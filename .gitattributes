@@ -1,0 +1,2 @@
+# normalizare de linii: text auto (LF in istoric), fara zgomot CRLF pe Windows
+* text=auto

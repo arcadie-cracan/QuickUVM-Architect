@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<!-- Harness de browser pentru webview, fara VSCode: stub acquireVsCodeApi,
+     tema minimala si modelul de regresie din examples/model.json.
+     Rulare: python -m http.server din radacina proiectului, apoi
+       http://localhost:8123/scripts/harness.html?view=demo_top.u_soc&mode=schematic
+     Parametri: view (calea instantei), mode (symbol|schematic). -->
+<html lang="ro">
+<head>
+<meta charset="UTF-8">
+<title>QuickUVM Architect — harness</title>
+<script>
+  // ocolirea cache-ului euristic al browserului (http.server nu trimite
+  // antete): stilurile si bundle-ul se incarca mereu proaspete
+  document.write(
+    `<link href="../media/webview.css?v=${Date.now()}" rel="stylesheet">`
+  );
+</script>
+<style>
+  :root {
+    --vscode-foreground: #cccccc;
+    --vscode-editor-background: #1e1e1e;
+    --vscode-editorWidget-background: #252526;
+    --vscode-editorWidget-border: #454545;
+    --vscode-panel-border: #454545;
+    --vscode-font-family: "Segoe UI", sans-serif;
+    --vscode-editor-font-family: Consolas, monospace;
+    --vscode-focusBorder: #007fd4;
+    --vscode-textLink-foreground: #3794ff;
+    --vscode-textLink-activeForeground: #3794ff;
+    --vscode-button-foreground: #ffffff;
+    --vscode-button-background: #0e639c;
+    --vscode-button-hoverBackground: #1177bb;
+    --vscode-button-secondaryForeground: #cccccc;
+    --vscode-button-secondaryBackground: #3a3d41;
+    --vscode-list-hoverBackground: #2a2d2e;
+    --vscode-inputValidation-warningBackground: #352a05;
+    --vscode-inputValidation-warningBorder: #b89500;
+    --vscode-charts-blue: #3794ff;
+    --vscode-charts-orange: #d18616;
+    --vscode-charts-green: #89d185;
+    --vscode-charts-purple: #b180d7;
+    --vscode-charts-red: #f14c4c;
+    --vscode-charts-yellow: #cca700;
+    --vscode-terminal-ansiCyan: #29b8db;
+    --vscode-terminal-ansiMagenta: #d670d6;
+  }
+</style>
+</head>
+<body>
+<div id="banner" hidden></div>
+<header id="head"></header>
+<div id="main">
+  <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
+  <aside id="inspector"></aside>
+</div>
+<div id="empty">Select an instance from the "Hierarchy" view.</div>
+<script>
+  // stub-ul API-ului VSCode: host-ul e simulat aici
+  const params = new URLSearchParams(location.search);
+  // config de verificare pentru mode=tb: DUT + 2 agenti (activ/pasiv) +
+  // scoreboard/coverage/vseq/proba, ca toate nivelurile (top/env/agent) sa fie
+  // populate la drill
+  const TB_CONFIG_PATH = "demo.quickuvm.yaml";
+  const TB_CONFIG = {
+    project: { name: "demo" },
+    dut: { name: "soc_top", clock: "clk", reset: "rst_n" },
+    agents: [
+      { name: "cmd", interface: "cmd_if" },
+      { name: "rsp", active: false },
+    ],
+    analysis: {
+      coverage: ["cmd"],
+      scoreboards: [
+        { name: "sbd", source: "cmd", monitor: "rsp", match: "out_of_order", match_key: "id" },
+      ],
+    },
+    virtual_sequences: [{ name: "smoke", body: [{ agent: "cmd", sequence: "cmd_seq" }] }],
+    probes: [{ name: "lvl", path: "u.lvl", width: 3 }],
+  };
+  const harnessState = {
+    viewId: params.get("view") || "demo_top",
+    mode: params.get("mode") || "symbol",
+  };
+  if (harnessState.mode === "tb") {
+    harnessState.viewId = "tb:" + TB_CONFIG_PATH;
+  }
+  function loadSidecar() {
+    return (
+      window.__sidecar ??
+      JSON.parse(sessionStorage.getItem("__sidecar") ?? "null") ?? {
+        schema_version: 1,
+        views: {},
+        orphans: [],
+      }
+    );
+  }
+  window.__sent = []; // mesajele webview -> "host", pentru inspectie
+  function acquireVsCodeApi() {
+    return {
+      postMessage(m) {
+        window.__sent.push(m);
+        console.log("[webview->host]", JSON.stringify(m));
+        // persistam pozitiile (layout/snapshot) in sidecar, ca
+        // reincarcarea sa le restaureze (simuleaza redeschiderea panelului)
+        if (m.type === "layout/snapshot") {
+          const sc = loadSidecar();
+          const v = (sc.views[m.viewId] ??= {});
+          const nodes = (v.nodes ??= {});
+          for (const [id, p] of Object.entries(m.nodes)) {
+            nodes[id] = { ...(nodes[id] ?? {}), x: p.x, y: p.y };
+          }
+          window.__sidecar = sc;
+          sessionStorage.setItem("__sidecar", JSON.stringify(sc));
+        }
+        if (m.type === "node/flipped") {
+          const sc = loadSidecar();
+          const nodes = ((sc.views[m.viewId] ??= {}).nodes ??= {});
+          const n = (nodes[m.nodeId] ??= {});
+          if (m.flipH) n.flipH = true; else delete n.flipH;
+          if (m.flipV) n.flipV = true; else delete n.flipV;
+          window.__sidecar = sc;
+          sessionStorage.setItem("__sidecar", JSON.stringify(sc));
+        }
+        if (m.type === "ready") {
+          void (async () => {
+            const model = await (await fetch("../examples/model.json")).json();
+            // sidecar-ul INAINTEA modelului (docs/05, ca in panel.ts): prima
+            // randare trebuie sa aiba semintele de pozitii.
+            window.postMessage(
+              { v: 1, type: "layout/full", sidecar: loadSidecar() },
+              "*"
+            );
+            // ?nomodel: simuleaza CustomTextEditor-ul (felia 4) — vederea TB se
+            // randeaza DOAR din config/full, fara model/full (nu are nevoie de RTL)
+            if (!params.has("nomodel")) {
+              window.postMessage({ v: 1, type: "model/full", model }, "*");
+            }
+            // config-ul de verificare (mesajul config/full, docs/05)
+            window.postMessage(
+              {
+                v: 1,
+                type: "config/full",
+                configPath: TB_CONFIG_PATH,
+                config: TB_CONFIG,
+              },
+              "*"
+            );
+            window.postMessage(
+              {
+                v: 1,
+                type: "view/show",
+                viewId: harnessState.viewId,
+                mode: harnessState.mode,
+              },
+              "*"
+            );
+          })();
+        }
+      },
+      getState() {
+        return undefined;
+      },
+      setState(s) {
+        console.log("[setState]", JSON.stringify(s));
+      },
+    };
+  }
+</script>
+<script>
+  document.write(`<script src="../dist/webview.js?v=${Date.now()}"><\/script>`);
+</script>
+</body>
+</html>

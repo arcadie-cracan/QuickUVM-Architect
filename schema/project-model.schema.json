@@ -1,0 +1,185 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.org/quickuvm-architect/project-model.schema.json",
+  "title": "quickuvm-architect project model",
+  "description": "Modelul de proiect emis de backend-ul semantic (svmodel) si consumat de extensia VSCode. Semantica detaliata: docs/02-model-de-proiect.md",
+  "type": "object",
+  "required": ["schema_version", "tops", "modules", "instances", "views"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "tops": { "type": "array", "items": { "type": "string" }, "minItems": 1 },
+    "modules": {
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/module" }
+    },
+    "instances": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/instance" }
+    },
+    "views": {
+      "type": "object",
+      "description": "cheie = calea ierarhica a instantei",
+      "additionalProperties": { "$ref": "#/$defs/view" }
+    }
+  },
+  "$defs": {
+    "loc": {
+      "type": ["object", "null"],
+      "required": ["file", "line"],
+      "properties": {
+        "file": { "type": "string" },
+        "line": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "port": {
+      "type": "object",
+      "required": ["name", "dir", "type", "width"],
+      "properties": {
+        "name": { "type": "string" },
+        "dir": { "enum": ["in", "out", "inout", "ref"] },
+        "type": { "type": "string" },
+        "width": { "type": ["integer", "null"], "minimum": 0 },
+        "unpacked_dims": {
+          "type": ["array", "null"],
+          "items": { "type": "integer", "minimum": 1 }
+        },
+        "elem_width": { "type": ["integer", "null"] },
+        "loc": { "$ref": "#/$defs/loc" }
+      }
+    },
+    "iface_port": {
+      "type": "object",
+      "required": ["name", "interface"],
+      "properties": {
+        "name": { "type": "string" },
+        "interface": { "type": "string" },
+        "modport": { "type": ["string", "null"] },
+        "loc": { "$ref": "#/$defs/loc" }
+      }
+    },
+    "module": {
+      "type": "object",
+      "required": ["ports", "iface_ports"],
+      "properties": {
+        "ports": { "type": "array", "items": { "$ref": "#/$defs/port" } },
+        "iface_ports": { "type": "array", "items": { "$ref": "#/$defs/iface_port" } },
+        "loc": { "$ref": "#/$defs/loc" }
+      }
+    },
+    "instance": {
+      "type": "object",
+      "required": ["path", "module", "params"],
+      "properties": {
+        "path": { "type": "string", "description": "ID stabil: cale ierarhica elaborata" },
+        "module": { "type": "string" },
+        "params": {
+          "type": "object",
+          "additionalProperties": { "type": "string" },
+          "description": "valorile efective ale parametrilor, ca text"
+        },
+        "loc": { "$ref": "#/$defs/loc" },
+        "iface": {
+          "type": "object",
+          "description": "prezent doar pentru instante de interfata",
+          "required": ["signals", "modports"],
+          "properties": {
+            "signals": { "type": "array", "items": { "$ref": "#/$defs/port_like_signal" } },
+            "modports": {
+              "type": "object",
+              "additionalProperties": {
+                "type": "object",
+                "additionalProperties": { "enum": ["in", "out", "inout", "ref"] }
+              }
+            }
+          }
+        }
+      }
+    },
+    "port_like_signal": {
+      "type": "object",
+      "required": ["name", "type", "width"],
+      "properties": {
+        "name": { "type": "string" },
+        "type": { "type": "string" },
+        "width": { "type": ["integer", "null"] },
+        "unpacked_dims": { "type": ["array", "null"], "items": { "type": "integer" } },
+        "elem_width": { "type": ["integer", "null"] }
+      }
+    },
+    "conn": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "net" }, "net": { "type": "string" } },
+          "additionalProperties": true
+        },
+        {
+          "type": "object",
+          "required": ["kind", "parts"],
+          "properties": {
+            "kind": { "const": "concat" },
+            "parts": { "type": "array", "items": { "$ref": "#/$defs/conn" } }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "const": "select" },
+            "base": { "$ref": "#/$defs/conn" },
+            "index": { "type": ["string", "null"] },
+            "text": { "type": ["string", "null"] }
+          }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "value"],
+          "properties": { "kind": { "const": "const" }, "value": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind", "ref"],
+          "properties": { "kind": { "const": "iface" }, "ref": { "type": "string" } }
+        },
+        {
+          "type": "object",
+          "required": ["kind"],
+          "properties": { "kind": { "const": "expr" }, "text": { "type": ["string", "null"] } }
+        }
+      ]
+    },
+    "view": {
+      "type": "object",
+      "required": ["module", "pins", "nets"],
+      "properties": {
+        "module": { "type": "string" },
+        "pins": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["pin", "conn"],
+            "properties": {
+              "pin": { "type": "string" },
+              "conn": { "$ref": "#/$defs/conn" }
+            }
+          }
+        },
+        "nets": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["name", "endpoints", "fanout", "render"],
+            "properties": {
+              "name": { "type": "string" },
+              "endpoints": { "type": "array", "items": { "type": "string" } },
+              "fanout": { "type": "integer", "minimum": 0 },
+              "render": { "enum": ["wire", "label"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,1056 @@
+/* Stilurile webview-ului: exclusiv variabile de tema VSCode (docs/01). */
+
+html,
+body {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  font-family: var(--vscode-font-family);
+  font-size: 13px;
+  color: var(--vscode-foreground);
+  background: var(--vscode-editor-background);
+}
+
+body {
+  display: flex;
+  flex-direction: column;
+}
+
+#banner {
+  padding: 4px 12px;
+  background: var(--vscode-inputValidation-warningBackground);
+  border-bottom: 1px solid var(--vscode-inputValidation-warningBorder);
+  color: var(--vscode-inputValidation-warningForeground, var(--vscode-foreground));
+}
+
+#head {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex: none;
+}
+
+#head .crumbs .seg {
+  font-weight: 600;
+}
+
+#head .crumbs .seg.link {
+  font-weight: 400;
+  color: var(--vscode-textLink-foreground);
+  cursor: pointer;
+}
+
+#head .crumbs .seg.link:hover {
+  text-decoration: underline;
+}
+
+#head .crumbs .sep {
+  opacity: 0.6;
+  margin: 0 1px;
+}
+
+#head .mode-toggle {
+  float: right;
+  display: inline-flex;
+  gap: 0;
+  border: 1px solid var(--vscode-button-border, var(--vscode-panel-border));
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+#head .mbtn {
+  border: none;
+  padding: 2px 10px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  color: var(--vscode-foreground);
+  background: transparent;
+}
+
+#head .mbtn.active {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+#head .module {
+  opacity: 0.85;
+}
+
+#head .params {
+  opacity: 0.7;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+}
+
+#main {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  cursor: default;
+  /* diagrama are propria semantica de selectie; selectia nativa de text
+     a browserului ar aparea la drag peste etichete */
+  user-select: none;
+}
+
+/* --------------------------------------------------------- inspector */
+
+#inspector {
+  width: 250px;
+  flex: none;
+  border-left: 1px solid var(--vscode-panel-border);
+  padding: 8px 10px;
+  overflow-y: auto;
+  font-size: 12px;
+}
+
+#inspector h3 {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.7;
+  margin: 12px 0 4px;
+}
+
+#inspector h3:first-child {
+  margin-top: 0;
+}
+
+#inspector .cfgpath,
+#inspector .dim {
+  opacity: 0.75;
+}
+
+#inspector .note {
+  opacity: 0.85;
+  font-style: italic;
+  margin: 2px 0;
+}
+
+#inspector ul {
+  list-style: none;
+  margin: 2px 0;
+  padding: 0;
+}
+
+#inspector li {
+  padding: 2px 4px;
+  cursor: pointer;
+  border-radius: 3px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#inspector li:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+#inspector .swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--agent-color, currentColor);
+  vertical-align: -1px;
+}
+
+#inspector .btn {
+  display: block;
+  width: 100%;
+  margin: 4px 0;
+  padding: 4px 8px;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}
+
+#inspector .btn.secondary {
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+}
+
+#inspector .btn:hover:not(:disabled) {
+  background: var(--vscode-button-hoverBackground);
+}
+
+#inspector .btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+/* editor de proprietati (felia 2): rand eticheta + control inline */
+#inspector .prop-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 4px 0;
+}
+
+#inspector .prop-label {
+  flex: none;
+  width: 74px;
+  opacity: 0.75;
+}
+
+#inspector .prop {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 2px 4px;
+  font-family: inherit;
+  font-size: 12px;
+  color: var(--vscode-input-foreground, var(--vscode-foreground));
+  background: var(--vscode-input-background, var(--vscode-editor-background));
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border));
+  border-radius: 2px;
+}
+
+#inspector .prop:disabled {
+  opacity: 0.45;
+}
+
+#inspector .prop:focus {
+  outline: 1px solid var(--vscode-focusBorder);
+  outline-offset: -1px;
+}
+
+/* meniu contextual (clic-dreapta pe o componenta din vederea de verificare) */
+.ctxmenu {
+  position: fixed;
+  z-index: 100;
+  min-width: 168px;
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.36);
+}
+
+.ctxitem {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 4px 10px;
+  border: none;
+  border-radius: 2px;
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 12px;
+  white-space: nowrap;
+  color: var(--vscode-foreground);
+  background: transparent;
+}
+
+.ctxitem:hover {
+  background: var(--vscode-list-hoverBackground);
+}
+
+/* stergerea: actiune distructiva, marcata cromatic */
+.ctxitem.danger {
+  color: var(--vscode-errorForeground, var(--vscode-charts-red, #f14c4c));
+}
+
+/* ------------------------------------------- overlay: agenti si roluri */
+
+.agent-c0 { --agent-color: var(--vscode-charts-blue, #3794ff); }
+.agent-c1 { --agent-color: var(--vscode-charts-orange, #d18616); }
+.agent-c2 { --agent-color: var(--vscode-charts-green, #89d185); }
+.agent-c3 { --agent-color: var(--vscode-charts-purple, #b180d7); }
+.agent-c4 { --agent-color: var(--vscode-charts-red, #f14c4c); }
+.agent-c5 { --agent-color: var(--vscode-charts-yellow, #cca700); }
+.agent-c6 { --agent-color: var(--vscode-terminal-ansiCyan, #29b8db); }
+.agent-c7 { --agent-color: var(--vscode-terminal-ansiMagenta, #d670d6); }
+
+.pin[class*="agent-c"] .stub {
+  stroke: var(--agent-color);
+  stroke-width: 2.5;
+}
+
+.pin[class*="agent-c"] text.pin-label {
+  fill: var(--agent-color);
+}
+
+.pin .marker {
+  fill: var(--agent-color);
+  stroke: var(--agent-color);
+  pointer-events: none;
+}
+
+/* rolurile ceas/reset: stub distinct (nu doar culoare) */
+.pin.role-clock .stub {
+  stroke-dasharray: 4 2;
+}
+
+.pin.role-reset .stub {
+  stroke-dasharray: 1.5 2.5;
+}
+
+.pin.role-ignored {
+  opacity: 0.45;
+}
+
+.pin.role-ignored text.pin-label {
+  text-decoration: line-through;
+}
+
+#canvas.panning {
+  cursor: grabbing;
+}
+
+/* lasso de selectie (click-stanga pe fundal) */
+.marquee {
+  fill: var(--vscode-focusBorder);
+  fill-opacity: 0.08;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  pointer-events: none;
+}
+
+/* ghidaje de aliniere la drag: linii temporare punctate, 1px la orice zoom
+   (non-scaling-stroke), peste diagrama */
+.align-guide {
+  stroke: var(--vscode-charts-blue, #3794ff);
+  stroke-width: 1;
+  stroke-dasharray: 4 3;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+
+#empty {
+  position: absolute;
+  inset: 40% 0 auto 0;
+  text-align: center;
+  opacity: 0.7;
+}
+
+/* ------------------------------------------------------------- diagrama */
+
+.module-box {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  /* frontiera blocului din foreground-ul temei, nu din editorWidget-border:
+     pe temele intunecate border-ul e un gri abia perceptibil (observatia
+     utilizatorului la validare); color-mix pastreaza contrastul pe ORICE
+     tema, iar linia veche ramane fallback daca color-mix nu exista */
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  stroke: color-mix(in srgb, var(--vscode-foreground, #888) 60%, transparent);
+  stroke-width: 1.5;
+  rx: 3;
+}
+
+.module-name {
+  font-size: 13px;
+  font-weight: 600;
+  fill: var(--vscode-foreground);
+  text-anchor: middle;
+}
+
+/* sectiuni de pini pe rol in vederea-simbol (docs/04): divizor discret +
+   titlu mic uppercase (symbolator) */
+.sym-divider {
+  stroke: var(--vscode-foreground);
+  stroke: color-mix(in srgb, var(--vscode-foreground, #888) 30%, transparent);
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+}
+
+text.sym-section {
+  font-size: 8px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  fill: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+text.pin-label,
+text.mult {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 12px;
+  fill: var(--vscode-foreground);
+}
+
+/* dimensiunile packed/unpacked din eticheta portului: aceeasi culoare ca
+   numele, dar o nuanta mai discreta prin fill-opacity (urmeaza culoarea la
+   hover/select/iface), ca numele sa ramana proeminent la etichete compacte
+   fara spatii */
+tspan.dim {
+  fill-opacity: 0.55;
+}
+
+text.mult {
+  font-size: 10px;
+  /* text-anchor se pune INLINE (nu aici): in SVG, CSS bate atributul de
+     prezentare, iar eticheta de latime din schema o ancoreaza pe latura
+     (start/end) ca sa nu taie frontiera; steagul si simbolul o centreaza */
+  opacity: 0.8;
+}
+
+.pin .stub {
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.5;
+}
+
+.pin .bus-slash {
+  stroke: var(--vscode-foreground);
+  stroke-width: 1;
+}
+
+/* setarea quickuvm.schematicDecorations=false: ascunde glifele vocabularului
+   (slash+latime pe buse, junction dots); gradarea de grosime ramane, e natura
+   firului, nu o adnotare (docs/04) */
+#canvas.decor-off .bus-slash,
+#canvas.decor-off .mult,
+#canvas.decor-off .junction {
+  display: none;
+}
+
+/* gradare pe clase de latime (docs/04): busul mai lat = fir/stub/slash mai
+   gros. Praguri: w-s 2-8, w-m 9-16, w-l >16 (widthClass in schematic.ts) */
+.pin.w-s .stub, .pin.w-s .bus-slash { stroke-width: 1.75; }
+.pin.w-m .stub, .pin.w-m .bus-slash { stroke-width: 2.25; }
+.pin.w-l .stub, .pin.w-l .bus-slash { stroke-width: 3; }
+.bport.w-s .bus-slash { stroke-width: 1.75; }
+.bport.w-m .bus-slash { stroke-width: 2.25; }
+.bport.w-l .bus-slash { stroke-width: 3; }
+/* firul (muchia) gradat pe clasa de latime a netului. Grosimea trece printr-o
+   variabila `--ew` ca hover/selectie sa n-o SUBTIEZE (regulile lor vin mai jos
+   cu specificitate egala si ar castiga) — la hover se ia max(2px, --ew) */
+.edge.w-s { --ew: 2px; }
+.edge.w-m { --ew: 2.75px; }
+.edge.w-l { --ew: 3.5px; }
+.edge.w-s .edge-line,
+.edge.w-m .edge-line,
+.edge.w-l .edge-line { stroke-width: var(--ew); }
+
+/* pin de interfata: culoare + hasura, niciodata doar culoare (docs/05) */
+.pin.iface .stub {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 5;
+}
+
+.pin.iface .hatch {
+  fill: url(#hatch);
+}
+
+.pin.iface text.pin-label {
+  fill: var(--vscode-charts-orange, #d18616);
+}
+
+#hatch line {
+  stroke: var(--vscode-editor-background);
+  stroke-width: 1.5;
+}
+
+.pin {
+  cursor: pointer;
+}
+
+.pin:hover .stub {
+  stroke: var(--vscode-focusBorder);
+}
+
+.pin:hover text.pin-label {
+  fill: var(--vscode-focusBorder);
+}
+
+.pin.selected text.pin-label {
+  fill: var(--vscode-textLink-activeForeground, var(--vscode-focusBorder));
+  font-weight: 700;
+}
+
+.pin.selected .stub {
+  stroke: var(--vscode-textLink-activeForeground, var(--vscode-focusBorder));
+  stroke-width: 3;
+}
+
+.node.selected .module-box {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2.5;
+}
+
+/* --------------------------------------------------- vederea de interior */
+
+.inode .module-box {
+  cursor: grab;
+}
+
+.inode .module-box:active {
+  cursor: grabbing;
+}
+
+.inode .inode-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--vscode-foreground);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.inode .inode-sub {
+  font-size: 10px;
+  fill: var(--vscode-foreground);
+  opacity: 0.7;
+  text-anchor: middle;
+  font-family: var(--vscode-editor-font-family);
+  pointer-events: none;
+}
+
+.inode.selected .module-box {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2.5;
+}
+
+/* nodurile de interfata: aceeasi conventie culoare+forma ca pinii iface */
+.inode.iface .module-box {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-dasharray: 5 3;
+}
+
+/* pliaj generate: teanc de umbre + buton de expandare */
+.fold-shadow {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  stroke-width: 1;
+  opacity: 0.65;
+}
+
+.foldbtn {
+  cursor: pointer;
+}
+
+.foldbtn rect {
+  fill: var(--vscode-editor-background);
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+}
+
+.foldbtn text {
+  font-size: 12px;
+  fill: var(--vscode-foreground);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.foldbtn:hover rect {
+  stroke: var(--vscode-focusBorder);
+}
+
+/* porturile modulului vederii, pe granita */
+.bport {
+  cursor: grab;
+}
+
+.bport:active {
+  cursor: grabbing;
+}
+
+.bport .bport-shape {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.2;
+}
+
+.bport .bport-label {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  fill: var(--vscode-foreground);
+  text-anchor: middle;
+}
+
+.bport.iface .bport-shape {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 2;
+  fill: url(#hatch);
+}
+
+.bport:hover .bport-shape,
+.bport.selected .bport-shape {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+
+/* muchii (interconect) */
+.edge .edge-line {
+  fill: none;
+  /* culoare OPACA amestecata cu FUNDALUL, nu opacity: 0.75 — firele aceluiasi
+     net care impart trunchiul (waive-ul de fan-out) isi cumulau transparenta
+     si produceau un efect de gradient la suprapunere (observatie la validare).
+     Amestecul cu fundalul da aceeasi softness la opacitate PLINA, deci
+     suprapunerile nu se mai acumuleaza; fallback la foreground pur */
+  stroke: var(--vscode-foreground);
+  stroke: color-mix(
+    in srgb,
+    var(--vscode-foreground, #888) 72%,
+    var(--vscode-editor-background, #1e1e1e)
+  );
+  stroke-width: 1.3;
+}
+
+/* punct de jonctiune (T) al unui net cu fanout (Eeschema): fill din culoarea
+   firului, ca sa se citeasca drept ramificatie, nu incrucisare */
+.junction {
+  fill: var(--vscode-foreground);
+  stroke: none;
+}
+
+.edge.iface .edge-line {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 3.5;
+  stroke-dasharray: 7 3;
+  opacity: 0.9;
+}
+
+.edge:hover .edge-line,
+.edge.selected .edge-line {
+  stroke: var(--vscode-focusBorder);
+  opacity: 1;
+  /* emfaza pe firele subtiri (2px), dar NU subtia un bus gros (--ew) */
+  stroke-width: max(2px, var(--ew, 2px));
+}
+
+#arrow path {
+  fill: var(--vscode-foreground);
+  opacity: 0.75;
+}
+
+/* adnotari de conexiune si etichete de net (nivelul 4, docs/04) */
+text.conn-note {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 9px;
+  fill: var(--vscode-foreground);
+  opacity: 0.75;
+}
+
+text.netlabel {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 10px;
+  font-style: italic;
+  fill: var(--vscode-textLink-foreground, var(--vscode-foreground));
+}
+
+/* eticheta unui singur net e selectabila: click -> sectiunea Net din
+   inspector, cu comutatorul fir/eticheta */
+text.netlabel[data-id] {
+  cursor: pointer;
+}
+
+text.netlabel[data-id]:hover,
+text.netlabel.selected {
+  fill: var(--vscode-focusBorder);
+  font-weight: 700;
+}
+
+.pin .nc {
+  fill: none;
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.2;
+  opacity: 0.8;
+}
+
+/* glife de adnotare (vocabular de desen, docs/04): cutie de constanta
+   (tie-cell) si pana split/join pentru slice/concat. Ascunse de setarea
+   schematicDecorations (clasa .mult/.conn-note nu le acopera; le adaugam) */
+.const-box {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  stroke: var(--vscode-foreground);
+  stroke: color-mix(in srgb, var(--vscode-foreground, #888) 60%, transparent);
+  stroke-width: 1;
+}
+
+text.const-val {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 8.5px;
+  fill: var(--vscode-foreground);
+  opacity: 0.85;
+}
+
+/* chip concat/select: paranteze SV in dreptunghi rotunjit de accent
+   (categoric adnotare, nu fir), {} concat / [] select. Fara varf pe fir
+   -> nu se confunda cu sageata de directie a firelor */
+.split-join {
+  fill: color-mix(in srgb, var(--vscode-charts-blue, #3794ff) 14%, var(--vscode-editor-background));
+  stroke: var(--vscode-charts-blue, #3794ff);
+  stroke-width: 1;
+}
+
+text.split-sign {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 9.5px;
+  fill: var(--vscode-charts-blue, #3794ff);
+}
+
+/* decor-off ascunde FORMELE glife (cutie, pana), dar pastreaza textul
+   informativ (valoarea constantei ramane vizibila, doar fara cutie) */
+#canvas.decor-off .const-box,
+#canvas.decor-off .split-join,
+#canvas.decor-off .split-sign {
+  display: none;
+}
+
+/* vederea de verificare (faza 3b, docs/05): accente pe tip de componenta */
+.inode.tbdut .module-box {
+  stroke: var(--vscode-charts-blue, #3794ff);
+  stroke-width: 2;
+}
+
+.inode.tbagent .module-box {
+  stroke: var(--vscode-charts-green, #89d185);
+}
+
+.inode.tbsb .module-box {
+  stroke: var(--vscode-charts-orange, #d18616);
+}
+
+.inode.tbcov .module-box {
+  stroke: var(--vscode-charts-purple, #b180d7);
+}
+
+.inode.tbvsqr .module-box,
+.inode.tbprobe .module-box {
+  stroke-dasharray: 5 3;
+}
+
+.inode.tbsubenv .module-box {
+  stroke-width: 2;
+}
+
+/* referinte punctate (vsqr->sqr, dut->probes) */
+.edge.ref .edge-line {
+  stroke-dasharray: 4 3;
+  stroke-width: 1.2;
+  opacity: 0.7;
+}
+
+/* vederea de verificare ierarhica (faza 3b, docs/05): containere + frunze */
+.tbnode.container .tb-frame {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  fill-opacity: 0.35;
+  stroke: var(--vscode-panel-border);
+  stroke-width: 1;
+}
+
+.tbnode.tb-tb .tb-frame {
+  stroke: var(--vscode-descriptionForeground, var(--vscode-panel-border));
+  stroke-dasharray: 2 2;
+}
+
+.tbnode.tb-env .tb-frame {
+  stroke: var(--vscode-charts-blue, #3794ff);
+  fill: var(--vscode-charts-blue, #3794ff);
+  fill-opacity: 0.06;
+}
+
+.tbnode.tb-agent .tb-frame {
+  stroke: var(--vscode-charts-green, #89d185);
+  fill: var(--vscode-charts-green, #89d185);
+  fill-opacity: 0.07;
+}
+
+.tb-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  fill: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  text-transform: uppercase;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.tbnode.leaf .tb-box {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  /* acelasi contrast de frontiera ca .module-box (vezi nota de acolo) */
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  stroke: color-mix(in srgb, var(--vscode-foreground, #888) 60%, transparent);
+  stroke-width: 1.4;
+  cursor: pointer;
+}
+
+.tbnode.tb-dut .tb-box { stroke: var(--vscode-charts-blue, #3794ff); stroke-width: 2; }
+.tbnode.tb-sb .tb-box { stroke: var(--vscode-charts-orange, #d18616); }
+.tbnode.tb-cov .tb-box { stroke: var(--vscode-charts-purple, #b180d7); }
+.tbnode.tb-vsqr .tb-box,
+.tbnode.tb-probe .tb-box { stroke-dasharray: 5 3; }
+.tbnode.tb-subenv .tb-box { stroke-width: 2; }
+/* internele agentului raman atenuate prin UMPLERE; frontiera ramane crisp —
+   cu stroke-opacity si border-ul slab, cutiile dispareau pe temele inchise */
+.tbnode.tb-unit .tb-box { fill-opacity: 0.7; }
+
+.tb-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--vscode-foreground);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.tbnode.tb-unit .tb-name { font-size: 11px; font-weight: 400; opacity: 0.85; }
+
+.tb-sub {
+  font-size: 9px;
+  opacity: 0.7;
+  fill: var(--vscode-foreground);
+  text-anchor: middle;
+  font-family: var(--vscode-editor-font-family);
+  pointer-events: none;
+}
+
+.tb-pin {
+  font-size: 10px;
+  fill: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family);
+  pointer-events: none;
+}
+
+.tb-stub {
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.4;
+}
+
+.tb-stub.iface {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 3.5;
+}
+
+.tbnode.leaf.selected .tb-box {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2.5;
+}
+
+.tbnode.container.selected .tb-frame {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+
+/* muchiile vederii de verificare */
+.tb-edge .tb-edge-line {
+  fill: none;
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.3;
+  opacity: 0.75;
+}
+
+.tb-edge.iface .tb-edge-line {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 3;
+  opacity: 0.9;
+}
+
+.tb-edge.ref .tb-edge-line {
+  stroke-dasharray: 4 3;
+  stroke-width: 1.1;
+  opacity: 0.6;
+}
+
+.tb-edge:hover .tb-edge-line,
+.tb-edge.selected .tb-edge-line {
+  stroke: var(--vscode-focusBorder);
+  opacity: 1;
+  stroke-width: 2;
+}
+
+/* vederea de verificare pe niveluri (D24): cutii UML + steaguri de granita */
+.tbnode .tb-box {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  /* acelasi contrast de frontiera ca .module-box (vezi nota de acolo) */
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  stroke: color-mix(in srgb, var(--vscode-foreground, #888) 60%, transparent);
+  stroke-width: 1.4;
+  cursor: pointer;
+}
+
+.tbnode.drill .tb-box {
+  stroke: var(--vscode-charts-blue, #3794ff);
+  stroke-width: 1.6;
+}
+
+.tbnode.tb-dut .tb-box { stroke: var(--vscode-charts-blue, #3794ff); stroke-width: 2; }
+.tbnode.tb-env .tb-box { stroke: var(--vscode-charts-blue, #3794ff); stroke-width: 1.8; }
+.tbnode.tb-agent .tb-box { stroke: var(--vscode-charts-green, #89d185); }
+.tbnode.tb-sb .tb-box { stroke: var(--vscode-charts-orange, #d18616); }
+.tbnode.tb-cov .tb-box { stroke: var(--vscode-charts-purple, #b180d7); }
+.tbnode.tb-vsqr .tb-box,
+.tbnode.tb-probe .tb-box { stroke-dasharray: 5 3; }
+.tbnode.tb-subenv .tb-box { stroke-width: 2; }
+
+.tb-name {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--vscode-foreground);
+  text-anchor: middle;
+  pointer-events: none;
+}
+
+.tbnode.tb-unit .tb-name { font-weight: 400; }
+
+.tb-stereotype {
+  font-size: 9.5px;
+  font-style: italic;
+  fill: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  text-anchor: middle;
+  opacity: 0.85;
+  pointer-events: none;
+}
+
+.tb-sep {
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  stroke-width: 0.7;
+  opacity: 0.6;
+}
+
+.tb-comp-title {
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  fill: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  opacity: 0.7;
+  pointer-events: none;
+}
+
+.tb-comp {
+  font-size: 10.5px;
+  fill: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family);
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+.tb-pin {
+  font-size: 10px;
+  fill: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family);
+  pointer-events: none;
+}
+
+.tb-stub { stroke: var(--vscode-foreground); stroke-width: 1.4; }
+.tb-stub.iface { stroke: var(--vscode-charts-orange, #d18616); stroke-width: 3.5; }
+
+.tbnode.selected .tb-box {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2.5;
+}
+
+/* steaguri de granita (conexiuni care traverseaza nivelul) */
+.tb-bport .tb-bport-shape {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  /* acelasi contrast ca .module-box; steagurile RTL folosesc deja foreground */
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  stroke: color-mix(in srgb, var(--vscode-foreground, #888) 60%, transparent);
+  stroke-width: 1.2;
+}
+
+.tb-bport.iface .tb-bport-shape {
+  stroke: var(--vscode-charts-orange, #d18616);
+  stroke-width: 1.6;
+}
+
+.tb-bport-label {
+  font-size: 10px;
+  fill: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family);
+  pointer-events: none;
+}
+
+.tb-bport.selected .tb-bport-shape {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+
+/* minimapul (navigatorul de ansamblu, docs/04): miniatura <use> + dreptunghiul
+   zonei vizibile; coordonate de ECRAN (nu se scaleaza cu camera), tasta M */
+#minimap .mm-bg {
+  fill: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  fill-opacity: 0.92;
+  stroke: var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  stroke-width: 1;
+}
+
+/* copia scenei si dreptunghiul de vedere nu prind pointerul — gesturile le ia
+   doar .mm-hit de deasupra */
+#minimap .mm-scale,
+#minimap .mm-view {
+  pointer-events: none;
+}
+
+#minimap .mm-view {
+  fill: var(--vscode-charts-blue, #3794ff);
+  fill-opacity: 0.14;
+  stroke: var(--vscode-charts-blue, #3794ff);
+  stroke-width: 1;
+}
+
+#minimap .mm-hit {
+  fill: transparent;
+  cursor: pointer;
+}
+
+/* haloul de cross-probing editor->diagrama (docs/05): DISTINCT de selectie
+   (galben, nu focusBorder) si persistent — se stinge cand cursorul din sursa
+   pleaca de pe element (probe/highlight cu lista goala) */
+.inode.xprobe .module-box,
+.node.xprobe .module-box,
+.bport.xprobe .bport-shape {
+  stroke: var(--vscode-charts-yellow, #cca700);
+  filter: drop-shadow(0 0 4px var(--vscode-charts-yellow, #cca700));
+}
+
+.pin.xprobe .stub {
+  stroke: var(--vscode-charts-yellow, #cca700);
+  stroke-width: 2.5;
+}
+
+.pin.xprobe .pin-label,
+.bport.xprobe .bport-label {
+  fill: var(--vscode-charts-yellow, #cca700);
+}
+
+/* decoratiile de stare quick-uvm (docs/05): badge ⚠/✕ in coltul elementului
+   vizat de o validare model<->YAML; culorile diagnosticelor din tema */
+.status-badge circle {
+  fill: var(--vscode-editorWarning-foreground, #cca700);
+  stroke: var(--vscode-editor-background, #1e1e1e);
+  stroke-width: 1.5;
+}
+
+.status-badge.sev-error circle {
+  fill: var(--vscode-editorError-foreground, #f14c4c);
+}
+
+.status-badge text {
+  fill: var(--vscode-editor-background, #1e1e1e);
+  font-size: 10px;
+  font-weight: bold;
+  pointer-events: none;
+}
+
+/* cipul de stare al ultimului „Genereaza testbench" din antet */
+.gen-chip {
+  padding: 1px 8px;
+  margin-right: 6px;
+  border-radius: 9px;
+  font-size: 11px;
+  border: 1px solid currentColor;
+  cursor: default;
+}
+
+.gen-chip.gen-ok {
+  color: var(--vscode-testing-iconPassed, #2ea043);
+}
+
+.gen-chip.gen-fail {
+  color: var(--vscode-editorError-foreground, #f14c4c);
+}

@@ -1,0 +1,15 @@
+.vscode/**
+src/**
+node_modules/**
+esbuild.mjs
+tsconfig.json
+docs/**
+examples/**
+examples-bender/**
+schema/**
+backend/tests/**
+backend/requirements-dev.txt
+**/__pycache__/**
+**/.pytest_cache/**
+CLAUDE.md
+**/*.map

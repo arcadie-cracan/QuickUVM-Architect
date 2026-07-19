@@ -1,0 +1,354 @@
+{
+  "name": "quickuvm-architect",
+  "displayName": "QuickUVM Architect — SystemVerilog schematic viewer & UVM testbench designer",
+  "description": "%description%",
+  "version": "0.1.0",
+  "publisher": "arcadie-cracan",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Visualization",
+    "Programming Languages",
+    "Testing"
+  ],
+  "keywords": [
+    "systemverilog",
+    "schematic",
+    "diagram",
+    "uvm",
+    "testbench",
+    "quickuvm"
+  ],
+  "main": "./dist/extension.js",
+  "l10n": "./l10n",
+  "activationEvents": [
+    "workspaceContains:**/*.sv",
+    "workspaceContains:Bender.yml"
+  ],
+  "contributes": {
+    "customEditors": [
+      {
+        "viewType": "quickuvm.configEditor",
+        "displayName": "%customEditor.configEditor.displayName%",
+        "selector": [
+          {
+            "filenamePattern": "*.quickuvm.yaml"
+          }
+        ],
+        "priority": "default"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "quickuvm",
+          "title": "QuickUVM Architect",
+          "icon": "media/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "quickuvm": [
+        {
+          "id": "quickuvm.hierarchy",
+          "name": "%view.hierarchy.name%",
+          "icon": "media/icon.svg",
+          "contextualTitle": "%view.hierarchy.contextualTitle%"
+        },
+        {
+          "id": "quickuvm.verification",
+          "name": "%view.verification.name%",
+          "icon": "media/icon.svg",
+          "contextualTitle": "%view.verification.contextualTitle%"
+        }
+      ]
+    },
+    "viewsWelcome": [
+      {
+        "view": "quickuvm.hierarchy",
+        "contents": "%welcome.hierarchy%"
+      },
+      {
+        "view": "quickuvm.verification",
+        "contents": "%welcome.verification%"
+      }
+    ],
+    "commands": [
+      {
+        "command": "quickuvm.openSymbolView",
+        "title": "%cmd.openSymbolView%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.openSchematicView",
+        "title": "%cmd.openSchematicView%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.reloadModel",
+        "title": "%cmd.reloadModel%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.openSource",
+        "title": "%cmd.openSource%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.setTop",
+        "title": "%cmd.setTop%",
+        "category": "QuickUVM Architect",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "quickuvm.setDut",
+        "title": "%cmd.setDut%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.createAgentFromSelection",
+        "title": "%cmd.createAgentFromSelection%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.createSubenv",
+        "title": "%cmd.createSubenv%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.ignoreSelection",
+        "title": "%cmd.ignoreSelection%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.generate",
+        "title": "%cmd.generate%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.openConfig",
+        "title": "%cmd.openConfig%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.openVerificationView",
+        "title": "%cmd.openVerificationView%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.chooseConfig",
+        "title": "%cmd.chooseConfig%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.fixPortWidth",
+        "title": "%cmd.fixPortWidth%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.cleanOrphans",
+        "title": "%cmd.cleanOrphans%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.revealTbComponent",
+        "title": "%cmd.revealTbComponent%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.exportSvg",
+        "title": "%cmd.exportSvg%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.revealInDiagram",
+        "title": "%cmd.revealInDiagram%",
+        "category": "QuickUVM Architect"
+      }
+    ],
+    "menus": {
+      "editor/context": [
+        {
+          "command": "quickuvm.revealInDiagram",
+          "when": "resourceExtname =~ /\\.(sv|svh|v|vh)$/i",
+          "group": "navigation@9"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "quickuvm.setTop",
+          "when": "view == quickuvm.hierarchy && viewItem == top-root",
+          "group": "inline"
+        },
+        {
+          "command": "quickuvm.setTop",
+          "when": "view == quickuvm.hierarchy && viewItem == top-root",
+          "group": "navigation"
+        },
+        {
+          "command": "quickuvm.openSchematicView",
+          "when": "view == quickuvm.hierarchy && viewItem == instance",
+          "group": "navigation"
+        },
+        {
+          "command": "quickuvm.openSource",
+          "when": "view == quickuvm.hierarchy && viewItem == instance",
+          "group": "navigation"
+        },
+        {
+          "command": "quickuvm.setDut",
+          "when": "view == quickuvm.hierarchy && viewItem == instance",
+          "group": "quickuvm@1"
+        },
+        {
+          "command": "quickuvm.openVerificationView",
+          "when": "view == quickuvm.hierarchy && viewItem == instance",
+          "group": "quickuvm@2"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "quickuvm.revealTbComponent",
+          "when": "false"
+        },
+        {
+          "command": "quickuvm.openSource",
+          "when": "false"
+        },
+        {
+          "command": "quickuvm.fixPortWidth",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "QuickUVM Architect",
+      "properties": {
+        "quickuvm.python": {
+          "type": "string",
+          "default": "python",
+          "description": "%config.python%"
+        },
+        "quickuvm.top": {
+          "type": "string",
+          "default": "",
+          "description": "%config.top%"
+        },
+        "quickuvm.bender": {
+          "type": "string",
+          "default": "bender",
+          "description": "%config.bender%"
+        },
+        "quickuvm.benderArgs": {
+          "type": "string",
+          "default": "",
+          "description": "%config.benderArgs%"
+        },
+        "quickuvm.fileList": {
+          "type": "string",
+          "default": "",
+          "description": "%config.fileList%"
+        },
+        "quickuvm.sourceGlob": {
+          "type": "string",
+          "default": "**/*.sv",
+          "description": "%config.sourceGlob%"
+        },
+        "quickuvm.labelThreshold": {
+          "type": "number",
+          "default": 4,
+          "description": "%config.labelThreshold%"
+        },
+        "quickuvm.debounceMs": {
+          "type": "number",
+          "default": 400,
+          "description": "%config.debounceMs%"
+        },
+        "quickuvm.configFile": {
+          "type": "string",
+          "default": "",
+          "description": "%config.configFile%"
+        },
+        "quickuvm.layoutFile": {
+          "type": "string",
+          "default": "",
+          "description": "%config.layoutFile%"
+        },
+        "quickuvm.lassoMode": {
+          "type": "string",
+          "enum": [
+            "contain",
+            "intersect"
+          ],
+          "default": "contain",
+          "description": "%config.lassoMode%",
+          "enumDescriptions": [
+            "%config.lassoMode.contain%",
+            "%config.lassoMode.intersect%"
+          ]
+        },
+        "quickuvm.quickUvm": {
+          "type": "string",
+          "default": "quick-uvm",
+          "description": "%config.quickUvm%"
+        },
+        "quickuvm.outputDir": {
+          "type": "string",
+          "default": "tb",
+          "description": "%config.outputDir%"
+        },
+        "quickuvm.seqItemStyle": {
+          "type": "string",
+          "enum": [
+            "manual",
+            "field_macros"
+          ],
+          "default": "manual",
+          "description": "%config.seqItemStyle%"
+        },
+        "quickuvm.hoverCrossProbe": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.hoverCrossProbe%"
+        },
+        "quickuvm.schematicDecorations": {
+          "type": "boolean",
+          "default": true,
+          "description": "%config.schematicDecorations%"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "watch": "node esbuild.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "test:tbscene": "node scripts/test-tbscene.mjs",
+    "test:tblayout": "node scripts/test-tblayout.mjs",
+    "test:scene": "node scripts/test-scene.mjs",
+    "test:router": "node scripts/test-router.mjs",
+    "test:minimap": "node scripts/test-minimap.mjs",
+    "test:locmap": "node scripts/test-locmap.mjs",
+    "test:status": "node scripts/test-status.mjs",
+    "test:probe": "node scripts/test-probe.mjs",
+    "test:compose": "node scripts/test-compose.mjs",
+    "test:sidecar": "node scripts/test-sidecar.mjs",
+    "test:yamlops": "node scripts/test-yamlops.mjs",
+    "test:filelist": "node scripts/test-filelist.mjs",
+    "test:heuristics": "node scripts/test-heuristics.mjs",
+    "test:configcheck": "node scripts/test-configcheck.mjs",
+    "test:e2e": "node scripts/e2e-quickuvm.mjs",
+    "vscode:prepublish": "npm run build",
+    "test:tbtree": "node scripts/test-tbtree.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "@types/vscode": "^1.90.0",
+    "elkjs": "^0.9.3",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0",
+    "yaml": "^2.9.0"
+  }
+}

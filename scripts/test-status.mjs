@@ -1,0 +1,131 @@
+// Teste Node pentru decoratiile de stare quick-uvm (src/status.ts):
+//   npm run test:status
+import assert from "node:assert/strict";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
+import esbuild from "esbuild";
+
+const outDir = mkdtempSync(join(tmpdir(), "quickuvm-status-"));
+const outFile = join(outDir, "status.mjs");
+await esbuild.build({
+  entryPoints: ["src/status.ts"],
+  outfile: outFile,
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  logLevel: "silent",
+});
+const { decosFromFindings, statusIdsRtl, statusIdsTb } = await import(
+  pathToFileURL(outFile)
+);
+
+let passed = 0;
+function test(name, fn) {
+  fn();
+  passed += 1;
+  console.log(`  ok ${name}`);
+}
+
+const F = (kind, severity, params) => ({ kind, severity, params, span: null });
+
+test("decosFromFindings: fiecare fel isi gaseste tinta semantica", () => {
+  const decos = decosFromFindings([
+    F("dut-missing", "warning", { module: "ghost" }),
+    F("hybrid", "error", {}),
+    F("port-claimed", "error", { port: "clk", agent: "cmd" }),
+    F("port-orphan", "warning", { port: "gone", dut: "chan", agent: "cmd" }),
+    F("width-mismatch", "warning", {
+      port: "din", declared: 8, expected: 16, agent: "cmd",
+    }),
+    F("ignored-and-mapped", "warning", { port: "x", agent: "rsp" }),
+  ]);
+  const scopes = decos.map((d) => d.scope);
+  // dut-missing/hybrid -> env; port-claimed -> port+agent; port-orphan ->
+  // DOAR agent (pinul nu mai exista); width-mismatch -> port+agent;
+  // ignored-and-mapped -> port
+  assert.deepEqual(scopes, [
+    "env", "env", "port", "agent", "agent", "port", "agent", "port",
+  ]);
+  assert.ok(decos[3].message.includes("clk"));
+  assert.ok(decos[4].message.includes("gone"));
+  assert.ok(decos[5].message.includes("width 8"));
+});
+
+test("statusIdsRtl: vederea DUT-ului -> steag; instantele de DUT -> pini", () => {
+  const decos = decosFromFindings([
+    F("width-mismatch", "warning", {
+      port: "din", declared: 8, expected: 16, agent: "cmd",
+    }),
+  ]);
+  // vederea INSASI e DUT-ul (simbol sau schema lui)
+  const own = statusIdsRtl(decos, { viewModule: "chan", dut: "chan", nodes: [] });
+  assert.deepEqual([...own.keys()], ["<port>.din"]);
+  assert.equal(own.get("<port>.din").severity, "warning");
+  // vedere-parinte cu instante de DUT (inclusiv pliaj)
+  const parent = statusIdsRtl(decos, {
+    viewModule: "soc_top",
+    dut: "chan",
+    nodes: [
+      { id: "u_add", module: "adder" },
+      { id: "g_ch[0..2].u_ch", module: "chan" },
+    ],
+  });
+  assert.deepEqual([...parent.keys()], ["g_ch[0..2].u_ch.din"]);
+});
+
+test("statusIdsRtl: fara DUT sau vedere nelegata -> nimic", () => {
+  const decos = decosFromFindings([
+    F("port-claimed", "error", { port: "clk", agent: "cmd" }),
+  ]);
+  assert.equal(statusIdsRtl(decos, { viewModule: "x", dut: null, nodes: [] }).size, 0);
+  assert.equal(
+    statusIdsRtl(decos, { viewModule: "adder", dut: "chan", nodes: [] }).size,
+    0
+  );
+});
+
+test("statusIdsTb: agent prezent -> blocul lui; env -> nodul env", () => {
+  const decos = decosFromFindings([
+    F("width-mismatch", "warning", {
+      port: "din", declared: 8, expected: 16, agent: "cmd",
+    }),
+    F("hybrid", "error", {}),
+  ]);
+  // nivelul env: agentii vizibili, env-ul nu
+  const envLevel = statusIdsTb(decos, new Set(["agent:cmd", "agent:rsp"]));
+  assert.deepEqual([...envLevel.keys()], ["agent:cmd"]);
+  // nivelul radacina: env vizibil, agentii nu -> bubble-up cu prefixul agentului
+  const root = statusIdsTb(decos, new Set(["dut", "env"]));
+  assert.deepEqual([...root.keys()], ["env"]);
+  const env = root.get("env");
+  assert.equal(env.severity, "error"); // hibridul (error) bate width (warning)
+  assert.equal(env.messages.length, 2);
+  assert.ok(env.messages.some((m) => m.startsWith("cmd: ")));
+});
+
+test("statusIdsTb: agregare — doua probleme pe acelasi agent, un badge", () => {
+  const decos = decosFromFindings([
+    F("width-mismatch", "warning", {
+      port: "din", declared: 8, expected: 16, agent: "cmd",
+    }),
+    F("port-claimed", "error", { port: "clk", agent: "cmd" }),
+  ]);
+  const m = statusIdsTb(decos, new Set(["agent:cmd"]));
+  assert.equal(m.size, 1);
+  const a = m.get("agent:cmd");
+  assert.equal(a.severity, "error");
+  assert.equal(a.messages.length, 2);
+});
+
+test("statusIdsTb: porturile nu decoreaza TB; decos gol -> nimic", () => {
+  const decos = decosFromFindings([
+    F("ignored-and-mapped", "warning", { port: "x", agent: "rsp" }),
+  ]);
+  // singura tinta e port -> nimic in TB (agentul NU e tintit de ignored)
+  assert.equal(statusIdsTb(decos, new Set(["agent:rsp", "env"])).size, 0);
+  assert.equal(statusIdsTb([], new Set(["env"])).size, 0);
+});
+
+console.log(`\ntest-status: ${passed} teste au trecut.`);

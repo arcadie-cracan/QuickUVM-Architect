@@ -1,0 +1,619 @@
+{
+ "schema_version": 1,
+ "tops": [
+  "demo_top"
+ ],
+ "modules": {
+  "demo_top": {
+   "ports": [],
+   "iface_ports": [],
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 28
+   }
+  },
+  "reg_bus": {
+   "ports": [
+    {
+     "name": "clk",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 3
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 3
+   }
+  },
+  "soc_top": {
+   "ports": [
+    {
+     "name": "clk",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 12
+     }
+    },
+    {
+     "name": "rst_n",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 13
+     }
+    },
+    {
+     "name": "din",
+     "dir": "in",
+     "type": "logic[7:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 14
+     }
+    },
+    {
+     "name": "sum",
+     "dir": "out",
+     "type": "logic[7:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 15
+     }
+    },
+    {
+     "name": "inv",
+     "dir": "out",
+     "type": "logic[7:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 16
+     }
+    },
+    {
+     "name": "ch_out",
+     "dir": "out",
+     "type": "logic[15:0]$[0:2]",
+     "width": 48,
+     "unpacked_dims": [
+      3
+     ],
+     "elem_width": 16,
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 18
+     }
+    }
+   ],
+   "iface_ports": [
+    {
+     "name": "bus",
+     "interface": "reg_bus",
+     "modport": "slave",
+     "loc": {
+      "file": "soc_top.sv",
+      "line": 17
+     }
+    }
+   ],
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 11
+   }
+  },
+  "adder": {
+   "ports": [
+    {
+     "name": "dout",
+     "dir": "out",
+     "type": "logic[7:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "adder.sv",
+      "line": 5
+     }
+    },
+    {
+     "name": "din",
+     "dir": "in",
+     "type": "logic[7:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "adder.sv",
+      "line": 6
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "adder.sv",
+    "line": 4
+   }
+  },
+  "inverter": {
+   "ports": [
+    {
+     "name": "dout",
+     "dir": "out",
+     "type": "logic[7:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "inverter.sv",
+      "line": 5
+     }
+    },
+    {
+     "name": "din",
+     "dir": "in",
+     "type": "logic[7:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "inverter.sv",
+      "line": 6
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "inverter.sv",
+    "line": 4
+   }
+  },
+  "chan": {
+   "ports": [
+    {
+     "name": "dout",
+     "dir": "out",
+     "type": "logic[15:0]",
+     "width": 16,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "chan.sv",
+      "line": 6
+     }
+    },
+    {
+     "name": "din",
+     "dir": "in",
+     "type": "logic[15:0]",
+     "width": 16,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "chan.sv",
+      "line": 7
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "chan.sv",
+    "line": 5
+   }
+  }
+ },
+ "instances": [
+  {
+   "path": "demo_top",
+   "module": "demo_top",
+   "params": {},
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 28
+   }
+  },
+  {
+   "path": "demo_top.bus_i",
+   "module": "reg_bus",
+   "params": {
+    "AW": "6"
+   },
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 31
+   },
+   "iface": {
+    "signals": [
+     {
+      "name": "clk",
+      "type": "logic",
+      "width": 1,
+      "unpacked_dims": null,
+      "elem_width": null
+     },
+     {
+      "name": "addr",
+      "type": "logic[5:0]",
+      "width": 6,
+      "unpacked_dims": null,
+      "elem_width": null
+     },
+     {
+      "name": "wdata",
+      "type": "logic[7:0]",
+      "width": 8,
+      "unpacked_dims": null,
+      "elem_width": null
+     },
+     {
+      "name": "we",
+      "type": "logic",
+      "width": 1,
+      "unpacked_dims": null,
+      "elem_width": null
+     }
+    ],
+    "modports": {
+     "slave": {
+      "addr": "in",
+      "wdata": "in",
+      "we": "in"
+     },
+     "master": {
+      "addr": "out",
+      "wdata": "out",
+      "we": "out"
+     }
+    }
+   }
+  },
+  {
+   "path": "demo_top.u_soc",
+   "module": "soc_top",
+   "params": {
+    "NCH": "3",
+    "CW": "16"
+   },
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 32
+   }
+  },
+  {
+   "path": "demo_top.u_soc.u_add",
+   "module": "adder",
+   "params": {},
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 20
+   }
+  },
+  {
+   "path": "demo_top.u_soc.u_inv",
+   "module": "inverter",
+   "params": {},
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 21
+   }
+  },
+  {
+   "path": "demo_top.u_soc.g_ch[0].u_ch",
+   "module": "chan",
+   "params": {
+    "W": "16"
+   },
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 24
+   }
+  },
+  {
+   "path": "demo_top.u_soc.g_ch[1].u_ch",
+   "module": "chan",
+   "params": {
+    "W": "16"
+   },
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 24
+   }
+  },
+  {
+   "path": "demo_top.u_soc.g_ch[2].u_ch",
+   "module": "chan",
+   "params": {
+    "W": "16"
+   },
+   "loc": {
+    "file": "soc_top.sv",
+    "line": 24
+   }
+  }
+ ],
+ "views": {
+  "demo_top": {
+   "module": "demo_top",
+   "pins": [
+    {
+     "pin": "bus_i.clk",
+     "conn": {
+      "kind": "net",
+      "net": "clk"
+     }
+    },
+    {
+     "pin": "u_soc.clk",
+     "conn": {
+      "kind": "net",
+      "net": "clk"
+     }
+    },
+    {
+     "pin": "u_soc.rst_n",
+     "conn": {
+      "kind": "const",
+      "value": "1'b1"
+     }
+    },
+    {
+     "pin": "u_soc.din",
+     "conn": {
+      "kind": "net",
+      "net": "din"
+     }
+    },
+    {
+     "pin": "u_soc.sum",
+     "conn": null
+    },
+    {
+     "pin": "u_soc.inv",
+     "conn": null
+    },
+    {
+     "pin": "u_soc.bus",
+     "conn": {
+      "kind": "iface",
+      "ref": "bus_i"
+     }
+    },
+    {
+     "pin": "u_soc.ch_out",
+     "conn": null
+    }
+   ],
+   "nets": [
+    {
+     "name": "clk",
+     "endpoints": [
+      "bus_i.clk",
+      "u_soc.clk"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "din",
+     "endpoints": [
+      "u_soc.din"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    }
+   ]
+  },
+  "demo_top.u_soc": {
+   "module": "soc_top",
+   "pins": [
+    {
+     "pin": "u_add.dout",
+     "conn": {
+      "kind": "net",
+      "net": "sum"
+     }
+    },
+    {
+     "pin": "u_add.din",
+     "conn": {
+      "kind": "net",
+      "net": "din"
+     }
+    },
+    {
+     "pin": "u_inv.dout",
+     "conn": {
+      "kind": "net",
+      "net": "inv"
+     }
+    },
+    {
+     "pin": "u_inv.din",
+     "conn": {
+      "kind": "net",
+      "net": "din"
+     }
+    },
+    {
+     "pin": "g_ch[0].u_ch.dout",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "ch_out"
+      },
+      "index": "0",
+      "text": "ch_out[g]"
+     }
+    },
+    {
+     "pin": "g_ch[0].u_ch.din",
+     "conn": {
+      "kind": "concat",
+      "parts": [
+       {
+        "kind": "net",
+        "net": "din"
+       },
+       {
+        "kind": "net",
+        "net": "din"
+       }
+      ]
+     }
+    },
+    {
+     "pin": "g_ch[1].u_ch.dout",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "ch_out"
+      },
+      "index": "1",
+      "text": "ch_out[g]"
+     }
+    },
+    {
+     "pin": "g_ch[1].u_ch.din",
+     "conn": {
+      "kind": "concat",
+      "parts": [
+       {
+        "kind": "net",
+        "net": "din"
+       },
+       {
+        "kind": "net",
+        "net": "din"
+       }
+      ]
+     }
+    },
+    {
+     "pin": "g_ch[2].u_ch.dout",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "ch_out"
+      },
+      "index": "2",
+      "text": "ch_out[g]"
+     }
+    },
+    {
+     "pin": "g_ch[2].u_ch.din",
+     "conn": {
+      "kind": "concat",
+      "parts": [
+       {
+        "kind": "net",
+        "net": "din"
+       },
+       {
+        "kind": "net",
+        "net": "din"
+       }
+      ]
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "clk",
+     "endpoints": [
+      "<port>.clk"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "rst_n",
+     "endpoints": [
+      "<port>.rst_n"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "din",
+     "endpoints": [
+      "<port>.din",
+      "u_add.din",
+      "u_inv.din",
+      "g_ch[0].u_ch.din",
+      "g_ch[0].u_ch.din",
+      "g_ch[1].u_ch.din",
+      "g_ch[1].u_ch.din",
+      "g_ch[2].u_ch.din",
+      "g_ch[2].u_ch.din"
+     ],
+     "fanout": 9,
+     "render": "label"
+    },
+    {
+     "name": "sum",
+     "endpoints": [
+      "<port>.sum",
+      "u_add.dout"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "inv",
+     "endpoints": [
+      "<port>.inv",
+      "u_inv.dout"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "bus",
+     "endpoints": [
+      "<port>.bus"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "ch_out",
+     "endpoints": [
+      "<port>.ch_out",
+      "g_ch[0].u_ch.dout",
+      "g_ch[1].u_ch.dout",
+      "g_ch[2].u_ch.dout"
+     ],
+     "fanout": 4,
+     "render": "wire"
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,3286 @@
+{
+ "schema_version": 1,
+ "tops": [
+  "cdc_fifo_gray"
+ ],
+ "modules": {
+  "cdc_fifo_gray": {
+   "ports": [
+    {
+     "name": "src_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 12
+     }
+    },
+    {
+     "name": "src_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 13
+     }
+    },
+    {
+     "name": "src_data_i",
+     "dir": "in",
+     "type": "cdc_fifo_gray.T",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 14
+     }
+    },
+    {
+     "name": "src_valid_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 15
+     }
+    },
+    {
+     "name": "src_ready_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 16
+     }
+    },
+    {
+     "name": "dst_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 17
+     }
+    },
+    {
+     "name": "dst_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 18
+     }
+    },
+    {
+     "name": "dst_data_o",
+     "dir": "out",
+     "type": "cdc_fifo_gray.T",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 19
+     }
+    },
+    {
+     "name": "dst_valid_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 20
+     }
+    },
+    {
+     "name": "dst_ready_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+      "line": 21
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+    "line": 6
+   }
+  },
+  "cc_cdc_fifo_gray": {
+   "ports": [
+    {
+     "name": "src_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 114
+     }
+    },
+    {
+     "name": "src_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 115
+     }
+    },
+    {
+     "name": "src_data_i",
+     "dir": "in",
+     "type": "cc_cdc_fifo_gray.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 116
+     }
+    },
+    {
+     "name": "src_valid_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 117
+     }
+    },
+    {
+     "name": "src_ready_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 118
+     }
+    },
+    {
+     "name": "dst_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 120
+     }
+    },
+    {
+     "name": "dst_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 121
+     }
+    },
+    {
+     "name": "dst_data_o",
+     "dir": "out",
+     "type": "cc_cdc_fifo_gray.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 122
+     }
+    },
+    {
+     "name": "dst_valid_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 123
+     }
+    },
+    {
+     "name": "dst_ready_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 124
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 104
+   }
+  },
+  "cc_cdc_fifo_gray_src": {
+   "ports": [
+    {
+     "name": "src_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 179
+     }
+    },
+    {
+     "name": "src_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 180
+     }
+    },
+    {
+     "name": "src_data_i",
+     "dir": "in",
+     "type": "cc_cdc_fifo_gray_src.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 181
+     }
+    },
+    {
+     "name": "src_valid_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 182
+     }
+    },
+    {
+     "name": "src_ready_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 183
+     }
+    },
+    {
+     "name": "async_data_o",
+     "dir": "out",
+     "type": "logic[7:0][0:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 185
+     }
+    },
+    {
+     "name": "async_wptr_o",
+     "dir": "out",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 186
+     }
+    },
+    {
+     "name": "async_rptr_i",
+     "dir": "in",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 187
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 174
+   }
+  },
+  "cc_cdc_fifo_gray_src_data": {
+   "ports": [
+    {
+     "name": "src_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 281
+     }
+    },
+    {
+     "name": "src_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 282
+     }
+    },
+    {
+     "name": "src_data_i",
+     "dir": "in",
+     "type": "cc_cdc_fifo_gray_src_data.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 283
+     }
+    },
+    {
+     "name": "src_widx_i",
+     "dir": "in",
+     "type": "logic[2:0]",
+     "width": 3,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 284
+     }
+    },
+    {
+     "name": "src_write_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 285
+     }
+    },
+    {
+     "name": "async_data_o",
+     "dir": "out",
+     "type": "logic[7:0][0:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 286
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 277
+   }
+  },
+  "cc_cdc_fifo_gray_src_ptr": {
+   "ports": [
+    {
+     "name": "src_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 309
+     }
+    },
+    {
+     "name": "src_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 310
+     }
+    },
+    {
+     "name": "src_valid_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 311
+     }
+    },
+    {
+     "name": "src_ready_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 312
+     }
+    },
+    {
+     "name": "src_widx_o",
+     "dir": "out",
+     "type": "logic[2:0]",
+     "width": 3,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 313
+     }
+    },
+    {
+     "name": "async_wptr_o",
+     "dir": "out",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 314
+     }
+    },
+    {
+     "name": "async_rptr_i",
+     "dir": "in",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 315
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 305
+   }
+  },
+  "tc_sync": {
+   "ports": [
+    {
+     "name": "clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\.bender\\git\\checkouts\\tech_cells_generic-f2b3120183f41af5\\src\\rtl\\tc_sync.sv",
+      "line": 20
+     }
+    },
+    {
+     "name": "rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\.bender\\git\\checkouts\\tech_cells_generic-f2b3120183f41af5\\src\\rtl\\tc_sync.sv",
+      "line": 21
+     }
+    },
+    {
+     "name": "serial_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\.bender\\git\\checkouts\\tech_cells_generic-f2b3120183f41af5\\src\\rtl\\tc_sync.sv",
+      "line": 22
+     }
+    },
+    {
+     "name": "serial_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\.bender\\git\\checkouts\\tech_cells_generic-f2b3120183f41af5\\src\\rtl\\tc_sync.sv",
+      "line": 23
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\.bender\\git\\checkouts\\tech_cells_generic-f2b3120183f41af5\\src\\rtl\\tc_sync.sv",
+    "line": 16
+   }
+  },
+  "cc_gray_to_binary": {
+   "ports": [
+    {
+     "name": "a_i",
+     "dir": "in",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_gray_to_binary.sv",
+      "line": 18
+     }
+    },
+    {
+     "name": "z_o",
+     "dir": "out",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_gray_to_binary.sv",
+      "line": 19
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_gray_to_binary.sv",
+    "line": 15
+   }
+  },
+  "cc_binary_to_gray": {
+   "ports": [
+    {
+     "name": "a_i",
+     "dir": "in",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_binary_to_gray.sv",
+      "line": 18
+     }
+    },
+    {
+     "name": "z_o",
+     "dir": "out",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_binary_to_gray.sv",
+      "line": 19
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_binary_to_gray.sv",
+    "line": 15
+   }
+  },
+  "cc_cdc_fifo_gray_dst": {
+   "ports": [
+    {
+     "name": "dst_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 230
+     }
+    },
+    {
+     "name": "dst_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 231
+     }
+    },
+    {
+     "name": "dst_data_o",
+     "dir": "out",
+     "type": "cc_cdc_fifo_gray_dst.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 232
+     }
+    },
+    {
+     "name": "dst_valid_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 233
+     }
+    },
+    {
+     "name": "dst_ready_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 234
+     }
+    },
+    {
+     "name": "async_data_i",
+     "dir": "in",
+     "type": "logic[7:0][0:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 236
+     }
+    },
+    {
+     "name": "async_wptr_i",
+     "dir": "in",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 237
+     }
+    },
+    {
+     "name": "async_rptr_o",
+     "dir": "out",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 238
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 225
+   }
+  },
+  "cc_cdc_fifo_gray_dst_ptr": {
+   "ports": [
+    {
+     "name": "dst_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 363
+     }
+    },
+    {
+     "name": "dst_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 364
+     }
+    },
+    {
+     "name": "dst_ready_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 365
+     }
+    },
+    {
+     "name": "dst_valid_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 366
+     }
+    },
+    {
+     "name": "dst_ridx_o",
+     "dir": "out",
+     "type": "logic[2:0]",
+     "width": 3,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 367
+     }
+    },
+    {
+     "name": "async_wptr_i",
+     "dir": "in",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 368
+     }
+    },
+    {
+     "name": "async_rptr_o",
+     "dir": "out",
+     "type": "logic[3:0]",
+     "width": 4,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 369
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 359
+   }
+  },
+  "cc_cdc_fifo_gray_dst_data": {
+   "ports": [
+    {
+     "name": "dst_rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 417
+     }
+    },
+    {
+     "name": "dst_clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 418
+     }
+    },
+    {
+     "name": "dst_data_o",
+     "dir": "out",
+     "type": "cc_cdc_fifo_gray_dst_data.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 419
+     }
+    },
+    {
+     "name": "dst_valid_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 420
+     }
+    },
+    {
+     "name": "dst_ready_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 421
+     }
+    },
+    {
+     "name": "dst_valid_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 422
+     }
+    },
+    {
+     "name": "dst_ready_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 423
+     }
+    },
+    {
+     "name": "dst_ridx_i",
+     "dir": "in",
+     "type": "logic[2:0]",
+     "width": 3,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 424
+     }
+    },
+    {
+     "name": "async_data_i",
+     "dir": "in",
+     "type": "logic[7:0][0:0]",
+     "width": 8,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+      "line": 425
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 413
+   }
+  },
+  "cc_spill_register": {
+   "ports": [
+    {
+     "name": "clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 21
+     }
+    },
+    {
+     "name": "rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 22
+     }
+    },
+    {
+     "name": "clr_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 23
+     }
+    },
+    {
+     "name": "valid_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 24
+     }
+    },
+    {
+     "name": "ready_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 25
+     }
+    },
+    {
+     "name": "data_i",
+     "dir": "in",
+     "type": "cc_spill_register.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 26
+     }
+    },
+    {
+     "name": "valid_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 27
+     }
+    },
+    {
+     "name": "ready_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 28
+     }
+    },
+    {
+     "name": "data_o",
+     "dir": "out",
+     "type": "cc_spill_register.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+      "line": 29
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+    "line": 17
+   }
+  },
+  "cc_spill_register_flushable": {
+   "ports": [
+    {
+     "name": "clk_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 23
+     }
+    },
+    {
+     "name": "rst_ni",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 24
+     }
+    },
+    {
+     "name": "clr_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 25
+     }
+    },
+    {
+     "name": "valid_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 27
+     }
+    },
+    {
+     "name": "flush_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 28
+     }
+    },
+    {
+     "name": "ready_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 30
+     }
+    },
+    {
+     "name": "data_i",
+     "dir": "in",
+     "type": "cc_spill_register_flushable.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 31
+     }
+    },
+    {
+     "name": "valid_o",
+     "dir": "out",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 32
+     }
+    },
+    {
+     "name": "ready_i",
+     "dir": "in",
+     "type": "logic",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 33
+     }
+    },
+    {
+     "name": "data_o",
+     "dir": "out",
+     "type": "cc_spill_register_flushable.data_t",
+     "width": 1,
+     "unpacked_dims": null,
+     "elem_width": null,
+     "loc": {
+      "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+      "line": 34
+     }
+    }
+   ],
+   "iface_ports": [],
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_spill_register_flushable.sv",
+    "line": 19
+   }
+  }
+ },
+ "instances": [
+  {
+   "path": "cdc_fifo_gray",
+   "module": "cdc_fifo_gray",
+   "params": {
+    "WIDTH": "32'd1",
+    "LOG_DEPTH": "3",
+    "SYNC_STAGES": "2"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+    "line": 6
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray",
+   "module": "cc_cdc_fifo_gray",
+   "params": {
+    "Width": "32'd1",
+    "LogDepth": "32'd3",
+    "SyncStages": "32'd2"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\deprecated\\cdc_fifo_gray.sv",
+    "line": 31
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src",
+   "module": "cc_cdc_fifo_gray_src",
+   "params": {
+    "LogDepth": "32'd3",
+    "SyncStages": "32'd2"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 135
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_data",
+   "module": "cc_cdc_fifo_gray_src_data",
+   "params": {
+    "LogDepth": "32'd3"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 198
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr",
+   "module": "cc_cdc_fifo_gray_src_ptr",
+   "params": {
+    "LogDepth": "32'd3",
+    "SyncStages": "32'd2",
+    "PtrWidth": "32'd4",
+    "PtrFull": "4'b1000"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 210
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr.gen_sync[0].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 330
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr.gen_sync[1].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 330
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr.gen_sync[2].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 330
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr.gen_sync[3].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 330
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr.i_rptr_g2b",
+   "module": "cc_gray_to_binary",
+   "params": {
+    "Width": "32'd4"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 337
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr.i_wptr_g2b",
+   "module": "cc_gray_to_binary",
+   "params": {
+    "Width": "32'd4"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 341
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr.i_wptr_b2g",
+   "module": "cc_binary_to_gray",
+   "params": {
+    "Width": "32'd4"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 342
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst",
+   "module": "cc_cdc_fifo_gray_dst",
+   "params": {
+    "LogDepth": "32'd3",
+    "SyncStages": "32'd2"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 151
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr",
+   "module": "cc_cdc_fifo_gray_dst_ptr",
+   "params": {
+    "LogDepth": "32'd3",
+    "SyncStages": "32'd2",
+    "PtrWidth": "32'd4",
+    "PtrEmpty": "4'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 247
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr.i_rptr_g2b",
+   "module": "cc_gray_to_binary",
+   "params": {
+    "Width": "32'd4"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 383
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr.i_rptr_b2g",
+   "module": "cc_binary_to_gray",
+   "params": {
+    "Width": "32'd4"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 384
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr.gen_sync[0].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 393
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr.gen_sync[1].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 393
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr.gen_sync[2].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 393
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr.gen_sync[3].i_sync",
+   "module": "tc_sync",
+   "params": {
+    "Stages": "32'd2",
+    "ResetValue": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 393
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr.i_wptr_g2b",
+   "module": "cc_gray_to_binary",
+   "params": {
+    "Width": "32'd4"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 400
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_data",
+   "module": "cc_cdc_fifo_gray_dst_data",
+   "params": {
+    "LogDepth": "32'd3"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 260
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_data.i_spill_register",
+   "module": "cc_spill_register",
+   "params": {
+    "Bypass": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_cdc_fifo_gray.sv",
+    "line": 435
+   }
+  },
+  {
+   "path": "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_data.i_spill_register.spill_register_flushable_i",
+   "module": "cc_spill_register_flushable",
+   "params": {
+    "Bypass": "1'b0"
+   },
+   "loc": {
+    "file": "examples-bender\\common_cells\\src\\cc_spill_register.sv",
+    "line": 35
+   }
+  }
+ ],
+ "views": {
+  "cdc_fifo_gray": {
+   "module": "cdc_fifo_gray",
+   "pins": [
+    {
+     "pin": "i_cc_cdc_fifo_gray.src_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.src_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.src_data_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_data_i"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.src_valid_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_valid_i"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.src_ready_o",
+     "conn": {
+      "kind": "net",
+      "net": "src_ready_o"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.dst_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.dst_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.dst_data_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_data_o"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.dst_valid_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_valid_o"
+     }
+    },
+    {
+     "pin": "i_cc_cdc_fifo_gray.dst_ready_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ready_i"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "src_rst_ni",
+     "endpoints": [
+      "<port>.src_rst_ni",
+      "i_cc_cdc_fifo_gray.src_rst_ni"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_clk_i",
+     "endpoints": [
+      "<port>.src_clk_i",
+      "i_cc_cdc_fifo_gray.src_clk_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_data_i",
+     "endpoints": [
+      "<port>.src_data_i",
+      "i_cc_cdc_fifo_gray.src_data_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_valid_i",
+     "endpoints": [
+      "<port>.src_valid_i",
+      "i_cc_cdc_fifo_gray.src_valid_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_ready_o",
+     "endpoints": [
+      "<port>.src_ready_o",
+      "i_cc_cdc_fifo_gray.src_ready_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_rst_ni",
+     "endpoints": [
+      "<port>.dst_rst_ni",
+      "i_cc_cdc_fifo_gray.dst_rst_ni"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_clk_i",
+     "endpoints": [
+      "<port>.dst_clk_i",
+      "i_cc_cdc_fifo_gray.dst_clk_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_data_o",
+     "endpoints": [
+      "<port>.dst_data_o",
+      "i_cc_cdc_fifo_gray.dst_data_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_valid_o",
+     "endpoints": [
+      "<port>.dst_valid_o",
+      "i_cc_cdc_fifo_gray.dst_valid_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ready_i",
+     "endpoints": [
+      "<port>.dst_ready_i",
+      "i_cc_cdc_fifo_gray.dst_ready_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    }
+   ]
+  },
+  "cdc_fifo_gray.i_cc_cdc_fifo_gray": {
+   "module": "cc_cdc_fifo_gray",
+   "pins": [
+    {
+     "pin": "i_src.src_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "i_src.src_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "i_src.src_data_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_data_i"
+     }
+    },
+    {
+     "pin": "i_src.src_valid_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_valid_i"
+     }
+    },
+    {
+     "pin": "i_src.src_ready_o",
+     "conn": {
+      "kind": "net",
+      "net": "src_ready_o"
+     }
+    },
+    {
+     "pin": "i_src.async_data_o",
+     "conn": {
+      "kind": "net",
+      "net": "async_data"
+     }
+    },
+    {
+     "pin": "i_src.async_wptr_o",
+     "conn": {
+      "kind": "net",
+      "net": "async_wptr"
+     }
+    },
+    {
+     "pin": "i_src.async_rptr_i",
+     "conn": {
+      "kind": "net",
+      "net": "async_rptr"
+     }
+    },
+    {
+     "pin": "i_dst.dst_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "i_dst.dst_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "i_dst.dst_data_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_data_o"
+     }
+    },
+    {
+     "pin": "i_dst.dst_valid_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_valid_o"
+     }
+    },
+    {
+     "pin": "i_dst.dst_ready_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ready_i"
+     }
+    },
+    {
+     "pin": "i_dst.async_data_i",
+     "conn": {
+      "kind": "net",
+      "net": "async_data"
+     }
+    },
+    {
+     "pin": "i_dst.async_wptr_i",
+     "conn": {
+      "kind": "net",
+      "net": "async_wptr"
+     }
+    },
+    {
+     "pin": "i_dst.async_rptr_o",
+     "conn": {
+      "kind": "net",
+      "net": "async_rptr"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "src_rst_ni",
+     "endpoints": [
+      "<port>.src_rst_ni",
+      "i_src.src_rst_ni"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_clk_i",
+     "endpoints": [
+      "<port>.src_clk_i",
+      "i_src.src_clk_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_data_i",
+     "endpoints": [
+      "<port>.src_data_i",
+      "i_src.src_data_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_valid_i",
+     "endpoints": [
+      "<port>.src_valid_i",
+      "i_src.src_valid_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_ready_o",
+     "endpoints": [
+      "<port>.src_ready_o",
+      "i_src.src_ready_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_rst_ni",
+     "endpoints": [
+      "<port>.dst_rst_ni",
+      "i_dst.dst_rst_ni"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_clk_i",
+     "endpoints": [
+      "<port>.dst_clk_i",
+      "i_dst.dst_clk_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_data_o",
+     "endpoints": [
+      "<port>.dst_data_o",
+      "i_dst.dst_data_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_valid_o",
+     "endpoints": [
+      "<port>.dst_valid_o",
+      "i_dst.dst_valid_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ready_i",
+     "endpoints": [
+      "<port>.dst_ready_i",
+      "i_dst.dst_ready_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_data",
+     "endpoints": [
+      "i_src.async_data_o",
+      "i_dst.async_data_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_wptr",
+     "endpoints": [
+      "i_src.async_wptr_o",
+      "i_dst.async_wptr_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_rptr",
+     "endpoints": [
+      "i_src.async_rptr_i",
+      "i_dst.async_rptr_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    }
+   ]
+  },
+  "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src": {
+   "module": "cc_cdc_fifo_gray_src",
+   "pins": [
+    {
+     "pin": "i_src_data.src_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "i_src_data.src_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "i_src_data.src_data_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_data_i"
+     }
+    },
+    {
+     "pin": "i_src_data.src_widx_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_widx"
+     }
+    },
+    {
+     "pin": "i_src_data.src_write_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_write"
+     }
+    },
+    {
+     "pin": "i_src_data.async_data_o",
+     "conn": {
+      "kind": "net",
+      "net": "async_data_o"
+     }
+    },
+    {
+     "pin": "i_src_ptr.src_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "i_src_ptr.src_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "i_src_ptr.src_valid_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_valid_i"
+     }
+    },
+    {
+     "pin": "i_src_ptr.src_ready_o",
+     "conn": {
+      "kind": "net",
+      "net": "src_ready_o"
+     }
+    },
+    {
+     "pin": "i_src_ptr.src_widx_o",
+     "conn": {
+      "kind": "net",
+      "net": "src_widx"
+     }
+    },
+    {
+     "pin": "i_src_ptr.async_wptr_o",
+     "conn": {
+      "kind": "net",
+      "net": "async_wptr_o"
+     }
+    },
+    {
+     "pin": "i_src_ptr.async_rptr_i",
+     "conn": {
+      "kind": "net",
+      "net": "async_rptr_i"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "src_rst_ni",
+     "endpoints": [
+      "<port>.src_rst_ni",
+      "i_src_data.src_rst_ni",
+      "i_src_ptr.src_rst_ni"
+     ],
+     "fanout": 3,
+     "render": "wire"
+    },
+    {
+     "name": "src_clk_i",
+     "endpoints": [
+      "<port>.src_clk_i",
+      "i_src_data.src_clk_i",
+      "i_src_ptr.src_clk_i"
+     ],
+     "fanout": 3,
+     "render": "wire"
+    },
+    {
+     "name": "src_data_i",
+     "endpoints": [
+      "<port>.src_data_i",
+      "i_src_data.src_data_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_valid_i",
+     "endpoints": [
+      "<port>.src_valid_i",
+      "i_src_ptr.src_valid_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_ready_o",
+     "endpoints": [
+      "<port>.src_ready_o",
+      "i_src_ptr.src_ready_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_data_o",
+     "endpoints": [
+      "<port>.async_data_o",
+      "i_src_data.async_data_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_wptr_o",
+     "endpoints": [
+      "<port>.async_wptr_o",
+      "i_src_ptr.async_wptr_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_rptr_i",
+     "endpoints": [
+      "<port>.async_rptr_i",
+      "i_src_ptr.async_rptr_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_widx",
+     "endpoints": [
+      "i_src_data.src_widx_i",
+      "i_src_ptr.src_widx_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "src_write",
+     "endpoints": [
+      "i_src_data.src_write_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    }
+   ]
+  },
+  "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_src.i_src_ptr": {
+   "module": "cc_cdc_fifo_gray_src_ptr",
+   "pins": [
+    {
+     "pin": "gen_sync[0].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[0].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[0].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_rptr_i"
+      },
+      "index": "0",
+      "text": "async_rptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[0].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "rptr"
+      },
+      "index": "0",
+      "text": "rptr[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_rptr_i"
+      },
+      "index": "1",
+      "text": "async_rptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "rptr"
+      },
+      "index": "1",
+      "text": "rptr[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_rptr_i"
+      },
+      "index": "2",
+      "text": "async_rptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "rptr"
+      },
+      "index": "2",
+      "text": "rptr[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "src_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "src_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_rptr_i"
+      },
+      "index": "3",
+      "text": "async_rptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "rptr"
+      },
+      "index": "3",
+      "text": "rptr[i]"
+     }
+    },
+    {
+     "pin": "i_rptr_g2b.a_i",
+     "conn": {
+      "kind": "net",
+      "net": "rptr"
+     }
+    },
+    {
+     "pin": "i_rptr_g2b.z_o",
+     "conn": {
+      "kind": "net",
+      "net": "rptr_bin"
+     }
+    },
+    {
+     "pin": "i_wptr_g2b.a_i",
+     "conn": {
+      "kind": "net",
+      "net": "wptr_q"
+     }
+    },
+    {
+     "pin": "i_wptr_g2b.z_o",
+     "conn": {
+      "kind": "net",
+      "net": "wptr_bin"
+     }
+    },
+    {
+     "pin": "i_wptr_b2g.a_i",
+     "conn": {
+      "kind": "net",
+      "net": "wptr_next"
+     }
+    },
+    {
+     "pin": "i_wptr_b2g.z_o",
+     "conn": {
+      "kind": "net",
+      "net": "wptr_d"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "src_rst_ni",
+     "endpoints": [
+      "<port>.src_rst_ni",
+      "gen_sync[0].i_sync.rst_ni",
+      "gen_sync[1].i_sync.rst_ni",
+      "gen_sync[2].i_sync.rst_ni",
+      "gen_sync[3].i_sync.rst_ni"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "src_clk_i",
+     "endpoints": [
+      "<port>.src_clk_i",
+      "gen_sync[0].i_sync.clk_i",
+      "gen_sync[1].i_sync.clk_i",
+      "gen_sync[2].i_sync.clk_i",
+      "gen_sync[3].i_sync.clk_i"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "src_valid_i",
+     "endpoints": [
+      "<port>.src_valid_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "src_ready_o",
+     "endpoints": [
+      "<port>.src_ready_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "src_widx_o",
+     "endpoints": [
+      "<port>.src_widx_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "async_wptr_o",
+     "endpoints": [
+      "<port>.async_wptr_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "async_rptr_i",
+     "endpoints": [
+      "<port>.async_rptr_i",
+      "gen_sync[0].i_sync.serial_i",
+      "gen_sync[1].i_sync.serial_i",
+      "gen_sync[2].i_sync.serial_i",
+      "gen_sync[3].i_sync.serial_i"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "rptr",
+     "endpoints": [
+      "gen_sync[0].i_sync.serial_o",
+      "gen_sync[1].i_sync.serial_o",
+      "gen_sync[2].i_sync.serial_o",
+      "gen_sync[3].i_sync.serial_o",
+      "i_rptr_g2b.a_i"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "rptr_bin",
+     "endpoints": [
+      "i_rptr_g2b.z_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "wptr_q",
+     "endpoints": [
+      "i_wptr_g2b.a_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "wptr_bin",
+     "endpoints": [
+      "i_wptr_g2b.z_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "wptr_next",
+     "endpoints": [
+      "i_wptr_b2g.a_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "wptr_d",
+     "endpoints": [
+      "i_wptr_b2g.z_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    }
+   ]
+  },
+  "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst": {
+   "module": "cc_cdc_fifo_gray_dst",
+   "pins": [
+    {
+     "pin": "i_dst_ptr.dst_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "i_dst_ptr.dst_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "i_dst_ptr.dst_ready_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ready"
+     }
+    },
+    {
+     "pin": "i_dst_ptr.dst_valid_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_valid"
+     }
+    },
+    {
+     "pin": "i_dst_ptr.dst_ridx_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ridx"
+     }
+    },
+    {
+     "pin": "i_dst_ptr.async_wptr_i",
+     "conn": {
+      "kind": "net",
+      "net": "async_wptr_i"
+     }
+    },
+    {
+     "pin": "i_dst_ptr.async_rptr_o",
+     "conn": {
+      "kind": "net",
+      "net": "async_rptr_o"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_data_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_data_o"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_valid_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_valid_o"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_ready_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ready_i"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_valid_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_valid"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_ready_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ready"
+     }
+    },
+    {
+     "pin": "i_dst_data.dst_ridx_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ridx"
+     }
+    },
+    {
+     "pin": "i_dst_data.async_data_i",
+     "conn": {
+      "kind": "net",
+      "net": "async_data_i"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "dst_rst_ni",
+     "endpoints": [
+      "<port>.dst_rst_ni",
+      "i_dst_ptr.dst_rst_ni",
+      "i_dst_data.dst_rst_ni"
+     ],
+     "fanout": 3,
+     "render": "wire"
+    },
+    {
+     "name": "dst_clk_i",
+     "endpoints": [
+      "<port>.dst_clk_i",
+      "i_dst_ptr.dst_clk_i",
+      "i_dst_data.dst_clk_i"
+     ],
+     "fanout": 3,
+     "render": "wire"
+    },
+    {
+     "name": "dst_data_o",
+     "endpoints": [
+      "<port>.dst_data_o",
+      "i_dst_data.dst_data_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_valid_o",
+     "endpoints": [
+      "<port>.dst_valid_o",
+      "i_dst_data.dst_valid_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ready_i",
+     "endpoints": [
+      "<port>.dst_ready_i",
+      "i_dst_data.dst_ready_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_data_i",
+     "endpoints": [
+      "<port>.async_data_i",
+      "i_dst_data.async_data_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_wptr_i",
+     "endpoints": [
+      "<port>.async_wptr_i",
+      "i_dst_ptr.async_wptr_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "async_rptr_o",
+     "endpoints": [
+      "<port>.async_rptr_o",
+      "i_dst_ptr.async_rptr_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ready",
+     "endpoints": [
+      "i_dst_ptr.dst_ready_i",
+      "i_dst_data.dst_ready_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_valid",
+     "endpoints": [
+      "i_dst_ptr.dst_valid_o",
+      "i_dst_data.dst_valid_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ridx",
+     "endpoints": [
+      "i_dst_ptr.dst_ridx_o",
+      "i_dst_data.dst_ridx_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    }
+   ]
+  },
+  "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_ptr": {
+   "module": "cc_cdc_fifo_gray_dst_ptr",
+   "pins": [
+    {
+     "pin": "i_rptr_g2b.a_i",
+     "conn": {
+      "kind": "net",
+      "net": "rptr_q"
+     }
+    },
+    {
+     "pin": "i_rptr_g2b.z_o",
+     "conn": {
+      "kind": "net",
+      "net": "rptr_bin"
+     }
+    },
+    {
+     "pin": "i_rptr_b2g.a_i",
+     "conn": {
+      "kind": "net",
+      "net": "rptr_next"
+     }
+    },
+    {
+     "pin": "i_rptr_b2g.z_o",
+     "conn": {
+      "kind": "net",
+      "net": "rptr_d"
+     }
+    },
+    {
+     "pin": "gen_sync[0].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[0].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[0].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_wptr_i"
+      },
+      "index": "0",
+      "text": "async_wptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[0].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "wptr"
+      },
+      "index": "0",
+      "text": "wptr[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_wptr_i"
+      },
+      "index": "1",
+      "text": "async_wptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[1].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "wptr"
+      },
+      "index": "1",
+      "text": "wptr[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_wptr_i"
+      },
+      "index": "2",
+      "text": "async_wptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[2].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "wptr"
+      },
+      "index": "2",
+      "text": "wptr[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.serial_i",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "async_wptr_i"
+      },
+      "index": "3",
+      "text": "async_wptr_i[i]"
+     }
+    },
+    {
+     "pin": "gen_sync[3].i_sync.serial_o",
+     "conn": {
+      "kind": "select",
+      "base": {
+       "kind": "net",
+       "net": "wptr"
+      },
+      "index": "3",
+      "text": "wptr[i]"
+     }
+    },
+    {
+     "pin": "i_wptr_g2b.a_i",
+     "conn": {
+      "kind": "net",
+      "net": "wptr"
+     }
+    },
+    {
+     "pin": "i_wptr_g2b.z_o",
+     "conn": {
+      "kind": "net",
+      "net": "wptr_bin"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "dst_rst_ni",
+     "endpoints": [
+      "<port>.dst_rst_ni",
+      "gen_sync[0].i_sync.rst_ni",
+      "gen_sync[1].i_sync.rst_ni",
+      "gen_sync[2].i_sync.rst_ni",
+      "gen_sync[3].i_sync.rst_ni"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "dst_clk_i",
+     "endpoints": [
+      "<port>.dst_clk_i",
+      "gen_sync[0].i_sync.clk_i",
+      "gen_sync[1].i_sync.clk_i",
+      "gen_sync[2].i_sync.clk_i",
+      "gen_sync[3].i_sync.clk_i"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "dst_ready_i",
+     "endpoints": [
+      "<port>.dst_ready_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "dst_valid_o",
+     "endpoints": [
+      "<port>.dst_valid_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ridx_o",
+     "endpoints": [
+      "<port>.dst_ridx_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "async_wptr_i",
+     "endpoints": [
+      "<port>.async_wptr_i",
+      "gen_sync[0].i_sync.serial_i",
+      "gen_sync[1].i_sync.serial_i",
+      "gen_sync[2].i_sync.serial_i",
+      "gen_sync[3].i_sync.serial_i"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "async_rptr_o",
+     "endpoints": [
+      "<port>.async_rptr_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "rptr_q",
+     "endpoints": [
+      "i_rptr_g2b.a_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "rptr_bin",
+     "endpoints": [
+      "i_rptr_g2b.z_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "rptr_next",
+     "endpoints": [
+      "i_rptr_b2g.a_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "rptr_d",
+     "endpoints": [
+      "i_rptr_b2g.z_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "wptr",
+     "endpoints": [
+      "gen_sync[0].i_sync.serial_o",
+      "gen_sync[1].i_sync.serial_o",
+      "gen_sync[2].i_sync.serial_o",
+      "gen_sync[3].i_sync.serial_o",
+      "i_wptr_g2b.a_i"
+     ],
+     "fanout": 5,
+     "render": "label"
+    },
+    {
+     "name": "wptr_bin",
+     "endpoints": [
+      "i_wptr_g2b.z_o"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    }
+   ]
+  },
+  "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_data": {
+   "module": "cc_cdc_fifo_gray_dst_data",
+   "pins": [
+    {
+     "pin": "i_spill_register.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_clk_i"
+     }
+    },
+    {
+     "pin": "i_spill_register.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "dst_rst_ni"
+     }
+    },
+    {
+     "pin": "i_spill_register.clr_i",
+     "conn": {
+      "kind": "expr",
+      "text": "'0"
+     }
+    },
+    {
+     "pin": "i_spill_register.valid_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_valid_i"
+     }
+    },
+    {
+     "pin": "i_spill_register.ready_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ready_o"
+     }
+    },
+    {
+     "pin": "i_spill_register.data_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_data"
+     }
+    },
+    {
+     "pin": "i_spill_register.valid_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_valid_o"
+     }
+    },
+    {
+     "pin": "i_spill_register.ready_i",
+     "conn": {
+      "kind": "net",
+      "net": "dst_ready_i"
+     }
+    },
+    {
+     "pin": "i_spill_register.data_o",
+     "conn": {
+      "kind": "net",
+      "net": "dst_data_o"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "dst_rst_ni",
+     "endpoints": [
+      "<port>.dst_rst_ni",
+      "i_spill_register.rst_ni"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_clk_i",
+     "endpoints": [
+      "<port>.dst_clk_i",
+      "i_spill_register.clk_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_data_o",
+     "endpoints": [
+      "<port>.dst_data_o",
+      "i_spill_register.data_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_valid_o",
+     "endpoints": [
+      "<port>.dst_valid_o",
+      "i_spill_register.valid_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ready_i",
+     "endpoints": [
+      "<port>.dst_ready_i",
+      "i_spill_register.ready_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_valid_i",
+     "endpoints": [
+      "<port>.dst_valid_i",
+      "i_spill_register.valid_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ready_o",
+     "endpoints": [
+      "<port>.dst_ready_o",
+      "i_spill_register.ready_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "dst_ridx_i",
+     "endpoints": [
+      "<port>.dst_ridx_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "async_data_i",
+     "endpoints": [
+      "<port>.async_data_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    },
+    {
+     "name": "dst_data",
+     "endpoints": [
+      "i_spill_register.data_i"
+     ],
+     "fanout": 1,
+     "render": "wire"
+    }
+   ]
+  },
+  "cdc_fifo_gray.i_cc_cdc_fifo_gray.i_dst.i_dst_data.i_spill_register": {
+   "module": "cc_spill_register",
+   "pins": [
+    {
+     "pin": "spill_register_flushable_i.clk_i",
+     "conn": {
+      "kind": "net",
+      "net": "clk_i"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.rst_ni",
+     "conn": {
+      "kind": "net",
+      "net": "rst_ni"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.clr_i",
+     "conn": {
+      "kind": "net",
+      "net": "clr_i"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.valid_i",
+     "conn": {
+      "kind": "net",
+      "net": "valid_i"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.flush_i",
+     "conn": {
+      "kind": "const",
+      "value": "1'b0"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.ready_o",
+     "conn": {
+      "kind": "net",
+      "net": "ready_o"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.data_i",
+     "conn": {
+      "kind": "net",
+      "net": "data_i"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.valid_o",
+     "conn": {
+      "kind": "net",
+      "net": "valid_o"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.ready_i",
+     "conn": {
+      "kind": "net",
+      "net": "ready_i"
+     }
+    },
+    {
+     "pin": "spill_register_flushable_i.data_o",
+     "conn": {
+      "kind": "net",
+      "net": "data_o"
+     }
+    }
+   ],
+   "nets": [
+    {
+     "name": "clk_i",
+     "endpoints": [
+      "<port>.clk_i",
+      "spill_register_flushable_i.clk_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "rst_ni",
+     "endpoints": [
+      "<port>.rst_ni",
+      "spill_register_flushable_i.rst_ni"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "clr_i",
+     "endpoints": [
+      "<port>.clr_i",
+      "spill_register_flushable_i.clr_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "valid_i",
+     "endpoints": [
+      "<port>.valid_i",
+      "spill_register_flushable_i.valid_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "ready_o",
+     "endpoints": [
+      "<port>.ready_o",
+      "spill_register_flushable_i.ready_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "data_i",
+     "endpoints": [
+      "<port>.data_i",
+      "spill_register_flushable_i.data_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "valid_o",
+     "endpoints": [
+      "<port>.valid_o",
+      "spill_register_flushable_i.valid_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "ready_i",
+     "endpoints": [
+      "<port>.ready_i",
+      "spill_register_flushable_i.ready_i"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    },
+    {
+     "name": "data_o",
+     "endpoints": [
+      "<port>.data_o",
+      "spill_register_flushable_i.data_o"
+     ],
+     "fanout": 2,
+     "render": "wire"
+    }
+   ]
+  }
+ }
+}
