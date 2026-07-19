@@ -5,6 +5,14 @@
   "version": "0.1.0",
   "publisher": "arcadie-cracan",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/arcadie-cracan/QuickUVM-Architect.git"
+  },
+  "homepage": "https://github.com/arcadie-cracan/QuickUVM-Architect#readme",
+  "bugs": {
+    "url": "https://github.com/arcadie-cracan/QuickUVM-Architect/issues"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },
