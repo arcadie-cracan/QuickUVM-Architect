@@ -31,9 +31,12 @@ un motiv nou.
 
 ## Convenții de cod
 
-- Backend Python: PEP 8, docstring-uri în română fără diacritice în cod (cum e
-  `svmodel.py`); comunicarea cu utilizatorul și documentația: română cu
-  diacritice.
+- **Comentariile din surse sunt în ENGLEZĂ** (decizie 2026-07-20, pentru
+  creșterea comunității): orice comentariu nou din `src/**`, `backend/**`,
+  `scripts/**` se scrie în engleză; corpusul vechi (comentarii în română fără
+  diacritice) se migrează progresiv la engleză. Backend Python: PEP 8.
+  Comunicarea cu utilizatorul rămâne în română cu diacritice; documentația
+  (`docs/**`, acest fișier) rămâne română până la o decizie separată.
 - **UI-ul extensiei: engleză** (decizia D19), localizat prin `package.nls.json`
   (+`package.nls.ro.json`) și `vscode.l10n.t()` + `l10n/bundle.l10n.ro.json`;
   orice șir nou vizibil utilizatorului în host se împachetează în `l10n.t()`
