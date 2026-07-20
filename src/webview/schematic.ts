@@ -75,11 +75,13 @@ const STUB = 10;
 const MARKER_GAP = 8;
 const MARKER_CW = 18;
 const MARKER_CH = 14;
-/** prelungirea stub-ului DINCOLO de marginea exterioara a chip-ului: pinul
- *  strapunge vizibil dreptunghiul marcatorului si iese ~12px in afara lui —
- *  altfel stub-ul parea ASCUNS sub chip (se oprea exact la marginea lui;
- *  cererea utilizatorului, iul. 2026). 12 duce varful la 48 = multiplu de 8,
- *  deci ancora firului cade PE GRILA (pin pe grila = fir drept, docs/04) */
+/** stub segment BEYOND the chip's outer face: the pin sticks out ~12px past the
+ *  marker, and the wire (or the label in show-as-label) anchors at the tip. The
+ *  stub does NOT pierce the chip — it is drawn as two segments touching its faces
+ *  (drawPin); on a wide bus a thick stub through `{}`/`[]` reads as a wire passing
+ *  through the decorator (user request, Jul 2026, superseding the older note "the
+ *  pin visibly pierces the rectangle"). 12 puts the tip at 48 = a multiple of 8,
+ *  so the wire anchor lands ON THE GRID (docs/04) */
 const MARKER_TAIL = 12;
 /** capatul stub-ului SI ancora firului pentru pinii cu marcator concat/select:
  *  dincolo de chip (STUB+GAP+CW=36) cu MARKER_TAIL (=48, pe grila). Astfel:
@@ -1171,12 +1173,35 @@ function drawPin(
     g.dataset.inst = node.instPath;
   }
 
-  g.append(
-    el("line", {
-      class: "stub",
-      x1: String(stubOut), y1: String(py), x2: String(x0), y2: String(py),
-    })
-  );
+  if (isMarker) {
+    // concat/select marker pin: the stub no longer PIERCES the chip (the old
+    // "the pin sticks out visibly through the rectangle" request is SUPERSEDED —
+    // on a wide bus the stub is thick and looks like a wire passing through
+    // `{}`/`[]`). It is drawn as TWO segments touching the chip's faces, so
+    // nothing crosses it: block -> block-side face, and tip-side face -> tip
+    // (where the wire anchors, like the label in show-as-label). The faces come
+    // from drawAnnotation's geometry: inner = xOut + out*GAP, outer = inner + out*CW.
+    const out = west ? -1 : 1;
+    const chipInner = xOut + out * MARKER_GAP;
+    const chipOuter = chipInner + out * MARKER_CW;
+    g.append(
+      el("line", {
+        class: "stub",
+        x1: String(x0), y1: String(py), x2: String(chipInner), y2: String(py),
+      }),
+      el("line", {
+        class: "stub",
+        x1: String(chipOuter), y1: String(py), x2: String(stubOut), y2: String(py),
+      })
+    );
+  } else {
+    g.append(
+      el("line", {
+        class: "stub",
+        x1: String(stubOut), y1: String(py), x2: String(x0), y2: String(py),
+      })
+    );
+  }
   if (spec.iface) {
     g.append(
       el("rect", {
@@ -1221,14 +1246,20 @@ function drawPin(
     g.append(a);
   }
   if (spec.netLabel) {
-    // net afisat ca eticheta, nu ca traseu (nivelul 4, docs/04);
-    // eticheta unui singur net e selectabila (click -> sectiunea Net din
-    // inspector, cu comutatorul fir/eticheta)
+    // net shown as a label, not as a routed wire (level 4, docs/04); a single
+    // net's label is selectable (click -> the inspector's Net section, with the
+    // wire/label toggle).
+    // On a split/join marker pin (concat/select) the label anchors at the TIP of
+    // the extended stub (stubOut = MARKER_STUB), BEYOND the chip — otherwise it
+    // overlapped `{}`/`[]` (the chip sits at xOut+MARKER_GAP; user request: the
+    // name at the extended port boundary, not on top of the marker). Without a
+    // marker stubOut == xOut, so plain pins are unchanged.
+    const labelX = west ? stubOut - 3 : stubOut + 3;
     const lbl = el(
       "text",
       {
         class: "netlabel",
-        x: String(west ? xOut - 3 : xOut + 3),
+        x: String(labelX),
         y: String(py + 4),
         "text-anchor": west ? "end" : "start",
       },
