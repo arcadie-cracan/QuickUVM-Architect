@@ -1,20 +1,20 @@
-// Mutatiile YAML-ului QuickUVM: functii pure text -> text, pe Document-ul
-// bibliotecii `yaml` (decizia D14) — comentariile, formatarea si campurile
-// necunoscute raman intacte ("editari chirurgicale", docs/03). Fisierul NU
-// importa `vscode`: host-ul (config.ts) aplica rezultatul ca WorkspaceEdit,
-// iar testele il ruleaza direct in Node (scripts/test-yamlops.mjs).
+// The QuickUVM YAML mutations: pure text -> text functions, on the Document of
+// the `yaml` library (decision D14) — comments, formatting and unknown fields
+// stay intact ("surgical edits", docs/03). The file does NOT
+// import `vscode`: the host (config.ts) applies the result as a WorkspaceEdit,
+// and the tests run it directly in Node (scripts/test-yamlops.mjs).
 
 import { Document, isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
 import type { QuvmConfig } from "./quickuvm";
 
-/** Optiunile de serializare: latime mai mare ca portii flow sa nu se franga. */
+/** The serialization options: a larger width so the flow ports don't break. */
 const TO_STRING = { lineWidth: 100 } as const;
 
 export interface DutSpec {
   module: string;
-  /** numele portului de ceas; null => DUT combinational (cadenta ramane clk) */
+  /** the clock port name; null => combinational DUT (the cadence remains clk) */
   clock: string | null;
-  /** numele portului de reset; null => fara reset ('' in YAML, ca in exemple) */
+  /** the reset port name; null => no reset ('' in YAML, as in the examples) */
   reset: string | null;
   resetActiveLow: boolean;
   externalReset: boolean;
@@ -28,9 +28,9 @@ export interface AgentPortSpec {
 
 export interface AgentSpec {
   name: string;
-  /** intrarile DUT pe care agentul le conduce (perspectiva DUT, docs/03) */
+  /** the DUT inputs the agent drives (DUT perspective, docs/03) */
   inputs: AgentPortSpec[];
-  /** iesirile DUT pe care agentul le observa: primesc randomize: false */
+  /** the DUT outputs the agent observes: they get randomize: false */
   outputs: AgentPortSpec[];
   seqItemStyle?: "manual" | "field_macros";
 }
@@ -38,7 +38,7 @@ export interface AgentSpec {
 function parse(text: string): Document {
   const doc = parseDocument(text || "{}\n");
   if (!isMap(doc.contents)) {
-    // document gol sau scalar: se porneste de la o mapare goala
+    // empty or scalar document: start from an empty map
     doc.contents = doc.createNode({}) as unknown as typeof doc.contents;
   }
   return doc;
@@ -52,7 +52,7 @@ export function parseQuvm(text: string): QuvmConfig {
   }
 }
 
-/** Scheletul unei configuratii noi; dut/agents vin din operatiile dedicate. */
+/** The skeleton of a new configuration; dut/agents come from the dedicated operations. */
 export function newConfigText(projectName: string): string {
   return [
     "# Configuratie QuickUVM — creata de QuickUVM Architect, editabila si manual.",
@@ -70,22 +70,22 @@ export function newConfigText(projectName: string): string {
   ].join("\n");
 }
 
-/** Seteaza sectiunea dut (si project.name daca lipseste). */
+/** Sets the dut section (and project.name if missing). */
 export function setDut(text: string, spec: DutSpec): string {
   const doc = parse(text);
   if (!doc.hasIn(["project", "name"])) {
     doc.setIn(["project", "name"], spec.module);
   }
   doc.setIn(["dut", "name"], spec.module);
-  // cadenta de ceas exista si la DUT combinational (docs QuickUVM / exemple)
+  // the clock cadence exists even for a combinational DUT (QuickUVM docs / examples)
   doc.setIn(["dut", "clock"], spec.clock ?? "clk");
   doc.setIn(["dut", "reset"], spec.reset ?? "");
-  // quick-uvm >= 1.0.0: polaritatea/externalitatea stau in cheia TOP-LEVEL
-  // `reset:` (dut.reset e doar numele portului); vechile chei pe `dut` sunt
-  // RESPINSE de generator cu eroare-ghid. Maparea se scrie doar la abatere de
-  // la implicituri si dispare cand redevine implicita. O LISTA `reset:` scrisa
-  // de mana (domenii multi-reset, cu active_low propriu per domeniu) NU se
-  // atinge; deleteIn se apara de intermediar lipsa (yaml arunca altfel).
+  // quick-uvm >= 1.0.0: the polarity/externality live in the TOP-LEVEL key
+  // `reset:` (dut.reset is only the port name); the old keys on `dut` are
+  // REJECTED by the generator with a teaching error. The map is written only on a
+  // deviation from the defaults and disappears when it becomes default again. A hand-written
+  // `reset:` LIST (multi-reset domains, with their own active_low per domain) is NOT
+  // touched; deleteIn guards against a missing intermediate (yaml throws otherwise).
   if (!isSeq(doc.getIn(["reset"]))) {
     const setOrDrop = (key: string, value: boolean | undefined): void => {
       if (value !== undefined) {
@@ -107,7 +107,7 @@ export function setDut(text: string, spec: DutSpec): string {
   return doc.toString(TO_STRING);
 }
 
-/** Adauga un agent nou; arunca Error la nume duplicat. */
+/** Adds a new agent; throws Error on a duplicate name. */
 export function createAgent(text: string, spec: AgentSpec): string {
   const doc = parse(text);
   const existing = doc.getIn(["agents"]);
@@ -150,33 +150,33 @@ export function createAgent(text: string, spec: AgentSpec): string {
 }
 
 export interface SubenvSpec {
-  /** identificator SV (calea relativa sanitizata, docs/03) */
+  /** SV identifier (the sanitized relative path, docs/03) */
   name: string;
-  /** calea config-ului blocului, relativa la config-ul top */
+  /** the block's config path, relative to the top config */
   config: string;
-  /** doar valori intregi: schema QuickUVM cere dict[str, int] */
+  /** integer values only: the QuickUVM schema requires dict[str, int] */
   params: Record<string, number>;
 }
 
-/** Adauga subenv-uri (compunere H1, docs/03); arunca la nume duplicat.
- *  Compunerea cere `layout: packaged` (validat de QuickUVM: fiecare bloc
- *  copil e un pachet env reutilizabil) — mutatia il asigura pe top. */
+/** Adds subenvs (H1 composition, docs/03); throws on a duplicate name.
+ *  The composition requires `layout: packaged` (validated by QuickUVM: each child
+ *  block is a reusable env package) — the mutation ensures it on the top. */
 export function createSubenvs(text: string, specs: SubenvSpec[]): string {
   const doc = parse(text);
   if (doc.getIn(["layout"]) !== "packaged") {
     doc.setIn(["layout"], "packaged");
   }
-  // Un top de subsistem PUR (fara agenti proprii) e un INVELIS combinational
-  // (conventia corpusului QuickUVM: `dut: {combinational: true, reset: ''}`):
-  // quick-uvm >= 1.0.0 REFUZA la generate un ceas de top pe care nimic nu-l
-  // conecteaza la DUT (garda de ceas-fantoma din tb_top). Un top HIBRID
-  // (agenti de granita, H2) isi pastreaza ceasul — agentii il leaga.
+  // A PURE subsystem top (without its own agents) is a combinational SHELL
+  // (the QuickUVM corpus convention: `dut: {combinational: true, reset: ''}`):
+  // quick-uvm >= 1.0.0 REJECTS at generate a top clock that nothing
+  // connects to the DUT (the ghost-clock guard in tb_top). A HYBRID top
+  // (boundary agents, H2) keeps its clock — the agents wire it.
   const agentsNode = doc.getIn(["agents"]);
   const hasAgents = isSeq(agentsNode) && agentsNode.items.length > 0;
   if (!hasAgents) {
     doc.setIn(["dut", "combinational"], true);
     doc.setIn(["dut", "reset"], "");
-    // configul de reset al unui port care nu mai exista e decoratie moarta
+    // the reset config of a port that no longer exists is dead decoration
     if (isMap(doc.getIn(["reset"]))) {
       doc.deleteIn(["reset"]);
     }
@@ -204,7 +204,7 @@ export function createSubenvs(text: string, specs: SubenvSpec[]): string {
     const node = doc.createNode(entry) as YAMLMap;
     const params = node.get("params", true);
     if (isMap(params)) {
-      params.flow = true; // params pe o linie: `params: {W: 16}`
+      params.flow = true; // params on one line: `params: {W: 16}`
     }
     seq.add(node);
   }
@@ -215,17 +215,17 @@ export function createSubenvs(text: string, specs: SubenvSpec[]): string {
 }
 
 export interface ConnSpec {
-  /** `<subenv>.<port>` — portul de iesire al blocului sursa */
+  /** `<subenv>.<port>` — the source block's output port */
   from: string;
-  /** `<subenv>.<port>` — portul de intrare al blocului destinatie */
+  /** `<subenv>.<port>` — the destination block's input port */
   to: string;
 }
 
 /**
- * Adauga conexiuni inter-bloc H1 in `connections` (felia 3, docs/03); idempotent
- * pe (from, to). `connections` e o listă de prim nivel care NU comută moduri
- * (absența ei e byte-identică — sondat pe 0.9.2), spre deosebire de `analysis`.
- * Intoarce textul original byte-identic daca nu are nimic nou de adaugat.
+ * Adds inter-block H1 connections to `connections` (slice 3, docs/03); idempotent
+ * on (from, to). `connections` is a top-level list that does NOT switch modes
+ * (its absence is byte-identical — probed on 0.9.2), unlike `analysis`.
+ * Returns the original text byte-identical if it has nothing new to add.
  */
 export function addConnections(text: string, conns: ConnSpec[]): string {
   const doc = parse(text);
@@ -240,12 +240,12 @@ export function addConnections(text: string, conns: ConnSpec[]): string {
   }
   const fresh = conns.filter((c) => !seen.has(`${c.from}\0${c.to}`));
   if (fresh.length === 0) {
-    return text; // nimic nou -> text neschimbat (apply devine no-op)
+    return text; // nothing new -> text unchanged (apply becomes a no-op)
   }
   const seq = isSeq(existing) ? existing : (doc.createNode([]) as YAMLSeq);
   for (const c of fresh) {
     const node = doc.createNode({ from: c.from, to: c.to }) as YAMLMap;
-    node.flow = true; // conexiune pe o linie: `- {from: p1.dout, to: c1.din}`
+    node.flow = true; // connection on one line: `- {from: p1.dout, to: c1.din}`
     seq.add(node);
   }
   if (!isSeq(existing)) {
@@ -255,11 +255,11 @@ export function addConnections(text: string, conns: ConnSpec[]): string {
 }
 
 /**
- * Seteaza `active` pe un agent (felia 3: blocul DESTINATIE al unei conexiuni H1
- * trebuie pasiv — un port de intrare condus de fir nu poate fi si condus de
- * propriul agent). `active=false` scrie `active: false`; `active=true` sterge
- * cheia (implicitul QuickUVM e activ). Arunca daca agentul lipseste; no-op
- * byte-identic daca e deja la valoarea ceruta.
+ * Sets `active` on an agent (slice 3: the DESTINATION block of an H1 connection
+ * must be passive — an input port driven by a wire cannot also be driven by
+ * its own agent). `active=false` writes `active: false`; `active=true` deletes
+ * the key (the QuickUVM default is active). Throws if the agent is missing; byte-identical
+ * no-op if it is already at the requested value.
  */
 export function setAgentActive(
   text: string,
@@ -274,7 +274,7 @@ export function setAgentActive(
         const cur = item.get("active");
         const curActive = cur === undefined ? true : cur !== false;
         if (curActive === active) {
-          return text; // deja la valoarea ceruta -> text neschimbat
+          return text; // already at the requested value -> text unchanged
         }
         if (active) {
           item.delete("active");
@@ -288,7 +288,7 @@ export function setAgentActive(
   throw new Error(`agentul „${agentName}" nu exista in configuratie`);
 }
 
-/** Sterge o conexiune (dupa perechea from/to) din `connections`. Idempotent. */
+/** Deletes a connection (by the from/to pair) from `connections`. Idempotent. */
 export function removeConnection(text: string, from: string, to: string): string {
   const doc = parse(text);
   const seq = doc.getIn(["connections"]);
@@ -306,20 +306,20 @@ export function removeConnection(text: string, from: string, to: string): string
   return doc.toString(TO_STRING);
 }
 
-// ---------------------------------------------- vederea de verificare (3b)
+// ---------------------------------------------- the verification view (3b)
 
 export interface ScoreboardSpec {
   name: string;
-  /** agentul flux-sursa (stimul) → predictor (docs/03, A2) */
+  /** the source-stream agent (stimulus) → predictor (docs/03, A2) */
   source: string;
-  /** agentul flux-raspuns (two-stream); absent = single-stream */
+  /** the response-stream agent (two-stream); absent = single-stream */
   monitor?: string;
   match?: "in_order" | "out_of_order";
-  /** cheia de potrivire, ceruta la out_of_order */
+  /** the match key, required for out_of_order */
   matchKey?: string;
 }
 
-/** Adauga un scoreboard in `analysis.scoreboards` (C1/A2); arunca la nume duplicat. */
+/** Adds a scoreboard to `analysis.scoreboards` (C1/A2); throws on a duplicate name. */
 export function addScoreboard(text: string, spec: ScoreboardSpec): string {
   const doc = parse(text);
   const existing = doc.getIn(["analysis", "scoreboards"]);
@@ -338,7 +338,7 @@ export function addScoreboard(text: string, spec: ScoreboardSpec): string {
     ...(spec.matchKey ? { match_key: spec.matchKey } : {}),
   };
   const node = doc.createNode(entry) as YAMLMap;
-  node.flow = true; // scoreboard pe o linie: `- {name: sbd, source: cmd}`
+  node.flow = true; // scoreboard on one line: `- {name: sbd, source: cmd}`
   const seq = isSeq(existing) ? existing : (doc.createNode([]) as YAMLSeq);
   seq.add(node);
   if (!isSeq(existing)) {
@@ -347,14 +347,14 @@ export function addScoreboard(text: string, spec: ScoreboardSpec): string {
   return doc.toString(TO_STRING);
 }
 
-/** Adauga un colector de coverage pentru un agent (`analysis.coverage`); idempotent. */
+/** Adds a coverage collector for an agent (`analysis.coverage`); idempotent. */
 export function addCoverage(text: string, agent: string): string {
   const doc = parse(text);
   const existing = doc.getIn(["analysis", "coverage"]);
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if ((item as { value?: unknown }).value === agent) {
-        return doc.toString(TO_STRING); // deja prezent
+        return doc.toString(TO_STRING); // already present
       }
     }
     existing.add(agent);
@@ -370,11 +370,11 @@ export function addCoverage(text: string, agent: string): string {
 export interface VseqSpec {
   name: string;
   mode: "sequential" | "parallel";
-  /** pasii: fiecare porneste o sub-secventa pe sequencer-ul unui agent (C2) */
+  /** the steps: each starts a sub-sequence on an agent's sequencer (C2) */
   steps: { agent: string; sequence: string }[];
 }
 
-/** Adauga o secventa virtuala in `virtual_sequences` (C2); arunca la nume duplicat. */
+/** Adds a virtual sequence to `virtual_sequences` (C2); throws on a duplicate name. */
 export function addVirtualSequence(text: string, spec: VseqSpec): string {
   const doc = parse(text);
   const existing = doc.getIn(["virtual_sequences"]);
@@ -397,7 +397,7 @@ export function addVirtualSequence(text: string, spec: VseqSpec): string {
   if (isSeq(body)) {
     for (const item of body.items) {
       if (isMap(item)) {
-        item.flow = true; // pasi pe o linie: `- {agent: cmd, sequence: cmd_seq}`
+        item.flow = true; // steps on one line: `- {agent: cmd, sequence: cmd_seq}`
       }
     }
   }
@@ -409,24 +409,24 @@ export function addVirtualSequence(text: string, spec: VseqSpec): string {
   return doc.toString(TO_STRING);
 }
 
-/** Sterge un scoreboard dupa nume din `analysis.scoreboards` (felia 2); curata
- *  blocul ramas gol. Idempotent: daca nu exista, intoarce textul ORIGINAL
- *  byte-identic (apply devine no-op; nu re-serializeaza, deci nu atinge alte
- *  blocuri goale scrise de mana). */
+/** Deletes a scoreboard by name from `analysis.scoreboards` (slice 2); cleans up
+ *  the block left empty. Idempotent: if it does not exist, returns the ORIGINAL
+ *  byte-identical text (apply becomes a no-op; it does not re-serialize, so it does not touch other
+ *  hand-written empty blocks). */
 export function removeScoreboard(text: string, name: string): string {
   const doc = parse(text);
   if (!removeNamedFromSeq(doc, ["analysis", "scoreboards"], name)) {
-    return text; // nimic de sters -> text neschimbat
+    return text; // nothing to delete -> text unchanged
   }
   pruneEmptySeq(doc, ["analysis", "scoreboards"]);
-  // ATENTIE: blocul `analysis` NU se sterge chiar daca ramane gol — vezi
-  // `keepAnalysis` de mai jos (prezenta cheii comuta QuickUVM implicit->explicit)
+  // ATTENTION: the `analysis` block is NOT deleted even if it stays empty — see
+  // `keepAnalysis` below (the presence of the key switches QuickUVM implicit->explicit)
   return doc.toString(TO_STRING);
 }
 
-/** Sterge colectorul de coverage al unui agent din `analysis.coverage`
- *  (lista de nume scalare); curata blocul gol. Idempotent (no-op = text
- *  original byte-identic). */
+/** Deletes an agent's coverage collector from `analysis.coverage`
+ *  (the list of scalar names); cleans up the empty block. Idempotent (no-op = original
+ *  byte-identical text). */
 export function removeCoverage(text: string, agent: string): string {
   const doc = parse(text);
   const seq = doc.getIn(["analysis", "coverage"]);
@@ -443,12 +443,12 @@ export function removeCoverage(text: string, agent: string): string {
     return text;
   }
   pruneEmptySeq(doc, ["analysis", "coverage"]);
-  // blocul `analysis` ramane chiar gol — vezi `keepAnalysis`
+  // the `analysis` block stays even when empty — see `keepAnalysis`
   return doc.toString(TO_STRING);
 }
 
-/** Sterge o secventa virtuala dupa nume din `virtual_sequences`. Idempotent
- *  (no-op = text original byte-identic). */
+/** Deletes a virtual sequence by name from `virtual_sequences`. Idempotent
+ *  (no-op = original byte-identical text). */
 export function removeVirtualSequence(text: string, name: string): string {
   const doc = parse(text);
   if (!removeNamedFromSeq(doc, ["virtual_sequences"], name)) {
@@ -458,22 +458,22 @@ export function removeVirtualSequence(text: string, name: string): string {
   return doc.toString(TO_STRING);
 }
 
-/** Sterge un agent (dupa nume) si TOATE referintele lui, in cascada (C1):
- *  intrarea lui de coverage, scoreboard-urile al caror `source` SAU `monitor`
- *  e agentul (un flux disparut face scoreboard-ul fara sens — se sterge
- *  intreg, nu se degradeaza) si pasii de vseq care-l folosesc (secventa dispare
- *  daca TOTI pasii ei erau ai agentului). scoreboard-urile cross-bloc (intrari `analysis.scoreboards`) folosesc chei
- *  `bloc.port`, nu nume de agenti, deci nu e atins. Idempotent daca agentul nu
- *  exista (text original byte-identic). Se curata doar blocurile pe care ACEASTA
- *  operatie le-a golit — un `virtual_sequences: [{body: []}]` scris de mana
- *  ramane intact (nu se sterge un vseq gol care nu referea agentul). */
+/** Deletes an agent (by name) and ALL its references, in cascade (C1):
+ *  its coverage entry, the scoreboards whose `source` OR `monitor`
+ *  is the agent (a vanished stream makes the scoreboard meaningless — it is deleted
+ *  whole, not degraded) and the vseq steps that use it (the sequence disappears
+ *  if ALL its steps belonged to the agent). the cross-block scoreboards (`analysis.scoreboards` entries) use
+ *  `bloc.port` keys, not agent names, so it is not touched. Idempotent if the agent does not
+ *  exist (original byte-identical text). Only the blocks that THIS
+ *  operation emptied are cleaned up — a hand-written `virtual_sequences: [{body: []}]`
+ *  stays intact (an empty vseq that did not reference the agent is not deleted). */
 export function removeAgent(text: string, name: string): string {
   const doc = parse(text);
   if (!removeNamedFromSeq(doc, ["agents"], name)) {
-    return text; // agentul nu exista -> nimic de facut (nici cascada)
+    return text; // the agent does not exist -> nothing to do (no cascade)
   }
   pruneEmptySeq(doc, ["agents"]);
-  // coverage: nume scalare
+  // coverage: scalar names
   const cov = doc.getIn(["analysis", "coverage"]);
   let covChanged = false;
   if (isSeq(cov)) {
@@ -484,7 +484,7 @@ export function removeAgent(text: string, name: string): string {
       }
     }
   }
-  // scoreboards: source sau monitor == agent
+  // scoreboards: source or monitor == agent
   const sbs = doc.getIn(["analysis", "scoreboards"]);
   let sbChanged = false;
   if (isSeq(sbs)) {
@@ -496,16 +496,16 @@ export function removeAgent(text: string, name: string): string {
       }
     }
   }
-  // curata doar containerele pe care le-a golit ACEASTA operatie; blocul
-  // `analysis` ramane chiar daca a ramas gol (vezi `keepAnalysis`)
+  // clean up only the containers that THIS operation emptied; the
+  // `analysis` block stays even if it was left empty (see `keepAnalysis`)
   if (covChanged) {
     pruneEmptySeq(doc, ["analysis", "coverage"]);
   }
   if (sbChanged) {
     pruneEmptySeq(doc, ["analysis", "scoreboards"]);
   }
-  // vseq: scoate pasii care folosesc agentul; secventa dispare doar daca s-au
-  // scos pasi SI corpul a ramas gol (un `body: []` pre-existent ramane)
+  // vseq: remove the steps that use the agent; the sequence disappears only if steps
+  // were removed AND the body was left empty (a pre-existing `body: []` stays)
   const vseqs = doc.getIn(["virtual_sequences"]);
   let vseqChanged = false;
   if (isSeq(vseqs)) {
@@ -546,19 +546,19 @@ export type ScoreboardField =
   | "match_key"
   | "max_latency";
 
-/** Editeaza un camp al unui scoreboard (identificat prin nume); arunca daca
- *  scoreboard-ul lipseste (`setAgentPortWidth` e precedentul). Valoarea
- *  implicita se sterge — `match=in_order` sau camp gol/undefined — ca YAML-ul
- *  sa ramana canonic, exact ca omisiunile din `addScoreboard`. Nu forteaza
- *  flow: stilul existent al intrarii (flow sau bloc scris de mana) ramane. */
+/** Edits a field of a scoreboard (identified by name); throws if
+ *  the scoreboard is missing (`setAgentPortWidth` is the precedent). The default
+ *  value is deleted — `match=in_order` or an empty/undefined field — so that the YAML
+ *  stays canonical, exactly like the omissions in `addScoreboard`. It does not force
+ *  flow: the entry's existing style (flow or a hand-written block) stays. */
 export function setScoreboardField(
   text: string,
   name: string,
   field: ScoreboardField,
   value: string | number | undefined
 ): string {
-  // `source` e obligatoriu (A2): a-l goli ar produce un scoreboard invalid —
-  // se refuza, ca la celelalte erori de configurare (nu se corupe YAML-ul)
+  // `source` is mandatory (A2): emptying it would produce an invalid scoreboard —
+  // it is refused, as with the other configuration errors (the YAML is not corrupted)
   if (field === "source" && (value === undefined || value === "")) {
     throw new Error(`source-ul scoreboard-ului „${name}" este obligatoriu`);
   }
@@ -573,9 +573,9 @@ export function setScoreboardField(
           (field === "match" && value === "in_order");
         if (isDefault) {
           item.delete(field);
-          // curatare in cascada: fara monitor, un scoreboard e single-stream,
-          // deci match/match_key n-au sens; la match=in_order, match_key n-are
-          // sens (schema QuickUVM cere match_key doar la out_of_order)
+          // cascade cleanup: without a monitor, a scoreboard is single-stream,
+          // so match/match_key make no sense; at match=in_order, match_key makes no
+          // sense (the QuickUVM schema requires match_key only for out_of_order)
           if (field === "monitor") {
             item.delete("match");
             item.delete("match_key");
@@ -593,22 +593,22 @@ export function setScoreboardField(
 }
 
 export interface ProbeSpec {
-  /** identificator SV (sanitizat din numele netului, vezi src/probe.ts) */
+  /** SV identifier (sanitized from the net name, see src/probe.ts) */
   name: string;
-  /** calea XMR relativa la instanta DUT (quick-uvm o lipeste dupa `dut_inst.`) */
+  /** the XMR path relative to the DUT instance (quick-uvm appends it after `dut_inst.`) */
   path: string;
-  /** omisa la 1 — implicitul QuickUVM (ProbeConfig.width = 1) */
+  /** omitted at 1 — the QuickUVM default (ProbeConfig.width = 1) */
   width?: number;
-  /** coverage functional pe proba: creeaza `<dut>_probe_monitor` in env */
+  /** functional coverage on the probe: creates `<dut>_probe_monitor` in the env */
   coverage?: boolean;
 }
 
 /**
- * Adauga o proba whitebox in `probes` (K2, docs/03); arunca la nume duplicat.
- * `probes` e o lista de PRIM NIVEL (ca `virtual_sequences`), nu o mapare care
- * comuta moduri: absenta ei e byte-identica pentru generator (sondat pe 0.9.2),
- * spre deosebire de `analysis` — vezi `keepAnalysis`. Deci lista goala SE
- * curata linistit (`removeProbe`).
+ * Adds a whitebox probe to `probes` (K2, docs/03); throws on a duplicate name.
+ * `probes` is a TOP-LEVEL list (like `virtual_sequences`), not a map that
+ * switches modes: its absence is byte-identical for the generator (probed on 0.9.2),
+ * unlike `analysis` — see `keepAnalysis`. So the empty list IS
+ * cleaned up safely (`removeProbe`).
  */
 export function addProbe(text: string, spec: ProbeSpec): string {
   const doc = parse(text);
@@ -627,7 +627,7 @@ export function addProbe(text: string, spec: ProbeSpec): string {
     ...(spec.coverage ? { coverage: true } : {}),
   };
   const node = doc.createNode(entry) as YAMLMap;
-  node.flow = true; // proba pe o linie: `- {name: lvl, path: u.lvl, width: 3}`
+  node.flow = true; // probe on one line: `- {name: lvl, path: u.lvl, width: 3}`
   const seq = isSeq(existing) ? existing : (doc.createNode([]) as YAMLSeq);
   seq.add(node);
   if (!isSeq(existing)) {
@@ -636,7 +636,7 @@ export function addProbe(text: string, spec: ProbeSpec): string {
   return doc.toString(TO_STRING);
 }
 
-/** Sterge o proba dupa nume din `probes`. Idempotent (no-op = text original). */
+/** Deletes a probe by name from `probes`. Idempotent (no-op = original text). */
 export function removeProbe(text: string, name: string): string {
   const doc = parse(text);
   if (!removeNamedFromSeq(doc, ["probes"], name)) {
@@ -646,7 +646,7 @@ export function removeProbe(text: string, name: string): string {
   return doc.toString(TO_STRING);
 }
 
-/** normalizare de cale pentru comparatii: separatoare unice + ./ si ../ */
+/** path normalization for comparisons: single separators + ./ and ../ */
 function normPath(p: string): string {
   const parts = p.replace(/\\/g, "/").split("/");
   const out: string[] = [];
@@ -664,11 +664,11 @@ function normPath(p: string): string {
 }
 
 /**
- * Config-urile "top" dintr-o multime de fisiere *.quickuvm.yaml: cele care NU
- * sunt referite ca `subenvs[].config` de un alt fisier din multime (docs/03 —
- * scaffold-urile blocurilor copil nu trebuie sa devina config-ul activ).
- * Comparatia e case-insensitive (Windows); caile relative se rezolva fata de
- * fisierul care refera.
+ * The "top" configs from a set of *.quickuvm.yaml files: those that are NOT
+ * referenced as `subenvs[].config` by another file in the set (docs/03 —
+ * the child-block scaffolds must not become the active config).
+ * The comparison is case-insensitive (Windows); relative paths resolve against
+ * the referencing file.
  */
 export function topConfigPaths(
   files: { path: string; text: string }[]
@@ -686,10 +686,10 @@ export function topConfigPaths(
 }
 
 /**
- * Config-ul de la `activePath` e COMPUS ca subenv al altui bench din multime?
- * Capcana K2 #2 (CLAUDE.md): probele unui bloc-frunza compus se genereaza dar
- * NU se cableaza in tb_top-ul subsistemului (exit 0, rupt tacit) — host-ul
- * avertizeaza pe baza acestui predicat.
+ * Is the config at `activePath` COMPOSED as a subenv of another bench in the set?
+ * K2 pitfall #2 (CLAUDE.md): a composed leaf-block's probes are generated but
+ * NOT wired into the subsystem's tb_top (exit 0, silently broken) — the host
+ * warns based on this predicate.
  */
 export function isComposedChild(
   files: { path: string; text: string }[],
@@ -703,8 +703,8 @@ export function isComposedChild(
   );
 }
 
-/** Adauga porturi la waiver-ul `dut.unverified_ports` (D15; quick-uvm >= 1.0.0 —
- *  cheie de schema de prim rang, fostul bloc `x_quickuvm_architect` e respins). */
+/** Adds ports to the `dut.unverified_ports` waiver (D15; quick-uvm >= 1.0.0 —
+ *  a first-class schema key, the former `x_quickuvm_architect` block is rejected). */
 export function ignorePorts(text: string, ports: string[]): string {
   const doc = parse(text);
   const current = readIgnored(doc);
@@ -713,7 +713,7 @@ export function ignorePorts(text: string, ports: string[]): string {
   return doc.toString(TO_STRING);
 }
 
-/** Scoate porturi din lista ignoratelor; blocul dispare cand ramane gol. */
+/** Removes ports from the ignored list; the block disappears when it stays empty. */
 export function unignorePorts(text: string, ports: string[]): string {
   const doc = parse(text);
   const drop = new Set(ports);
@@ -721,7 +721,7 @@ export function unignorePorts(text: string, ports: string[]): string {
   return doc.toString(TO_STRING);
 }
 
-/** Actualizeaza latimea unui port de agent (quick-fix-ul din docs/03). */
+/** Updates the width of an agent port (the quick-fix from docs/03). */
 export function setAgentPortWidth(
   text: string,
   agentName: string,
@@ -759,7 +759,7 @@ export function setAgentPortWidth(
   );
 }
 
-// ------------------------------------------------------------------ intern
+// ------------------------------------------------------------------ internal
 
 function setOrDelete(
   doc: Document,
@@ -773,9 +773,9 @@ function setOrDelete(
   }
 }
 
-/** Sterge din seq-ul de la `path` prima intrare-mapare cu `name` dat; intoarce
- *  `true` daca a sters ceva (no-op + `false` daca seq-ul lipseste sau numele
- *  nu se gaseste — apelantul se poate scurtcircuita la text neschimbat). */
+/** Deletes from the seq at `path` the first map-entry with the given `name`; returns
+ *  `true` if it deleted something (no-op + `false` if the seq is missing or the name
+ *  is not found — the caller can short-circuit to unchanged text). */
 function removeNamedFromSeq(
   doc: Document,
   path: (string | number)[],
@@ -793,8 +793,8 @@ function removeNamedFromSeq(
   return true;
 }
 
-/** Sterge seq-ul de la `path` daca a ramas gol (curatare de blocuri, ca in
- *  `writeIgnored`) — YAML-ul nu pastreaza `scoreboards: []` orfan. */
+/** Deletes the seq at `path` if it was left empty (block cleanup, as in
+ *  `writeIgnored`) — the YAML does not keep an orphan `scoreboards: []`. */
 function pruneEmptySeq(doc: Document, path: (string | number)[]): void {
   const seq = doc.getIn(path);
   if (isSeq(seq) && seq.items.length === 0) {
@@ -803,19 +803,19 @@ function pruneEmptySeq(doc: Document, path: (string | number)[]): void {
 }
 
 /**
- * `keepAnalysis` — DE CE blocul `analysis` NU se sterge niciodata, nici gol
- * (probat contra quick-uvm 0.9.2, `test:e2e` scenariul 4):
+ * `keepAnalysis` — WHY the `analysis` block is NEVER deleted, not even empty
+ * (proved against quick-uvm 0.9.2, `test:e2e` scenario 4):
  *
- *   - FARA cheia `analysis:` QuickUVM intra in mod IMPLICIT si auto-cableaza
- *     un scoreboard SI un colector de coverage la "primary agent"
- *     (`// Scoreboard (wired to primary agent: cmd)` in env);
- *   - CU `analysis:` (chiar `{}` gol) intra in mod DECLARAT si cableaza exact
- *     ce e listat — gol => NIMIC.
+ *   - WITHOUT the `analysis:` key QuickUVM enters IMPLICIT mode and auto-wires
+ *     a scoreboard AND a coverage collector to the "primary agent"
+ *     (`// Scoreboard (wired to primary agent: cmd)` in the env);
+ *   - WITH `analysis:` (even empty `{}`) it enters DECLARED mode and wires exactly
+ *     what is listed — empty => NOTHING.
  *
- * Deci a curata blocul golit ar comuta explicit->implicit si ar REINVIA un
- * scoreboard + coverage pe care utilizatorul tocmai le-a sters din diagrama
- * (stergi ceva, primesti inapoi mai mult). Se curata doar listele-copil
- * (`scoreboards: []` / `coverage: []`), niciodata maparea `analysis`.
+ * So cleaning up the emptied block would switch explicit->implicit and would REVIVE a
+ * scoreboard + coverage that the user just deleted from the diagram
+ * (you delete something, you get back more). Only the child lists are cleaned up
+ * (`scoreboards: []` / `coverage: []`), never the `analysis` map.
  */
 
 
@@ -833,7 +833,7 @@ function readIgnored(doc: Document): string[] {
 
 function writeIgnored(doc: Document, ports: string[]): void {
   if (ports.length === 0) {
-    // doar cheia dispare — blocul `dut` ramane (e configuratie obligatorie)
+    // only the key disappears — the `dut` block stays (it is mandatory configuration)
     doc.deleteIn(["dut", "unverified_ports"]);
     return;
   }
@@ -842,7 +842,7 @@ function writeIgnored(doc: Document, ports: string[]): void {
   doc.setIn(["dut", "unverified_ports"], seq);
 }
 
-/** Portii agentului ca mape flow pe o linie: `- {name: din, width: 8}`. */
+/** The agent's ports as flow maps on one line: `- {name: din, width: 8}`. */
 function flowPortMaps(agent: YAMLMap): void {
   for (const side of ["inputs", "outputs"]) {
     const list = agent.getIn(["ports", side]);

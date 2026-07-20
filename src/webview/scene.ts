@@ -1,13 +1,13 @@
-// Construirea scenei vederii-schema (docs/05): functii pure, fara DOM,
-// testabile in Node (scripts/test-scene.mjs). Consuma modelul de proiect
-// (docs/02) si produce noduri, porturi de granita si muchii gata de layout.
+// Building the schematic-view scene (docs/05): pure functions, no DOM,
+// testable in Node (scripts/test-scene.mjs). Consumes the project model
+// (docs/02) and produces nodes, boundary ports and edges ready for layout.
 //
-// Politicile de vedere care NU sunt in model (docs/02) se aplica aici:
-// - plierea instantelor generate cu acelasi modul+parametri (`g_ch[0..2].u_ch`),
-//   cu notatia `nume[lo..hi]` din docs/04;
-// - maparea net -> muchii sursa->destinatie, cu dedup pe pliaje;
-// - net-urile `render=label` si net-urile wire fara doua capete desenabile
-//   devin etichete pe pini, nu trasee.
+// The view policies that are NOT in the model (docs/02) apply here:
+// - folding generated instances with the same module+params (`g_ch[0..2].u_ch`),
+//   with the `name[lo..hi]` notation from docs/04;
+// - mapping net -> source->destination edges, with dedup on folds;
+// - `render=label` nets and wire nets without two drawable endpoints
+//   become labels on pins, not routes.
 
 import type { Conn, Dir, ModuleDef, ProjectModel } from "../model";
 import { netWidth } from "../probe";
@@ -16,7 +16,7 @@ export type SceneNodeKind =
   | "instance"
   | "iface"
   | "fold"
-  // nodurile vederii de verificare (faza 3b, docs/05; scena in tbscene.ts)
+  // the verification-view nodes (phase 3b, docs/05; scene in tbscene.ts)
   | "tbdut"
   | "tbagent"
   | "tbsb"
@@ -24,93 +24,93 @@ export type SceneNodeKind =
   | "tbvsqr"
   | "tbprobe"
   | "tbsubenv"
-  // containere (containment UVM canonic): Testbench, Env, si internele
-  // agentului (sequencer/driver/monitor)
+  // containers (canonical UVM containment): Testbench, Env, and the agent's
+  // internals (sequencer/driver/monitor)
   | "tbtb"
   | "tbenv"
   | "tbunit";
 
 export interface ScenePin {
-  /** ID stabil relativ la vedere: `u_add.din`, `g_ch[0..2].u_ch.din` */
+  /** stable ID relative to the view: `u_add.din`, `g_ch[0..2].u_ch.din` */
   id: string;
   port: string;
   dir: Dir;
   side: "WEST" | "EAST";
   iface: boolean;
   bus: boolean;
-  /** latimea semnalului (elem_width ?? width); null la interfete. Feed pentru
-   *  eticheta slash `/N` si gradarea vizuala pe clase de latime (docs/04) */
+  /** the signal width (elem_width ?? width); null for interfaces. Feed for
+   *  the slash `/N` label and the visual grading by width classes (docs/04) */
   width: number | null;
   mult: string | null;
   label: string;
-  /** numele net-urilor afisate ca eticheta la capatul pinului (sau null) */
+  /** the names of the nets shown as a label at the pin's end (or null) */
   netLabel: string | null;
-  /** aceleasi net-uri, masina (netLabel e join de afisare): conectivitatea
-   *  pinului prin net-urile cu render=label, care NU au muchii — netCone
-   *  traverseaza si prin ele */
+  /** the same nets, machine-readable (netLabel is a display join): the pin's
+   *  connectivity through the render=label nets, which have NO edges — netCone
+   *  traverses through them too */
   nets: string[];
-  /** adnotare scurta a conexiunii: `[1]` select, `=1'b1` const, `nc` flotant */
+  /** short annotation of the connection: `[1]` select, `=1'b1` const, `nc` floating */
   note: string | null;
-  /** felul adnotarii — ALEGE glifa (const-box, split/join) fara sa reparseze
-   *  `note`; null = fara adnotare (docs/04, vocabular) */
+  /** the kind of annotation — CHOOSES the glyph (const-box, split/join) without
+   *  re-parsing `note`; null = no annotation (docs/04, vocabulary) */
   noteKind: NoteKind | null;
   tooltip: string;
 }
 
 export interface SceneNode {
-  /** ID stabil relativ la vedere: calea relativa sau ID-ul pliajului */
+  /** stable ID relative to the view: the relative path or the fold's ID */
   id: string;
   kind: SceneNodeKind;
-  /** numele afisat (calea relativa in vedere) */
+  /** the displayed name (the relative path in the view) */
   name: string;
-  /** subtitlul: modulul cu parametrii efectivi (`chan #(W=16)`) */
+  /** the subtitle: the module with its effective params (`chan #(W=16)`) */
   sub: string;
-  /** calea ierarhica completa, pentru drill/sursa; null pentru pliaje */
+  /** the full hierarchical path, for drill/source; null for folds */
   instPath: string | null;
-  /** instanta are schema (dublu-click coboara; altfel sursa) */
+  /** the instance has a schematic (double-click descends; otherwise source) */
   hasView: boolean;
-  /** numarul de instante pliate (1 pentru noduri simple) */
+  /** the number of folded instances (1 for simple nodes) */
   foldCount: number;
-  /** ID-ul pliajului din care face parte un membru expandat (re-pliere) */
+  /** the ID of the fold an expanded member is part of (re-folding) */
   foldId: string | null;
-  /** caile instantelor membre ale unui pliaj (cross-probing editor->diagrama:
-   *  tinta pe un membru aprinde pliajul; docs/05); absent la noduri simple */
+  /** the paths of a fold's member instances (cross-probing editor->diagram:
+   *  targeting a member lights up the fold; docs/05); absent for simple nodes */
   memberPaths?: string[];
   pins: ScenePin[];
   tooltip: string;
 }
 
-/** port al modulului vederii, pe granita diagramei */
+/** port of the view's module, on the diagram's boundary */
 export interface SceneBPort {
-  /** ID stabil: `<port>.din` (docs/02) */
+  /** stable ID: `<port>.din` (docs/02) */
   id: string;
   name: string;
   dir: Dir;
   side: "WEST" | "EAST";
   iface: boolean;
   bus: boolean;
-  /** latimea portului vederii (elem_width ?? width); null la interfete */
+  /** the width of the view's port (elem_width ?? width); null for interfaces */
   width: number | null;
   mult: string | null;
   label: string;
-  /** net-urile cu render=label la care participa steagul (fara muchii):
-   *  netCone traverseaza prin ele — altfel un net-eticheta care atinge o
-   *  granita si-ar pierde capatul de granita din con */
+  /** the render=label nets the flag participates in (without edges):
+   *  netCone traverses through them — otherwise a label-net that touches a
+   *  boundary would lose its boundary end from the cone */
   nets: string[];
   tooltip: string;
 }
 
 export interface SceneEdge {
   id: string;
-  /** numele net-ului (ID stabil in scope-ul vederii); null pentru interfete */
+  /** the net's name (stable ID in the view's scope); null for interfaces */
   net: string | null;
-  /** latimea netului (derivata prin netWidth — DOAR de la un capat cu acelasi
-   *  semnal, niciodata prin select/concat); null cand nederivabila. Gradare
-   *  vizuala a firului pe clase de latime (docs/04) */
+  /** the net's width (derived via netWidth — ONLY from an endpoint with the same
+   *  signal, never through select/concat); null when not derivable. Visual
+   *  grading of the wire by width classes (docs/04) */
   width: number | null;
-  /** "ref" = referinta punctata (vsqr->sqr, dut->probes; vederea de verificare) */
+  /** "ref" = dotted reference (vsqr->sqr, dut->probes; the verification view) */
   kind: "wire" | "iface" | "ref";
-  /** ID de nod (nodurile granitei nu au porturi ELK: sourcePort null) */
+  /** node ID (the boundary nodes have no ELK ports: sourcePort null) */
   source: string;
   sourcePort: string | null;
   target: string;
@@ -132,9 +132,9 @@ export function hasSchematic(
   return Boolean(model && viewId && model.views[viewId]);
 }
 
-// ------------------------------------------------------- descrierea conn
+// ------------------------------------------------------- conn description
 
-/** textul lizibil al unei expresii de conexiune, pentru tooltip-uri */
+/** the readable text of a connection expression, for tooltips */
 export function connText(conn: Conn): string {
   if (conn === null) {
     return "unconnected";
@@ -155,18 +155,18 @@ export function connText(conn: Conn): string {
   }
 }
 
-/** felul adnotarii unui pin — discriminatorul care ALEGE glifa in stratul de
- *  desen (docs/04, vocabular): stratul de desen NU mai adulmeca textul notei */
+/** the kind of a pin's annotation — the discriminator that CHOOSES the glyph in
+ *  the drawing layer (docs/04, vocabulary): the drawing layer NO longer sniffs the note text */
 export type NoteKind =
   | "select"
   | "const"
   | "concat"
   | "nc"
   | "expr"
-  | "mixed"; // fold cu conexiuni divergente (`≠`)
+  | "mixed"; // fold with divergent connections (`≠`)
 
-/** adnotarea scurta desenata la capatul pinului (docs/02: consecinta vizuala):
- *  textul de afisare + felul (pentru glifa). `kind: null` = fara adnotare */
+/** the short annotation drawn at the pin's end (docs/02: visual consequence):
+ *  the display text + the kind (for the glyph). `kind: null` = no annotation */
 function noteOf(conn: Conn): { note: string | null; kind: NoteKind | null } {
   if (conn === null) {
     return { note: "nc", kind: "nc" };
@@ -186,13 +186,13 @@ function noteOf(conn: Conn): { note: string | null; kind: NoteKind | null } {
   }
 }
 
-/** eticheta unui port in ordinea de declarare SystemVerilog: dimensiunile
- *  packed inaintea numelui (din elem_width), unpacked dupa (din sufixul
- *  `type` de dupa separatorul intern `$`, ca sa pastreze intervalul exact
- *  declarat, ex. `[0:2]`) -> `[15:0]ch_out[0:2]`. Semnal de 1 bit fara
- *  tablou = doar numele. Compact (FARA spatii intre dimensiuni si nume):
- *  lizibilitatea vine din colorarea diferita a dimensiunilor la desen
- *  (`splitLabel` + tspan `.dim`), nu din spatii — economiseste latime. */
+/** a port's label in SystemVerilog declaration order: the packed
+ *  dimensions before the name (from elem_width), unpacked after (from the
+ *  `type` suffix after the internal `$` separator, so it keeps the exact
+ *  declared interval, e.g. `[0:2]`) -> `[15:0]ch_out[0:2]`. A 1-bit signal without
+ *  an array = just the name. Compact (WITHOUT spaces between dimensions and name):
+ *  readability comes from coloring the dimensions differently at draw time
+ *  (`splitLabel` + tspan `.dim`), not from spaces — it saves width. */
 export function portLabel(p: {
   name: string;
   type?: string | null;
@@ -207,10 +207,10 @@ export function portLabel(p: {
   return `${packed}${p.name}${unpacked}`;
 }
 
-/** desparte eticheta compacta a unui port (`[15:0]ch_out[0:2]`) in dimensiunile
- *  packed/unpacked si nume, dupa prima aparitie a numelui — identificatorii SV
- *  nu apar in `[N:0]` (doar cifre / `:` / paranteze), deci despartirea e
- *  neambigua. Pentru colorarea diferentiata a dimensiunilor la desen. */
+/** splits a port's compact label (`[15:0]ch_out[0:2]`) into the packed/unpacked
+ *  dimensions and name, after the first occurrence of the name — SV identifiers
+ *  do not appear in `[N:0]` (only digits / `:` / brackets), so the split is
+ *  unambiguous. For coloring the dimensions differently at draw time. */
 export function splitLabel(
   label: string,
   name: string
@@ -226,7 +226,7 @@ export function splitLabel(
   };
 }
 
-// --------------------------------------------------------------- pliaje
+// --------------------------------------------------------------- folds
 
 interface ChildInfo {
   rel: string;
@@ -236,18 +236,18 @@ interface ChildInfo {
   iface: boolean;
 }
 
-/** `g_ch[0].u_ch` -> `g_ch[*].u_ch` (cheia de grupare a pliajului) */
+/** `g_ch[0].u_ch` -> `g_ch[*].u_ch` (the fold's grouping key) */
 function foldPattern(rel: string): string {
   return rel.replace(/\[\d+\]/g, "[*]");
 }
 
-/** indicele primei dimensiuni generate dintr-o cale relativa (sau null) */
+/** the index of the first generated dimension in a relative path (or null) */
 function firstIndex(rel: string): number | null {
   const m = /\[(\d+)\]/.exec(rel);
   return m ? Number(m[1]) : null;
 }
 
-/** notatia pliajului din docs/04: `g_ch[lo..hi].u_ch` */
+/** the fold notation from docs/04: `g_ch[lo..hi].u_ch` */
 function foldId(pattern: string, members: ChildInfo[]): string {
   const idx = members
     .map((m) => firstIndex(m.rel))
@@ -265,14 +265,14 @@ function paramText(params: Record<string, string>): string {
   return t ? ` #(${t})` : "";
 }
 
-// ----------------------------------------------------------- construire
+// ----------------------------------------------------------- build
 
 /**
- * Construieste scena vederii-schema pentru `viewId`.
+ * Builds the schematic-view scene for `viewId`.
  *
- * `expanded` = ID-urile pliajelor desfacute explicit de utilizator; restul
- * grupurilor generate raman pliate implicit (docs/05). Intoarce null daca
- * instanta nu are schema in model.
+ * `expanded` = the IDs of the folds explicitly unfolded by the user; the rest
+ * of the generated groups stay folded implicitly (docs/05). Returns null if
+ * the instance has no schematic in the model.
  */
 export function buildSchematicScene(
   model: ProjectModel,
@@ -287,7 +287,7 @@ export function buildSchematicScene(
   }
   const instByPath = new Map(model.instances.map((i) => [i.path, i]));
 
-  // -- copiii vederii, in ordinea primei aparitii in pins (ordine stabila)
+  // -- the view's children, in order of first appearance in pins (stable order)
   const children = new Map<string, ChildInfo>();
   for (const vp of view.pins) {
     const dot = vp.pin.lastIndexOf(".");
@@ -308,7 +308,7 @@ export function buildSchematicScene(
     });
   }
 
-  // -- gruparea pliajelor: acelasi tipar generate + acelasi modul+parametri
+  // -- grouping the folds: same generate pattern + same module+params
   const groups = new Map<string, ChildInfo[]>();
   for (const c of children.values()) {
     const key =
@@ -321,7 +321,7 @@ export function buildSchematicScene(
     }
   }
 
-  /** rel membru -> ID-ul nodului care il reprezinta in scena */
+  /** member rel -> the ID of the node representing it in the scene */
   const nodeOf = new Map<string, string>();
   const nodes: SceneNode[] = [];
   const conns = new Map(view.pins.map((vp) => [vp.pin, vp.conn]));
@@ -341,7 +341,7 @@ export function buildSchematicScene(
     }
   }
 
-  // -- porturile modulului vederii, pe granita
+  // -- the view's module ports, on the boundary
   const boundary: SceneBPort[] = [];
   for (const p of parentDef.ports) {
     const elemW = p.elem_width ?? p.width;
@@ -380,7 +380,7 @@ export function buildSchematicScene(
   }
   const boundaryById = new Map(boundary.map((b) => [b.id, b]));
 
-  // -- net-uri: muchii pentru `wire`, etichete pentru `label`
+  // -- nets: edges for `wire`, labels for `label`
   const pinById = new Map<string, ScenePin>();
   for (const n of nodes) {
     for (const p of n.pins) {
@@ -391,11 +391,11 @@ export function buildSchematicScene(
   for (const [id, p] of pinById) {
     dirByPin.set(id, p.dir);
   }
-  // Pinii instantelor de interfata nu au directie proprie: un semnal de
-  // interfata nu e intrinsec intrare/iesire (directia se stabileste per
-  // modport, la modulul conectat). Ii orientam dupa rolul in net (sursa ->
-  // EST, destinatie -> VEST) ca firul sa iasa spre modul, nu sa ocoleasca
-  // blocul pornind pe latura opusa (docs/04).
+  // The pins of interface instances have no direction of their own: an
+  // interface signal is not intrinsically input/output (the direction is set per
+  // modport, at the connected module). We orient them by their role in the net
+  // (source -> EAST, destination -> WEST) so the wire exits toward the module,
+  // not around the block starting on the opposite side (docs/04).
   const ifacePins = new Set<string>();
   for (const n of nodes) {
     if (n.kind === "iface") {
@@ -408,7 +408,7 @@ export function buildSchematicScene(
   interface Endpoint {
     pinId: string;
     node: string;
-    port: string | null; // null = nod de granita (fara porturi ELK)
+    port: string | null; // null = boundary node (no ELK ports)
     dir: Dir;
     boundary: boolean;
   }
@@ -435,7 +435,7 @@ export function buildSchematicScene(
   };
 
   const edges: SceneEdge[] = [];
-  const netLabels = new Map<string, string[]>(); // pinId -> nume de net-uri
+  const netLabels = new Map<string, string[]>(); // pinId -> net names
   const addLabel = (pinId: string, net: string): void => {
     const l = netLabels.get(pinId);
     if (l) {
@@ -457,14 +457,14 @@ export function buildSchematicScene(
         eps.push(ep);
       }
     }
-    // nivelul 4 (docs/04): override-ul explicit fir/eticheta al
-    // utilizatorului bate sugestia din model (render din fan-out)
+    // level 4 (docs/04): the user's explicit wire/label override
+    // beats the model's suggestion (render from fan-out)
     const render = renderOverrides?.get(net.name) ?? net.render;
     if (render === "label") {
       for (const ep of eps) {
         if (ep.boundary) {
-          // steagul granitei nu poarta eticheta vizibila (E portul), dar
-          // netCone are nevoie de apartenenta la net pentru con complet
+          // the boundary flag carries no visible label (IT is the port), but
+          // netCone needs the net membership for a complete cone
           const b = boundaryById.get(ep.pinId);
           if (b && !b.nets.includes(net.name)) {
             b.nets.push(net.name);
@@ -476,33 +476,33 @@ export function buildSchematicScene(
       continue;
     }
     if (eps.length < 2) {
-      // net wire fara doua capete desenabile: degradare la eticheta
+      // wire net without two drawable endpoints: degrade to a label
       if (eps.length === 1 && !eps[0].boundary) {
         addLabel(eps[0].pinId, net.name);
       }
       continue;
     }
-    // surse: porturile de intrare ale modulului si iesirile copiilor —
-    // pot fi mai multe (ex. slice-uri asamblate prin select-uri, ch_out);
-    // fiecare sursa se leaga de fiecare destinatie, nu sursele intre ele.
-    // Fara nicio sursa sau destinatie identificabila (net condus de logica
-    // interna a parintelui, respectiv doar iesiri), primul capat tine loc
-    // de sursa — muchia tot se deseneaza
+    // sources: the module's input ports and the children's outputs —
+    // there can be several (e.g. slices assembled via selects, ch_out);
+    // each source links to each destination, not the sources among themselves.
+    // With no identifiable source or destination (a net driven by the parent's
+    // internal logic, respectively only outputs), the first endpoint stands in
+    // for the source — the edge is drawn anyway
     let drivers = eps.filter((e) =>
       e.boundary ? e.dir === "in" : e.dir === "out"
     );
     let sinks = eps.filter((e) => !drivers.includes(e));
     if (drivers.length === 0 || sinks.length === 0) {
-      // fara sursa/destinatie identificabila: prefera o instanta de interfata
-      // drept sursa (semnalele curg din interfata spre modulele conectate),
-      // altfel primul capat tine loc de sursa
+      // with no identifiable source/destination: prefer an interface instance
+      // as the source (signals flow from the interface toward the connected modules),
+      // otherwise the first endpoint stands in for the source
       const i = eps.findIndex((e) => ifacePins.has(e.pinId));
       const di = drivers.length === 0 && i >= 0 ? i : 0;
       drivers = [eps[di]];
       sinks = eps.filter((_, idx) => idx !== di);
     }
-    // orienteaza pinii de interfata dupa rol: sursa spre EST, destinatie spre
-    // VEST (ceilalti pini pastreaza latura semantica data de directie)
+    // orient the interface pins by role: source toward EAST, destination toward
+    // WEST (the other pins keep the semantic side given by direction)
     for (const d of drivers) {
       if (ifacePins.has(d.pinId)) {
         const dp = pinById.get(d.pinId);
@@ -519,9 +519,9 @@ export function buildSchematicScene(
         }
       }
     }
-    // latimea netului: derivata O DATA per net (netWidth din probe.ts — DOAR
-    // de la un capat cu acelasi semnal, niciodata prin select/concat), pentru
-    // gradarea vizuala a firului pe clase de latime (docs/04)
+    // the net's width: derived ONCE per net (netWidth from probe.ts — ONLY
+    // from an endpoint with the same signal, never through select/concat), for
+    // the visual grading of the wire by width classes (docs/04)
     const nw = netWidth(model, viewId, net.name).width;
     for (const d of drivers) {
       for (const s of sinks) {
@@ -539,7 +539,7 @@ export function buildSchematicScene(
     }
   }
 
-  // -- conexiunile de interfata: muchii nod-interfata -> pin (conn.kind=iface)
+  // -- the interface connections: interface-node -> pin edges (conn.kind=iface)
   const ifaceSeen = new Set<string>();
   for (const vp of view.pins) {
     if (vp.conn === null || typeof vp.conn !== "object" || vp.conn.kind !== "iface") {
@@ -552,7 +552,7 @@ export function buildSchematicScene(
     }
     const id = `iface:${source}->${target.pinId}`;
     if (ifaceSeen.has(id)) {
-      continue; // membrii unui pliaj converg pe aceeasi muchie
+      continue; // the members of a fold converge on the same edge
     }
     ifaceSeen.add(id);
     edges.push({
@@ -567,7 +567,7 @@ export function buildSchematicScene(
     });
   }
 
-  // -- etichetele de net calculate mai sus se aseaza pe pini
+  // -- the net labels computed above are placed on the pins
   for (const [pinId, nets] of netLabels) {
     const pin = pinById.get(pinId);
     if (pin) {
@@ -579,22 +579,22 @@ export function buildSchematicScene(
   return { viewId, module: view.module, nodes, boundary, edges };
 }
 
-// --------------------------------------------------- conul de conectivitate
+// --------------------------------------------------- the connectivity cone
 
-/** samanta conului: un net (click pe fir/eticheta) sau un nod/steag */
+/** the cone's seed: a net (click on wire/label) or a node/flag */
 export type ConeSeed = { net: string } | { node: string };
 
 /**
- * Conul de conectivitate al unei seminte, in directia datelor: `down` (aval)
- * = tot ce e CONDUS, tranzitiv, de samanta; `up` (amonte) = tot ce o conduce.
- * Intoarce id-urile de selectat: noduri/steaguri + nume de net-uri.
- * Traversarea urmeaza exact ce e DESENAT: muchiile wire (sursa=driver) si
- * iface (fara directie clara — se traverseaza in ambele sensuri), plus
- * net-urile cu render=label prin `pin.nets` si `bport.nets` (etichetele nu au
- * muchii; pe pinii copiilor doar `out` conduce, iar la steagurile de granita
- * regula e INVERSA — portul de INTRARE al vederii conduce net-ul in interior).
- * Graful e cel al scenei, deci pliajele generate sunt un singur nod, ca pe
- * ecran, iar steagurile de granita sunt seminte si tinte valide.
+ * The connectivity cone of a seed, in the data direction: `down` (downstream)
+ * = everything DRIVEN, transitively, by the seed; `up` (upstream) = everything that drives it.
+ * Returns the ids to select: nodes/flags + net names.
+ * The traversal follows exactly what is DRAWN: the wire edges (source=driver) and
+ * iface (no clear direction — traversed in both directions), plus
+ * the render=label nets through `pin.nets` and `bport.nets` (labels have no
+ * edges; on the children's pins only `out` drives, while at the boundary flags
+ * the rule is REVERSED — the view's INPUT port drives the net inward).
+ * The graph is the scene's, so the generated folds are a single node, as on
+ * screen, and the boundary flags are valid seeds and targets.
  */
 export function netCone(
   scene: SchematicScene,
@@ -609,16 +609,16 @@ export function netCone(
       m.set(k, new Set([v]));
     }
   };
-  const netSinks = new Map<string, Set<string>>(); // net -> noduri conduse
-  const netDrivers = new Map<string, Set<string>>(); // net -> noduri sursa
-  const nodeOut = new Map<string, Set<string>>(); // nod -> net-uri conduse
-  const nodeIn = new Map<string, Set<string>>(); // nod -> net-uri primite
-  const direct = new Map<string, Set<string>>(); // iface: nod -> nod (aval)
+  const netSinks = new Map<string, Set<string>>(); // net -> driven nodes
+  const netDrivers = new Map<string, Set<string>>(); // net -> source nodes
+  const nodeOut = new Map<string, Set<string>>(); // node -> driven nets
+  const nodeIn = new Map<string, Set<string>>(); // node -> received nets
+  const direct = new Map<string, Set<string>>(); // iface: node -> node (downstream)
   const directRev = new Map<string, Set<string>>();
 
   for (const e of scene.edges) {
     if (e.kind === "iface" || !e.net) {
-      // interfetele nu au directie intrinseca: conul trece in ambele sensuri
+      // interfaces have no intrinsic direction: the cone passes in both directions
       add(direct, e.source, e.target);
       add(directRev, e.target, e.source);
       add(direct, e.target, e.source);
@@ -633,7 +633,7 @@ export function netCone(
   for (const n of scene.nodes) {
     for (const p of n.pins) {
       for (const net of p.nets) {
-        // aceeasi regula ca la muchii: pe pinii copiilor doar `out` conduce
+        // same rule as for edges: on the children's pins only `out` drives
         if (p.dir === "out") {
           add(netDrivers, net, n.id);
           add(nodeOut, n.id, net);
@@ -644,9 +644,9 @@ export function netCone(
       }
     }
   }
-  // steagurile de granita pe net-uri etichetate (fara muchii): regula INVERSA
-  // fata de pinii copiilor — un port de INTRARE al vederii conduce net-ul in
-  // interior (sursa), unul de IESIRE il primeste (ca la muchii, docs/scene)
+  // the boundary flags on labeled nets (without edges): the REVERSED rule
+  // versus the children's pins — the view's INPUT port drives the net
+  // inward (source), an OUTPUT one receives it (as for edges, docs/scene)
   for (const b of scene.boundary) {
     for (const net of b.nets) {
       if (b.dir === "in") {
@@ -708,12 +708,12 @@ function coneWalk(seed: ConeSeed, dir: "up" | "down", m: ConeMaps): Set<string> 
 }
 
 /**
- * Conul pornit de la un `data-id` din diagrama (Shift+click): clasifica id-ul
- * si intoarce selectia, sau `null` daca nu se recunoaste (apelantul NU atinge
- * selectia atunci). Grupul unui pin poarta data-id = id-ul pinului, iar
- * copiii lui (numele portului, stub-ul, adnotarea, eticheta multi-net) nu au
- * data-id propriu — un click pe ei cade pe pin: se porneste din net-urile
- * pinului (eticheta ori fir), nu se transforma intr-un net inexistent.
+ * The cone started from a `data-id` in the diagram (Shift+click): classifies the id
+ * and returns the selection, or `null` if it is not recognized (the caller does NOT touch
+ * the selection then). A pin's group carries data-id = the pin's id, while
+ * its children (the port name, the stub, the annotation, the multi-net label) have no
+ * data-id of their own — a click on them falls onto the pin: it starts from the
+ * pin's nets (label or wire), it does not turn into a non-existent net.
  */
 export function coneOf(
   scene: SchematicScene,
@@ -726,7 +726,7 @@ export function coneOf(
   ) {
     return netCone(scene, { node: id }, dir);
   }
-  // nume de net: firele si etichetele mono-net poarta numele netului ca data-id
+  // net name: the wires and mono-net labels carry the net's name as data-id
   const isNet =
     scene.edges.some((e) => e.net === id) ||
     scene.nodes.some((n) => n.pins.some((p) => p.nets.includes(id))) ||
@@ -734,8 +734,8 @@ export function coneOf(
   if (isNet) {
     return netCone(scene, { net: id }, dir);
   }
-  // pin: net-urile lui vin din eticheta (pin.nets) SAU din muchii (fir);
-  // conul e reuniunea; fara net identificabil, nodul proprietar tine loc
+  // pin: its nets come from the label (pin.nets) OR from edges (wire);
+  // the cone is the union; with no identifiable net, the owner node stands in
   for (const n of scene.nodes) {
     const pin = n.pins.find((p) => p.id === id);
     if (!pin) {
@@ -761,14 +761,14 @@ export function coneOf(
   return null;
 }
 
-/** rezolva `ref`-ul unei conexiuni de interfata la un nod sau la granita */
+/** resolves an interface connection's `ref` to a node or to the boundary */
 function resolveIfaceRef(
   ref: string,
   nodeOf: ReadonlyMap<string, string>,
   boundaryById: ReadonlyMap<string, SceneBPort>
 ): string | null {
-  // intai instantele de interfata din vedere (ref poate purta modportul:
-  // `bus_i.slave`), apoi porturile de interfata ale modulului vederii
+  // first the interface instances in the view (ref may carry the modport:
+  // `bus_i.slave`), then the interface ports of the view's module
   for (const [rel, nodeId] of nodeOf) {
     if (ref === rel || ref.startsWith(rel + ".")) {
       return nodeId;
@@ -779,7 +779,7 @@ function resolveIfaceRef(
   return bport ? bport.id : null;
 }
 
-// ------------------------------------------------------ construirea nodurilor
+// ------------------------------------------------------ building the nodes
 
 interface ConnInfo {
   note: string | null;
@@ -882,7 +882,7 @@ function makeFoldNode(
     if (list.every((c) => c === undefined)) {
       return { note: null, kind: null, tooltip: "" };
     }
-    // selecturi pe acelasi net de baza -> interval agregat `[lo..hi]`
+    // selects on the same base net -> aggregated interval `[lo..hi]`
     const idx = list.map((c) =>
       c && typeof c === "object" && c.kind === "select" && c.index !== null
         ? Number(c.index)

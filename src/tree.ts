@@ -1,31 +1,31 @@
-// Tree view-ul de ierarhie (nativ, in sidebar): arborele instantelor din
-// instances[], cu ID-urile stabile drept chei. Blocurile generate apar in
-// eticheta copilului (g_ch[1].u_ch sub u_soc), fara nod intermediar —
-// instances[] contine doar instante reale.
+// The hierarchy tree view (native, in the sidebar): the tree of instances from
+// instances[], with the stable IDs as keys. The generated blocks appear in
+// the child's label (g_ch[1].u_ch under u_soc), without an intermediate node —
+// instances[] contains only real instances.
 //
-// Deasupra top-ului sta o radacina sintetica „top module" (D24): selectarea
-// ei prezinta SIMBOLUL top-ului, iar restul nodurilor (cu nume) prezinta
-// SCHEMA interna a modulului (frunzele cad gratios pe simbol). Astfel exista
-// o diferentiere simbol/schema si la nivelul de top — care altfel nu se putea
-// reflecta in selectia din arbore (docs/05).
+// Above the top sits a synthetic "top module" root (D24): selecting
+// it shows the top's SYMBOL, while the rest of the nodes (with names) show
+// the module's internal SCHEMATIC (leaves fall gracefully onto the symbol). This way there is
+// a symbol/schematic differentiation at the top level too — which otherwise could not
+// be reflected in the tree selection (docs/05).
 
 import * as vscode from "vscode";
 import { Instance, ProjectModel } from "./model";
 
-/** cheia sintetica a radacinii „top module" (nu e o cale-instanta) */
+/** the synthetic key of the "top module" root (not an instance path) */
 export const TOP_ROOT_ID = "<top-module>";
 
 export interface InstanceNode {
-  /** absent doar pentru radacina sintetica „top module" */
+  /** absent only for the synthetic "top module" root */
   inst?: Instance;
-  /** true pentru radacina sintetica „top module" */
+  /** true for the synthetic "top module" root */
   synthetic?: boolean;
-  /** modulul are schema interna (views[path]) — decide comanda de deschidere */
+  /** the module has an internal schematic (views[path]) — decides the open command */
   hasSchematic?: boolean;
-  /** eticheta relativa la parinte (poate include segmentul generate) */
+  /** the label relative to the parent (may include the generate segment) */
   label: string;
   children: InstanceNode[];
-  /** parintele in arbore — cerut de TreeView.reveal (getParent) */
+  /** the parent in the tree — required by TreeView.reveal (getParent) */
   parent?: InstanceNode;
 }
 
@@ -45,12 +45,12 @@ export class HierarchyProvider implements vscode.TreeDataProvider<InstanceNode> 
     this.changeEmitter.fire();
   }
 
-  /** nodul instantei cu calea data (pentru reveal din diagrama) */
+  /** the node of the instance with the given path (for reveal from the diagram) */
   findNode(path: string): InstanceNode | undefined {
     return this.byPath.get(path);
   }
 
-  /** radacina sintetica „top module" (pentru reveal-ul simbolului top-ului) */
+  /** the synthetic "top module" root (for revealing the top's symbol) */
   topRoot(): InstanceNode | undefined {
     return this.root?.synthetic ? this.root : undefined;
   }
@@ -61,8 +61,8 @@ export class HierarchyProvider implements vscode.TreeDataProvider<InstanceNode> 
 
   getTreeItem(node: InstanceNode): vscode.TreeItem {
     if (node.synthetic) {
-      // radacina „top module": click -> simbolul top-ului; buton „Set top
-      // module" prin meniul contextual (contextValue)
+      // "top module" root: click -> the top's symbol; a "Set top
+      // module" button via the context menu (contextValue)
       const item = new vscode.TreeItem(
         node.label,
         vscode.TreeItemCollapsibleState.Expanded
@@ -99,8 +99,8 @@ export class HierarchyProvider implements vscode.TreeDataProvider<InstanceNode> 
     );
     item.id = inst.path;
     item.contextValue = "instance";
-    // un modul cu nume prezinta schema interna; frunza (fara schema) cade
-    // gratios pe simbol in webview, deci comanda schema e uniforma (docs/05)
+    // a module with a name shows the internal schematic; a leaf (without a schematic) falls
+    // gracefully onto the symbol in the webview, so the schematic command is uniform (docs/05)
     item.command = {
       command: node.hasSchematic
         ? "quickuvm.openSchematicView"
@@ -121,13 +121,13 @@ export class HierarchyProvider implements vscode.TreeDataProvider<InstanceNode> 
 }
 
 /**
- * Construieste arborele dupa prefixul cailor ierarhice. Parintele unei
- * instante e cea mai lunga cale-instanta care ii e prefix propriu — sare
- * natural peste segmentele generate (g_ch[1]), care nu sunt instante.
+ * Builds the tree by the prefix of the hierarchical paths. The parent of an
+ * instance is the longest instance path that is a proper prefix of it — it
+ * naturally skips over the generate segments (g_ch[1]), which are not instances.
  *
- * Deasupra top-ului (instantele fara parinte) se aseaza radacina sintetica
- * „top module": arborele expus are un singur root, iar top-ul designului sta
- * imediat sub el.
+ * Above the top (the instances without a parent) sits the synthetic
+ * "top module" root: the exposed tree has a single root, and the design's top sits
+ * immediately under it.
  */
 export function buildTree(model: ProjectModel): {
   roots: InstanceNode[];

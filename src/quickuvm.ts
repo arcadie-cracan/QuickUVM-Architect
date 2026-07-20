@@ -1,13 +1,13 @@
-// Tipurile subsetului de configuratie QuickUVM pe care il atinge extensia.
-// Referinta de schema: modelele Pydantic din quick_uvm/models.py (v1.0.0) si
-// docs/quickuvm-schema-reference.md (probata empiric pe build-ul 1.0.0);
-// docs/03-mapare-quickuvm.md ramane maparea gesturilor. Campurile-s optionale —
-// YAML-ul e scris si de mana; validarea autoritara ramane in QuickUVM
-// (Pydantic), extensia doar previne divergentele model<->YAML (docs/03).
+// The types of the QuickUVM config subset that the extension touches.
+// Schema reference: the Pydantic models in quick_uvm/models.py (v1.0.0) and
+// docs/quickuvm-schema-reference.md (probed empirically on the 1.0.0 build);
+// docs/03-mapare-quickuvm.md remains the gesture mapping. Fields are optional —
+// the YAML is also written by hand; the authoritative validation stays in QuickUVM
+// (Pydantic), the extension only prevents model<->YAML divergences (docs/03).
 
 export interface QuvmPort {
   name?: string;
-  /** implicit 1 in QuickUVM; extensia omite width la porturile de 1 bit */
+  /** defaults to 1 in QuickUVM; the extension omits width on 1-bit ports */
   width?: number;
   randomize?: boolean;
 }
@@ -26,15 +26,15 @@ export interface QuvmDut {
   clock?: string;
   reset?: string;
   combinational?: boolean;
-  /** porturi DUT scoase deliberat din scopul verificarii (waiver, quick-uvm
-   *  >= 1.0.0; inlocuieste vechiul bloc `x_quickuvm_architect.ignored_ports`
-   *  pe care 1.0 il respinge — extra="forbid" peste tot) */
+  /** DUT ports deliberately taken out of the verification scope (waiver, quick-uvm
+   *  >= 1.0.0; replaces the old `x_quickuvm_architect.ignored_ports` block
+   *  that 1.0 rejects — extra="forbid" everywhere) */
   unverified_ports?: string[];
 }
 
-/** configul resetului unic — cheia TOP-LEVEL `reset:` (quick-uvm >= 1.0.0):
- *  polaritatea/externalitatea NU mai stau pe `dut` (dut.reset e doar numele
- *  portului, ca dut.clock); forma lista = domenii multi-reset */
+/** the single-reset config — the TOP-LEVEL `reset:` key (quick-uvm >= 1.0.0):
+ *  polarity/externality NO longer live on `dut` (dut.reset is only the port
+ *  name, like dut.clock); the list form = multi-reset domains */
 export interface QuvmReset {
   active_low?: boolean;
   external?: boolean;
@@ -45,7 +45,7 @@ export interface QuvmTest {
   num_items?: number;
 }
 
-/** analiza declarativa C1/A2: scoreboard cu flux sursa (+ monitor la A2) */
+/** declarative analysis C1/A2: scoreboard with a source stream (+ monitor at A2) */
 export interface QuvmScoreboard {
   name?: string;
   source?: string;
@@ -56,7 +56,7 @@ export interface QuvmScoreboard {
 }
 
 export interface QuvmAnalysis {
-  /** numele agentilor care primesc colector de coverage */
+  /** the names of the agents that get a coverage collector */
   coverage?: string[];
   scoreboards?: QuvmScoreboard[];
 }
@@ -66,14 +66,14 @@ export interface QuvmVseqStep {
   sequence?: string;
 }
 
-/** secventa virtuala C2: coordoneaza sub-secvente per agent prin vsqr */
+/** virtual sequence C2: coordinates per-agent sub-sequences through the vsqr */
 export interface QuvmVseq {
   name?: string;
   mode?: "sequential" | "parallel";
   body?: QuvmVseqStep[];
 }
 
-/** proba whitebox K2 (observe-only, cale relativa la instanta DUT) */
+/** whitebox probe K2 (observe-only, path relative to the DUT instance) */
 export interface QuvmProbe {
   name?: string;
   path?: string;
@@ -81,24 +81,24 @@ export interface QuvmProbe {
   coverage?: boolean;
   real?: boolean;
   clock?: string;
-  /** campul observat refoloseste masinaria de tipuri PortConfig (S1) */
+  /** the observed field reuses the PortConfig type machinery (S1) */
   enum?: Record<string, number>;
   type?: string;
   packed_dims?: number[];
   struct?: unknown[];
 }
 
-/** fir intre blocuri compuse (H1): `<bloc>.<port>` -> `<bloc>.<port>` */
+/** wire between composed blocks (H1): `<bloc>.<port>` -> `<bloc>.<port>` */
 export interface QuvmConnection {
   from?: string;
   to?: string;
 }
 
-/** compunere H1: un bloc copil referit prin calea config-ului sau (docs/03) */
+/** composition H1: a child block referenced through its config path (docs/03) */
 export interface QuvmSubenv {
   name?: string;
   config?: string;
-  /** schema QuickUVM cere dict[str, int] */
+  /** the QuickUVM schema requires dict[str, int] */
   params?: Record<string, number>;
   namespace?: boolean | string;
 }
@@ -106,15 +106,15 @@ export interface QuvmSubenv {
 export interface QuvmConfig {
   project?: { name?: string };
   dut?: QuvmDut;
-  /** un obiect (azi) sau o lista de domenii (M1 multi-clock) */
+  /** an object (today) or a list of domains (M1 multi-clock) */
   clock?: { period?: number; unit?: string } | unknown[];
-  /** mapare (resetul unic) sau lista de domenii — NU se colapseaza lista de
-   *  1 element la mapare: formele au semantici diferite (schema-reference) */
+  /** mapping (the single reset) or a list of domains — a 1-element list is NOT
+   *  collapsed into a mapping: the forms have different semantics (schema-reference) */
   reset?: QuvmReset | unknown[];
   agents?: QuvmAgent[];
   tests?: QuvmTest[];
   analysis?: QuvmAnalysis;
-  /** implicit pornit in QuickUVM: vseq sintetizat la >=2 agenti activi */
+  /** on by default in QuickUVM: vseq synthesized at >=2 active agents */
   auto_virtual_sequences?: boolean;
   virtual_sequences?: QuvmVseq[];
   probes?: QuvmProbe[];
@@ -122,9 +122,9 @@ export interface QuvmConfig {
   connections?: QuvmConnection[];
 }
 
-/** Un scoreboard cross-bloc = intrare `analysis.scoreboards` cu capete
- *  calificate `<subenv>.<agent>` (quick-uvm >= 1.0.0 — cheia top-level
- *  `subenv_scoreboards` NU mai exista; 1.0 o respinge cu eroare-ghid). */
+/** A cross-block scoreboard = an `analysis.scoreboards` entry with endpoints
+ *  qualified `<subenv>.<agent>` (quick-uvm >= 1.0.0 — the top-level
+ *  `subenv_scoreboards` key NO longer exists; 1.0 rejects it with a teaching error). */
 export function isCrossBlockSb(
   sb: QuvmScoreboard,
   subenvNames: ReadonlySet<string>
@@ -137,7 +137,7 @@ export function isCrossBlockSb(
   return dotted(sb.source) || dotted(sb.monitor);
 }
 
-/** Porturile unui agent, aplatizate (nume -> latime declarata). */
+/** An agent's ports, flattened (name -> declared width). */
 export function agentPorts(agent: QuvmAgent): Map<string, number> {
   const out = new Map<string, number>();
   for (const p of [

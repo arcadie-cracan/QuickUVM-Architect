@@ -1,5 +1,5 @@
-// Teste Node pentru arborele de verificare pe niveluri (src/tbtree-build.ts —
-// pur, fara vscode): npm run test:tbtree
+// Node tests for the leveled verification tree (src/tbtree-build.ts —
+// pure, no vscode): npm run test:tbtree
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -65,10 +65,10 @@ test("radacina Testbench, cu DUT + Env; Env cu agenti", () => {
 test("nav: containerele deschid nivelul lor; frunzele deschid parintele + select", () => {
   const env = find(roots, (n) => n.label === "Env");
   assert.equal(env.focus, "env");
-  assert.equal(env.selectId, null); // click pe Env -> deschide nivelul env
+  assert.equal(env.selectId, null); // click on Env -> opens the env level
   const seq = find(roots, (n) => n.label === "sequencer");
-  assert.equal(seq.focus, "agent:cmd"); // deschide nivelul agentului
-  assert.equal(seq.selectId, "u.sequencer"); // si selecteaza sequencer-ul
+  assert.equal(seq.focus, "agent:cmd"); // opens the agent level
+  assert.equal(seq.selectId, "u.sequencer"); // and selects the sequencer
   const sb = find(roots, (n) => n.label === "sbd");
   assert.equal(sb.focus, "env");
   assert.equal(sb.selectId, "sb:sbd");
@@ -79,11 +79,11 @@ test("nav: containerele deschid nivelul lor; frunzele deschid parintele + select
 
 test("indici de reveal: byFocus (drill) + byIdent (selectie)", () => {
   assert.ok(byFocus.get("") && byFocus.get("env") && byFocus.get("agent:cmd"));
-  // reveal blocul agent:cmd selectat la nivelul env
+  // reveal the selected agent:cmd block at the env level
   assert.equal(byIdent.get("env|agent:cmd")?.focus, "agent:cmd");
-  // reveal sequencer selectat la nivelul agentului
+  // reveal the selected sequencer at the agent level
   assert.equal(byIdent.get("agent:cmd|u.sequencer")?.label, "sequencer");
-  // reveal dut la nivelul top
+  // reveal dut at the top level
   assert.equal(byIdent.get("|dut")?.label, "soc_top");
 });
 

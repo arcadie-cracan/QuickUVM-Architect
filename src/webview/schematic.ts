@@ -1,7 +1,7 @@
-// Vederea de interior: layout ELK (layered, stanga->dreapta, rutare
-// ortogonala) si desen SVG pentru scena construita de scene.ts. Muchiile
-// vin din ELK la layoutul complet — ruterul independent de pozitii e pasul
-// urmator al fazei 3 (docs/04); aici pozitiile sunt inca cele calculate.
+// The interior view: ELK layout (layered, left->right, orthogonal
+// routing) and SVG drawing for the scene built by scene.ts. The edges
+// come from ELK at full layout — the position-independent router is the
+// next step of phase 3 (docs/04); here the positions are still the computed ones.
 
 import type { ElkNode } from "elkjs/lib/elk.bundled.js";
 import type {
@@ -16,11 +16,11 @@ import { splitLabel } from "./scene";
 import { Rect, route, RouteRequest } from "./router";
 import { el } from "./svg";
 
-/** eticheta de port ca <text> cu dimensiunile packed/unpacked intr-o nuanta
- *  discreta (tspan `.dim`), numele in culoarea plina — compacta (fara spatii),
- *  dar lizibila prin contrast de nuanta (cererea utilizatorului, iul. 2026).
- *  Nuanta e `fill-opacity` pe tspan, deci urmeaza culoarea numelui la
- *  hover/select/iface, nu o culoare fixa. */
+/** a port label as <text> with the packed/unpacked dimensions in a subtle
+ *  shade (tspan `.dim`), the name in the full color — compact (without spaces),
+ *  but readable through the shade contrast (user request, Jul. 2026).
+ *  The shade is `fill-opacity` on the tspan, so it follows the name's color at
+ *  hover/select/iface, not a fixed color. */
 export function portLabelText(
   attrs: Record<string, string>,
   label: string,
@@ -38,12 +38,12 @@ export function portLabelText(
   return el("text", attrs, ...spans);
 }
 
-/** centreaza vertical semnul `{}`/`[]` in dreptunghiul chip-ului, DUPA randare
- *  (getBBox cere elementele in DOM). `dominant-baseline: central` centreaza
- *  corect in fontul de fallback, dar depinde de metrica fontului si poate lasa
- *  parantezele usor descentrate in unele fonturi de editor — masuram cutia
- *  reala a semnului si a dreptunghiului si nudge-uim. Idempotent per randare
- *  (semnele se recreeaza la fiecare desen cu y=py, deci nu se acumuleaza). */
+/** vertically centers the `{}`/`[]` sign in the chip's rectangle, AFTER rendering
+ *  (getBBox requires the elements in the DOM). `dominant-baseline: central` centers
+ *  correctly in the fallback font, but depends on the font metrics and can leave
+ *  the brackets slightly off-center in some editor fonts — we measure the real box
+ *  of the sign and of the rectangle and nudge. Idempotent per render
+ *  (the signs are recreated on every draw with y=py, so they don't accumulate). */
 export function centerChipSigns(root: ParentNode): void {
   root
     .querySelectorAll<SVGTextElement>("text.split-sign")
@@ -63,15 +63,15 @@ export function centerChipSigns(root: ParentNode): void {
           sign.setAttribute("y", String(y + delta));
         }
       } catch {
-        // getBBox poate esua daca elementul nu e inca randat; ignoram
+        // getBBox may fail if the element is not yet rendered; we ignore
       }
     });
 }
 
-/** lungimea liniei de pin in afara dreptunghiului, in vederea-schema */
+/** the length of the pin line outside the rectangle, in the schematic view */
 const STUB = 10;
-/** geometria chip-ului concat/select: GAP fata de capatul stub-ului, latime,
- *  inaltime (folosite si de MARKER_STUB si de ancora firului) */
+/** the concat/select chip geometry: GAP from the stub's end, width,
+ *  height (used by MARKER_STUB and the wire anchor too) */
 const MARKER_GAP = 8;
 const MARKER_CW = 18;
 const MARKER_CH = 14;
@@ -83,41 +83,41 @@ const MARKER_CH = 14;
  *  pin visibly pierces the rectangle"). 12 puts the tip at 48 = a multiple of 8,
  *  so the wire anchor lands ON THE GRID (docs/04) */
 const MARKER_TAIL = 12;
-/** capatul stub-ului SI ancora firului pentru pinii cu marcator concat/select:
- *  dincolo de chip (STUB+GAP+CW=36) cu MARKER_TAIL (=48, pe grila). Astfel:
- *  (1) trunchiul fanout-ului se leaga dincolo de marcator (nu-l mai taie pe
- *  verticala), iar stub-ul orizontal il traverseaza in directia portului;
- *  (2) tranzitia de grosime stub-port (subtire) -> muchie-net (gros) cade la
- *  VARF, coliniara cu firul (fara colt), deci nu produce imbinari rupte —
- *  nota veche „tranzitia sub chip" e INLOCUITA de cererea mai noua (pinul
- *  vizibil dincolo de chip bate ascunderea tranzitiei) */
+/** the stub's end AND the wire anchor for the concat/select marker pins:
+ *  beyond the chip (STUB+GAP+CW=36) with MARKER_TAIL (=48, on the grid). Thus:
+ *  (1) the fanout trunk connects beyond the marker (no longer cutting it on the
+ *  vertical), and the horizontal stub traverses it toward the port;
+ *  (2) the stub-port thickness transition (thin) -> net-edge (thick) falls at the
+ *  TIP, collinear with the wire (no corner), so it produces no broken joints —
+ *  the old note "the transition under the chip" is SUPERSEDED by the newer request (the pin
+ *  visible beyond the chip beats hiding the transition) */
 const MARKER_STUB = STUB + MARKER_GAP + MARKER_CW + MARKER_TAIL;
-/** inaltimea unui port de granita (centrul la multiplu de 8, ca pinii) */
+/** the height of a boundary port (center at a multiple of 8, like the pins) */
 const BPORT_H = 16;
 
-// Geometria pinilor pe grila de 8 (conventia EDA: pinii se agata de grila,
-// nu cutia). Porturile sunt FIXED_POS, calculate aici — ELK nu ofera control
-// suficient (portsSurrounding e ignorat la plasare, etichetele INSIDE umfla
-// pasul); pretul e ca pinii raman in ordinea declaratiei, ceea ce e chiar
-// norma din schematics (override-urile de ordine vin in faza 4, nivelul 2).
-// Colt pe grila => toti pinii pe grila => pin aliniat = fir drept.
-/** centrul primului pin, sub banda de titlu (multiplu de 8) */
+// The pin geometry on the grid of 8 (EDA convention: pins snap to the grid,
+// not the box). The ports are FIXED_POS, computed here — ELK does not offer
+// enough control (portsSurrounding is ignored at placement, the INSIDE labels
+// inflate the step); the price is that the pins stay in declaration order, which is
+// exactly the norm in schematics (the order overrides come in phase 4, level 2).
+// Corner on the grid => all pins on the grid => aligned pin = straight wire.
+/** the center of the first pin, below the title band (multiple of 8) */
 const PIN_TOP = 40;
-/** pasul dintre centrele pinilor. MULTIPLU DE 8 obligatoriu (pin pe grila =
- *  fir drept, docs/04); 24 (nu 16) da aer decoratiilor — latimi `/N`, glife
- *  const/split-join, cercuri nc — care la 16 se calcau intre randuri
- *  (observatie la validare) */
+/** the step between pin centers. MULTIPLE OF 8 mandatory (pin on the grid =
+ *  straight wire, docs/04); 24 (not 16) gives room to the decorations — `/N` widths,
+ *  const/split-join glyphs, nc circles — which at 16 trod on each other between rows
+ *  (observation at validation) */
 const PIN_PITCH = 24;
 
-/** rotunjire in sus la multiplu de grila */
+/** round up to a multiple of the grid */
 function ceilGrid(v: number): number {
   return Math.ceil(v / 8) * 8;
 }
 
 /**
- * Clasa CSS de gradare pe clase de latime (docs/04, vocabular de desen): un
- * fir/pin de bus e cu atat mai gros cu cat semnalul e mai lat. `null`/1 =
- * fir simplu (fara clasa). Praguri: 2-8 (w-s), 9-16 (w-m), >16 (w-l).
+ * The CSS class for grading by width classes (docs/04, drawing vocabulary): a
+ * bus wire/pin is thicker the wider the signal is. `null`/1 =
+ * simple wire (no class). Thresholds: 2-8 (w-s), 9-16 (w-m), >16 (w-l).
  */
 export function widthClass(w: number | null): string {
   if (w === null || w <= 1) {
@@ -132,16 +132,16 @@ export function widthClass(w: number | null): string {
   return "w-l";
 }
 
-/** latimea glifei de adnotare (const-box, chip split/join) dincolo de text, in
- *  px — acopera si GAP-ul cu care chip-ul concat/select se departeaza de port */
+/** the width of the annotation glyph (const-box, split/join chip) beyond the text, in
+ *  px — it also covers the GAP by which the concat/select chip distances itself from the port */
 const GLYPH_W = 22;
 
 /**
- * Glifele adnotarii unui pin la capatul liber al stub-ului (vocabular de desen,
- * docs/04): `nc` cerc gol, `const` cutie tie-cell cu valoarea, `select`/`concat`
- * pana netlistsvg (split ingusteaza spre exterior, join largeste) + eticheta,
- * restul (`expr`/`mixed`) text simplu. Alege glifa dupa `noteKind`, nu dupa
- * textul notei. `xOut` = capatul liber; `west` = latura vest (glifa spre stanga).
+ * The glyphs of a pin's annotation at the stub's free end (drawing vocabulary,
+ * docs/04): `nc` empty circle, `const` tie-cell box with the value, `select`/`concat`
+ * netlistsvg wedge (split narrows outward, join widens) + label,
+ * the rest (`expr`/`mixed`) plain text. Chooses the glyph by `noteKind`, not by
+ * the note's text. `xOut` = the free end; `west` = the west side (glyph toward the left).
  */
 function drawAnnotation(
   spec: ScenePin,
@@ -170,7 +170,7 @@ function drawAnnotation(
       spec.note ?? ""
     );
   if (kind === "const") {
-    // cutie tie-cell cu valoarea (fara `=`), lipita de capatul stub-ului
+    // tie-cell box with the value (without `=`), stuck to the stub's end
     const val = (spec.note ?? "").replace(/^=/, "");
     const bw = Math.max(16, val.length * 6 + 8);
     const bx = west ? xOut - bw : xOut;
@@ -192,18 +192,18 @@ function drawAnnotation(
     ];
   }
   if (kind === "select" || kind === "concat") {
-    // chip cu perechea de paranteze SV (decizia de vocabular, iul. 2026):
-    // concat = `{}` (acolade), select = `[]` (paranteze drepte) — chiar
-    // operatorii din sursa, fara mnemonic. Contur de accent, categoric
-    // adnotare (nu fir), fara varf orientat de-a lungul firului -> nu se
-    // confunda cu sageata de directie a firelor (pana plina veche o facea).
-    // Textul {…}/[hi:lo] ramane purtatorul de sens la `decorations off`
-    // (chip-ul e decoratie, ascuns acolo; nota nu se scoate).
-    // chip departat de capatul stub-ului cu MARKER_GAP (altfel coltul de sus se
-    // suprapunea cu eticheta de latime / nota); dimensiunile si stub-ul extins
-    // vin din constantele de modul MARKER_*
+    // chip with the pair of SV brackets (vocabulary decision, Jul. 2026):
+    // concat = `{}` (braces), select = `[]` (square brackets) — the very
+    // operators from the source, without a mnemonic. Accent outline, decidedly
+    // an annotation (not a wire), without a tip oriented along the wire -> it is not
+    // confused with the wires' direction arrow (the old solid wedge did that).
+    // The {…}/[hi:lo] text remains the carrier of meaning at `decorations off`
+    // (the chip is decoration, hidden there; the note is not removed).
+    // chip distanced from the stub's end by MARKER_GAP (otherwise the top corner
+    // overlapped with the width label / note); the dimensions and the extended stub
+    // come from the module constants MARKER_*
     const brackets = kind === "concat" ? "{}" : "[]";
-    const inner = xOut + out * MARKER_GAP; // marginea dinspre bloc a chip-ului
+    const inner = xOut + out * MARKER_GAP; // the chip's block-facing edge
     const cx = inner + out * (MARKER_CW / 2);
     const bx = west ? inner - MARKER_CW : inner;
     return [
@@ -220,11 +220,11 @@ function drawAnnotation(
         {
           class: "split-sign",
           x: String(cx),
-          // y aproximativ centrat ca fallback; centrarea fina o face
-          // `centerChipSigns` dupa randare. NU folosim `dominant-baseline`:
-          // getBBox + dominant-baseline difera intre versiuni de Chromium
-          // (harness vs webview VSCode), iar nudge-ul iesea gresit; cu baseline
-          // alfabetic getBBox e fiabil peste tot
+          // y approximately centered as a fallback; the fine centering is done by
+          // `centerChipSigns` after rendering. We do NOT use `dominant-baseline`:
+          // getBBox + dominant-baseline differ between Chromium versions
+          // (harness vs webview VSCode), and the nudge came out wrong; with the
+          // alphabetic baseline getBBox is reliable everywhere
           y: String(py + 3),
           "text-anchor": "middle",
         },
@@ -233,14 +233,14 @@ function drawAnnotation(
       noteText(inner + out * (MARKER_CW + 3)),
     ];
   }
-  // expr / mixed / alta nota fara glifa dedicata: text simplu
+  // expr / mixed / another note without a dedicated glyph: plain text
   return spec.note ? [noteText(xOut + out * 3)] : [];
 }
 
-/** estimarea latimii textelor exterioare ale unui pin (eticheta de net +
- *  adnotarea de conexiune), fara masurator DOM — suficient pentru margini
- *  si obstacole de rutare. Glifele de adnotare (const/select/concat) adauga
- *  o alocare fixa peste text, ca ELK sa lase margine si ruterul sa le rezerve */
+/** estimating the width of a pin's exterior texts (net label +
+ *  connection annotation), without a DOM measurer — enough for margins
+ *  and routing obstacles. The annotation glyphs (const/select/concat) add
+ *  a fixed allocation on top of the text, so ELK leaves a margin and the router reserves them */
 function estPinText(pin: {
   netLabel: string | null;
   note: string | null;
@@ -250,7 +250,7 @@ function estPinText(pin: {
   mult?: string | null;
 }): number {
   const annot = [pin.netLabel, pin.note].filter(Boolean).join(" ");
-  // eticheta de latime (ancorata la slash, mx = STUB/2 de la bloc, spre exterior)
+  // the width label (anchored at the slash, mx = STUB/2 from the block, toward the exterior)
   const wtxt = (pin.bus && pin.width ? `${pin.width}` : "") + (pin.mult ?? "");
   if (!annot && !wtxt) {
     return 0;
@@ -272,19 +272,19 @@ interface ElkLike {
 
 // ----------------------------------------------------------------- layout
 
-/** starea de rasturnare a unui nod (docs/04) */
+/** the flip state of a node (docs/04) */
 export interface Flip {
   h: boolean;
   v: boolean;
 }
 
 /**
- * Layoutul schemei. Fara `seeds`, ELK layered complet (prima deschidere).
- * Cu `seeds` (pozitiile detinute de utilizator, docs/04), ELK ruleaza in
- * mod interactiv: pozitiile date devin semintele layering-ului si ale
- * ordonarii, astfel incat DOAR elementele noi primesc pozitii, inserate in
- * contextul celor existente; apelantul forteaza apoi semintele exact
- * (ELK interactiv le poate deplasa usor).
+ * The schematic layout. Without `seeds`, a full ELK layered (first opening).
+ * With `seeds` (the user-owned positions, docs/04), ELK runs in
+ * interactive mode: the given positions become the seeds of the layering and
+ * of the ordering, so that ONLY the new elements receive positions, inserted in
+ * the context of the existing ones; the caller then forces the seeds exactly
+ * (interactive ELK may shift them slightly).
  */
 export async function layoutSchematic(
   elk: ElkLike,
@@ -298,16 +298,16 @@ export async function layoutSchematic(
   for (const b of scene.boundary) {
     children.push({
       id: b.id,
-      // latime pe grila: ancora steagului (varful/baza) cade pe grila, ca
-      // traseele sa fie integral ortogonale pe grid. Padding-ul (16 = margine
-      // + varful de 9px al steagului) e strans dar lasa eticheta sa nu atinga
-      // varful; ceilGrid rotunjeste la 8
+      // width on the grid: the flag's anchor (the tip/base) falls on the grid, so
+      // the routes are entirely orthogonal on the grid. The padding (16 = margin
+      // + the flag's 9px tip) is tight but keeps the label from touching the
+      // tip; ceilGrid rounds to 8
       width: ceilGrid(measure(b.label, true) + 16),
       height: BPORT_H,
       layoutOptions: {
-        // straturi dedicate exclusiv granitei (FIRST/LAST simplu ar amesteca
-        // instantele fara muchii de intrare — net-uri etichetate — printre
-        // steagurile de porturi)
+        // layers dedicated exclusively to the boundary (a plain FIRST/LAST would mix
+        // the instances without input edges — labeled nets — among the
+        // port flags)
         "elk.layered.layering.layerConstraint":
           b.side === "WEST" ? "FIRST_SEPARATE" : "LAST_SEPARATE",
       },
@@ -318,9 +318,9 @@ export async function layoutSchematic(
     const flip = flips?.get(n.id) ?? { h: false, v: false };
     const west = n.pins.filter((p) => p.side === "WEST");
     const east = n.pins.filter((p) => p.side === "EAST");
-    // rasturnarea reatribuie sloturile de pin (docs/04): orizontal schimba
-    // laturile intre ele, vertical inverseaza ordinea pe fiecare latura;
-    // sloturile de grila si textul raman neschimbate
+    // the flip reassigns the pin slots (docs/04): horizontal swaps the
+    // sides between them, vertical reverses the order on each side;
+    // the grid slots and the text stay unchanged
     let effWest = flip.h ? east : west;
     let effEast = flip.h ? west : east;
     if (flip.v) {
@@ -328,7 +328,7 @@ export async function layoutSchematic(
       effEast = [...effEast].reverse();
     }
     const rows = Math.max(effWest.length, effEast.length, 1);
-    const height = 56 + PIN_PITCH * (rows - 1); // 56, 72, ... (grila 8)
+    const height = 56 + PIN_PITCH * (rows - 1); // 56, 72, ... (grid 8)
     const maxW = Math.max(0, ...effWest.map((p) => measure(p.label, true)));
     const maxE = Math.max(0, ...effEast.map((p) => measure(p.label, true)));
     const width = ceilGrid(
@@ -344,11 +344,11 @@ export async function layoutSchematic(
       width: 8,
       height: 8,
       x,
-      y: PIN_TOP + i * PIN_PITCH - 4, // centrul la PIN_TOP + i*PIN_PITCH
+      y: PIN_TOP + i * PIN_PITCH - 4, // center at PIN_TOP + i*PIN_PITCH
     });
-    // textele exterioare (etichete de net, adnotari) intra ca margini in
-    // layout: ELK lasa loc pentru ele intre straturi, altfel canalele
-    // proaspete raman prea stramte pentru rutare
+    // the exterior texts (net labels, annotations) enter as margins in the
+    // layout: ELK leaves room for them between the layers, otherwise the fresh
+    // channels stay too narrow for routing
     const marginW = Math.max(0, ...effWest.map(estPinText));
     const marginE = Math.max(0, ...effEast.map(estPinText));
     children.push({
@@ -382,16 +382,16 @@ export async function layoutSchematic(
       "elk.algorithm": "layered",
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
-      // fara separare pe componente conexe: porturile de granita fara muchii
-      // (net-uri etichetate) trebuie sa respecte tot FIRST/LAST, nu sa fie
-      // impachetate separat
+      // without separation by connected components: the boundary ports without edges
+      // (labeled nets) must still respect FIRST/LAST, not be
+      // packed separately
       "elk.separateConnectedComponents": "false",
-      // cu seminte: mod interactiv (docs/04) — pozitiile date ordoneaza
-      // straturile si randurile, doar elementele noi primesc pozitii.
-      // cycleBreaking ramane implicit: varianta INTERACTIVE inverseaza
-      // muchii dupa pozitii si intra in conflict cu LAST_SEPARATE pe
-      // steagurile granitei (directiile muchiilor noastre sunt oricum
-      // fixe semantic, driver -> destinatie)
+      // with seeds: interactive mode (docs/04) — the given positions order
+      // the layers and the rows, only the new elements receive positions.
+      // cycleBreaking stays default: the INTERACTIVE variant reverses
+      // edges by positions and conflicts with LAST_SEPARATE on
+      // the boundary flags (our edge directions are anyway
+      // semantically fixed, driver -> destination)
       ...(seeds?.size
         ? {
             "elk.interactive": "true",
@@ -400,8 +400,8 @@ export async function layoutSchematic(
             "elk.layered.nodePlacement.strategy": "INTERACTIVE",
           }
         : { "elk.layered.layering.strategy": "LONGEST_PATH" }),
-      // spatieri corelate cu haloul de rutare (16px pe fiecare bloc):
-      // intre doua halouri trebuie sa incapa cel putin un culoar de fir
+      // spacings correlated with the routing halo (16px on each block):
+      // between two halos at least one wire lane must fit
       "elk.layered.spacing.nodeNodeBetweenLayers": "88",
       "elk.spacing.nodeNode": "48",
       "elk.spacing.edgeNode": "18",
@@ -418,19 +418,19 @@ export async function layoutSchematic(
   return elk.layout(graph);
 }
 
-// ------------------------------------------------------------------ desen
+// ------------------------------------------------------------------ drawing
 
 export interface SchematicHooks {
-  /** click pe butonul de pliere/expandare al unui pliaj generate */
+  /** click on the fold/expand button of a generated fold */
   onToggleFold(foldId: string): void;
 }
 
 /**
- * Deseneaza scena in viewport si intoarce grupul muchiilor (pentru
- * re-rutarea live in timpul drag-ului). Traseele vin intotdeauna din
- * ruterul propriu (docs/04) — un singur comportament de rutare, cu halou
- * si etichete protejate, indiferent daca vederea are sau nu override-uri;
- * ELK da doar pozitiile nodurilor.
+ * Draws the scene in the viewport and returns the edges group (for
+ * live re-routing during the drag). The routes always come from
+ * the own router (docs/04) — a single routing behavior, with halo
+ * and protected labels, regardless of whether the view has overrides or not;
+ * ELK gives only the node positions.
  */
 export function drawSchematic(
   scene: SchematicScene,
@@ -441,7 +441,7 @@ export function drawSchematic(
   const nodeById = new Map(scene.nodes.map((n) => [n.id, n]));
   const bportById = new Map(scene.boundary.map((b) => [b.id, b]));
 
-  // muchiile primele, ca nodurile sa se deseneze peste trasee
+  // the edges first, so the nodes draw over the routes
   const edgesGroup = el("g", { class: "edges" });
   viewport.append(edgesGroup);
   routeEdges(scene, layout, edgesGroup);
@@ -464,21 +464,21 @@ export function drawSchematic(
   return edgesGroup;
 }
 
-// ------------------------------------------------------------------ muchii
+// ------------------------------------------------------------------ edges
 
 function edgeElement(spec: SceneEdge, d: string): SVGGElement {
-  // gradare pe clasa de latime: firul de bus e cu atat mai gros (docs/04)
+  // grading by width class: the bus wire is thicker (docs/04)
   const g = el("g", {
     class: `edge ${spec.kind} ${widthClass(spec.width)}`.trimEnd(),
   });
-  // ID stabil pentru selectie: numele net-ului in scope-ul vederii
+  // stable ID for selection: the net's name in the view's scope
   if (spec.net) {
     g.dataset.id = spec.net;
   }
   g.append(
-    // fara sageata de directie in vederea-schema: sensul e implicit din latura
-    // portului (intrari pe vest, iesiri pe est) — decizia utilizatorului. In
-    // vederea TB sagetile raman (steagurile disting in/out/inout).
+    // no direction arrow in the schematic view: the direction is implicit from the
+    // port's side (inputs on west, outputs on east) — the user's decision. In
+    // the TB view the arrows remain (the flags distinguish in/out/inout).
     el("path", {
       class: "edge-line",
       d,
@@ -491,24 +491,24 @@ function edgeElement(spec: SceneEdge, d: string): SVGGElement {
 interface Anchor {
   x: number;
   y: number;
-  /** directia orizontala in care pinul "iese" din nod (+1 est, -1 vest) */
+  /** the horizontal direction in which the pin "exits" the node (+1 east, -1 west) */
   dir: 1 | -1;
 }
 
 /**
- * Obstacolele ruterului, derivate din scena + layout (PUR, testat in
- * test:router): dreptunghiurile tuturor nodurilor si steagurilor, plus
- * zonele de text din afara blocurilor (etichete de net, adnotari de
- * conexiune) — traseele altor net-uri nu trec peste numele porturilor.
- * Doua capcane reale traiesc aici (docs/04, CLAUDE.md):
- * - inaltimea obstacolului de text = un pas de pin (PIN_PITCH, nu mai mult):
- *   un obstacol mai inalt sangereaza in randul pinului vecin si-i forteaza
- *   firul pe un ocol inutil in scara;
- * - pinii care sunt capete ale unei muchii-fir NU devin obstacole: adnotarea
- *   lor (select `[N]`, concat) sta chiar pe traseul propriului fir, ca
- *   eticheta lui — altfel firul isi ocoleste propria eticheta cu coturi
- *   inutile. Adnotarile pinilor FARA fir (const `=1'b1`, nc, etichete de
- *   net) raman obstacole MOI pentru firele ALTOR net-uri.
+ * The router's obstacles, derived from the scene + layout (PURE, tested in
+ * test:router): the rectangles of all nodes and flags, plus
+ * the text zones outside the blocks (net labels, connection
+ * annotations) — other nets' routes do not pass over the port names.
+ * Two real pitfalls live here (docs/04, CLAUDE.md):
+ * - the text obstacle's height = one pin step (PIN_PITCH, no more):
+ *   a taller obstacle bleeds into the neighboring pin's row and forces its
+ *   wire onto a useless staircase detour;
+ * - the pins that are endpoints of a wire-edge do NOT become obstacles: their
+ *   annotation (select `[N]`, concat) sits right on its own wire's route, as
+ *   its label — otherwise the wire detours around its own label with useless
+ *   bends. The annotations of pins WITHOUT a wire (const `=1'b1`, nc, net
+ *   labels) remain SOFT obstacles for OTHER nets' wires.
  */
 export function edgeObstacles(
   scene: SchematicScene,
@@ -544,7 +544,7 @@ export function edgeObstacles(
         continue;
       }
       if (wirePins.has(port.id)) {
-        continue; // firul propriu coexista cu eticheta pinului
+        continue; // the pin's own wire coexists with the pin's label
       }
       const w = estPinText(pin);
       if (!w) {
@@ -553,8 +553,8 @@ export function edgeObstacles(
       const west =
         (port.x ?? 0) + (port.width ?? 0) / 2 < (child.width ?? 0) / 2;
       const py = (child.y ?? 0) + (port.y ?? 0) + (port.height ?? 0) / 2;
-      // obstacol MOALE (cost, nu zid): in canale stramte ruterul trece
-      // peste eticheta in loc sa cada pe fallback prin blocuri
+      // SOFT obstacle (cost, not wall): in narrow channels the router passes
+      // over the label instead of falling to the fallback through blocks
       obstacles.push({
         x: west ? (child.x ?? 0) - w : (child.x ?? 0) + (child.width ?? 0),
         y: py - PIN_PITCH / 2,
@@ -568,10 +568,10 @@ export function edgeObstacles(
 }
 
 /**
- * Re-ruteaza toate muchiile dupa pozitiile curente din `layout.children`:
- * ruterul A* pe grila (docs/04) ocoleste nodurile, cu fallback naiv in Z
- * per muchie fara drum gasit. Goleste si repopuleaza grupul — apelabila
- * la fiecare pas de drag.
+ * Re-routes all edges by the current positions in `layout.children`:
+ * the A* router on the grid (docs/04) avoids the nodes, with a naive Z fallback
+ * per edge with no path found. Empties and repopulates the group — callable
+ * on every drag step.
  */
 export function routeEdges(
   scene: SchematicScene,
@@ -581,9 +581,9 @@ export function routeEdges(
   group.replaceChildren();
   const childById = new Map((layout.children ?? []).map((c) => [c.id, c]));
   const bportById = new Map(scene.boundary.map((b) => [b.id, b]));
-  // pinii cu marcator concat/select: firul se ancoreaza DINCOLO de chip
-  // (MARKER_STUB), ca trunchiul sa se lege la stanga marcatorului si stub-ul
-  // orizontal sa-l traverseze (cererea utilizatorului)
+  // the concat/select marker pins: the wire anchors BEYOND the chip
+  // (MARKER_STUB), so the trunk connects to the left of the marker and the
+  // horizontal stub traverses it (user request)
   const markerPins = new Set<string>();
   for (const n of scene.nodes) {
     for (const p of n.pins) {
@@ -603,7 +603,7 @@ export function routeEdges(
     const cw = child.width ?? 0;
     const ch = child.height ?? 0;
     if (!portId) {
-      // steag de granita: vestul iese spre dreapta, estul primeste din stanga
+      // boundary flag: the west exits to the right, the east receives from the left
       const b = bportById.get(nodeId);
       if (!b) {
         return null;
@@ -616,8 +616,8 @@ export function routeEdges(
     if (!port) {
       return null;
     }
-    // latura efectiva vine din geometrie (rasturnarile schimba laturile),
-    // nu din semantica pinului din scena
+    // the effective side comes from geometry (the flips change the sides),
+    // not from the scene pin's semantics
     const west = (port.x ?? 0) + (port.width ?? 0) / 2 < cw / 2;
     const out = markerPins.has(portId) ? MARKER_STUB : 0;
     return {
@@ -627,7 +627,7 @@ export function routeEdges(
     };
   };
 
-  // obstacolele (noduri + texte de pini): edgeObstacles (pur, testat)
+  // the obstacles (nodes + pin texts): edgeObstacles (pure, tested)
   const obstacles = edgeObstacles(scene, layout);
   const pending: { e: SceneEdge; s: Anchor; t: Anchor }[] = [];
   const requests: RouteRequest[] = [];
@@ -636,7 +636,7 @@ export function routeEdges(
     const t = anchor(e.target, e.targetPort);
     if (s && t) {
       pending.push({ e, s, t });
-      // grupul = net-ul: muchiile aceluiasi net pot imparti trunchiul
+      // the group = the net: the edges of the same net can share the trunk
       requests.push({ id: e.id, source: s, target: t, group: e.net ?? e.id });
     }
   }
@@ -646,8 +646,8 @@ export function routeEdges(
       edgeElement(e, "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "))
     );
   };
-  // garda pieptenelui: un segment axial nu are voie sa taie interiorul unui
-  // bloc (obstacol HARD, fara cost) — altfel prizele drepte ar trece prin cutii
+  // the comb guard: an axial segment must not cut through the interior of a
+  // block (HARD obstacle, no cost) — otherwise the straight taps would pass through boxes
   const hardRects = obstacles.filter((o) => o.cost === undefined);
   const combClear = (polys: Pt[][]): boolean =>
     polys.every((poly) => {
@@ -668,15 +668,15 @@ export function routeEdges(
       }
       return true;
     });
-  // grupam muchiile-fir pe net: fan-in-ul unei magistrale se deseneaza ca
-  // PIEPTENE (combPolys), nu ca stea care converge in sink (4-way)
+  // we group the wire-edges by net: a bus's fan-in is drawn as a
+  // COMB (combPolys), not as a star converging in the sink (4-way)
   const netPolys = new Map<string, Pt[][]>();
   const byNet = new Map<string, { e: SceneEdge; s: Anchor; t: Anchor }[]>();
   for (const p of pending) {
     if (p.e.kind === "wire" && p.e.net) {
       (byNet.get(p.e.net) ?? byNet.set(p.e.net, []).get(p.e.net)!).push(p);
     } else {
-      // interfata / fara net: per-muchie (fara junction dots)
+      // interface / no net: per-edge (without junction dots)
       const pts = routed.get(p.e.id);
       draw(p.e, pts ?? []);
       if (!pts) {
@@ -717,7 +717,7 @@ export function routeEdges(
       netPolys.set(net, polys);
     }
   }
-  // punctele de jonctiune (T) ale net-urilor cu fanout (docs/04, vocabular)
+  // the junction points (T) of the nets with fanout (docs/04, vocabulary)
   for (const dot of junctionDots(netPolys)) {
     group.append(
       el("circle", {
@@ -734,15 +734,15 @@ interface Pt {
 }
 
 /**
- * Punctele de JONCTIUNE (junction dots) dintr-un set de polilinii grupate pe
- * net (PUR, testat in test:router). Conventia Eeschema: un punct DOAR unde
- * un net se RAMIFICA in T (trei directii cardinale au fir), niciodata la o
- * simpla incrucisare (patru directii = crossover — poate fi si o suprapunere
- * incidentala a doua ramuri ale ACELUIASI net) sau la un cot (doua directii).
- * Se grupeaza pe net, deci incrucisarile a DOUA net-uri diferite nu produc
- * niciodata punct. Robust la geometrie (nu presupune grila): pentru fiecare
- * varf al netului numara directiile cardinale distincte in care pleaca un
- * segment al netului; T = exact 3.
+ * The JUNCTION points (junction dots) from a set of polylines grouped by
+ * net (PURE, tested in test:router). The Eeschema convention: a dot ONLY where
+ * a net BRANCHES in a T (three cardinal directions have a wire), never at a
+ * simple crossing (four directions = crossover — it can also be an
+ * incidental overlap of two branches of the SAME net) or at a corner (two directions).
+ * They are grouped by net, so the crossings of TWO different nets never produce
+ * a dot. Robust to geometry (it does not assume a grid): for each
+ * vertex of the net it counts the distinct cardinal directions in which a
+ * segment of the net departs; T = exactly 3.
  */
 export function junctionDots(netPolys: Map<string, Pt[][]>): Pt[] {
   const dots: Pt[] = [];
@@ -757,7 +757,7 @@ export function junctionDots(netPolys: Map<string, Pt[][]>): Pt[] {
       for (let i = 0; i + 1 < poly.length; i++) {
         const a = poly[i];
         const b = poly[i + 1];
-        // axial si nenul (un segment degenerat n-are directie)
+        // axial and nonzero (a degenerate segment has no direction)
         if ((a.x === b.x) !== (a.y === b.y)) {
           segs.push([a, b]);
         }
@@ -773,7 +773,7 @@ export function junctionDots(netPolys: Map<string, Pt[][]>): Pt[] {
             continue;
           }
           if (v.y > lo) {
-            dirs.add("N"); // segmentul se intinde spre y mai mic
+            dirs.add("N"); // the segment extends toward a smaller y
           }
           if (v.y < hi) {
             dirs.add("S");
@@ -792,12 +792,12 @@ export function junctionDots(netPolys: Map<string, Pt[][]>): Pt[] {
           }
         }
       }
-      // >=3 directii la un VARF = jonctiune reala a aceluiasi net (T cu 3, sau
-      // contopire 4-way ca la fan-in-ul unei magistrale: 3 fire intr-un port).
-      // Incrucisarile periculoase sunt deja excluse: net-uri DIFERITE nu-s in
-      // acelasi grup, iar o incrucisare a aceluiasi net fara cot (doua fire
-      // drepte) nu are varf la intersectie, deci nu ajunge aici (cererea
-      // utilizatorului: puncte la contopirea dout-urilor in ch_out)
+      // >=3 directions at a VERTEX = a real junction of the same net (T with 3, or
+      // a 4-way merge as at a bus's fan-in: 3 wires into a port).
+      // The dangerous crossings are already excluded: DIFFERENT nets are not in
+      // the same group, and a crossing of the same net without a corner (two straight
+      // wires) has no vertex at the intersection, so it does not reach here (user
+      // request: dots at the merge of the douts into ch_out)
       const key = `${v.x},${v.y}`;
       if (dirs.size >= 3 && !seen.has(key)) {
         seen.add(key);
@@ -808,20 +808,20 @@ export function junctionDots(netPolys: Map<string, Pt[][]>): Pt[] {
   return dots;
 }
 
-/** Reconstruieste traseele unui net cu FAN (>=2 muchii wire, capete pe randuri
- *  diferite) ca un PIEPTENE: un trunchi vertical la `trunkX` (x-ul vertical
- *  dominant din rutarea A*, deci ocoleste obstacolele) + o priza orizontala per
- *  capat. Inlocuieste STEAUA care converge in sink (toate muchiile spre acelasi
- *  punct = 4-way) cu prize SEPARATE: fiecare capat atinge trunchiul la randul
- *  lui, iar sink-ul la randul lui (la capatul trunchiului cand e dincolo de
- *  surse -> jonctiuni curate in T, cererea utilizatorului). Intoarce null cand
- *  nu se aplica (sub 3 capete / toate pe un rand / fara verticala) -> ramane
- *  rutarea per-muchie. Pur, testat in test:router. */
+/** Reconstructs the routes of a net with FAN (>=2 wire edges, endpoints on
+ *  different rows) as a COMB: a vertical trunk at `trunkX` (the dominant
+ *  vertical x from the A* routing, so it avoids the obstacles) + a horizontal tap per
+ *  endpoint. Replaces the STAR that converges in the sink (all edges toward the same
+ *  point = 4-way) with SEPARATE taps: each endpoint touches the trunk in its
+ *  turn, and the sink in its turn (at the trunk's end when it is beyond the
+ *  sources -> clean T junctions, user request). Returns null when
+ *  it does not apply (below 3 endpoints / all on one row / no vertical) -> the
+ *  per-edge routing remains. Pure, tested in test:router. */
 export function combPolys(ends: Pt[], routed: Pt[][]): Pt[][] | null {
   if (ends.length < 3) {
-    return null; // nevoie de >=2 surse + 1 sink
+    return null; // need >=2 sources + 1 sink
   }
-  // trunkX = x-ul cu cea mai mare lungime verticala totala din rutare (spina)
+  // trunkX = the x with the greatest total vertical length in the routing (spine)
   const vlen = new Map<number, number>();
   for (const poly of routed) {
     for (let i = 0; i + 1 < poly.length; i++) {
@@ -841,18 +841,18 @@ export function combPolys(ends: Pt[], routed: Pt[][]): Pt[][] | null {
     }
   }
   if (trunkX === null) {
-    return null; // nicio verticala -> nu e trunchi vertical
+    return null; // no vertical -> there is no vertical trunk
   }
   const ys = ends.map((e) => e.y);
   const y0 = Math.min(...ys);
   const y1 = Math.max(...ys);
   if (y0 === y1) {
-    return null; // toate capetele pe un rand
+    return null; // all endpoints on one row
   }
-  // spina = priza de sus -> trunchi -> priza de jos, ca O SINGURA polilinie:
-  // colturile de capat au jonctiune (miter), nu doua capete butt separate care
-  // lasa un gol la imbinare (observatia utilizatorului). Prizele INTERIOARE
-  // raman separate — ating LATURA groasa a trunchiului (T), acoperite de el.
+  // spine = top tap -> trunk -> bottom tap, as ONE SINGLE polyline:
+  // the end corners have a junction (miter), not two separate butt ends that
+  // leave a gap at the joint (user observation). The INTERIOR taps
+  // stay separate — they touch the thick SIDE of the trunk (T), covered by it.
   const top = ends.find((e) => e.y === y0) as Pt;
   const bottom = ends.find((e) => e.y === y1) as Pt;
   const spine: Pt[] = [];
@@ -873,29 +873,29 @@ export function combPolys(ends: Pt[], routed: Pt[][]): Pt[][] | null {
   return polys;
 }
 
-/** surplusul (px diagrama) cu care ghidajul depaseste porturile potrivite */
+/** the surplus (diagram px) by which the guide overshoots the matched ports */
 export const ALIGN_GUIDE_PAD = 24;
 export interface AlignPt {
   x: number;
   y: number;
 }
 export interface AlignSnap {
-  /** deplasarea pe X/Y care aliniaza EXACT portul tras (0 fara potrivire) */
+  /** the X/Y displacement that aligns the dragged port EXACTLY (0 with no match) */
   dx: number;
   dy: number;
-  /** linia de ghidaj verticala/orizontala la aliniere (null fara potrivire) */
+  /** the vertical/horizontal guide line at alignment (null with no match) */
   vLine: { x: number; y0: number; y1: number } | null;
   hLine: { y: number; x0: number; x1: number } | null;
 }
 
-/** Ghidaje de aliniere la drag pe POZITIILE PORTURILOR (cererea utilizatorului):
- *  pentru porturile blocului TRAS `dragged` (deja mutate la pozitia bruta),
- *  cauta pe fiecare axa cea mai apropiata potrivire (in `threshold`) cu un port
- *  al altui bloc din `others`. Alinierea la PORTURI, nu la marginile blocului,
- *  tine firele drepte: doua porturi la acelasi y => fir orizontal. Intoarce
- *  deplasarea care aliniaza exact + linia de ghidaj de la portul tras la cel
- *  potrivit; 0/null pe axa fara potrivire (acolo apelantul cade pe snap-ul de
- *  grila). Pur, testat in test:router. */
+/** Alignment guides on drag on the PORT POSITIONS (user request):
+ *  for the ports of the DRAGGED block `dragged` (already moved to the raw position),
+ *  it looks on each axis for the closest match (within `threshold`) with a port
+ *  of another block from `others`. Aligning to PORTS, not to the block's edges,
+ *  keeps the wires straight: two ports at the same y => a horizontal wire. Returns
+ *  the displacement that aligns exactly + the guide line from the dragged port to the
+ *  matched one; 0/null on the axis with no match (there the caller falls to the grid
+ *  snap). Pure, tested in test:router. */
 export function alignSnap(
   dragged: AlignPt[],
   others: AlignPt[],
@@ -923,9 +923,9 @@ export function alignSnap(
   }
   const dx = bx ? bx.diff : 0;
   const dy = by ? by.diff : 0;
-  // ghidajul se intinde de la portul tras la cel potrivit, cu un mic surplus
-  // (ALIGN_GUIDE_PAD) pe fiecare capat: ramane vizibil chiar cand cele doua
-  // porturi coincid pe axa (aceeasi coloana / acelasi rand)
+  // the guide extends from the dragged port to the matched one, with a small surplus
+  // (ALIGN_GUIDE_PAD) on each end: it stays visible even when the two
+  // ports coincide on the axis (same column / same row)
   const pad = ALIGN_GUIDE_PAD;
   return {
     dx,
@@ -947,14 +947,14 @@ export function alignSnap(
   };
 }
 
-/** Offseturile CAPETELOR de pini (varfurile stub-urilor, unde se leaga firele
- *  si stau marcajele `{}`/`[]`), relativ la originea fiecarui nod — punctele de
- *  aliniere corecte (cererea utilizatorului): ghidajele verticale trec prin
- *  capetele pinilor, nu prin marginile blocului. Capatul e la `-stubLen` pe
- *  vest / `cw+stubLen` pe est, cu `stubLen = MARKER_STUB` pentru pinii cu
- *  marcator concat/select (firul se leaga dincolo de chip), altfel `STUB`.
- *  Latura vine din GEOMETRIE (ca ancora din routeEdges), deci rasturnarile o
- *  urmeaza. Pur, testat in test:router. */
+/** The offsets of the pin ENDS (the stub tips, where the wires connect
+ *  and the `{}`/`[]` markers sit), relative to each node's origin — the correct
+ *  alignment points (user request): the vertical guides pass through the
+ *  pin ends, not through the block's edges. The end is at `-stubLen` on the
+ *  west / `cw+stubLen` on the east, with `stubLen = MARKER_STUB` for the pins with
+ *  a concat/select marker (the wire connects beyond the chip), otherwise `STUB`.
+ *  The side comes from GEOMETRY (like the anchor in routeEdges), so the flips
+ *  follow it. Pure, tested in test:router. */
 export function pinTipOffsets(
   scene: SchematicScene,
   layout: ElkNode
@@ -984,7 +984,7 @@ export function pinTipOffsets(
   return out;
 }
 
-/** traseu ortogonal in Z; la directii nefavorabile, ocol in S prin mijloc */
+/** orthogonal Z route; at unfavorable directions, an S detour through the middle */
 function zRoute(s: Anchor, t: Anchor): string {
   const off = 14;
   const forward =
@@ -1002,7 +1002,7 @@ function zRoute(s: Anchor, t: Anchor): string {
   );
 }
 
-/** port al modulului vederii: steag pentagonal cu numele inauntru */
+/** port of the view's module: pentagonal flag with the name inside */
 function drawBoundaryPort(
   b: SceneBPort,
   x: number,
@@ -1032,8 +1032,8 @@ function drawBoundaryPort(
       })
     );
   }
-  // latimea busului + `×M` unpacked, deasupra steagului (fara `/` — slash-ul
-  // e deja marcajul de bus; steagul e element de sine statator, deci centrat)
+  // the bus width + `×M` unpacked, above the flag (without `/` — the slash
+  // is already the bus marker; the flag is a standalone element, so centered)
   const wtxt = (b.bus && b.width ? `${b.width}` : "") + (b.mult ?? "");
   if (wtxt) {
     g.append(
@@ -1074,7 +1074,7 @@ function drawNode(
   }
 
   if (n.kind === "fold") {
-    // teanc: doua umbre decalate sugereaza instantele pliate
+    // stack: two offset shadows suggest the folded instances
     g.append(
       el("rect", { class: "fold-shadow", x: "8", y: "8", rx: "3",
         width: String(w), height: String(h) }),
@@ -1110,12 +1110,12 @@ function drawNode(
       continue;
     }
     const py = (port.y ?? 0) + (port.height ?? 0) / 2;
-    // latura efectiva vine din geometrie: rasturnarile schimba laturile
+    // the effective side comes from geometry: the flips change the sides
     const west = (port.x ?? 0) + (port.width ?? 0) / 2 < w / 2;
     g.append(drawPin(spec, n, w, py, west));
   }
 
-  // butonul de pliere/expandare (docs/05: pliate implicit, expandabile)
+  // the fold/expand button (docs/05: folded implicitly, expandable)
   if (n.kind === "fold") {
     g.append(foldButton(n.id, w, `×${n.foldCount} — expand`, "⊞", hooks));
   } else if (n.foldId) {
@@ -1155,9 +1155,9 @@ function drawPin(
   west: boolean
 ): SVGGElement {
   const x0 = west ? 0 : nodeW;
-  // xOut = capatul stub-ului pentru pozitionarea chip-ului/adnotarii (STUB fix);
-  // stub-ul VIZIBIL se extinde la MARKER_STUB pentru pinii cu marcator, ca firul
-  // sa se lege dincolo de chip (vezi MARKER_STUB) si sa-l traverseze orizontal
+  // xOut = the stub's end for positioning the chip/annotation (fixed STUB);
+  // the VISIBLE stub extends to MARKER_STUB for the marker pins, so the wire
+  // connects beyond the chip (see MARKER_STUB) and traverses it horizontally
   const isMarker =
     spec.noteKind === "select" || spec.noteKind === "concat";
   const xOut = west ? -STUB : nodeW + STUB;
@@ -1211,8 +1211,8 @@ function drawPin(
       })
     );
   } else if (spec.bus) {
-    // busul: slash + eticheta `/N` (netlistsvg); gradarea pe latime vine din
-    // clasa w-* de pe grupul pinului
+    // the bus: slash + `/N` label (netlistsvg); the grading by width comes from
+    // the w-* class on the pin's group
     g.append(
       el("line", {
         class: "bus-slash",
@@ -1221,12 +1221,12 @@ function drawPin(
       })
     );
   }
-  // eticheta de latime deasupra stub-ului (py-6): latimea busului + `×M`
-  // unpacked (ex. `16×3`). ANCORATA la marcajul slash (mx), spre EXTERIOR
-  // (anchor pe latura), NU centrata — altfel taia frontiera blocului pe stub-ul
-  // scurt (observatie la validare). FARA `/`: slash-ul de pe fir e deja
-  // marcajul de bus, deci `/16` ar dubla slash-ul. Marginea e rezervata in
-  // estPinText (eticheta iese dincolo de stub la valori late)
+  // the width label above the stub (py-6): the bus width + `×M`
+  // unpacked (e.g. `16×3`). ANCHORED at the slash marker (mx), toward the EXTERIOR
+  // (anchor on the side), NOT centered — otherwise it cut the block's boundary on the
+  // short stub (observation at validation). WITHOUT `/`: the slash on the wire is already
+  // the bus marker, so `/16` would double the slash. The margin is reserved in
+  // estPinText (the label sticks out beyond the stub at wide values)
   const wtxt = (spec.bus && spec.width ? `${spec.width}` : "") + (spec.mult ?? "");
   if (wtxt) {
     g.append(

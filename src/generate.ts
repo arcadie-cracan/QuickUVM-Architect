@@ -1,7 +1,7 @@
-// Ciclul de generare (docs/03): comanda "Genereaza testbench" ruleaza
-// `quick-uvm generate -c <yaml> -o <dir>`; erorile Pydantic/CLI ajung in
-// Problems pe fisierul YAML, iesirea completa in canalul de jurnal.
-// Generarea cu porturi nemapate cere confirmare (indicatorul de acoperire).
+// The generation cycle (docs/03): the "Generate Testbench" command runs
+// `quick-uvm generate -c <yaml> -o <dir>`; the Pydantic/CLI errors land in
+// Problems on the YAML file, the full output in the log channel.
+// Generation with unmapped ports requires confirmation (the coverage indicator).
 
 import { spawn } from "child_process";
 import * as path from "path";
@@ -10,12 +10,12 @@ import { ConfigService } from "./config";
 import { GenerateStatus } from "./protocol";
 
 export class Generator {
-  /** rezultatul ultimei rulari, pentru cipul de stare din diagrama
-   *  (docs/05); null = niciodata rulat in sesiunea asta */
+  /** the result of the last run, for the status chip in the diagram
+   *  (docs/05); null = never run in this session */
   status: GenerateStatus | null = null;
   private readonly statusEmitter = new vscode.EventEmitter<GenerateStatus>();
-  /** semnal dupa fiecare rulare (si esecul ENOENT) — extension.ts posteaza
-   *  status/decorations catre webview */
+  /** signaled after every run (including the ENOENT failure) — extension.ts posts
+   *  status/decorations to the webview */
   readonly onStatus = this.statusEmitter.event;
 
   constructor(
@@ -40,7 +40,7 @@ export class Generator {
       return;
     }
 
-    // acoperirea: generarea cu porturi nemapate cere confirmare (docs/03)
+    // coverage: generation with unmapped ports requires confirmation (docs/03)
     const unmapped = this.config.lastOverlay?.coverage.unmapped ?? [];
     if (unmapped.length > 0) {
       const list =
@@ -65,7 +65,7 @@ export class Generator {
       }
     }
 
-    // quick-uvm citeste de pe disc: documentul murdar se salveaza intai
+    // quick-uvm reads from disk: the dirty document is saved first
     const doc = await vscode.workspace.openTextDocument(uri);
     if (doc.isDirty && !(await doc.save())) {
       return;
@@ -81,13 +81,13 @@ export class Generator {
     this.log.appendLine(`[generate] ${command} ${args.join(" ")}`);
     let r = await run(command, args, cwd);
     if (r.enoent) {
-      // fallback: modulul instalat, prin acelasi Python ca backend-ul
+      // fallback: the installed module, through the same Python as the backend
       const python = cfg.get<string>("python", "python");
       const shim = "from quick_uvm.cli import main; main()";
       this.log.appendLine(`[generate] fallback: ${python} -c "${shim}" …`);
       r = await run(python, ["-c", shim, ...args], cwd);
       if (r.enoent) {
-        // cipul de stare arata si esecul de lansare (mesaj EN — docs/05)
+        // the status chip also shows the launch failure (EN message — docs/05)
         this.setStatus(false, -1, "quick-uvm not found (pip install quick-uvm)");
         void vscode.window.showErrorMessage(
           vscode.l10n.t(
@@ -130,8 +130,8 @@ export class Generator {
     }
   }
 
-  /** Erorile de validare/CLI, ca diagnostic pe fisierul de configuratie;
-   *  intoarce mesajul scurtat, refolosit de cipul de stare (docs/05). */
+  /** The validation/CLI errors, as a diagnostic on the configuration file;
+   *  returns the shortened message, reused by the status chip (docs/05). */
   private publishDiagnostics(
     uri: vscode.Uri,
     code: number,
@@ -141,8 +141,8 @@ export class Generator {
     if (code === 0) {
       return "";
     }
-    // Pydantic scrie "N validation error(s) for ProjectConfig" + campuri;
-    // click scrie "Error: ...". Se pastreaza mesajul brut — e deja lizibil.
+    // Pydantic writes "N validation error(s) for ProjectConfig" + fields;
+    // click writes "Error: ...". The raw message is kept — it is already readable.
     const text = stderr.trim();
     const start = text.search(/\d+ validation errors? for|Error:/);
     const message =
@@ -167,7 +167,7 @@ function run(
   cwd: string
 ): Promise<{ code: number; out: string; err: string; enoent: boolean }> {
   return new Promise((resolve) => {
-    // PYTHONUTF8: quick-uvm scrie sageti Unicode; consola Windows e cp1252
+    // PYTHONUTF8: quick-uvm writes Unicode arrows; the Windows console is cp1252
     const p = spawn(cmd, args, {
       cwd,
       shell: false,

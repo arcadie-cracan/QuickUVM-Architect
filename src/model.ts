@@ -1,7 +1,7 @@
-// Tipurile modelului de proiect — oglinda TypeScript a contractului
-// schema/project-model.schema.json (schema_version 1). Semantica:
-// docs/02-model-de-proiect.md. Orice schimbare aici trebuie sa porneasca
-// din schema, nu invers.
+// The project-model types — the TypeScript mirror of the
+// schema/project-model.schema.json contract (schema_version 1). Semantics:
+// docs/02-model-de-proiect.md. Any change here must originate
+// from the schema, not the other way around.
 
 export type Dir = "in" | "out" | "inout" | "ref";
 
@@ -14,7 +14,7 @@ export interface Port {
   name: string;
   dir: Dir;
   type: string;
-  /** latimea totala in biti; null pentru tipuri fara dimensiune fixa */
+  /** total width in bits; null for types without a fixed dimension */
   width: number | null;
   unpacked_dims: number[] | null;
   elem_width: number | null;
@@ -48,13 +48,13 @@ export interface IfaceDetail {
 }
 
 export interface Instance {
-  /** ID stabil: calea ierarhica elaborata (demo_top.u_soc.g_ch[1].u_ch) */
+  /** stable ID: the elaborated hierarchical path (demo_top.u_soc.g_ch[1].u_ch) */
   path: string;
   module: string;
-  /** valorile efective ale parametrilor, ca text */
+  /** the effective parameter values, as text */
   params: Record<string, string>;
   loc: Loc | null;
-  /** prezent doar pentru instante de interfata */
+  /** present only for interface instances */
   iface?: IfaceDetail;
 }
 
@@ -96,12 +96,12 @@ export interface ProjectModel {
 export const SCHEMA_VERSION = 1;
 
 /**
- * Validare structurala usoara a modelului primit de la backend.
+ * Lightweight structural validation of the model received from the backend.
  *
- * Nu inlocuieste schema JSON (validata in testele pytest ale backend-ului);
- * aici se verifica doar versiunea de schema — host-ul refuza versiuni
- * necunoscute (docs/02) — si forma de ansamblu, ca erorile de integrare sa
- * apara devreme si inteligibil, nu ca exceptii adanci in UI.
+ * Does not replace the JSON schema (validated in the backend's pytest tests);
+ * here only the schema version is checked — the host rejects unknown
+ * versions (docs/02) — along with the overall shape, so that integration errors
+ * surface early and intelligibly, not as deep exceptions in the UI.
  */
 export function validateModel(data: unknown): ProjectModel {
   if (typeof data !== "object" || data === null) {

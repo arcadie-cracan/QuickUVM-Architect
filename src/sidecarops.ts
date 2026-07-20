@@ -1,16 +1,16 @@
-// Mutatiile pure ale sidecar-ului de layout (docs/04): parsare/serializare
-// YAML si operatiile pe structura, fara `vscode` — testabile in Node
-// (scripts/test-sidecar.mjs). Serviciul src/sidecar.ts le ambaleaza cu
-// fisiere, watcher si comenzi.
+// The pure mutations of the layout sidecar (docs/04): YAML parsing/serialization
+// and the operations on the structure, without `vscode` — testable in Node
+// (scripts/test-sidecar.mjs). The src/sidecar.ts service wraps them with
+// files, watcher and commands.
 //
-// Principii (docs/04):
-// - fisierul contine DOAR override-uri (pozitii, pliaje, rasturnari) —
-//   niciodata
-//   date derivate din model; intrarile fara continut se elimina;
-// - invalidare gratioasa: cheile disparute din model migreaza in `orphans`
-//   cu data ultimei vederi valide; cheile care reapar (eroare temporara de
-//   compilare, revert) se restaureaza automat din orphans;
-// - serializare determinista (chei sortate) pentru diff-uri git stabile.
+// Principles (docs/04):
+// - the file contains ONLY overrides (positions, folds, flips) —
+//   never
+//   data derived from the model; entries without content are removed;
+// - graceful invalidation: keys that disappeared from the model migrate into `orphans`
+//   with the date of the last valid view; keys that reappear (a temporary
+//   compilation error, revert) are restored automatically from orphans;
+// - deterministic serialization (sorted keys) for stable git diffs.
 
 import { parse, stringify } from "yaml";
 import type { ProjectModel } from "./model";
@@ -29,9 +29,9 @@ export function emptySidecar(): SidecarData {
 }
 
 /**
- * Parseaza continutul fisierului sidecar. Arunca la YAML invalid sau la
- * versiune de schema necunoscuta — apelantul decide ce face cu fisierul
- * (serviciul il pastreaza ca .bak, nu il suprascrie orbeste).
+ * Parses the content of the sidecar file. Throws on invalid YAML or on an
+ * unknown schema version — the caller decides what to do with the file
+ * (the service keeps it as .bak, does not overwrite it blindly).
  */
 export function parseSidecar(text: string): SidecarData {
   if (!text.trim()) {
@@ -58,7 +58,7 @@ export function parseSidecar(text: string): SidecarData {
   };
 }
 
-/** serializare determinista: vederile si nodurile sortate dupa cheie */
+/** deterministic serialization: the views and nodes sorted by key */
 export function serializeSidecar(data: SidecarData): string {
   const views: Record<string, SidecarView> = {};
   for (const viewId of Object.keys(data.views).sort()) {
@@ -86,7 +86,7 @@ export function serializeSidecar(data: SidecarData): string {
   );
 }
 
-// ------------------------------------------------------------------ mutatii
+// ------------------------------------------------------------------ mutations
 
 function viewOf(data: SidecarData, viewId: string): SidecarView {
   const v = data.views[viewId] ?? {};
@@ -103,7 +103,7 @@ function nodeOf(data: SidecarData, viewId: string, nodeId: string): SidecarNode 
   return n;
 }
 
-/** sterge intrarile ramase fara continut (fisierul tine doar override-uri) */
+/** deletes the entries left without content (the file holds only overrides) */
 function prune(data: SidecarData, viewId: string, nodeId?: string): void {
   const view = data.views[viewId];
   if (!view) {
@@ -153,7 +153,7 @@ export function setFold(
 ): SidecarData {
   const n = nodeOf(data, viewId, foldId);
   if (collapsed) {
-    delete n.collapsed; // pliat = implicitul; nu se persista
+    delete n.collapsed; // folded = the default; not persisted
   } else {
     n.collapsed = false;
   }
@@ -172,7 +172,7 @@ export function setFlip(
   if (flipH) {
     n.flipH = true;
   } else {
-    delete n.flipH; // ne-rasturnat = implicitul; nu se persista
+    delete n.flipH; // not-flipped = the default; not persisted
   }
   if (flipV) {
     n.flipV = true;
@@ -184,9 +184,9 @@ export function setFlip(
 }
 
 /**
- * Override-ul de nivel 4 (docs/04): fir <-> eticheta per net. `suggestion`
- * e sugestia din model — alegerea egala cu sugestia sterge override-ul
- * (fisierul tine doar abateri de la implicit).
+ * The level-4 override (docs/04): wire <-> label per net. `suggestion`
+ * is the model's suggestion — a choice equal to the suggestion deletes the override
+ * (the file holds only deviations from the default).
  */
 export function setNetRender(
   data: SidecarData,
@@ -208,9 +208,9 @@ export function setNetRender(
 }
 
 /**
- * Snapshot-ul pozitiilor unei vederi (docs/04): la primul gest de pozitie,
- * aranjamentul intregii vederi devine al utilizatorului — se scriu TOATE
- * pozitiile primite, peste cele existente; pliajele/rasturnarile raman.
+ * The position snapshot of a view (docs/04): on the first position gesture,
+ * the arrangement of the whole view becomes the user's — ALL the received
+ * positions are written, over the existing ones; the folds/flips remain.
  */
 export function setPositions(
   data: SidecarData,
@@ -229,9 +229,9 @@ export function cleanOrphans(data: SidecarData): SidecarData {
 }
 
 /**
- * "Re-aranjeaza tot" (docs/04): sterge pozitiile (x/y) din nodurile unei
- * vederi — plierea si rasturnarile raman; intrarile ramase fara continut
- * dispar (fisierul tine doar override-uri).
+ * "Re-arrange all" (docs/04): deletes the positions (x/y) from the nodes of a
+ * view — the folding and the flips remain; the entries left without content
+ * disappear (the file holds only overrides).
  */
 export function clearPositions(data: SidecarData, viewId: string): SidecarData {
   const nodes = data.views[viewId]?.nodes ?? {};
@@ -244,13 +244,13 @@ export function clearPositions(data: SidecarData, viewId: string): SidecarData {
   return data;
 }
 
-// ------------------------------------------------- invalidare gratioasa
+// ------------------------------------------------- graceful invalidation
 
 /**
- * Cheile de nod valide intr-o vedere: nodurile scenei pliate implicit,
- * membrii tuturor pliajelor (utilizatorul poate avea pozitii si pentru
- * membri expandati) si steagurile granitei (`<port>.x` — mutabile si ele).
- * Intoarce null daca vederea nu exista in model.
+ * The valid node keys in a view: the scene nodes folded by default,
+ * the members of all the folds (the user can have positions for expanded
+ * members too) and the boundary flags (`<port>.x` — mutable as well).
+ * Returns null if the view does not exist in the model.
  */
 export function validNodeKeys(
   model: ProjectModel,
@@ -281,10 +281,10 @@ export function validNodeKeys(
 }
 
 /**
- * Invalidarea gratioasa (docs/04): cheile care nu mai exista in model
- * migreaza in `orphans` cu data ultimei vederi valide; orfanele ale caror
- * chei au reaparut se restaureaza (fara a calca peste override-uri noi).
- * Intoarce true daca structura s-a schimbat.
+ * Graceful invalidation (docs/04): the keys that no longer exist in the model
+ * migrate into `orphans` with the date of the last valid view; the orphans whose
+ * keys have reappeared are restored (without stepping over new overrides).
+ * Returns true if the structure changed.
  */
 export function invalidate(
   data: SidecarData,
@@ -300,7 +300,7 @@ export function invalidate(
     return valid.get(viewId) ?? null;
   };
 
-  // 1. restaurarea orfanelor ale caror chei au reaparut
+  // 1. restoring the orphans whose keys have reappeared
   const still: SidecarOrphan[] = [];
   for (const o of data.orphans) {
     if (o.kind === "net") {
@@ -323,18 +323,18 @@ export function invalidate(
         const n = nodeOf(data, o.view, o.node);
         Object.assign(n, o.value as Record<string, unknown>);
       }
-      changed = true; // orfanul dispare din lista, restaurat sau nu
+      changed = true; // the orphan disappears from the list, restored or not
     } else {
       still.push(o);
     }
   }
   data.orphans = still;
 
-  // 2. cheile curente care nu mai exista -> orphans
+  // 2. the current keys that no longer exist -> orphans
   for (const viewId of Object.keys(data.views)) {
     if (viewId.startsWith("tb:")) {
-      // vederea de verificare (docs/05): cheile ei vin din YAML-ul QuickUVM,
-      // nu din modelul RTL — invalidarea pe model nu o atinge
+      // the verification view (docs/05): its keys come from the QuickUVM YAML,
+      // not from the RTL model — model invalidation does not touch it
       continue;
     }
     const keys = keysFor(viewId);
@@ -376,8 +376,8 @@ export function invalidate(
       delete view.nodes;
     }
     if (keys === null) {
-      // vederea insasi a disparut: pozitiile au migrat in orphans (activul
-      // protejat, docs/04)
+      // the view itself disappeared: the positions migrated into orphans (the
+      // protected asset, docs/04)
       delete data.views[viewId];
       changed = true;
     } else if (!view.nodes && !view.nets) {

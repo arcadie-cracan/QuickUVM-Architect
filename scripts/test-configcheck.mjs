@@ -1,17 +1,17 @@
-// Teste Node pentru nucleul PUR al validarilor model<->YAML
+// Node tests for the PURE core of the model<->YAML validations
 // (src/configcheck.ts): npm run test:configcheck
-// Miza: emiterea diagnosticelor era complet netestata — o regresie aici
-// stinge TACIT feedback-ul de validare din editor (inclusiv eroarea dura de
-// pe care generatorul o refuza abia la `generate`). NOTA 1.0: hibridul
-// subenvs+agents e LEGAL (agenti de granita H2) — testul verifica absenta.
+// The stake: emitting the diagnostics was completely untested — a regression here
+// SILENTLY turns off the validation feedback in the editor (including the hard error
+// that the generator refuses only at `generate`). NOTE 1.0: the subenvs+agents
+// hybrid is LEGAL (H2 boundary agents) — the test checks the absence.
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import esbuild from "esbuild";
-// aceeasi instanta `yaml` din node_modules; identitatea nodurilor e pe
-// Symbol.for (global), deci parseDocument de aici + isMap din bundle coexista
+// the same `yaml` instance from node_modules; node identity is on
+// Symbol.for (global), so parseDocument from here + isMap from the bundle coexist
 import { parseDocument } from "yaml";
 
 const outDir = mkdtempSync(join(tmpdir(), "quickuvm-configcheck-"));
@@ -36,7 +36,7 @@ function test(name, fn) {
   console.log(`  ok ${name}`);
 }
 
-/** ruleaza checkConfig pe un text YAML + un model minimal */
+/** runs checkConfig on a YAML text + a minimal model */
 function check(text, model) {
   const ydoc = parseDocument(text);
   return { ...checkConfig(ydoc, ydoc.toJS() ?? {}, model), text };
@@ -81,7 +81,7 @@ agents:
 `,
     undefined
   );
-  // quick-uvm >= 1.0.0 ACCEPTA compunerea cu agenti proprii la top
+  // quick-uvm >= 1.0.0 ACCEPTS composition with own agents at top
   assert.ok(!r.findings.some((f) => f.kind === "hybrid"),
     "diagnosticul 'hybrid' nu mai exista (1.0: agenti de granita legali)");
 });
@@ -100,9 +100,9 @@ agents:
   assert.ok(w, "lipseste width-mismatch");
   assert.equal(w.severity, "warning");
   assert.equal(w.code, `${WIDTH_CODE}:a:din:8`);
-  // `agent` a intrat in params pentru decoratiile de stare (src/status.ts)
+  // `agent` entered params for the status decorations (src/status.ts)
   assert.deepEqual(w.params, { port: "din", declared: 16, expected: 8, agent: "a" });
-  // span-ul cade pe intrarea portului
+  // the span falls on the port entry
   assert.match(r.text.slice(w.span[0], w.span[1]), /din/);
 });
 
@@ -168,8 +168,8 @@ agents:
   );
   const i = r.findings.find((f) => f.kind === "ignored-and-mapped");
   assert.ok(i);
-  // quick-uvm 1.0 REFUZA la generate ("connected by agent ... Remove it from
-  // one side") -> diagnosticul replica zidul cu severitate error
+  // quick-uvm 1.0 REFUSES at generate ("connected by agent ... Remove it from
+  // one side") -> the diagnostic replicates the wall with error severity
   assert.equal(i.severity, "error");
   assert.deepEqual(i.params, { port: "din", agent: "a" });
 });

@@ -1,25 +1,25 @@
-// Partea PURA a cailor si listelor de fisiere schimbate cu slang (fara
-// vscode) — testabila in Node (scripts/test-filelist.mjs). Trei capcane
-// reale traiesc aici (CLAUDE.md):
-// - slang relativizeaza loc.file fata de cwd-ul procesului (poate iesi
-//   ..\..\...); host-ul reconstituie calea absoluta prin join cu radacina
-//   workspace-ului (resolveLocPath, folosit de openLoc);
-// - slang desparte linia de comanda pe spatii: caile din .f se citeaza
-//   integral, iar la +incdir+ se citeaza doar calea (`+incdir+"cale"`,
-//   validat cu slang 11 pe cai cu spatii);
-// - dosarul de iesire quick-uvm se exclude din glob-ul de surse: testbench-ul
-//   generat contine un stub al DUT-ului (definitie duplicata care castiga
-//   rezolutia slang) si surse care cer uvm_macros.svh — altfel extensia isi
-//   otraveste singura modelul dupa primul "Genereaza testbench" (regresie
-//   reala pe examples/, unde test:e2e lasase tb/).
+// The PURE part of the paths and file lists exchanged with slang (no
+// vscode) — testable in Node (scripts/test-filelist.mjs). Three real pitfalls
+// live here (CLAUDE.md):
+// - slang relativizes loc.file against the process cwd (it can come out
+//   ..\..\...); the host reconstructs the absolute path by joining with the
+//   workspace root (resolveLocPath, used by openLoc);
+// - slang splits the command line on spaces: the paths in .f are quoted
+//   in full, and at +incdir+ only the path is quoted (`+incdir+"cale"`,
+//   validated with slang 11 on paths with spaces);
+// - the quick-uvm output directory is excluded from the source glob: the
+//   generated testbench contains a DUT stub (a duplicate definition that wins
+//   slang resolution) and sources that require uvm_macros.svh — otherwise the
+//   extension poisons its own model after the first "Generate Testbench" (a real
+//   regression on examples/, where test:e2e had left tb/).
 
 import * as path from "path";
 
 /**
- * Citeaza liniile unui flist pentru parserul slang (desparte pe spatii).
- * Caile se citeaza integral; la +incdir+ se citeaza doar calea (forma
- * `+incdir+"cale"`, validata cu slang 11 pe cai cu spatii). Bender emite un
- * singur director per linie +incdir+; +define+ nu contine spatii.
+ * Quotes the lines of a flist for the slang parser (splits on spaces).
+ * Paths are quoted in full; at +incdir+ only the path is quoted (the
+ * `+incdir+"cale"` form, validated with slang 11 on paths with spaces). Bender emits a
+ * single directory per +incdir+ line; +define+ contains no spaces.
  */
 export function quoteFlistLine(line: string): string {
   const t = line.trim();
@@ -36,20 +36,20 @@ export function quoteFlistLine(line: string): string {
   return t.startsWith('"') ? t : `"${t}"`;
 }
 
-/** textul fisierului .f: liniile citate, fara cele ramase goale */
+/** the text of the .f file: the quoted lines, without those left empty */
 export function renderFlist(lines: string[]): string {
   return lines.map(quoteFlistLine).filter(Boolean).join("\n") + "\n";
 }
 
 /**
- * Sablonul de exclude pentru dosarul de iesire quick-uvm, sau null cand
- * excluderea relativa nu are sens (gol, "." = radacina, cale absoluta).
- * Normalizeaza \ -> / si taie separatorii finali.
+ * The exclude pattern for the quick-uvm output directory, or null when
+ * a relative exclude makes no sense (empty, "." = the root, an absolute path).
+ * Normalizes \ -> / and trims the trailing separators.
  */
 export function outputDirExclude(outputDir: string): string | null {
   const outDir = outputDir.trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  // absoluta pe ORICE platforma: pe Linux, path.isAbsolute nu recunoaste
-  // "C:\..." (regresie reala: testul de outputDir absolut pica pe posix)
+  // absolute on ANY platform: on Linux, path.isAbsolute does not recognize
+  // "C:\..." (a real regression: the absolute outputDir test failed on posix)
   if (!outDir || outDir === "." || path.isAbsolute(outDir) || /^[A-Za-z]:\//.test(outDir)) {
     return null;
   }
@@ -57,10 +57,10 @@ export function outputDirExclude(outputDir: string): string | null {
 }
 
 /**
- * Calea absoluta a unui `loc.file` emis de slang: absoluta ramane cum e, iar
- * cea relativa (slang o relativizeaza fata de cwd-ul procesului — poate iesi
- * `..\\..\\...`) se reconstituie prin join cu radacina workspace-ului
- * (path.join normalizeaza segmentele `..`).
+ * The absolute path of a `loc.file` emitted by slang: an absolute one stays as is, and
+ * a relative one (slang relativizes it against the process cwd — it can come out
+ * `..\\..\\...`) is reconstructed by joining with the workspace root
+ * (path.join normalizes the `..` segments).
  */
 export function resolveLocPath(root: string, file: string): string {
   return path.isAbsolute(file) ? file : path.join(root, file);

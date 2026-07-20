@@ -1,4 +1,4 @@
-// Teste Node pentru matematica minimapului (src/webview/minimap.ts):
+// Node tests for the minimap math (src/webview/minimap.ts):
 //   npm run test:minimap
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -28,22 +28,22 @@ function test(name, fn) {
 }
 
 test("minimapLayout: incadrare centrata, scara uniforma", () => {
-  // lume 400x300 in minimap 180x120 pad 8: s = min(164/400, 104/300) = 104/300
+  // world 400x300 in minimap 180x120 pad 8: s = min(164/400, 104/300) = 104/300
   const l = minimapLayout({ x: 0, y: 0, w: 400, h: 300 }, 180, 120, 8);
   const s = 104 / 300;
   assert.ok(Math.abs(l.s - s) < 1e-9);
-  // centrat: pe X raman (180 - 400*s)/2 pe fiecare parte; pe Y exact pad-ul
+  // centered: on X, (180 - 400*s)/2 remains on each side; on Y exactly the pad
   assert.ok(Math.abs(l.ox - (180 - 400 * s) / 2) < 1e-9);
   assert.ok(Math.abs(l.oy - 8) < 1e-9);
 });
 
 test("minimapLayout: origine negativa (drag spre stanga/sus)", () => {
   const l = minimapLayout({ x: -100, y: -50, w: 200, h: 100 }, 180, 120, 8);
-  // coltul lumii (-100,-50) trebuie sa cada in interiorul minimapului
+  // the world corner (-100,-50) must fall inside the minimap
   const cx = l.ox + l.s * -100;
   const cy = l.oy + l.s * -50;
   assert.ok(cx >= 0 && cy >= 0);
-  // iar centrul lumii (0,0) in centrul minimapului
+  // and the world center (0,0) at the minimap center
   assert.ok(Math.abs(l.ox - 90) < 1e-9);
   assert.ok(Math.abs(l.oy - 60) < 1e-9);
 });
@@ -55,8 +55,8 @@ test("minimapUseTransform: camera identitate = plasarea lumii in minimap", () =>
 });
 
 test("minimapViewRect: zona vizibila prin camera, in coordonate minimap", () => {
-  // camera: zoom 2, translatie (100, 40); canvas 800x600
-  // lume vizibila: x=(0-100)/2=-50 .. (800-100)/2=350 (w=400), y=-20..280 (h=300)
+  // camera: zoom 2, translation (100, 40); canvas 800x600
+  // visible world: x=(0-100)/2=-50 .. (800-100)/2=350 (w=400), y=-20..280 (h=300)
   const l = { s: 0.25, ox: 10, oy: 20 };
   const r = minimapViewRect(l, { tx: 100, ty: 40, k: 2 }, 800, 600);
   assert.ok(Math.abs(r.x - (10 + 0.25 * -50)) < 1e-9);
@@ -66,8 +66,8 @@ test("minimapViewRect: zona vizibila prin camera, in coordonate minimap", () => 
 });
 
 test("cameraForMinimapPoint: dus-intors — centrul dreptunghiului de vedere", () => {
-  // pentru orice camera, punctul din CENTRUL dreptunghiului de vedere trebuie
-  // sa intoarca exact aceeasi camera (fixpoint al saltului)
+  // for any camera, the point at the CENTER of the view rectangle must
+  // return exactly the same camera (fixpoint of the jump)
   const l = minimapLayout({ x: 0, y: 0, w: 640, h: 480 }, 180, 120, 8);
   const cam = { tx: -37, ty: 91, k: 1.4251 };
   const r = minimapViewRect(l, cam, 800, 600);
@@ -78,11 +78,11 @@ test("cameraForMinimapPoint: dus-intors — centrul dreptunghiului de vedere", (
 
 test("cameraForMinimapPoint: click pe proiectia unui punct il centreaza", () => {
   const l = minimapLayout({ x: 0, y: 0, w: 400, h: 400 }, 180, 120, 8);
-  // punctul-lume (100, 200), proiectat in minimap
+  // the world point (100, 200), projected into the minimap
   const mx = l.ox + l.s * 100;
   const my = l.oy + l.s * 200;
   const cam = cameraForMinimapPoint(l, mx, my, 2, 800, 600);
-  // pe ecran, punctul-lume trebuie sa cada in centrul canvasului
+  // on screen, the world point must fall in the center of the canvas
   assert.ok(Math.abs(2 * 100 + cam.tx - 400) < 1e-9);
   assert.ok(Math.abs(2 * 200 + cam.ty - 300) < 1e-9);
 });

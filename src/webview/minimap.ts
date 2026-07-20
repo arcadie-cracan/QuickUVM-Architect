@@ -1,16 +1,16 @@
 /**
- * Matematica minimapului (navigatorul de ansamblu, docs/04) — MODUL PUR,
- * testat in test:minimap, fara DOM.
+ * Minimap math (the overview navigator, docs/04) — PURE MODULE,
+ * tested in test:minimap, without DOM.
  *
- * Minimapul arata intreaga scena in miniatura (copie vie prin <use> pe grupul
- * #viewport) plus dreptunghiul zonei vizibile; click/drag pe el muta camera.
- * Toata geometria e aici, in trei sisteme de coordonate:
- *   - LUME: coordonatele diagramei (pozitiile ELK/drag);
- *   - ECRAN: pixelii canvas-ului; camera V(p) = k*p + (tx,ty);
- *   - MINIMAP: pixelii locali ai minimapului; M(p) = s*p + (ox,oy).
- * Copia <use> a scenei poarta transformul camerei (e #viewport), deci grupul
- * ei primeste U = M ∘ V⁻¹, care anuleaza camera si aduce lumea la scara
- * minimapului.
+ * The minimap shows the whole scene in miniature (a live copy via <use> on the
+ * #viewport group) plus the rectangle of the visible area; click/drag on it moves the camera.
+ * All the geometry is here, in three coordinate systems:
+ *   - WORLD: the diagram coordinates (the ELK/drag positions);
+ *   - SCREEN: the canvas pixels; camera V(p) = k*p + (tx,ty);
+ *   - MINIMAP: the minimap's local pixels; M(p) = s*p + (ox,oy).
+ * The scene's <use> copy carries the camera transform (it's #viewport), so its
+ * group receives U = M ∘ V⁻¹, which cancels the camera and brings the world to the
+ * minimap's scale.
  */
 
 export interface MmBounds {
@@ -20,22 +20,22 @@ export interface MmBounds {
   h: number;
 }
 
-/** camera vederii (aceleasi campuri ca state.tx/ty/k) */
+/** the view's camera (same fields as state.tx/ty/k) */
 export interface MmCam {
   tx: number;
   ty: number;
   k: number;
 }
 
-/** maparea lume->minimap: mx = ox + s*wx, my = oy + s*wy */
+/** the world->minimap mapping: mx = ox + s*wx, my = oy + s*wy */
 export interface MmLayout {
   s: number;
   ox: number;
   oy: number;
 }
 
-/** scara+offsetul care incadreaza limitele lumii in minimapul w×h cu pad,
- *  centrat; scara e uniforma (aspectul lumii se pastreaza) */
+/** the scale+offset that fits the world bounds into the w×h minimap with pad,
+ *  centered; the scale is uniform (the world's aspect ratio is preserved) */
 export function minimapLayout(
   b: MmBounds,
   w: number,
@@ -53,15 +53,15 @@ export function minimapLayout(
   };
 }
 
-/** transformul SVG al grupului care contine copia <use> a scenei:
- *  U = M ∘ V⁻¹ (anuleaza camera, aduce lumea la scara minimapului) */
+/** the SVG transform of the group that contains the scene's <use> copy:
+ *  U = M ∘ V⁻¹ (cancels the camera, brings the world to the minimap's scale) */
 export function minimapUseTransform(l: MmLayout, cam: MmCam): string {
   const f = l.s / cam.k;
   return `translate(${l.ox - f * cam.tx},${l.oy - f * cam.ty}) scale(${f})`;
 }
 
-/** dreptunghiul zonei VIZIBILE (canvas vw×vh vazut prin camera), in
- *  coordonate minimap — dreptunghiul de vedere desenat peste miniatura */
+/** the rectangle of the VISIBLE area (the vw×vh canvas seen through the camera), in
+ *  minimap coordinates — the view rectangle drawn over the miniature */
 export function minimapViewRect(
   l: MmLayout,
   cam: MmCam,
@@ -77,8 +77,8 @@ export function minimapViewRect(
   };
 }
 
-/** camera care CENTREAZA vederea pe punctul minimap (mx,my), pastrand zoomul:
- *  inversul lui M pana in lume, apoi centrare pe canvasul vw×vh */
+/** the camera that CENTERS the view on the minimap point (mx,my), keeping the zoom:
+ *  the inverse of M back into the world, then centering on the vw×vh canvas */
 export function cameraForMinimapPoint(
   l: MmLayout,
   mx: number,

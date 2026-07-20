@@ -1,7 +1,7 @@
-// Panelul webview cu diagrama: un singur panel reutilizat, cu
-// retainContextWhenHidden (docs/01). Host-ul e singura autoritate pe
-// fisiere; webview-ul cere actiuni prin `action/request` (docs/05), pe care
-// panelul le dispecerizeaza catre handler-ul primit din extension.ts.
+// The webview panel with the diagram: a single reused panel, with
+// retainContextWhenHidden (docs/01). The host is the sole authority on
+// files; the webview requests actions through `action/request` (docs/05), which
+// the panel dispatches to the handler received from extension.ts.
 
 import * as vscode from "vscode";
 import { resolveLocPath } from "./filelistops";
@@ -20,7 +20,7 @@ import {
   XprobeTarget,
 } from "./protocol";
 
-/** interfata ingusta catre LayoutStore (sidecar-ul de layout, docs/04) */
+/** the narrow interface to LayoutStore (the layout sidecar, docs/04) */
 export interface LayoutDeps {
   get(): SidecarData;
   positionsSnapshotted(
@@ -41,28 +41,28 @@ export interface LayoutDeps {
 export interface PanelDeps {
   getModel: () => ProjectModel | undefined;
   getOverlay: () => OverlayConfig | null;
-  /** configuratia parsata + calea ei, pentru vederea de verificare */
+  /** the parsed configuration + its path, for the verification (TB) view */
   getConfig?: () => { configPath: string | null; config: QuvmConfig };
-  /** decoratiile de stare quick-uvm (docs/05): validari + ultimul generate */
+  /** the quick-uvm status decorations (docs/05): validations + the last generate */
   getStatus?: () => { decos: StatusDeco[]; generate: GenerateStatus | null };
-  /** sidecar-ul de layout; absent doar in teste */
+  /** the layout sidecar; absent only in tests */
   layout?: LayoutDeps;
-  /** actiunile de configurare; openSource ramane tratat in panel */
+  /** the configuration actions; openSource stays handled in the panel */
   onAction: (
     action: ActionKind,
     args: Record<string, unknown>,
     viewId: string | undefined
   ) => void;
-  /** selectia din diagrama (id-uri relative la vedere) — pentru
-   *  sincronizarea cu ierarhia (docs/05); `mode` distinge simbolul de schema
-   *  la reveal (radacina „top module" vs nodul instantei) */
+  /** the selection from the diagram (ids relative to the view) — for
+   *  the synchronization with the hierarchy (docs/05); `mode` distinguishes the symbol from the schematic
+   *  at reveal (the "top module" root vs the instance node) */
   onSelection?: (
     ids: string[],
     viewId: string | undefined,
     mode?: ViewMode
   ) => void;
-  /** navigare locala pe niveluri in vederea de verificare (D24): host-ul
-   *  tine nivelul curent si evidentiaza in arborele de verificare */
+  /** local level navigation in the verification (TB) view (D24): the host
+   *  keeps the current level and highlights in the verification tree */
   onTbFocus?: (focus: string, select: string | null) => void;
 }
 
@@ -75,12 +75,12 @@ const EMPTY_OVERLAY: OverlayConfig = {
   orphans: [],
 };
 
-// Exporter-ul ACTIV: comanda din paleta trebuie sa exporte tab-ul de diagrama
-// vizibil (panou RTL/TB SAU editorul per-fisier al `*.quickuvm.yaml`), NU un
-// panou din fundal — altfel exportul mergea si cand era activ tab-ul Welcome
-// sau un fisier sursa (regresie prinsa la validare). Fiecare suprafata se
-// inregistreaza cand devine `active` si se scoate cand pierde focusul/dispare;
-// identitatea token-ului tine clear-ul precis (nu sterge un alt exporter).
+// The ACTIVE exporter: the palette command must export the visible diagram
+// tab (RTL/TB panel OR the per-file editor of `*.quickuvm.yaml`), NOT a
+// background panel — otherwise the export also ran when the Welcome tab
+// or a source file was active (a regression caught at validation). Each surface
+// registers when it becomes `active` and is removed when it loses focus/disappears;
+// the token identity keeps the clear precise (does not remove another exporter).
 let activeExporter: { run: () => void } | undefined;
 export function setActiveExporter(e: { run: () => void }): void {
   activeExporter = e;
@@ -90,7 +90,7 @@ export function clearActiveExporter(e: { run: () => void }): void {
     activeExporter = undefined;
   }
 }
-/** exporta tab-ul de diagrama activ; false daca niciunul nu e activ */
+/** exports the active diagram tab; false if none is active */
 export function runActiveExport(): boolean {
   if (activeExporter) {
     activeExporter.run();
@@ -102,7 +102,7 @@ export function runActiveExport(): boolean {
 export class DiagramPanel {
   static current: DiagramPanel | undefined;
 
-  /** Creeaza sau readuce in fata panelul si cere vederea data. */
+  /** Creates or brings the panel to the front and requests the given view. */
   static show(
     context: vscode.ExtensionContext,
     deps: PanelDeps,
@@ -127,10 +127,10 @@ export class DiagramPanel {
     | { viewId: string; mode?: ViewMode; select?: string[] }
     | undefined;
   currentView: string | undefined;
-  /** modul curent al vederii RTL (symbol/schematic) — pentru reveal-ul
-   *  corect al radacinii „top module" vs nodul instantei (docs/05) */
+  /** the current mode of the RTL view (symbol/schematic) — for the
+   *  correct reveal of the "top module" root vs the instance node (docs/05) */
   currentMode: ViewMode | undefined;
-  /** selectia curenta din webview (ID-uri relative la vederea curenta) */
+  /** the current selection from the webview (IDs relative to the current view) */
   selection: string[] = [];
 
   private constructor(
@@ -154,7 +154,7 @@ export class DiagramPanel {
     this.panel.webview.onDidReceiveMessage((m: WebviewMessage) =>
       this.onMessage(m)
     );
-    // exporter activ: doar cand ACEST panou e tab-ul vizibil (docs/05)
+    // active exporter: only when THIS panel is the visible tab (docs/05)
     setActiveExporter(this.exporter);
     this.panel.onDidChangeViewState(() => {
       if (this.panel.active) {
@@ -199,8 +199,8 @@ export class DiagramPanel {
     }
   }
 
-  /** configuratia pentru vederea de verificare (docs/05): la ready si la
-   *  orice schimbare a YAML-ului */
+  /** the configuration for the verification (TB) view (docs/05): at ready and on
+   *  any change of the YAML */
   postConfig(): void {
     if (this.ready) {
       const c = this.deps.getConfig?.();
@@ -210,14 +210,14 @@ export class DiagramPanel {
     }
   }
 
-  /** sidecar schimbat in afara gestului curent (extern/invalidare/curatare) */
+  /** sidecar changed outside the current gesture (external/invalidation/cleanup) */
   postLayout(sidecar: SidecarData): void {
     if (this.ready) {
       this.post({ v: 1, type: "layout/full", sidecar });
     }
   }
 
-  /** preferintele UI din setari (docs/05): la ready si la schimbari */
+  /** the UI preferences from settings (docs/05): at ready and on changes */
   postUiConfig(): void {
     if (this.ready) {
       const cfg = vscode.workspace.getConfiguration("quickuvm");
@@ -232,7 +232,7 @@ export class DiagramPanel {
 
   private pendingTbNav: { focus: string; select: string | null } | undefined;
 
-  /** navigare pe niveluri in vederea de verificare (D24): deschide nivelul */
+  /** level navigation in the verification (TB) view (D24): opens the level */
   navigateTb(focus: string, select: string | null): void {
     if (this.ready) {
       this.post({ v: 1, type: "tb/navigate", focus, select });
@@ -241,18 +241,18 @@ export class DiagramPanel {
     }
   }
 
-  /** cere webview-ului serializarea SVG a vederii curente (docs/05, faza 4) */
+  /** requests from the webview the SVG serialization of the current view (docs/05, phase 4) */
   requestExport(): void {
     if (this.ready) {
       this.post({ v: 1, type: "export/request" });
     }
   }
 
-  /** ultima tinta de cross-probing trimisa, ca sa nu repostam identic la
-   *  fiecare miscare de cursor in interiorul aceluiasi element */
+  /** the last cross-probing target sent, so we do not repost identically on
+   *  every cursor move inside the same element */
   private lastProbe = "";
 
-  /** decoratiile de stare quick-uvm (docs/05): badge-uri + cipul generate */
+  /** the quick-uvm status decorations (docs/05): badges + the generate chip */
   postStatus(): void {
     const s = this.deps.getStatus?.();
     if (this.ready && s) {
@@ -265,10 +265,10 @@ export class DiagramPanel {
     }
   }
 
-  /** cross-probing editor->diagrama (docs/05): haloul .xprobe din webview */
+  /** editor->diagram cross-probing (docs/05): the .xprobe halo in the webview */
   postProbe(targets: XprobeTarget[]): void {
     if (!this.ready) {
-      return; // fara panel gata nu exista diagrama de evidentiat
+      return; // without a ready panel there is no diagram to highlight
     }
     const key = JSON.stringify(targets);
     if (key === this.lastProbe) {
@@ -285,8 +285,8 @@ export class DiagramPanel {
     if (this.ready) {
       this.post({ v: 1, type: "view/show", viewId, mode });
       if (select?.length) {
-        // reveal din arbore: selectia se aplica dupa view/show — render-ul
-        // declansat de view/show o deseneaza (state.selection persista)
+        // reveal from the tree: the selection is applied after view/show — the render
+        // triggered by view/show draws it (state.selection persists)
         this.post({ v: 1, type: "select/reveal", ids: select });
       }
     } else {
@@ -298,13 +298,13 @@ export class DiagramPanel {
     switch (m.type) {
       case "ready": {
         this.ready = true;
-        // un webview reincarcat si-a pierdut haloul de cross-probing: fara
-        // resetul dedupe-ului, urmatoarea tinta identica ar fi inghitita si
-        // haloul nu s-ar mai reaprinde (recenzia adversariala a sincronizarii)
+        // a reloaded webview has lost its cross-probing halo: without
+        // resetting the dedupe, the next identical target would be swallowed and
+        // the halo would no longer light up again (adversarial review of the synchronization)
         this.lastProbe = "";
-        // sidecar-ul INAINTEA modelului (docs/05): prima randare trebuie sa
-        // aiba semintele de pozitii, altfel o vedere aranjata ar licari
-        // intai cu layout-ul automat
+        // the sidecar BEFORE the model (docs/05): the first render must
+        // have the position seeds, otherwise an arranged view would flicker
+        // first with the automatic layout
         if (this.deps.layout) {
           this.post({ v: 1, type: "layout/full", sidecar: this.deps.layout.get() });
         }
@@ -315,7 +315,7 @@ export class DiagramPanel {
         this.postUiConfig();
         this.postOverlay(this.deps.getOverlay());
         this.postConfig();
-        this.postStatus(); // decoratiile de stare (docs/05)
+        this.postStatus(); // the status decorations (docs/05)
         if (this.pendingView) {
           const { select, ...vs } = this.pendingView;
           this.post({ v: 1, type: "view/show", ...vs });
@@ -358,9 +358,9 @@ export class DiagramPanel {
         this.deps.onTbFocus?.(m.focus, m.select ?? null);
         break;
       case "nav/drill":
-        // webview-ul a navigat local; host-ul tine titlul si vederea curenta
-        // la zi si aliniaza ierarhia la noua vedere (docs/05); `mode` distinge
-        // simbolul top-ului (radacina) de schema lui (nodul instantei)
+        // the webview navigated locally; the host keeps the title and the current view
+        // up to date and aligns the hierarchy to the new view (docs/05); `mode` distinguishes
+        // the top's symbol (root) from its schematic (the instance node)
         this.currentView = m.instancePath;
         this.currentMode = m.mode;
         this.panel.title = `QuickUVM Architect — ${m.instancePath}`;
@@ -374,15 +374,15 @@ export class DiagramPanel {
         }
         break;
       default:
-        // mesajele declarate dar inca neimplementate (faza 4, docs/04):
-        // ports/reordered (nivelul 2), edge/override (nivelul 3) — se ignora
+        // the messages declared but not yet implemented (phase 4, docs/04):
+        // ports/reordered (level 2), edge/override (level 3) — they are ignored
         break;
     }
   }
 
   /**
-   * Salt-la-sursa cerut din diagrama: pentru un pin (`port`) se deschide
-   * declaratia portului; fara `port`, definitia modulului vederii.
+   * Jump-to-source requested from the diagram: for a pin (`port`) the port
+   * declaration is opened; without `port`, the definition of the view module.
    */
   private async openSource(args: Record<string, unknown>): Promise<void> {
     const model = this.deps.getModel();
@@ -407,8 +407,8 @@ export class DiagramPanel {
       return;
     }
     if (args.peek === true) {
-      // cross-probing la hover (faza 4): ne-intruziv — doar editoarele
-      // deja vizibile; setarea quickuvm.hoverCrossProbe il poate stinge
+      // cross-probing on hover (phase 4): non-intrusive — only the editors
+      // already visible; the quickuvm.hoverCrossProbe setting can turn it off
       const on = vscode.workspace
         .getConfiguration("quickuvm")
         .get<boolean>("hoverCrossProbe", true);
@@ -425,7 +425,7 @@ export class DiagramPanel {
   }
 }
 
-/** HTML-ul webview-ului diagramei, partajat de panel si de CustomTextEditor. */
+/** The HTML of the diagram webview, shared by the panel and the CustomTextEditor. */
 export function diagramHtml(
   webview: vscode.Webview,
   extensionUri: vscode.Uri
@@ -460,16 +460,16 @@ export function diagramHtml(
 }
 
 /**
- * Salveaza SVG-ul autonom exportat de webview (export/result, docs/05):
- * save dialog cu nume derivat din vedere, scriere pe disc. Partajat de panel
- * si de editorul per-fisier (customeditor).
+ * Saves the self-contained SVG exported by the webview (export/result, docs/05):
+ * a save dialog with a name derived from the view, writing to disk. Shared by the panel
+ * and the per-file editor (customeditor).
  */
 export async function saveExportedSvg(
   viewId: string,
   svg: string
 ): Promise<void> {
   if (!svg) {
-    // vederea nu are nimic de desenat (banner/ecran de bun-venit)
+    // the view has nothing to draw (banner/welcome screen)
     void vscode.window.showInformationMessage(
       vscode.l10n.t("QuickUVM Architect: nothing to export in this view.")
     );
@@ -482,7 +482,7 @@ export async function saveExportedSvg(
     filters: { SVG: ["svg"] },
   });
   if (!uri) {
-    return; // anulat
+    return; // cancelled
   }
   await vscode.workspace.fs.writeFile(uri, Buffer.from(svg, "utf8"));
   void vscode.window.showInformationMessage(
@@ -493,17 +493,17 @@ export async function saveExportedSvg(
   );
 }
 
-// starea cross-probing-ului la hover: decoratia (creata lenes, o singura
-// instanta), editorul evidentiat curent si timer-ul de stingere
+// the state of cross-probing on hover: the decoration (created lazily, a single
+// instance), the currently highlighted editor and the turn-off timer
 let peekDecoration: vscode.TextEditorDecorationType | undefined;
 let peekEditor: vscode.TextEditor | undefined;
 let peekTimer: ReturnType<typeof setTimeout> | undefined;
 
 /**
- * Cross-probing la hover (faza 4, docs/05): reveleaza `loc` DOAR intr-un
- * editor DEJA vizibil — hover-ul nu deschide tab-uri si nu fura focusul —
- * si evidentiaza scurt linia (decoratie tranzitorie, ~1.2s). Saltul complet
- * (deschidere + cursor) ramane pe dublu-click (openLoc).
+ * Cross-probing on hover (phase 4, docs/05): reveals `loc` ONLY in an
+ * ALREADY visible editor — the hover does not open tabs and does not steal focus —
+ * and briefly highlights the line (transient decoration, ~1.2s). The full jump
+ * (opening + cursor) stays on double-click (openLoc).
  */
 export function revealLocPeek(loc: Loc): void {
   const root = vscode.workspace.workspaceFolders?.[0];
@@ -513,7 +513,7 @@ export function revealLocPeek(loc: Loc): void {
     (e) => norm(e.document.uri.fsPath) === norm(abs)
   );
   if (!editor) {
-    return; // fisierul nu e deschis: hover-ul ramane fara efect
+    return; // the file is not open: the hover stays without effect
   }
   peekDecoration ??= vscode.window.createTextEditorDecorationType({
     isWholeLine: true,
@@ -539,10 +539,10 @@ export function revealLocPeek(loc: Loc): void {
   }, 1200);
 }
 
-/** Deschide fisierul unui `loc` (relativ la radacina workspace-ului) la linie. */
+/** Opens the file of a `loc` (relative to the workspace root) at the line. */
 export async function openLoc(loc: Loc): Promise<void> {
   const root = vscode.workspace.workspaceFolders?.[0];
-  // reconstituirea caii relativizate de slang: filelistops (pur, testat)
+  // reconstructing the path relativized by slang: filelistops (pure, tested)
   const abs = resolveLocPath(root?.uri.fsPath ?? "", loc.file);
   const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(abs));
   const pos = new vscode.Position(Math.max(0, loc.line - 1), 0);

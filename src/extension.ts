@@ -1,7 +1,7 @@
-// Punctul de intrare al extensiei: orchestreaza backend-ul, tree view-ul,
-// panelul de diagrama, serviciul de configurare QuickUVM si comenzile.
-// Regula (docs/01): tot ce poate fi UI nativ VSCode este nativ; webview-ul
-// primeste doar diagrama si inspectorul.
+// The extension entry point: orchestrates the backend, the tree view,
+// the diagram panel, the QuickUVM configuration service and the commands.
+// The rule (docs/01): everything that can be native VSCode UI is native; the webview
+// gets only the diagram and the inspector.
 
 import * as path from "path";
 import * as vscode from "vscode";
@@ -53,9 +53,9 @@ export function activate(context: vscode.ExtensionContext): void {
       new WidthFixProvider(),
       WidthFixProvider.metadata
     ),
-    // felia 4 (D22): diagrama TB ca editor implicit al `*.quickuvm.yaml`, cu
-    // fallback text (reopenWith). Layout-ul re-foloseste sidecar-ul comun,
-    // gesturile de editare aplica pe DOCUMENT (via TbEditTarget)
+    // slice 4 (D22): the TB diagram as the default editor of `*.quickuvm.yaml`, with
+    // text fallback (reopenWith). The layout reuses the common sidecar,
+    // the editing gestures apply on the DOCUMENT (via TbEditTarget)
     vscode.window.registerCustomEditorProvider(
       QuvmConfigEditor.viewType,
       new QuvmConfigEditor(context, layout, actions, log),
@@ -66,19 +66,19 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
-  /** id-ul de vedere al testbench-ului config-ului activ (docs/05) */
+  /** the view id of the active config's testbench (docs/05) */
   const tbViewId = (): string | undefined => {
     const uri = config.configUri;
     return uri ? `tb:${vscode.workspace.asRelativePath(uri)}` : undefined;
   };
 
-  /** nivelul (focus) curent al vederii de verificare, pentru reveal */
+  /** the current level (focus) of the verification (TB) view, for reveal */
   let tbFocus = "";
 
   /**
-   * Sincronizarea diagrama TB -> ierarhia verificarii (D24): reveal-ul se
-   * face pe identitatea `<focus>|<bloc>` (tbtree si diagrama impart nivelurile
-   * si id-urile). Fara id (drill), evidentiaza containerul nivelului.
+   * The TB diagram -> verification hierarchy synchronization (D24): the reveal is
+   * done on the identity `<focus>|<block>` (tbtree and the diagram share the levels
+   * and the ids). Without an id (drill), it highlights the level container.
    */
   const revealTbNode = (ids: string[]): void => {
     if (!vTreeView.visible) {
@@ -93,15 +93,15 @@ export function activate(context: vscode.ExtensionContext): void {
   };
 
   /**
-   * Sincronizarea diagrama -> ierarhie (docs/05): primul id din selectie
-   * care se rezolva la o instanta se evidentiaza in tree view. Candidatii,
-   * in ordine: id-ul ca atare (blocul vederii de context poarta calea
-   * completa), prefixat cu vederea curenta (nodurile vederii-schema
-   * sunt relative), instanta-proprietar a unui pin (fara ultimul segment),
-   * iar pentru pliaje — primul membru (`g_ch[0..2]` -> `g_ch[0]`).
-   * Fara niciun id rezolvabil (selectie goala, net, steag de granita),
-   * se evidentiaza instanta vederii curente: ierarhia reflecta mereu ce
-   * arata diagrama, inclusiv dupa comutarea de mod sau dupa drill.
+   * The diagram -> hierarchy synchronization (docs/05): the first id in the selection
+   * that resolves to an instance is highlighted in the tree view. The candidates,
+   * in order: the id as such (the context view's block carries the full
+   * path), prefixed with the current view (the schematic view nodes
+   * are relative), the owner instance of a pin (without the last segment),
+   * and for folds — the first member (`g_ch[0..2]` -> `g_ch[0]`).
+   * Without any resolvable id (empty selection, net, boundary flag),
+   * the current view's instance is highlighted: the hierarchy always reflects what
+   * the diagram shows, including after a mode switch or after a drill.
    */
   const revealInstance = (
     ids: string[],
@@ -109,10 +109,10 @@ export function activate(context: vscode.ExtensionContext): void {
     mode?: string
   ): void => {
     if (!model || !treeView.visible) {
-      return; // fara reveal cand ierarhia nu e vizibila (nu deschidem sidebar)
+      return; // no reveal when the hierarchy is not visible (we don't open the sidebar)
     }
-    // simbolul top-ului apartine radacinii sintetice „top module", nu nodului
-    // instantei (aceeasi cale, vederi diferite — docs/05)
+    // the top's symbol belongs to the synthetic "top module" root, not the
+    // instance node (the same path, different views — docs/05)
     if (mode === "symbol" && viewId && viewId === model.tops[0]) {
       const top = tree.topRoot();
       if (top) {
@@ -157,7 +157,7 @@ export function activate(context: vscode.ExtensionContext): void {
         : null,
       config: config.current,
     }),
-    // decoratiile de stare quick-uvm (docs/05): validari + ultimul generate
+    // the quick-uvm status decorations (docs/05): validations + the last generate
     getStatus: () => ({ decos: config.decorations, generate: generator.status }),
     layout: {
       get: () => layout.sidecar,
@@ -168,22 +168,22 @@ export function activate(context: vscode.ExtensionContext): void {
       netRender: (v, n, r) => layout.netRender(v, n, r),
     },
     onTbFocus: (focus, select) => {
-      // webview a navigat pe niveluri (drill/breadcrumb): host-ul tine
-      // nivelul curent + evidentiaza in arborele de verificare (D24)
+      // the webview navigated across levels (drill/breadcrumb): the host keeps
+      // the current level + highlights in the verification tree (D24)
       tbFocus = focus;
       revealTbNode(select ? [select] : []);
     },
     onSelection: (ids, viewId, mode) => {
       if (viewId?.startsWith("tb:")) {
-        revealTbNode(ids); // vederea de verificare -> arborele verificarii
+        revealTbNode(ids); // the verification (TB) view -> the verification tree
       } else {
-        revealInstance(ids, viewId, mode); // vederile RTL -> ierarhia designului
+        revealInstance(ids, viewId, mode); // the RTL views -> the design hierarchy
       }
     },
     onAction: (action: ActionKind, args, viewId) => {
       const pins = Array.isArray(args.pins) ? (args.pins as string[]) : [];
-      // gesturile pe pinii unui bloc copil trimit viewId-ul blocului in
-      // args (docs/05): agentii se creeaza pentru config-ul acelui modul
+      // the gestures on the pins of a child block send the block's viewId in
+      // args (docs/05): the agents are created for that module's config
       const target = typeof args.viewId === "string" ? args.viewId : viewId;
       switch (action) {
         case "setDut":
@@ -246,8 +246,8 @@ export function activate(context: vscode.ExtensionContext): void {
           void actions.composeIntoParent(target);
           break;
         case "openSubenvConfig":
-          // drill in blocul compus: calea config-ului copil (din drill), cu
-          // editorul implicit
+          // drill into the composed block: the path of the child config (from the drill), with
+          // the default editor
           void actions.openSubenvConfig(
             typeof args.config === "string" ? args.config : ""
           );
@@ -256,10 +256,10 @@ export function activate(context: vscode.ExtensionContext): void {
           void generator.generate();
           break;
         case "openSource":
-          break; // tratat direct in panel (are nevoie de model); nu ajunge aici
+          break; // handled directly in the panel (it needs the model); does not reach here
         default: {
-          // garda de exhaustivitate: un ActionKind nou fara handler aici e
-          // eroare de COMPILARE, nu un log inghitit tacit la rulare
+          // exhaustiveness guard: a new ActionKind without a handler here is
+          // a COMPILE error, not a log silently swallowed at runtime
           const missing: never = action;
           log.appendLine(`[panel] unhandled action: ${missing as string}`);
         }
@@ -267,9 +267,9 @@ export function activate(context: vscode.ExtensionContext): void {
     },
   };
 
-  // ---- cross-probing editor->diagrama (docs/05): indexul loc->tinta al
-  // modelului, pe cai ABSOLUTE normalizate (lower + slash — pe Windows caile
-  // difera prin caz, aceeasi capcana ca isComposedChild)
+  // ---- editor->diagram cross-probing (docs/05): the model's loc->target
+  // index, on normalized ABSOLUTE paths (lower + slash — on Windows the paths
+  // differ by case, the same pitfall as isComposedChild)
   const normPath = (p: string): string => p.toLowerCase().replace(/\\/g, "/");
   let locIndex = new Map<string, LocEntry[]>();
   const rebuildLocIndex = (m: ProjectModel): void => {
@@ -286,13 +286,13 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     }
   };
-  /** tintele de sub cursorul unui editor de sursa SV (goale = niciuna) */
+  /** the targets under the cursor of an SV source editor (empty = none) */
   const targetsAt = (
     doc: vscode.TextDocument,
     line0: number
   ): XprobeTarget[] => {
     const entries = locIndex.get(normPath(doc.uri.fsPath));
-    return resolveLoc(entries, line0 + 1); // modelul numara liniile de la 1
+    return resolveLoc(entries, line0 + 1); // the model counts lines from 1
   };
 
   backend.onModel((m) => {
@@ -300,21 +300,21 @@ export function activate(context: vscode.ExtensionContext): void {
     rebuildLocIndex(m);
     tree.setModel(m);
     config.setModel(m);
-    layout.setModel(m); // invalidare gratioasa a sidecar-ului (docs/04)
+    layout.setModel(m); // graceful invalidation of the sidecar (docs/04)
     DiagramPanel.current?.postModel(m);
   });
   layout.onExternalChange((sidecar) => {
     DiagramPanel.current?.postLayout(sidecar);
   });
-  // cipul de stare generate se actualizeaza dupa fiecare rulare (docs/05)
+  // the generate status chip is updated after each run (docs/05)
   context.subscriptions.push(
     generator.onStatus(() => DiagramPanel.current?.postStatus())
   );
   backend.onStale((errors) => {
     DiagramPanel.current?.postStale(errors);
     if (!model) {
-      // fara model anterior, esecul ar fi altfel invizibil (arborele ramane
-      // pe ecranul de bun-venit, erorile doar in Problems)
+      // without a previous model, the failure would otherwise be invisible (the tree stays
+      // on the welcome screen, the errors only in Problems)
       void vscode.window.showWarningMessage(
         errors === 1
           ? vscode.l10n.t(
@@ -329,17 +329,17 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   config.onOverlay((overlay) => {
     DiagramPanel.current?.postOverlay(overlay);
-    DiagramPanel.current?.postConfig(); // vederea de verificare (docs/05)
-    DiagramPanel.current?.postStatus(); // decoratiile de stare (docs/05)
-    // ierarhia verificarii: arborele derivat din configuratia curenta
+    DiagramPanel.current?.postConfig(); // the verification (TB) view (docs/05)
+    DiagramPanel.current?.postStatus(); // the status decorations (docs/05)
+    // the verification hierarchy: the tree derived from the current configuration
     vtree.setConfig(
       config.configUri ? config.current : null,
       config.configUri ? vscode.workspace.asRelativePath(config.configUri) : null
     );
   });
 
-  // urmarirea cursorului (docs/05): debounced, non-invaziv — doar haloul
-  // .xprobe din vederea curenta; fisier necunoscut modelului = stinge
+  // cursor tracking (docs/05): debounced, non-invasive — only the .xprobe
+  // halo of the current view; a file unknown to the model = turn off
   let probeTimer: ReturnType<typeof setTimeout> | undefined;
   context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection((e) => {
@@ -355,8 +355,8 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  /** vederea care CONTINE o instanta: cea mai lunga cheie de vedere care ii e
-   *  prefix propriu; null pentru top-uri (fara parinte) */
+  /** the view that CONTAINS an instance: the longest view key that is a proper
+   *  prefix of it; null for tops (without a parent) */
   const containingView = (path: string): string | null => {
     let best: string | null = null;
     for (const v of Object.keys(model?.views ?? {})) {
@@ -366,8 +366,8 @@ export function activate(context: vscode.ExtensionContext): void {
     }
     return best;
   };
-  /** instanta preferata a unui modul: cea a vederii curente daca se
-   *  potriveste, altfel prima din model */
+  /** the preferred instance of a module: that of the current view if it
+   *  matches, otherwise the first in the model */
   const instanceOf = (module: string): string | null => {
     const cur = DiagramPanel.current?.currentView;
     const curInst = model?.instances.find((i) => i.path === cur);
@@ -377,7 +377,7 @@ export function activate(context: vscode.ExtensionContext): void {
     return model?.instances.find((i) => i.module === module)?.path ?? null;
   };
 
-  // ------------------------------------------------------------ comenzi
+  // ------------------------------------------------------------ commands
 
   context.subscriptions.push(
     vscode.commands.registerCommand("quickuvm.reloadModel", () => {
@@ -408,8 +408,8 @@ export function activate(context: vscode.ExtensionContext): void {
           path = await pickInstance();
         }
         if (path) {
-          // explicit „symbol": fara comutator, modul nu se mai mosteneste din
-          // starea webview-ului (radacina „top module" -> simbolul top-ului)
+          // explicit "symbol": without a toggle, the mode is no longer inherited from
+          // the webview state (the "top module" root -> the top's symbol)
           DiagramPanel.show(context, panelDeps, path, "symbol");
         }
       }
@@ -438,10 +438,10 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     ),
 
-    // reciproca navigationala a cross-probing-ului (docs/05): din sursa SV,
-    // deschide diagrama la elementul de sub cursor — instanta -> schema
-    // vederii care o contine + selectie; port/modul -> vederea instantei
-    // modulului (preferand vederea curenta)
+    // the navigational reciprocal of cross-probing (docs/05): from the SV source,
+    // opens the diagram at the element under the cursor — instance -> the schematic
+    // of the view that contains it + selection; port/module -> the view of the module's
+    // instance (preferring the current view)
     vscode.commands.registerCommand("quickuvm.revealInDiagram", () => {
       const ed = vscode.window.activeTextEditor;
       if (!ed || !model) {
@@ -460,17 +460,17 @@ export function activate(context: vscode.ExtensionContext): void {
       if (t.kind === "instance") {
         const view = containingView(t.path);
         if (view) {
-          // toate tintele (instantele generate impart linia) cad in aceeasi
-          // vedere: selectam toate caile relative
+          // all targets (the generated instances share the line) fall in the same
+          // view: we select all the relative paths
           const rels = targets
             .filter((x): x is Extract<XprobeTarget, { kind: "instance" }> =>
               x.kind === "instance" && x.path.startsWith(view + "."))
             .map((x) => x.path.slice(view.length + 1));
           DiagramPanel.show(context, panelDeps, view, "schematic", rels);
         } else {
-          // top (fara vedere-parinte): schema lui daca exista — antetul unui
-          // modul dezvaluie interiorul, consecvent cu celelalte module
-          // (recenzia adversariala; simbolul ramane pentru frunze)
+          // top (without a parent view): its schematic if it exists — a module
+          // header reveals the interior, consistent with the other modules
+          // (adversarial review; the symbol stays for leaves)
           const mode: ViewMode = model.views[t.path] ? "schematic" : "symbol";
           DiagramPanel.show(context, panelDeps, t.path, mode);
         }
@@ -478,14 +478,14 @@ export function activate(context: vscode.ExtensionContext): void {
       }
       const inst = instanceOf(t.module);
       if (!inst) {
-        return; // modul fara instanta elaborata: nimic de aratat
+        return; // module without an elaborated instance: nothing to show
       }
       const mode: ViewMode = model.views[inst] ? "schematic" : "symbol";
       const select = t.kind === "port" ? [`<port>.${t.port}`] : undefined;
       DiagramPanel.show(context, panelDeps, inst, mode, select);
     }),
 
-    // ---- faza 2: configurarea QuickUVM
+    // ---- phase 2: the QuickUVM configuration
 
     vscode.commands.registerCommand(
       "quickuvm.setDut",
@@ -538,8 +538,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       "quickuvm.revealTbComponent",
       (focus?: string, selectId?: string | null) => {
-        // click pe un nod din ierarhia verificarii: deschide vederea TB la
-        // nivelul lui (focus) si selecteaza blocul (selectId) — D24
+        // click on a node in the verification hierarchy: opens the TB view at
+        // its level (focus) and selects the block (selectId) — D24
         const viewId = tbViewId();
         if (!viewId) {
           return;
@@ -551,7 +551,7 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
 
     vscode.commands.registerCommand("quickuvm.openVerificationView", async () => {
-      await config.refresh(); // prima invocare poate precede descoperirea
+      await config.refresh(); // the first invocation may precede discovery
       const uri = config.configUri;
       if (!uri) {
         void vscode.window.showInformationMessage(
@@ -570,9 +570,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
 
     vscode.commands.registerCommand("quickuvm.exportSvg", () => {
-      // exporta tab-ul de diagrama ACTIV (panou RTL/TB sau editorul
-      // per-fisier); daca activ e alt tab (Welcome, fisier sursa), nu face
-      // nimic si indruma spre butonul ⤓ din header-ul diagramei
+      // exports the ACTIVE diagram tab (RTL/TB panel or the per-file
+      // editor); if another tab is active (Welcome, source file), it does
+      // nothing and points to the ⤓ button in the diagram header
       if (!runActiveExport()) {
         void vscode.window.showInformationMessage(
           vscode.l10n.t(
@@ -634,7 +634,7 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // ------------------------------------------------------- evenimente
+  // ------------------------------------------------------- events
 
   context.subscriptions.push(
     vscode.workspace.onDidSaveTextDocument((doc) => {
@@ -647,7 +647,7 @@ export function activate(context: vscode.ExtensionContext): void {
         e.affectsConfiguration("quickuvm.lassoMode") ||
         e.affectsConfiguration("quickuvm.schematicDecorations")
       ) {
-        // setari pur de UI: se retrimit webview-ului, fara re-elaborare
+        // purely UI settings: they are resent to the webview, without re-elaboration
         DiagramPanel.current?.postUiConfig();
         return;
       }
@@ -663,8 +663,8 @@ export function activate(context: vscode.ExtensionContext): void {
     })
   );
 
-  // prima incarcare: doar daca top-ul e deja setat (altfel viewsWelcome
-  // ghideaza utilizatorul catre "Incarca modelul", care cere top-ul)
+  // the first load: only if the top is already set (otherwise viewsWelcome
+  // guides the user toward "Load the model", which requires the top)
   const top = vscode.workspace.getConfiguration("quickuvm").get<string>("top", "");
   if (vscode.workspace.workspaceFolders?.length && top.trim()) {
     backend.schedule(0);
@@ -697,5 +697,5 @@ async function pickInstance(
 }
 
 export function deactivate(): void {
-  // curatenia e facuta de context.subscriptions
+  // cleanup is done by context.subscriptions
 }

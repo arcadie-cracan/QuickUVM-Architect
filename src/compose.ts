@@ -1,14 +1,14 @@
-// Derivarea conexiunilor H1 dintre blocuri compuse (felia 3, docs/03/06) din
-// net-urile vederii-schema a parintelui: un net care leaga IESIREA unui bloc
-// copil de INTRAREA altuia e exact o intrare `connections: [{from, to}]`.
-// Modul PUR (nu importa `vscode`, nu atinge YAML-ul): host-ul il foloseste, iar
-// testele il ruleaza in Node (`npm run test:compose`).
+// Deriving the H1 connections between composed blocks (slice 3, docs/03/06) from
+// the nets of the parent's schematic view: a net that links the OUTPUT of a child
+// block to the INPUT of another is exactly a `connections: [{from, to}]` entry.
+// PURE module (does not import `vscode`, does not touch the YAML): the host uses it, and
+// the tests run it in Node (`npm run test:compose`).
 //
-// Contractul e sondat empiric pe quick-uvm 0.9.2 (`SubenvConnection` +
-// `validate_subenv_composition`): `from` = un port de IESIRE al blocului sursa,
-// `to` = un port de INTRARE al blocului destinatie, latimile EGALE, un singur
-// driver per destinatie, iar agentul blocului DESTINATIE trebuie sa fie PASIV.
-// Primul token al capatului e NUMELE SUBENV-ului (= numele instantei copil).
+// The contract is empirically probed on quick-uvm 0.9.2 (`SubenvConnection` +
+// `validate_subenv_composition`): `from` = an OUTPUT port of the source block,
+// `to` = an INPUT port of the destination block, EQUAL widths, a single
+// driver per destination, and the DESTINATION block's agent must be PASSIVE.
+// The endpoint's first token is the SUBENV NAME (= the child instance name).
 
 import { SV_IDENT_RE } from "./heuristics";
 import type { Dir, ProjectModel } from "./model";
@@ -16,18 +16,18 @@ import type { QuvmSubenv } from "./quickuvm";
 import { addConnections, parseQuvm, setAgentActive } from "./yamlops";
 
 export interface ParentComposition {
-  /** calea instantei parinte (bench-ul in care se compune blocul curent) */
+  /** the parent instance path (the bench into which the current block is composed) */
   parentPath: string;
-  /** rel-urile copiilor-bloc DIRECTI ai parintelui, relative la el */
+  /** the rels of the parent's DIRECT block children, relative to it */
   childRels: string[];
 }
 
 /**
- * Parintele-bench imediat al unei vederi-bloc + copiii-bloc DIRECTI ai lui
- * (pentru „Compose into parent bench", felia 3). Parintele = cea mai lunga
- * instanta care e prefix STRICT al vederii (sare peste domeniile de generate,
- * care nu-s instante in model); copiii directi = cei fara alta instanta intre
- * ei si parinte. Interfetele se exclud. null daca vederea e un modul top.
+ * The immediate parent bench of a block view + its DIRECT block children
+ * (for "Compose into parent bench", slice 3). The parent = the longest
+ * instance that is a STRICT prefix of the view (skips over the generate domains,
+ * which are not instances in the model); the direct children = those with no other instance between
+ * them and the parent. The interfaces are excluded. null if the view is a top module.
  */
 export function parentComposition(
   model: ProjectModel,
@@ -46,7 +46,7 @@ export function parentComposition(
     }
   }
   if (!parent) {
-    return null; // modul top: fara parinte
+    return null; // top module: no parent
   }
   const p = parent;
   const childRels: string[] = [];
@@ -68,7 +68,7 @@ export function parentComposition(
   return { parentPath: p.path, childRels };
 }
 
-/** `g_ch[1].u_ch` -> `g_ch_1_u_ch` (identificator SV pentru subenvs[].name) */
+/** `g_ch[1].u_ch` -> `g_ch_1_u_ch` (SV identifier for subenvs[].name) */
 export function subenvName(rel: string): string {
   const s = rel
     .replace(/\[(\d+)\]/g, "_$1")
@@ -79,21 +79,21 @@ export function subenvName(rel: string): string {
 }
 
 export interface SubenvMapping {
-  /** rel-copil -> numele subenv-ului compus (doar cele neambigue) */
+  /** child-rel -> the composed subenv's name (only the unambiguous ones) */
   subenvOf: Map<string, string>;
-  /** numele revendicate de MAI MULTI rel — excluse din cablare */
+  /** the names claimed by MULTIPLE rels — excluded from wiring */
   ambiguous: string[];
 }
 
 /**
- * Reconstituie maparea rel-copil -> nume subenv prin conventia createSubenvs
- * (nume = subenvName(rel)). Rel poate fi ADANC (membru de generate:
- * `g_ch[0].u_ch`) — NU se filtreaza dupa `.` (invariantul #3 al compunerii,
- * calit la recenzia adversariala). `subenvName` e many-to-one, iar
- * `createSubenvs` a dedus coliziunile cu `_2` — reconstructia prin recalcul
- * nu stie care rel a primit varianta, deci numele revendicate de mai multi
- * rel se EXCLUD si se avertizeaza (mai bine nimic decat o conexiune
- * misrutata).
+ * Reconstitutes the child-rel -> subenv name mapping via the createSubenvs convention
+ * (name = subenvName(rel)). Rel can be DEEP (a generate member:
+ * `g_ch[0].u_ch`) — it is NOT filtered by `.` (invariant #3 of the composition,
+ * hardened at the adversarial review). `subenvName` is many-to-one, and
+ * `createSubenvs` disambiguated the collisions with `_2` — the reconstruction by recompute
+ * does not know which rel received the variant, so the names claimed by multiple
+ * rels are EXCLUDED and warned about (better nothing than a misrouted
+ * connection).
  */
 export function subenvMapping(
   model: ProjectModel,
@@ -128,19 +128,19 @@ export function subenvMapping(
 }
 
 export interface DerivedConn {
-  /** `<subenv>.<port>` — portul de iesire al blocului sursa */
+  /** `<subenv>.<port>` — the source block's output port */
   from: string;
-  /** `<subenv>.<port>` — portul de intrare al blocului destinatie */
+  /** `<subenv>.<port>` — the destination block's input port */
   to: string;
-  /** latimea comuna (biti); pentru diagnosticul nepotrivirilor */
+  /** the common width (bits); for the mismatch diagnostic */
   width: number | null;
 }
 
 export interface ComposeResult {
   connections: DerivedConn[];
-  /** subenv-urile destinatie: agentul lor TREBUIE pus pasiv (`active: false`) */
+  /** the destination subenvs: their agent MUST be set passive (`active: false`) */
   sinks: string[];
-  /** probleme care ar face `generate` sa refuze (multi-driver, latimi) */
+  /** problems that would make `generate` refuse (multi-driver, widths) */
   warnings: string[];
 }
 
@@ -153,9 +153,9 @@ interface Endpoint {
 }
 
 /**
- * Conexiunile inter-bloc dintre subenv-urile date (map rel-copil -> nume subenv).
- * Doar net-urile pur inter-bloc conteaza: unul care atinge un port PROPRIU al
- * vederii (`<port>.X`) e o legatura de granita a DUT-ului, nu intre blocuri.
+ * The inter-block connections between the given subenvs (map child-rel -> subenv name).
+ * Only the purely inter-block nets matter: one that touches an OWN port of the
+ * view (`<port>.X`) is a boundary link of the DUT, not between blocks.
  */
 export function deriveConnections(
   model: ProjectModel,
@@ -169,12 +169,12 @@ export function deriveConnections(
   }
   const sinkSet = new Set<string>();
   for (const net of view.nets) {
-    // capetele care sunt pini de bloc-copil COMPUS ca subenv. NU se sare
-    // net-ul care atinge si un port propriu al vederii (`<port>.X`): un net de
-    // feedthrough (portul parintelui condus de un copil SI citit de altul) e o
-    // conexiune reala inter-bloc — capatul `<port>.X` cade oricum la filtrul
-    // per-capat (rel `<port>` nu e cheie in subenvOf), iar net-urile pur de
-    // granita cad la testul 0-drivere/0-sink de mai jos
+    // the endpoints that are pins of a child block COMPOSED as a subenv. The
+    // net that also touches an own port of the view (`<port>.X`) is NOT skipped: a
+    // feedthrough net (the parent's port driven by one child AND read by another) is a
+    // real inter-block connection — the `<port>.X` endpoint falls off anyway at the
+    // per-endpoint filter (rel `<port>` is not a key in subenvOf), and the purely
+    // boundary nets fall off at the 0-drivers/0-sink test below
     const eps: Endpoint[] = [];
     for (const ep of net.endpoints) {
       const dot = ep.lastIndexOf(".");
@@ -183,14 +183,14 @@ export function deriveConnections(
       }
       const rel = ep.slice(0, dot);
       if (!subenvOf.has(rel)) {
-        continue; // capat catre un bloc necompus / port propriu: se ignora
+        continue; // endpoint towards an uncomposed block / own port: ignored
       }
       const inst = model.instances.find((i) => i.path === `${viewId}.${rel}`);
       const p = inst
         ? model.modules[inst.module]?.ports.find((x) => x.name === ep.slice(dot + 1))
         : undefined;
       if (!inst || !p) {
-        continue; // semnal de interfata / port necunoscut: nesondabil ca fir
+        continue; // interface signal / unknown port: not probeable as a wire
       }
       eps.push({
         rel,
@@ -206,10 +206,10 @@ export function deriveConnections(
     const drivers = eps.filter((e) => e.dir === "out" || e.dir === "inout");
     const sinks = eps.filter((e) => e.dir === "in");
     if (drivers.length === 0 || sinks.length === 0) {
-      continue; // fara pereche iesire->intrare intre subenv-uri
+      continue; // no output->input pair between subenvs
     }
     if (drivers.length > 1) {
-      // quick-uvm cere un singur driver per destinatie — nu ghicim sursa
+      // quick-uvm requires a single driver per destination — we do not guess the source
       out.warnings.push(
         `net "${net.name}" has ${drivers.length} drivers among composed blocks — not wired (needs a single driver)`
       );
@@ -218,14 +218,14 @@ export function deriveConnections(
     const drv = drivers[0];
     for (const snk of sinks) {
       if (subenvOf.get(snk.rel) === subenvOf.get(drv.rel)) {
-        continue; // acelasi subenv (feedback intern / nume-ambiguu): nu se cableaza
+        continue; // same subenv (internal feedback / ambiguous name): not wired
       }
-      // latimea vine din DEFINITIA modulului (per nume), care e comuna la mai
-      // multe elaborari — pentru DOUA instante ale ACELUIASI modul cu parametri
-      // diferiti latimea partajata e nesigura, deci NU verificam aici (quick-uvm
-      // face oricum verificarea autoritara la generare). Pentru module DIFERITE
-      // latimea e de incredere: nepotrivirea o avertizam, dar tot cablam (nu
-      // aruncam o conexiune reala — generatorul decide).
+      // the width comes from the module's DEFINITION (per name), which is common to
+      // several elaborations — for TWO instances of the SAME module with different
+      // parameters the shared width is unreliable, so we do NOT check here (quick-uvm
+      // does the authoritative check at generation anyway). For DIFFERENT modules
+      // the width is trustworthy: we warn about the mismatch, but still wire (we do not
+      // discard a real connection — the generator decides).
       if (
         drv.module !== snk.module &&
         drv.width !== null &&
@@ -248,29 +248,29 @@ export function deriveConnections(
   return out;
 }
 
-// ------------------------------------------------- planul de editare (H1)
+// ------------------------------------------------- the edit plan (H1)
 
 export interface WirePlan {
-  /** textul NOU al config-ului top (identic cu intrarea = nimic de scris) */
+  /** the NEW text of the top config (identical to the input = nothing to write) */
   topText: string;
-  /** cheia fisierului copil (data de host) -> textul NOU (doar schimbate) */
+  /** the child file's key (given by the host) -> the NEW text (only changed ones) */
   childTexts: Map<string, string>;
-  /** `<sink>.<agent>` puse pasive */
+  /** `<sink>.<agent>` set passive */
   passivated: string[];
-  /** sinks fara config/fisier/agent — utilizatorul configureaza manual */
+  /** sinks without config/file/agent — the user configures manually */
   manual: string[];
 }
 
 /**
- * Planifica editarea ATOMICA multi-fisier a cablarii H1 (PUR, testat in
- * test:compose): `connections` pe top + TOTI agentii blocului DESTINATIE care
- * detin porturi conduse pusi pasivi in config-ul lui copil (quick-uvm refuza
- * daca oricare ramane activ). `children` mapeaza `subenvs[].config` (textul
- * din YAML) la fisierul REZOLVAT de host: `key` identifica fisierul (URI
- * canonic), `text` e continutul lui. Invariantul #4 (calit la recenzia
- * adversariala): doua sinks pot referi ACELASI fisier copil (bloc partajat)
- * — pasivizarile se PLIAZA pe textul in evolutie, o singura intrare per
- * `key`, altfel doua inlocuiri full-range pe acelasi fisier s-ar corupe.
+ * Plans the ATOMIC multi-file edit of the H1 wiring (PURE, tested in
+ * test:compose): `connections` on the top + ALL the DESTINATION block's agents that
+ * own driven ports set passive in its child config (quick-uvm refuses
+ * if any stays active). `children` maps `subenvs[].config` (the text
+ * from the YAML) to the file RESOLVED by the host: `key` identifies the file (canonical
+ * URI), `text` is its content. Invariant #4 (hardened at the adversarial
+ * review): two sinks can reference the SAME child file (shared block)
+ * — the passivations FOLD onto the evolving text, a single entry per
+ * `key`, otherwise two full-range replacements on the same file would corrupt it.
  */
 export function planWireEdits(
   topText: string,
@@ -284,8 +284,8 @@ export function planWireEdits(
     passivated: [],
     manual: [],
   };
-  // textul in evolutie per fisier (cheia = identitatea fisierului, nu sirul
-  // `config` — doua cai relative diferite pot rezolva la acelasi fisier)
+  // the evolving text per file (the key = the file identity, not the
+  // `config` string — two different relative paths can resolve to the same file)
   const evolving = new Map<string, string>();
   for (const sink of derived.sinks) {
     const subenv = subenvs.find((s) => s.name === sink);
@@ -295,7 +295,7 @@ export function planWireEdits(
     }
     const child = children.get(subenv.config);
     if (!child) {
-      plan.manual.push(sink); // fisier lipsa/ilizibil
+      plan.manual.push(sink); // missing/unreadable file
       continue;
     }
     let text = evolving.get(child.key) ?? child.text;
@@ -304,13 +304,13 @@ export function planWireEdits(
         .filter((c) => c.to.startsWith(`${sink}.`))
         .map((c) => c.to.slice(sink.length + 1))
     );
-    // TOTI agentii care detin un port de intrare condus (scheletul din
-    // createSubenv nu creeaza agenti — atunci nu avem ce pasiviza inca).
-    // filter(), NU find(): porturile conduse ale unui sink pot apartine unor
-    // agenti DIFERITI, iar quick-uvm refuza generarea daca ORICARE ramane
-    // activ ("agent ... is active and would drive ...") — cu find(), al
-    // doilea agent ramanea activ si gestul raporta succes pe o stare rupta
-    // (bug pre-existent, confirmat empiric la recenzia adversariala).
+    // ALL the agents that own a driven input port (the skeleton from
+    // createSubenv does not create agents — then we have nothing to passivate yet).
+    // filter(), NOT find(): a sink's driven ports can belong to DIFFERENT
+    // agents, and quick-uvm refuses generation if ANY stays
+    // active ("agent ... is active and would drive ...") — with find(), the
+    // second agent stayed active and the gesture reported success on a broken state
+    // (pre-existing bug, empirically confirmed at the adversarial review).
     const owners = (parseQuvm(text).agents ?? []).filter(
       (a) =>
         a.name &&
