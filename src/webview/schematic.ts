@@ -203,9 +203,14 @@ function drawAnnotation(
     // overlapped with the width label / note); the dimensions and the extended stub
     // come from the module constants MARKER_*
     const brackets = kind === "concat" ? "{}" : "[]";
-    const inner = xOut + out * MARKER_GAP; // the chip's block-facing edge
-    const cx = inner + out * (MARKER_CW / 2);
-    const bx = west ? inner - MARKER_CW : inner;
+    // The chip sits AT the extended tip: its OUTER face is the marker tip
+    // (= stubOut, where the wire anchors / the label sits just beyond), and it
+    // extends CW toward the block. drawAnnotation gets the plain-stub end `xOut`,
+    // so recompute the tip from the module constants (tip = xOut + out*(GAP+CW+
+    // TAIL) = xOut + out*(MARKER_STUB - STUB)).
+    const markerTip = xOut + out * (MARKER_STUB - STUB);
+    const bx = west ? markerTip : markerTip - MARKER_CW; // rect left edge
+    const signX = markerTip - out * (MARKER_CW / 2); // chip center
     return [
       el("rect", {
         class: "split-join",
@@ -219,7 +224,7 @@ function drawAnnotation(
         "text",
         {
           class: "split-sign",
-          x: String(cx),
+          x: String(signX),
           // y approximately centered as a fallback; the fine centering is done by
           // `centerChipSigns` after rendering. We do NOT use `dominant-baseline`:
           // getBBox + dominant-baseline differ between Chromium versions
@@ -230,7 +235,18 @@ function drawAnnotation(
         },
         brackets
       ),
-      noteText(inner + out * (MARKER_CW + 3)),
+      // the {…}/[hi:lo] note goes ABOVE the chip (the outer side now carries the
+      // wire/label, so it can no longer sit beyond the chip)
+      el(
+        "text",
+        {
+          class: "conn-note",
+          x: String(signX),
+          y: String(py - MARKER_CH / 2 - 3),
+          "text-anchor": "middle",
+        },
+        spec.note ?? ""
+      ),
     ];
   }
   // expr / mixed / another note without a dedicated glyph: plain text
@@ -1174,24 +1190,18 @@ function drawPin(
   }
 
   if (isMarker) {
-    // concat/select marker pin: the stub no longer PIERCES the chip (the old
-    // "the pin sticks out visibly through the rectangle" request is SUPERSEDED —
-    // on a wide bus the stub is thick and looks like a wire passing through
-    // `{}`/`[]`). It is drawn as TWO segments touching the chip's faces, so
-    // nothing crosses it: block -> block-side face, and tip-side face -> tip
-    // (where the wire anchors, like the label in show-as-label). The faces come
-    // from drawAnnotation's geometry: inner = xOut + out*GAP, outer = inner + out*CW.
+    // concat/select marker pin: the decorator chip sits AT the extended tip
+    // (drawAnnotation), so the wire connects to its OUTER face (stubOut) and the
+    // pin reads as terminating at the extended pin — not the inner pin (user
+    // request, Jul 2026). A single stub runs from the block to the chip's inner
+    // face; nothing crosses the chip. chipInner = stubOut - out*CW (the chip
+    // spans [stubOut, chipInner], CW wide, outer face at the tip).
     const out = west ? -1 : 1;
-    const chipInner = xOut + out * MARKER_GAP;
-    const chipOuter = chipInner + out * MARKER_CW;
+    const chipInner = stubOut - out * MARKER_CW;
     g.append(
       el("line", {
         class: "stub",
         x1: String(x0), y1: String(py), x2: String(chipInner), y2: String(py),
-      }),
-      el("line", {
-        class: "stub",
-        x1: String(chipOuter), y1: String(py), x2: String(stubOut), y2: String(py),
       })
     );
   } else {
