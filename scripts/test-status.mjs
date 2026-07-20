@@ -33,7 +33,6 @@ const F = (kind, severity, params) => ({ kind, severity, params, span: null });
 test("decosFromFindings: fiecare fel isi gaseste tinta semantica", () => {
   const decos = decosFromFindings([
     F("dut-missing", "warning", { module: "ghost" }),
-    F("hybrid", "error", {}),
     F("port-claimed", "error", { port: "clk", agent: "cmd" }),
     F("port-orphan", "warning", { port: "gone", dut: "chan", agent: "cmd" }),
     F("width-mismatch", "warning", {
@@ -42,15 +41,16 @@ test("decosFromFindings: fiecare fel isi gaseste tinta semantica", () => {
     F("ignored-and-mapped", "warning", { port: "x", agent: "rsp" }),
   ]);
   const scopes = decos.map((d) => d.scope);
-  // dut-missing/hybrid -> env; port-claimed -> port+agent; port-orphan ->
+  // dut-missing -> env; port-claimed -> port+agent; port-orphan ->
   // DOAR agent (pinul nu mai exista); width-mismatch -> port+agent;
-  // ignored-and-mapped -> port
+  // ignored-and-mapped -> port (kind-ul "hybrid" nu mai exista: 1.0
+  // accepta agenti de granita la o compunere)
   assert.deepEqual(scopes, [
-    "env", "env", "port", "agent", "agent", "port", "agent", "port",
+    "env", "port", "agent", "agent", "port", "agent", "port",
   ]);
-  assert.ok(decos[3].message.includes("clk"));
-  assert.ok(decos[4].message.includes("gone"));
-  assert.ok(decos[5].message.includes("width 8"));
+  assert.ok(decos[2].message.includes("clk"));
+  assert.ok(decos[3].message.includes("gone"));
+  assert.ok(decos[4].message.includes("width 8"));
 });
 
 test("statusIdsRtl: vederea DUT-ului -> steag; instantele de DUT -> pini", () => {
@@ -88,10 +88,12 @@ test("statusIdsRtl: fara DUT sau vedere nelegata -> nimic", () => {
 
 test("statusIdsTb: agent prezent -> blocul lui; env -> nodul env", () => {
   const decos = decosFromFindings([
+    // env-scoped ERROR fabricat (fostul rol al "hybrid"-ului): testul verifica
+    // PRECEDENTA severitatii la agregare, nu realismul finding-ului
+    F("dut-missing", "error", { module: "ghost" }),
     F("width-mismatch", "warning", {
       port: "din", declared: 8, expected: 16, agent: "cmd",
     }),
-    F("hybrid", "error", {}),
   ]);
   // nivelul env: agentii vizibili, env-ul nu
   const envLevel = statusIdsTb(decos, new Set(["agent:cmd", "agent:rsp"]));
@@ -100,7 +102,7 @@ test("statusIdsTb: agent prezent -> blocul lui; env -> nodul env", () => {
   const root = statusIdsTb(decos, new Set(["dut", "env"]));
   assert.deepEqual([...root.keys()], ["env"]);
   const env = root.get("env");
-  assert.equal(env.severity, "error"); // hibridul (error) bate width (warning)
+  assert.equal(env.severity, "error"); // error-ul env bate width (warning)
   assert.equal(env.messages.length, 2);
   assert.ok(env.messages.some((m) => m.startsWith("cmd: ")));
 });

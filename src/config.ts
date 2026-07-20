@@ -319,7 +319,7 @@ export class ConfigService implements vscode.Disposable {
       }));
 
     const roles: Record<string, PortRole> = {};
-    for (const p of cfg.x_quickuvm_architect?.ignored_ports ?? []) {
+    for (const p of cfg.dut?.unverified_ports ?? []) {
       roles[p] = "ignored";
     }
     if (cfg.dut?.clock) {
@@ -426,10 +426,6 @@ function findingMessage(f: Finding): string {
       return vscode.l10n.t(
         'Module "{0}" does not exist in the current design',
         String(p.module)
-      );
-    case "hybrid":
-      return vscode.l10n.t(
-        "A bench with `subenvs` cannot also define its own `agents` — a composition level is a pure subsystem, which QuickUVM requires. Remove the agents (or the subenvs)."
       );
     case "port-claimed":
       return vscode.l10n.t(

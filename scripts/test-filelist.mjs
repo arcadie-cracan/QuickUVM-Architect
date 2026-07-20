@@ -92,20 +92,41 @@ test("outputDir absolut: nu devine exclude relativ", () => {
   assert.equal(outputDirExclude("/abs/out"), null);
 });
 
-test("resolveLocPath: loc.file relativizat de slang (..\\..) -> cale absoluta", () => {
-  // capcana 8: slang relativizeaza fata de cwd; join-ul normalizeaza ..
-  assert.equal(
-    resolveLocPath("C:\\ws\\proj", "..\\..\\other\\top.sv"),
-    "C:\\other\\top.sv"
-  );
-  assert.equal(
-    resolveLocPath("C:\\ws\\proj", "src/adder.sv"),
-    "C:\\ws\\proj\\src\\adder.sv"
-  );
-});
+// resolveLocPath foloseste path-ul platformei (asa il consuma openLoc); formele
+// Windows se verifica DOAR pe win32 — pe posix, path.join nu intelege "\\"
+// (testul pica altfel pe Linux, regresie reala de mediu), deci acolo se
+// verifica echivalentele posix.
+if (process.platform === "win32") {
+  test("resolveLocPath: loc.file relativizat de slang (..\\..) -> cale absoluta", () => {
+    // capcana 8: slang relativizeaza fata de cwd; join-ul normalizeaza ..
+    assert.equal(
+      resolveLocPath("C:\\ws\\proj", "..\\..\\other\\top.sv"),
+      "C:\\other\\top.sv"
+    );
+    assert.equal(
+      resolveLocPath("C:\\ws\\proj", "src/adder.sv"),
+      "C:\\ws\\proj\\src\\adder.sv"
+    );
+  });
 
-test("resolveLocPath: loc.file deja absolut ramane neatins", () => {
-  assert.equal(resolveLocPath("C:\\ws", "D:\\alt\\x.sv"), "D:\\alt\\x.sv");
-});
+  test("resolveLocPath: loc.file deja absolut ramane neatins", () => {
+    assert.equal(resolveLocPath("C:\\ws", "D:\\alt\\x.sv"), "D:\\alt\\x.sv");
+  });
+} else {
+  test("resolveLocPath (posix): relativ -> join cu radacina, .. normalizat", () => {
+    assert.equal(
+      resolveLocPath("/ws/proj", "../../other/top.sv"),
+      "/other/top.sv"
+    );
+    assert.equal(
+      resolveLocPath("/ws/proj", "src/adder.sv"),
+      "/ws/proj/src/adder.sv"
+    );
+  });
+
+  test("resolveLocPath (posix): loc.file deja absolut ramane neatins", () => {
+    assert.equal(resolveLocPath("/ws", "/alt/x.sv"), "/alt/x.sv");
+  });
+}
 
 console.log(`\ntest-filelist: ${passed} teste au trecut.`);

@@ -2,7 +2,8 @@
 // (src/configcheck.ts): npm run test:configcheck
 // Miza: emiterea diagnosticelor era complet netestata — o regresie aici
 // stinge TACIT feedback-ul de validare din editor (inclusiv eroarea dura de
-// hibrid, pe care generatorul o refuza abia la `generate`).
+// pe care generatorul o refuza abia la `generate`). NOTA 1.0: hibridul
+// subenvs+agents e LEGAL (agenti de granita H2) — testul verifica absenta.
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -69,7 +70,7 @@ agents:
   assert.deepEqual(r.orphans, []);
 });
 
-test("hibrid: subenvs + agents nevid = EROARE pe blocul agents", () => {
+test("hibrid subenvs + agents (agenti de granita H2): NICIUN diagnostic", () => {
   const r = check(
     `dut: { name: top }
 subenvs:
@@ -80,26 +81,9 @@ agents:
 `,
     undefined
   );
-  const hy = r.findings.find((f) => f.kind === "hybrid");
-  assert.ok(hy, "lipseste finding-ul de hibrid");
-  assert.equal(hy.severity, "error");
-  // span-ul acopera blocul agents (nu inceputul documentului)
-  assert.ok(hy.span, "hibridul trebuie ancorat pe blocul agents");
-  const spanText = r.text.slice(hy.span[0], hy.span[1]);
-  assert.match(spanText, /name: cmd/);
-});
-
-test("hibrid: agents gol sau absent + subenvs = OK (nu e hibrid)", () => {
-  const empty = check(
-    `subenvs:\n  - { name: u_a, config: a.quickuvm.yaml }\nagents: []\n`,
-    undefined
-  );
-  assert.ok(!kinds(empty).includes("hybrid"), "agents: [] nu e hibrid");
-  const absent = check(
-    `subenvs:\n  - { name: u_a, config: a.quickuvm.yaml }\n`,
-    undefined
-  );
-  assert.ok(!kinds(absent).includes("hybrid"));
+  // quick-uvm >= 1.0.0 ACCEPTA compunerea cu agenti proprii la top
+  assert.ok(!r.findings.some((f) => f.kind === "hybrid"),
+    "diagnosticul 'hybrid' nu mai exista (1.0: agenti de granita legali)");
 });
 
 test("latime gresita: warning cu codul quick-fix-ului", () => {
@@ -172,20 +156,21 @@ agents:
   assert.deepEqual(r.orphans, ["gone"]);
 });
 
-test("ignorat + mapat: warning pe blocul ignored_ports", () => {
+test("waived + mapat: EROARE pe dut.unverified_ports (zidul 1.0)", () => {
   const r = check(
-    `dut: { name: soc_top }
+    `dut: { name: soc_top, unverified_ports: [ din ] }
 agents:
   - name: a
     ports:
       inputs: [ { name: din, width: 8 } ]
-x_quickuvm_architect:
-  ignored_ports: [ din ]
 `,
     MODEL
   );
   const i = r.findings.find((f) => f.kind === "ignored-and-mapped");
   assert.ok(i);
+  // quick-uvm 1.0 REFUZA la generate ("connected by agent ... Remove it from
+  // one side") -> diagnosticul replica zidul cu severitate error
+  assert.equal(i.severity, "error");
   assert.deepEqual(i.params, { port: "din", agent: "a" });
 });
 

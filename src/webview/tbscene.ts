@@ -16,7 +16,32 @@
 // Constructie fail-soft: intrarile YAML care refera agenti inexistenti se
 // deseneaza cat se poate; validarea autoritara ramane in ConfigService.
 
+import { isCrossBlockSb } from "../quickuvm";
 import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
+
+// quick-uvm >= 1.0.0: scoreboard-urile cross-bloc NU mai au cheia proprie
+// `subenv_scoreboards` — sunt intrari `analysis.scoreboards` cu capete
+// calificate `<subenv>.<agent>`. Separarea locala/cross decide ce se deseneaza
+// ca `sb:` (in Env) si ce ca `xsb:` (la nivelul testbench-ului).
+function subenvNameSet(config: QuvmConfig): Set<string> {
+  return new Set(
+    (config.subenvs ?? [])
+      .map((s) => s.name)
+      .filter((n): n is string => Boolean(n))
+  );
+}
+function localSbs(config: QuvmConfig): QuvmScoreboard[] {
+  const names = subenvNameSet(config);
+  return (config.analysis?.scoreboards ?? []).filter(
+    (s) => s.source && !isCrossBlockSb(s, names)
+  );
+}
+function crossSbs(config: QuvmConfig): QuvmScoreboard[] {
+  const names = subenvNameSet(config);
+  return (config.analysis?.scoreboards ?? []).filter((s) =>
+    isCrossBlockSb(s, names)
+  );
+}
 import type { SceneNodeKind } from "./scene";
 
 /** un compartiment UML: titlu optional + linii de text */
@@ -242,9 +267,7 @@ function levelTop(
 
   // Env: cutie UML cu componentele listate + drill
   const analysisItems = [
-    ...(config.analysis?.scoreboards ?? [])
-      .filter((s) => s.source)
-      .map((s) => `${s.name ?? "sbd"} (scoreboard)`),
+    ...localSbs(config).map((s) => `${s.name ?? "sbd"} (scoreboard)`),
     ...[...new Set(config.analysis?.coverage ?? [])].map((a) => `${a} (coverage)`),
   ];
   const envComp: TbCompartment[] = [];
@@ -410,7 +433,7 @@ function levelEnv(
 
   // scoreboards
   const usedSb = new Set<string>();
-  for (const sb of (config.analysis?.scoreboards ?? []).filter((s) => s.source)) {
+  for (const sb of localSbs(config)) {
     let id = `sb:${sb.name ?? "sbd"}`;
     for (let n = 2; usedSb.has(id); n++) {
       id = `sb:${sb.name ?? "sbd"}#${n}`;
@@ -701,7 +724,7 @@ function addSubenvs(
     if (from) addPin(from[0], from[1], "EAST");
     if (to) addPin(to[0], to[1], "WEST");
   }
-  const xsbs = (config.subenv_scoreboards ?? []).filter((s) => s.name);
+  const xsbs = crossSbs(config).filter((s) => s.name);
   for (const sb of xsbs) {
     const src = endpoint(sb.source);
     const mon = endpoint(sb.monitor ?? undefined);
