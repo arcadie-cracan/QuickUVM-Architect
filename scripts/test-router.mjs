@@ -331,6 +331,60 @@ test("edgeObstacles: pinul capat de fir NU e obstacol pentru propriul fir", () =
   assert.equal(east.x, 180); // child.x + width
 });
 
+test("edgeObstacles: concat/select decorator is a HARD obstacle even with a wire", () => {
+  // A marker pin's whole obstacle is otherwise skipped when it carries a wire;
+  // the decorator box must still block routing so wires never pass through/under
+  // it. It stays hard (no cost) even for a wire pin — the pin's own wire connects
+  // at the tip, beyond the chip.
+  const scene = {
+    ...OBST_SCENE,
+    nodes: [
+      {
+        ...OBST_SCENE.nodes[0],
+        pins: [
+          PIN("u_a.y", {
+            side: "EAST",
+            dir: "out",
+            noteKind: "concat",
+            note: "{…}",
+            bus: true,
+            width: 16,
+          }),
+        ],
+      },
+    ],
+    edges: [
+      {
+        id: "e",
+        net: "n",
+        kind: "wire",
+        source: "u_a",
+        sourcePort: "u_a.y",
+        target: "p",
+        targetPort: null,
+      },
+    ],
+  };
+  const layout = {
+    id: "root",
+    children: [
+      {
+        id: "u_a",
+        x: 100,
+        y: 50,
+        width: 80,
+        height: 72,
+        ports: [{ id: "u_a.y", x: 80, y: 32, width: 0, height: 0 }],
+      },
+    ],
+  };
+  const obs = edgeObstacles(scene, layout);
+  const chip = obs.find((o) => o.cost === undefined && o.w === 18 && o.h === 14);
+  assert.ok(chip, "the decorator must be a hard obstacle even when the pin has a wire");
+  assert.ok(chip.x >= 180, JSON.stringify(chip)); // on the extended pin, east of the block
+  assert.equal(chip.y, 82 - 7); // centered on the pin row (py = 50 + 32)
+});
+
 // --------------------------------------------- junctionDots (schematic.ts)
 
 const P = (x, y) => ({ x, y });

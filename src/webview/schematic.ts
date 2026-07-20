@@ -591,6 +591,26 @@ export function edgeObstacles(
       if (!pin) {
         continue;
       }
+      const west =
+        (port.x ?? 0) + (port.width ?? 0) / 2 < (child.width ?? 0) / 2;
+      const py = (child.y ?? 0) + (port.y ?? 0) + (port.height ?? 0) / 2;
+      // A concat/select decorator is a solid box: wires must never route through
+      // it. Add its rect as a HARD obstacle ALWAYS — even when the pin has a wire
+      // (which otherwise removes the pin's obstacle below). The pin's own wire
+      // connects at the tip, BEYOND the chip, so this never blocks it.
+      if (pin.noteKind === "select" || pin.noteKind === "concat") {
+        const out = west ? -1 : 1;
+        const x0 = west ? (child.x ?? 0) : (child.x ?? 0) + (child.width ?? 0);
+        const wtxt =
+          (pin.bus && pin.width ? `${pin.width}` : "") + (pin.mult ?? "");
+        const chip = markerChip(x0, out, widthReserve(wtxt));
+        obstacles.push({
+          x: Math.min(chip.chipOuter, chip.chipInner),
+          y: py - MARKER_CH / 2,
+          w: MARKER_CW,
+          h: MARKER_CH,
+        });
+      }
       if (wirePins.has(port.id)) {
         continue; // the pin's own wire coexists with the pin's label
       }
@@ -598,9 +618,6 @@ export function edgeObstacles(
       if (!w) {
         continue;
       }
-      const west =
-        (port.x ?? 0) + (port.width ?? 0) / 2 < (child.width ?? 0) / 2;
-      const py = (child.y ?? 0) + (port.y ?? 0) + (port.height ?? 0) / 2;
       // SOFT obstacle (cost, not wall): in narrow channels the router passes
       // over the label instead of falling to the fallback through blocks
       obstacles.push({
