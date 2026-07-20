@@ -1,28 +1,28 @@
-// Scena vederii de verificare (faza 3b — docs/05): functie pura QuvmConfig ->
-// scena PLATA PER NIVEL, fara DOM, testabila in Node
+// The verification view's scene (phase 3b — docs/05): pure function QuvmConfig ->
+// FLAT PER LEVEL scene, without DOM, testable in Node
 // (scripts/test-tbscene.mjs).
 //
-// Model (decizia utilizatorului, iul. 2026): detaliere pe niveluri, ca
-// Symbol/Schematic la RTL. Fiecare nivel arata blocurile lui ca CUTII UML
-// (stereotip + compartimente text cu structura interna), interconectate,
-// cu steaguri de granita pentru conexiunile care traverseaza nivelul.
-// Dublu-clic pe un bloc cu structura (`drill`) coboara la nivelul lui:
+// Model (the user's decision, Jul. 2026): detailing by levels, like
+// Symbol/Schematic at RTL. Each level shows its blocks as UML BOXES
+// (stereotype + text compartments with internal structure), interconnected,
+// with boundary flags for the connections that cross the level.
+// Double-click on a block with structure (`drill`) descends to its level:
 //   ""            (testbench)  -> DUT + Env
-//   "env"                      -> agenti, scoreboards, coverage, vsqr, subenvs, probes
-//   "agent:<nume>"             -> sequencer / driver / monitor cu interconexiuni
-// Subenv-urile arata info UML; drill-ul lor (`config:<nume>`) cere host-ului
-// deschiderea config-ului copil cu editorul implicit (docs/05).
+//   "env"                      -> agents, scoreboards, coverage, vsqr, subenvs, probes
+//   "agent:<name>"             -> sequencer / driver / monitor with interconnections
+// The subenvs show UML info; their drill (`config:<name>`) asks the host to
+// open the child config with the default editor (docs/05).
 //
-// Constructie fail-soft: intrarile YAML care refera agenti inexistenti se
-// deseneaza cat se poate; validarea autoritara ramane in ConfigService.
+// Fail-soft construction: the YAML entries that reference nonexistent agents are
+// drawn as much as possible; the authoritative validation stays in ConfigService.
 
 import { isCrossBlockSb } from "../quickuvm";
 import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
 
-// quick-uvm >= 1.0.0: scoreboard-urile cross-bloc NU mai au cheia proprie
-// `subenv_scoreboards` — sunt intrari `analysis.scoreboards` cu capete
-// calificate `<subenv>.<agent>`. Separarea locala/cross decide ce se deseneaza
-// ca `sb:` (in Env) si ce ca `xsb:` (la nivelul testbench-ului).
+// quick-uvm >= 1.0.0: the cross-block scoreboards NO longer have their own key
+// `subenv_scoreboards` — they are `analysis.scoreboards` entries with
+// qualified endpoints `<subenv>.<agent>`. The local/cross separation decides what is drawn
+// as `sb:` (in Env) and what as `xsb:` (at the testbench level).
 function subenvNameSet(config: QuvmConfig): Set<string> {
   return new Set(
     (config.subenvs ?? [])
@@ -44,13 +44,13 @@ function crossSbs(config: QuvmConfig): QuvmScoreboard[] {
 }
 import type { SceneNodeKind } from "./scene";
 
-/** un compartiment UML: titlu optional + linii de text */
+/** a UML compartment: optional title + text lines */
 export interface TbCompartment {
   title?: string;
   items: string[];
 }
 
-/** port pe granita unui bloc TB */
+/** port on a TB block's boundary */
 export interface TbPort {
   id: string;
   port: string;
@@ -60,7 +60,7 @@ export interface TbPort {
   note: string | null;
 }
 
-/** bloc al unui nivel: cutie UML cu compartimente; `drill` = focus-ul coborarii */
+/** a level's block: UML box with compartments; `drill` = the descent's focus */
 export interface TbNode {
   id: string;
   kind: SceneNodeKind;
@@ -68,21 +68,21 @@ export interface TbNode {
   stereotype: string | null;
   compartments: TbCompartment[];
   ports: TbPort[];
-  /** focus-ul nivelului la dublu-clic (bloc cu structura); null = frunza */
+  /** the level's focus on double-click (block with structure); null = leaf */
   drill: string | null;
   tooltip: string;
 }
 
-/** steag de granita: conexiune care traverseaza nivelul (ca `<port>` la RTL) */
+/** boundary flag: a connection that crosses the level (like `<port>` at RTL) */
 export interface TbBoundary {
   id: string;
   label: string;
   side: "WEST" | "EAST";
   iface: boolean;
   note: string | null;
-  /** directia fata de nivel, dedusa din muchii: `in` = doar sursa (datele
-   *  INTRA in diagrama), `out` = doar tinta (datele IES), `inout` = ambele
-   *  (interfata bidirectionala). Steagul o arata prin orientarea varfului. */
+  /** the direction relative to the level, deduced from edges: `in` = only source (the data
+   *  ENTERS the diagram), `out` = only target (the data EXITS), `inout` = both
+   *  (bidirectional interface). The flag shows it through the tip's orientation. */
   dir?: "in" | "out" | "inout";
 }
 
@@ -98,7 +98,7 @@ export interface TbEdge {
 
 export interface TbScene {
   viewId: string;
-  /** nivelul curent: focus-ul + firimiturile pentru breadcrumb */
+  /** the current level: the focus + the crumbs for the breadcrumb */
   focus: string;
   breadcrumb: { label: string; focus: string }[];
   nodes: TbNode[];
@@ -106,7 +106,7 @@ export interface TbScene {
   edges: TbEdge[];
 }
 
-// ------------------------------------------------------------- ajutatoare
+// ------------------------------------------------------------- helpers
 
 function port(
   nodeId: string,
@@ -149,7 +149,7 @@ function sbSub(sb: QuvmScoreboard): string {
 const agentId = (name: string): string => `agent:${name}`;
 const subId = (name: string): string => `sub:${name}`;
 
-/** numele agentilor coordonati de virtual sequences (sau auto la >=2 activi) */
+/** the names of the agents coordinated by virtual sequences (or auto at >=2 active) */
 function coordinatedAgents(config: QuvmConfig): Set<string> {
   const agents = (config.agents ?? []).filter((a) => a.name);
   const names = new Set(agents.map((a) => a.name as string));
@@ -184,12 +184,12 @@ function probeNote(p: NonNullable<QuvmConfig["probes"]>[number]): string | null 
   return p.width && p.width > 1 ? `[${p.width}]` : null;
 }
 
-// ----------------------------------------------------------- constructia
+// ----------------------------------------------------------- construction
 
 /**
- * Construieste scena PLATA a nivelului `focus` din configuratia QuickUVM.
- * `focus`: "" (testbench top), "env", "agent:<nume>". Intoarce null la
- * nivel inexistent sau configuratie fara nimic desenabil.
+ * Builds the FLAT scene of the `focus` level from the QuickUVM configuration.
+ * `focus`: "" (testbench top), "env", "agent:<name>". Returns null at a
+ * nonexistent level or a configuration with nothing drawable.
  */
 export function buildTbScene(
   config: QuvmConfig,
@@ -200,13 +200,13 @@ export function buildTbScene(
   const agents = (config.agents ?? []).filter((a) => a.name);
   const subenvs = (config.subenvs ?? []).filter((s) => s.name);
   const dutName = config.dut?.name;
-  // Deseneaza DUT-ul cand exista un dut.name SI e verificat direct: fie config
-  // frunza (fara subenvs), fie hibrid (are agenti proprii pe top). ATENTIE:
-  // quick-uvm curent INTERZICE hibridul (subenvs + agenti proprii — `generate`
-  // il refuza; ConfigService pune un diagnostic dur). Ramura hibrida a ramas ca
-  // sa desenam onest si un config invalid (agentii lui nu dispar tacit din
-  // diagrama), nu fiindca ar fi valid. Omitem DUT-ul la subsistemele PURE
-  // (subenvs fara agenti), unde dut.name e doar containerul de impachetare.
+  // Draws the DUT when there is a dut.name AND it is verified directly: either a leaf
+  // config (without subenvs), or hybrid (has its own agents on top). ATTENTION:
+  // the current quick-uvm FORBIDS the hybrid (subenvs + own agents — `generate`
+  // refuses it; ConfigService puts a hard diagnostic). The hybrid branch stayed so
+  // that we honestly draw an invalid config too (its agents do not silently disappear from
+  // the diagram), not because it would be valid. We omit the DUT at PURE subsystems
+  // (subenvs without agents), where dut.name is just the packaging container.
   const hasDut =
     Boolean(dutName) && (subenvs.length === 0 || agents.length > 0);
   if (!dutName && agents.length === 0 && subenvs.length === 0) {
@@ -229,7 +229,7 @@ export function buildTbScene(
     return null;
   }
 
-  // breadcrumb (dezvaluire progresiva): top > env > agent
+  // breadcrumb (progressive disclosure): top > env > agent
   const crumb: { label: string; focus: string }[] = [
     { label: config.project?.name ? `${config.project.name} (tb)` : "Testbench", focus: "" },
   ];
@@ -240,9 +240,9 @@ export function buildTbScene(
     crumb.push({ label: focus.slice("agent:".length), focus });
   }
 
-  // directia fiecarui steag de granita, dedusa din muchii (sursa/tinta):
-  // `in` = datele intra in diagrama, `out` = ies, `inout` = interfata
-  // bidirectionala (ex. `<if>`: driver-ul o conduce, monitorul o esantioneaza)
+  // the direction of each boundary flag, deduced from edges (source/target):
+  // `in` = the data enters the diagram, `out` = it exits, `inout` = bidirectional
+  // interface (e.g. `<if>`: the driver drives it, the monitor samples it)
   for (const b of level.boundary) {
     const isSource = level.edges.some((e) => e.source === b.id);
     const isTarget = level.edges.some((e) => e.target === b.id);
@@ -253,7 +253,7 @@ export function buildTbScene(
   return { viewId, focus, breadcrumb: crumb, ...level };
 }
 
-/** nivelul testbench: DUT + Env (Env cu drill) */
+/** the testbench level: DUT + Env (Env with drill) */
 function levelTop(
   config: QuvmConfig,
   hasDut: boolean,
@@ -265,7 +265,7 @@ function levelTop(
   const edges: TbEdge[] = [];
   const probes = (config.probes ?? []).filter((p) => p.name);
 
-  // Env: cutie UML cu componentele listate + drill
+  // Env: UML box with the listed components + drill
   const analysisItems = [
     ...localSbs(config).map((s) => `${s.name ?? "sbd"} (scoreboard)`),
     ...[...new Set(config.analysis?.coverage ?? [])].map((a) => `${a} (coverage)`),
@@ -332,7 +332,7 @@ function levelTop(
       drill: null,
       tooltip: "DUT — design under test (hardware)",
     });
-    // interfata: env <-> dut, per agent
+    // interface: env <-> dut, per agent
     for (const a of agents) {
       edges.push({
         id: `e:if:${a.name}`,
@@ -359,7 +359,7 @@ function levelTop(
   return { nodes, boundary: [], edges };
 }
 
-/** nivelul Env: agenti + analiza + vsqr + subenvs + probes; granita = interfata DUT */
+/** the Env level: agents + analysis + vsqr + subenvs + probes; boundary = DUT interface */
 function levelEnv(
   config: QuvmConfig,
   hasDut: boolean,
@@ -373,7 +373,7 @@ function levelEnv(
   const coordinated = coordinatedAgents(config);
   const probes = (config.probes ?? []).filter((p) => p.name);
 
-  // granite: interfata catre DUT (EAST) + internals (WEST) daca sunt probe
+  // boundaries: interface toward the DUT (EAST) + internals (WEST) if there are probes
   if (hasDut) {
     for (const a of agents) {
       boundaries.push(boundary(`<if>.${a.name}`, `${a.name}_if`, "EAST", true));
@@ -383,7 +383,7 @@ function levelEnv(
     }
   }
 
-  // agentii: cutii UML cu componentele interne listate + drill
+  // the agents: UML boxes with the internal components listed + drill
   for (const a of agents) {
     const name = a.name as string;
     const id = agentId(name);
@@ -520,7 +520,7 @@ function levelEnv(
     );
     for (const a of coordinated) {
       if (!activeSet.has(a)) {
-        continue; // agent pasiv coordonat (config invalid): fara sqr
+        continue; // coordinated passive agent (invalid config): without sqr
       }
       edges.push({
         id: `e:vsqr.${a}`,
@@ -534,7 +534,7 @@ function levelEnv(
     }
   }
 
-  // subenvs (H1) — cutii UML cu info; drill = deschiderea config-ului copil
+  // subenvs (H1) — UML boxes with info; drill = opening the child config
   addSubenvs(config, subenvs, nodes, edges);
 
   // probes
@@ -544,8 +544,8 @@ function levelEnv(
         note: probeNote(p),
       })
     );
-    // portul intern de legatura cu DUT-ul; id unic fata de numele probelor
-    // (o proba numita "tap" e valida in QuickUVM)
+    // the internal port linking to the DUT; id unique relative to the probes' names
+    // (a probe named "tap" is valid in QuickUVM)
     const probeNames = new Set(probes.map((p) => p.name as string));
     let tapPort = "tap";
     while (probeNames.has(tapPort)) {
@@ -582,7 +582,7 @@ function levelEnv(
   return { nodes, boundary: boundaries, edges };
 }
 
-/** nivelul unui agent: sequencer / driver / monitor cu interconexiuni */
+/** an agent's level: sequencer / driver / monitor with interconnections */
 function levelAgent(
   config: QuvmConfig,
   name: string,
@@ -594,7 +594,7 @@ function levelAgent(
   const boundaries: TbBoundary[] = [];
   const coordinated = coordinatedAgents(config).has(name);
 
-  // granite: sqr (vest, de la vsqr), if (est, la DUT), ap (est, la analiza)
+  // boundaries: sqr (west, from vsqr), if (east, to DUT), ap (east, to analysis)
   if (coordinated && active) {
     boundaries.push(boundary("<sqr>", "sqr", "WEST"));
   }
@@ -621,12 +621,12 @@ function levelAgent(
   };
 
   if (active) {
-    // sequencer: sqr(vest) <- granita; seq_item_port(est) -> driver
+    // sequencer: sqr(west) <- boundary; seq_item_port(east) -> driver
     unit("u.sequencer", "sequencer", [
       ...(coordinated ? [port("u.sequencer", "sqr", "WEST", "sqr")] : []),
       port("u.sequencer", "seq", "EAST", "seq_item"),
     ]);
-    // driver: seq(vest) <- sequencer; if(est) -> granita
+    // driver: seq(west) <- sequencer; if(east) -> boundary
     unit("u.driver", "driver", [
       port("u.driver", "seq", "WEST", "seq_item"),
       ...(hasDut ? [port("u.driver", "if", "EAST", "if", { iface: true })] : []),
@@ -664,9 +664,9 @@ function levelAgent(
     }
   }
 
-  // monitor: if(vest) <- granita — `<if>` (inout) e plasat de ELK intr-un
-  // strat de mijloc (driver->if->monitor), deci intra in monitor dinspre
-  // STANGA (firul nu ocoleste monitorul); ap(est) -> granita
+  // monitor: if(west) <- boundary — `<if>` (inout) is placed by ELK in a
+  // middle layer (driver->if->monitor), so it enters the monitor from the
+  // LEFT (the wire does not go around the monitor); ap(east) -> boundary
   unit("u.monitor", "monitor", [
     ...(hasDut ? [port("u.monitor", "if", "WEST", "if", { iface: true })] : []),
     port("u.monitor", "ap", "EAST", "ap ◆"),
@@ -734,10 +734,10 @@ function addSubenvs(
   const usedSub = new Set<string>();
   for (const s of subenvs) {
     const name = s.name as string;
-    const nameId = subId(name); // cheia pinilor/conexiunilor (name-based)
-    // dedup de id ca la usedSb/usedXsb: doua subenv-uri cu ACELASI nume (YAML
-    // scris de mana, invalid pt quick-uvm dar desenat onest) primesc noduri
-    // DISTINCTE — altfel selectia/drag/meniul contextual gaseau mereu primul
+    const nameId = subId(name); // the key of the pins/connections (name-based)
+    // id dedup like at usedSb/usedXsb: two subenvs with the SAME name (hand-written
+    // YAML, invalid for quick-uvm but honestly drawn) receive DISTINCT
+    // nodes — otherwise the selection/drag/context menu always found the first
     let id = nameId;
     for (let n = 2; usedSub.has(id); n++) {
       id = `${nameId}#${n}`;
@@ -754,14 +754,14 @@ function addSubenvs(
       compartments: [
         { items: [`config: ${s.config ?? "?"}`, ...(params ? [`params: ${params}`] : [])] },
       ],
-      // pinii/conexiunile sunt name-based: nodurile duplicate impart pinii
-      // (onest pt un config invalid); doar id-ul de nod se distinge
+      // the pins/connections are name-based: the duplicate nodes share the pins
+      // (honest for an invalid config); only the node id is distinguished
       ports: pinsByBlock.get(nameId) ?? [],
-      // drill in blocul compus: `config:<cale>` poarta chiar calea config-ului
-      // (nu numele) — fiecare bloc deschide FISIERUL LUI, fara ambiguitate la
-      // nume duplicate; prefixul `config:` il deosebeste de focus-urile locale
-      // (env, agent:X). Host-ul rezolva calea si o deschide cu editorul
-      // implicit (openSubenvConfig, docs/05). Un subenv fara config e frunza
+      // drill into the composed block: `config:<path>` carries the config's path itself
+      // (not the name) — each block opens ITS FILE, without ambiguity at
+      // duplicate names; the `config:` prefix distinguishes it from the local focuses
+      // (env, agent:X). The host resolves the path and opens it with the default
+      // editor (openSubenvConfig, docs/05). A subenv without a config is a leaf
       drill: s.config ? `config:${s.config}` : null,
       tooltip: `composed block env (H1): ${s.config ?? "?"}`,
     });
@@ -819,7 +819,7 @@ function addSubenvs(
   });
 }
 
-/** toate blocurile care au drill (pentru navigare / arbore) */
+/** all the blocks that have a drill (for navigation / tree) */
 export function tbDrillTargets(config: QuvmConfig): string[] {
   const out = ["", "env"];
   for (const a of config.agents ?? []) {

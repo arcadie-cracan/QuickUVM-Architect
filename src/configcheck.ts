@@ -1,54 +1,54 @@
-// Validarile model<->YAML (docs/03) ca nucleu PUR (fara vscode) — testabile
-// in Node (scripts/test-configcheck.mjs). Functia intoarce FINDINGS
-// structurate (kind + span + parametri + cod), iar host-ul (config.ts) le
-// mapeaza pe vscode.Diagnostic cu mesajele localizate prin l10n.t (D19:
-// sirurile vizibile raman in host). NOTA (quick-uvm >= 1.0.0): hibridul
-// `subenvs` + `agents` e LEGAL acum (agenti de granita, H2) — vechiul
-// diagnostic dur "hybrid" a fost SCOS; nu-l reintroduce.
+// The model<->YAML validations (docs/03) as a PURE core (no vscode) — testable
+// in Node (scripts/test-configcheck.mjs). The function returns structured
+// FINDINGS (kind + span + params + code), and the host (config.ts) maps
+// them onto vscode.Diagnostic with the messages localized via l10n.t (D19:
+// the visible strings stay in the host). NOTE (quick-uvm >= 1.0.0): the hybrid
+// `subenvs` + `agents` is LEGAL now (boundary agents, H2) — the old
+// hard "hybrid" diagnostic was REMOVED; do not reintroduce it.
 
 import { Document, isMap, isSeq } from "yaml";
 import type { ProjectModel } from "./model";
 import type { QuvmConfig } from "./quickuvm";
 
-/** prefixul codului de diagnostic purtator al quick-fix-ului de latime */
+/** the prefix of the diagnostic code that carries the width quick-fix */
 export const WIDTH_CODE = "quickuvm.width";
 
 export type FindingKind =
-  /** dut.name nu exista in modelul curent — {module} */
+  /** dut.name does not exist in the current model — {module} */
   | "dut-missing"
-  /** port revendicat de doi agenti — {port, agent} (primul proprietar) */
+  /** port claimed by two agents — {port, agent} (the first owner) */
   | "port-claimed"
-  /** port disparut din modul — {port, dut}; intra si in `orphans` */
+  /** port that disappeared from the module — {port, dut}; also enters `orphans` */
   | "port-orphan"
-  /** latime YAML != model — {port, declared, expected}; poarta `code` */
+  /** YAML width != model — {port, declared, expected}; carries `code` */
   | "width-mismatch"
-  /** port si waived (dut.unverified_ports), si mapat pe agent — {port, agent};
-   *  quick-uvm 1.0 refuza combinatia la generate, deci severitatea e error */
+  /** port both waived (dut.unverified_ports) and mapped to an agent — {port, agent};
+   *  quick-uvm 1.0 rejects the combination at generate, so the severity is error */
   | "ignored-and-mapped";
 
 export interface Finding {
   kind: FindingKind;
-  /** [start, end) in text; null = inceputul documentului */
+  /** [start, end) in the text; null = the start of the document */
   span: [number, number] | null;
   severity: "error" | "warning";
   params: Record<string, string | number>;
-  /** codul purtator de quick-fix (`quickuvm.width:agent:port:latime`) */
+  /** the code carrying the quick-fix (`quickuvm.width:agent:port:latime`) */
   code?: string;
 }
 
 export interface CheckResult {
   findings: Finding[];
-  /** porturile de agent disparute din model (invalidare gratioasa) */
+  /** the agent ports that disappeared from the model (graceful invalidation) */
   orphans: string[];
 }
 
-/** Span-ul unui nod yaml ([start, valEnd] din range), sau null. */
+/** The span of a yaml node ([start, valEnd] from range), or null. */
 function spanOf(node: unknown): [number, number] | null {
   const r = (node as { range?: [number, number, number] } | null)?.range;
   return r ? [r[0], r[1]] : null;
 }
 
-/** Nodul CST al portului agents[ai].ports[side][pi], pentru span precis. */
+/** The CST node of the agents[ai].ports[side][pi] port, for a precise span. */
 function getPortNode(
   agentsNode: unknown,
   ai: number,
@@ -66,7 +66,7 @@ function getPortNode(
   return isSeq(list) ? list.items[pi] : undefined;
 }
 
-/** Validarile model<->YAML; ordinea findings = ordinea de emitere istorica. */
+/** The model<->YAML validations; findings order = the historical emission order. */
 export function checkConfig(
   ydoc: Document,
   cfg: QuvmConfig,
@@ -122,8 +122,8 @@ export function checkConfig(
             kind: "port-orphan",
             span,
             severity: "warning",
-            // `agent` nu apare in mesajul l10n, dar decoratiile de stare
-            // (decosFromFindings, src/status.ts) tintesc blocul agentului
+            // `agent` does not appear in the l10n message, but the status
+            // decorations (decosFromFindings, src/status.ts) target the agent block
             params: { port: p.name, dut: dutName ?? "", agent: agentName },
           });
         } else if (def) {
@@ -135,7 +135,7 @@ export function checkConfig(
               span,
               severity: "warning",
               params: { port: p.name, declared, expected, agent: agentName },
-              // quick-fix-ul citeste tinta din cod (config -> CodeAction)
+              // the quick-fix reads the target from the code (config -> CodeAction)
               code: `${WIDTH_CODE}:${agentName}:${p.name}:${expected}`,
             });
           }
@@ -144,9 +144,9 @@ export function checkConfig(
     }
   });
 
-  // quick-uvm >= 1.0.0 REFUZA la generate un port waived pe care un agent il
-  // conecteaza ("connected by agent ... Remove it from one side"), deci
-  // diagnosticul replica zidul generatorului: severitate ERROR, nu warning.
+  // quick-uvm >= 1.0.0 REJECTS at generate a waived port that an agent
+  // connects ("connected by agent ... Remove it from one side"), so
+  // the diagnostic replicates the generator's wall: ERROR severity, not warning.
   for (const ignored of cfg.dut?.unverified_ports ?? []) {
     if (claimedBy.has(ignored)) {
       findings.push({

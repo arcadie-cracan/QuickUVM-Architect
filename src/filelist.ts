@@ -1,12 +1,12 @@
-// Rezolvarea listei de surse SV, in ordinea din docs/01-arhitectura.md:
-// 1. Bender (`bender script flist-plus`), daca exista Bender.yml in radacina;
-// 2. fisier .f indicat de utilizator (setarea quickuvm.fileList);
-// 3. glob pe workspace (setarea quickuvm.sourceGlob).
-// Rezultatul e mereu un fisier .f (generat in storage-ul extensiei cand e
-// cazul), pasat backend-ului cu -f — evita limita de lungime a liniei de
-// comanda pe Windows. Formatul flist-plus (nu flist!) pastreaza
-// +incdir/+define — altfel export_include_dirs din Bender.yml se pierde si
-// `include-urile esueaza.
+// Resolving the SV source list, in the order from docs/01-arhitectura.md:
+// 1. Bender (`bender script flist-plus`), if Bender.yml exists in the root;
+// 2. a .f file indicated by the user (the quickuvm.fileList setting);
+// 3. a glob over the workspace (the quickuvm.sourceGlob setting).
+// The result is always a .f file (generated in the extension's storage when
+// needed), passed to the backend with -f — avoids the command-line length
+// limit on Windows. The flist-plus format (not flist!) preserves
+// +incdir/+define — otherwise export_include_dirs from Bender.yml is lost and
+// `include directives fail.
 
 import { spawn } from "child_process";
 import * as path from "path";
@@ -14,9 +14,9 @@ import * as vscode from "vscode";
 import { outputDirExclude, renderFlist } from "./filelistops";
 
 export interface FileListResult {
-  /** calea fisierului .f de pasat backend-ului */
+  /** the path of the .f file to pass to the backend */
   flist: string;
-  /** provenienta, pentru mesaje si jurnal */
+  /** the provenance, for messages and the log */
   source: "bender" | ".f file" | "glob";
 }
 
@@ -31,7 +31,7 @@ function runCapture(
     let err = "";
     p.stdout.on("data", (d: Buffer) => (out += d.toString("utf8")));
     p.stderr.on("data", (d: Buffer) => (err += d.toString("utf8")));
-    p.on("error", reject); // ex. ENOENT: bender nu e instalat
+    p.on("error", reject); // e.g. ENOENT: bender is not installed
     p.on("close", (code) => resolve({ code: code ?? -1, out, err }));
   });
 }
@@ -42,7 +42,7 @@ async function writeFlist(
 ): Promise<string> {
   await vscode.workspace.fs.createDirectory(storage);
   const uri = vscode.Uri.joinPath(storage, "quickuvm-architect.f");
-  // citarea pentru slang (desparte pe spatii) sta in filelistops (pur, testat)
+  // the quoting for slang (splits on spaces) lives in filelistops (pure, tested)
   const text = renderFlist(lines);
   await vscode.workspace.fs.writeFile(uri, Buffer.from(text, "utf8"));
   return uri.fsPath;
@@ -84,7 +84,7 @@ export async function resolveFileList(
     }
   }
 
-  // 2. fisier .f al utilizatorului
+  // 2. the user's .f file
   const userList = cfg.get<string>("fileList", "").trim();
   if (userList) {
     const abs = path.isAbsolute(userList)
@@ -97,10 +97,10 @@ export async function resolveFileList(
     log.appendLine(`[filelist] quickuvm.fileList does not exist: ${abs}; falling back to glob.`);
   }
 
-  // 3. glob pe workspace
+  // 3. glob over the workspace
   const glob = cfg.get<string>("sourceGlob", "**/*.sv");
-  // dosarul de iesire quick-uvm se exclude (stub-ul DUT-ului ar otravi
-  // modelul — rationamentul complet in filelistops.ts, pur si testat)
+  // the quick-uvm output directory is excluded (the DUT stub would poison
+  // the model — the full reasoning in filelistops.ts, pure and tested)
   const excludes = ["**/node_modules/**"];
   const outExclude = outputDirExclude(cfg.get<string>("outputDir", "tb"));
   if (outExclude) {

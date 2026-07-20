@@ -1,8 +1,8 @@
-// Teste Node pentru partea pura a listei de surse (src/filelistops.ts):
+// Node tests for the pure part of the source list (src/filelistops.ts):
 //   npm run test:filelist
-// Cele doua capcane reale (CLAUDE.md): citarea pentru slang (desparte pe
-// spatii) si excluderea dosarului de iesire quick-uvm (auto-otravirea
-// modelului cu stub-ul DUT-ului dupa primul "Genereaza testbench").
+// The two real pitfalls (CLAUDE.md): quoting for slang (splits on
+// spaces) and excluding the quick-uvm output folder (auto-poisoning
+// the model with the DUT stub after the first "Generate testbench").
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -92,13 +92,13 @@ test("outputDir absolut: nu devine exclude relativ", () => {
   assert.equal(outputDirExclude("/abs/out"), null);
 });
 
-// resolveLocPath foloseste path-ul platformei (asa il consuma openLoc); formele
-// Windows se verifica DOAR pe win32 — pe posix, path.join nu intelege "\\"
-// (testul pica altfel pe Linux, regresie reala de mediu), deci acolo se
-// verifica echivalentele posix.
+// resolveLocPath uses the platform path (that's how openLoc consumes it); the
+// Windows forms are checked ONLY on win32 — on posix, path.join does not understand "\\"
+// (the test would otherwise fail on Linux, a real environment regression), so there
+// the posix equivalents are checked.
 if (process.platform === "win32") {
   test("resolveLocPath: loc.file relativizat de slang (..\\..) -> cale absoluta", () => {
-    // capcana 8: slang relativizeaza fata de cwd; join-ul normalizeaza ..
+    // pitfall 8: slang relativizes against cwd; the join normalizes ..
     assert.equal(
       resolveLocPath("C:\\ws\\proj", "..\\..\\other\\top.sv"),
       "C:\\other\\top.sv"

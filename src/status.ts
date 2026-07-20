@@ -1,18 +1,18 @@
-// Decoratiile de stare quick-uvm (docs/05, faza 4) — MODUL PUR, partajat de
-// host (config.ts: findings -> decoratii semantice) si de webview (main.ts:
-// decoratii -> id-urile vederii curente). Testat in test:status, fara DOM si
-// fara vscode. Mesajele decoratilor sunt ENGLEZA: webview-ul e monolingv in
-// MVP (D19) — diagnosticele localizate raman pe fisierul YAML (config.ts).
+// The quick-uvm status decorations (docs/05, phase 4) — a PURE MODULE, shared by
+// the host (config.ts: findings -> semantic decorations) and the webview (main.ts:
+// decorations -> the current view's ids). Tested in test:status, without DOM and
+// without vscode. The decoration messages are ENGLISH: the webview is monolingual in
+// the MVP (D19) — the localized diagnostics stay on the YAML file (config.ts).
 
 import type { Finding } from "./configcheck";
 import type { StatusDeco, StatusSeverity } from "./protocol";
 
 /**
- * Traduce findings-urile structurate ale validarii model<->YAML (checkConfig)
- * in decoratii SEMANTICE pentru diagrama: tinte port/agent/env, nu span-uri de
- * text. Port-level -> si portul (pinul RTL), si agentul proprietar (blocul
- * TB); `port-orphan` NU tinteste portul (a disparut din model — nu exista pin
- * de decorat), doar agentul.
+ * Translates the structured findings of the model<->YAML validation (checkConfig)
+ * into SEMANTIC decorations for the diagram: port/agent/env targets, not text
+ * spans. Port-level -> both the port (the RTL pin) and the owning agent (the
+ * TB block); `port-orphan` does NOT target the port (it disappeared from the model —
+ * there is no pin to decorate), only the agent.
  */
 export function decosFromFindings(findings: Finding[]): StatusDeco[] {
   const out: StatusDeco[] = [];
@@ -34,8 +34,8 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
         break;
       }
       case "port-orphan":
-        // portul nu mai exista in model — nu exista pin de decorat; doar
-        // agentul care il revendica (invalidare gratioasa, docs/03)
+        // the port no longer exists in the model — there is no pin to decorate; only
+        // the agent that claims it (graceful invalidation, docs/03)
         if (agent) {
           out.push({
             scope: "agent",
@@ -66,7 +66,7 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
   return out;
 }
 
-/** starea agregata a unui element decorat: severitatea maxima + mesajele */
+/** the aggregated status of a decorated element: the maximum severity + the messages */
 export interface ElementStatus {
   severity: StatusSeverity;
   messages: string[];
@@ -82,28 +82,28 @@ function addTo(
   if (cur) {
     cur.messages.push(message);
     if (severity === "error") {
-      cur.severity = "error"; // eroarea bate avertismentul
+      cur.severity = "error"; // the error beats the warning
     }
   } else {
     map.set(id, { severity, messages: [message] });
   }
 }
 
-/** un nod al vederii RTL curente, cat ii trebuie maparii de status */
+/** a node of the current RTL view, as much as the status mapping needs */
 export interface StatusRtlCtx {
-  /** modulul vederii curente (schema: al instantei; simbol: cel desenat) */
+  /** the current view's module (schema: the instance's; symbol: the drawn one) */
   viewModule: string | null;
-  /** modulul DUT din YAML (overlay.dut); null fara configuratie */
+  /** the DUT module from YAML (overlay.dut); null without a configuration */
   dut: string | null;
-  /** nodurile scenei (doar schema): pinii instantelor de DUT se decoreaza */
+  /** the scene nodes (schema only): the pins of the DUT instances get decorated */
   nodes: { id: string; module: string }[];
 }
 
 /**
- * Maparea decoratilor pe id-urile unei vederi RTL: porturile DUT-ului se
- * decoreaza pe steagul/pinul `<port>.X` cand vederea INSASI e DUT-ul si pe
- * pinii `<nod>.X` ai instantelor de DUT dintr-o vedere-parinte. Decoratiile
- * agent/env nu au corespondent RTL.
+ * The mapping of decorations onto the ids of an RTL view: the DUT ports get
+ * decorated on the `<port>.X` flag/pin when the view ITSELF is the DUT, and on
+ * the `<node>.X` pins of the DUT instances in a parent view. The agent/env
+ * decorations have no RTL counterpart.
  */
 export function statusIdsRtl(
   decos: StatusDeco[],
@@ -130,10 +130,10 @@ export function statusIdsRtl(
 }
 
 /**
- * Maparea decoratilor pe id-urile scenei TB curente (`presentIds` = nodurile
- * nivelului): agent -> `agent:<nume>`; env -> nodul "env"; la nivelul-radacina
- * (agentii NU sunt vizibili, env da), problemele agentilor se agrega pe Env
- * (bubble-up) — altfel radacina ar parea curata cu agenti stricati dedesubt.
+ * The mapping of decorations onto the ids of the current TB scene (`presentIds` = the
+ * level's nodes): agent -> `agent:<nume>`; env -> the "env" node; at the root level
+ * (agents are NOT visible, but env is), the agents' problems aggregate onto Env
+ * (bubble-up) — otherwise the root would look clean with broken agents underneath.
  */
 export function statusIdsTb(
   decos: StatusDeco[],
@@ -142,7 +142,7 @@ export function statusIdsTb(
   const out = new Map<string, ElementStatus>();
   for (const d of decos) {
     if (d.scope === "port") {
-      continue; // porturile DUT n-au element propriu in vederea TB
+      continue; // the DUT ports have no element of their own in the TB view
     }
     if (d.scope === "env") {
       if (presentIds.has("env")) {

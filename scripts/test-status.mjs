@@ -1,4 +1,4 @@
-// Teste Node pentru decoratiile de stare quick-uvm (src/status.ts):
+// Node tests for the quick-uvm status decorations (src/status.ts):
 //   npm run test:status
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -42,9 +42,9 @@ test("decosFromFindings: fiecare fel isi gaseste tinta semantica", () => {
   ]);
   const scopes = decos.map((d) => d.scope);
   // dut-missing -> env; port-claimed -> port+agent; port-orphan ->
-  // DOAR agent (pinul nu mai exista); width-mismatch -> port+agent;
-  // ignored-and-mapped -> port (kind-ul "hybrid" nu mai exista: 1.0
-  // accepta agenti de granita la o compunere)
+  // ONLY agent (the pin no longer exists); width-mismatch -> port+agent;
+  // ignored-and-mapped -> port (the "hybrid" kind no longer exists: 1.0
+  // accepts boundary agents at a composition)
   assert.deepEqual(scopes, [
     "env", "port", "agent", "agent", "port", "agent", "port",
   ]);
@@ -59,11 +59,11 @@ test("statusIdsRtl: vederea DUT-ului -> steag; instantele de DUT -> pini", () =>
       port: "din", declared: 8, expected: 16, agent: "cmd",
     }),
   ]);
-  // vederea INSASI e DUT-ul (simbol sau schema lui)
+  // the view ITSELF is the DUT (its symbol or schematic)
   const own = statusIdsRtl(decos, { viewModule: "chan", dut: "chan", nodes: [] });
   assert.deepEqual([...own.keys()], ["<port>.din"]);
   assert.equal(own.get("<port>.din").severity, "warning");
-  // vedere-parinte cu instante de DUT (inclusiv pliaj)
+  // parent view with DUT instances (including a fold)
   const parent = statusIdsRtl(decos, {
     viewModule: "soc_top",
     dut: "chan",
@@ -88,21 +88,21 @@ test("statusIdsRtl: fara DUT sau vedere nelegata -> nimic", () => {
 
 test("statusIdsTb: agent prezent -> blocul lui; env -> nodul env", () => {
   const decos = decosFromFindings([
-    // env-scoped ERROR fabricat (fostul rol al "hybrid"-ului): testul verifica
-    // PRECEDENTA severitatii la agregare, nu realismul finding-ului
+    // fabricated env-scoped ERROR (the former role of the "hybrid"): the test checks
+    // the severity PRECEDENCE at aggregation, not the realism of the finding
     F("dut-missing", "error", { module: "ghost" }),
     F("width-mismatch", "warning", {
       port: "din", declared: 8, expected: 16, agent: "cmd",
     }),
   ]);
-  // nivelul env: agentii vizibili, env-ul nu
+  // the env level: agents visible, env not
   const envLevel = statusIdsTb(decos, new Set(["agent:cmd", "agent:rsp"]));
   assert.deepEqual([...envLevel.keys()], ["agent:cmd"]);
-  // nivelul radacina: env vizibil, agentii nu -> bubble-up cu prefixul agentului
+  // the root level: env visible, agents not -> bubble-up with the agent prefix
   const root = statusIdsTb(decos, new Set(["dut", "env"]));
   assert.deepEqual([...root.keys()], ["env"]);
   const env = root.get("env");
-  assert.equal(env.severity, "error"); // error-ul env bate width (warning)
+  assert.equal(env.severity, "error"); // the env error beats width (warning)
   assert.equal(env.messages.length, 2);
   assert.ok(env.messages.some((m) => m.startsWith("cmd: ")));
 });
@@ -125,7 +125,7 @@ test("statusIdsTb: porturile nu decoreaza TB; decos gol -> nimic", () => {
   const decos = decosFromFindings([
     F("ignored-and-mapped", "warning", { port: "x", agent: "rsp" }),
   ]);
-  // singura tinta e port -> nimic in TB (agentul NU e tintit de ignored)
+  // the only target is port -> nothing in TB (the agent is NOT targeted by ignored)
   assert.equal(statusIdsTb(decos, new Set(["agent:rsp", "env"])).size, 0);
   assert.equal(statusIdsTb([], new Set(["env"])).size, 0);
 });

@@ -1,5 +1,5 @@
-// Teste Node pentru mutatiile YAML pure (src/yamlops.ts).
-// yamlops nu importa `vscode`, deci se leaga cu esbuild si se ruleaza direct:
+// Node tests for the pure YAML mutations (src/yamlops.ts).
+// yamlops does not import `vscode`, so it is bundled with esbuild and run directly:
 //   npm run test:yamlops
 import assert from "node:assert/strict";
 import { mkdtempSync, writeFileSync } from "node:fs";
@@ -17,7 +17,7 @@ await esbuild.build({
   format: "esm",
   platform: "node",
   logLevel: "silent",
-  // pachetul CJS `yaml` face require pe builtin-uri: shim-ul standard esbuild
+  // the CJS package `yaml` requires builtins: the standard esbuild shim
   banner: {
     js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   },
@@ -58,7 +58,7 @@ test("setDut: scrie dut-ul si pastreaza restul", () => {
   assert.equal(cfg.dut.name, "soc_top");
   assert.equal(cfg.dut.clock, "clk");
   assert.equal(cfg.dut.reset, "rst_n");
-  assert.equal(cfg.reset, undefined); // implicituri -> fara bloc `reset:`
+  assert.equal(cfg.reset, undefined); // defaults -> no `reset:` block
   assert.equal(cfg.project.name, "demo");
 });
 
@@ -68,9 +68,9 @@ test("setDut: abaterile de reset merg in cheia TOP-LEVEL `reset:` (1.0)", () => 
   });
   assert.deepEqual(ops.parseQuvm(text).reset,
     { active_low: false, external: true });
-  // vechile chei pe dut NU se mai scriu (1.0 le respinge cu eroare-ghid)
+  // the old keys on dut are NO longer written (1.0 rejects them with a guide-error)
   assert.ok(!/reset_active_low|external_reset/.test(text));
-  // revenirea la implicituri sterge blocul
+  // returning to defaults deletes the block
   text = ops.setDut(text, DUT);
   assert.equal(ops.parseQuvm(text).reset, undefined);
 });
@@ -125,13 +125,13 @@ test("createAgent: forma din docs/03, flow pe porturi", () => {
   assert.equal(a.interface, "drv_if");
   assert.equal(a.sequence_item, "drv_seq_item");
   assert.deepEqual(a.ports.inputs[0], { name: "din", width: 8 });
-  assert.deepEqual(a.ports.inputs[1], { name: "en" }); // width 1 omis
+  assert.deepEqual(a.ports.inputs[1], { name: "en" }); // width 1 omitted
   assert.deepEqual(a.ports.outputs[0], {
     name: "sum",
     width: 8,
     randomize: false,
   });
-  assert.match(text, /\{ name: din, width: 8 \}/); // stil flow, o linie
+  assert.match(text, /\{ name: din, width: 8 \}/); // flow style, one line
 });
 
 test("createAgent: nume duplicat => eroare", () => {
@@ -153,7 +153,7 @@ test("ignorePorts: uniune sortata, fara duplicate; unignore curata blocul", () =
     "test_mode",
   ]);
   text = ops.unignorePorts(text, ["dbg", "scan_en", "test_mode"]);
-  // cheia dispare; blocul `dut` (configuratie obligatorie) ramane
+  // the key disappears; the `dut` block (mandatory configuration) stays
   assert.equal(ops.parseQuvm(text).dut?.unverified_ports, undefined);
 });
 
@@ -184,22 +184,22 @@ test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate 
     config: "adder.quickuvm.yaml",
     params: { W: 8 },
   });
-  // params gol se omite complet
+  // empty params is omitted entirely
   assert.deepEqual(cfg.subenvs[1], {
     name: "g_ch_0_u_ch",
     config: "chan.quickuvm.yaml",
   });
-  // params pe o singura linie (mapa flow) si comentariile din schelet intacte
+  // params on a single line (flow map) and the skeleton comments intact
   assert.ok(/params: \{ ?W: 8 ?\}/.test(text), `params nu e flow:\n${text}`);
   assert.ok(text.includes("# Configuratie QuickUVM"));
-  // compunerea cere layout: packaged (validat de QuickUVM) — asigurat de mutatie
+  // composition requires layout: packaged (validated by QuickUVM) — ensured by the mutation
   assert.equal(cfg.layout, "packaged");
-  // adaugare incrementala la lista existenta
+  // incremental addition to the existing list
   text = ops.createSubenvs(text, [
     { name: "u_inv", config: "inverter.quickuvm.yaml", params: {} },
   ]);
   assert.equal(ops.parseQuvm(text).subenvs.length, 3);
-  // duplicat: refuzat cu mesaj clar
+  // duplicate: refused with a clear message
   assert.throws(
     () => ops.createSubenvs(text, [
       { name: "u_add", config: "x.yaml", params: {} },
@@ -209,8 +209,8 @@ test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate 
 });
 
 test("topConfigPaths: scaffold-urile copiilor nu devin config-ul activ", () => {
-  // scenariul regresiei reale: chan.quickuvm.yaml (scaffold createSubenv)
-  // castiga alfabetic, dar e referit de demo_top -> top-ul ramane demo_top
+  // the real regression scenario: chan.quickuvm.yaml (createSubenv scaffold)
+  // wins alphabetically, but is referenced by demo_top -> the top stays demo_top
   let top = ops.setDut(ops.newConfigText("demo_top"), DUT);
   top = ops.createSubenvs(top, [
     { name: "g_ch_0_u_ch", config: "chan.quickuvm.yaml", params: { W: 16 } },
@@ -224,7 +224,7 @@ test("topConfigPaths: scaffold-urile copiilor nu devin config-ul activ", () => {
     { path: "C:\\ws\\examples\\demo_top.quickuvm.yaml", text: top },
   ]);
   assert.deepEqual(tops, ["C:\\ws\\examples\\demo_top.quickuvm.yaml"]);
-  // cai relative cu ../ si case diferit (Windows) se rezolva la acelasi fisier
+  // relative paths with ../ and different case (Windows) resolve to the same file
   const tops2 = ops.topConfigPaths([
     { path: "C:\\ws\\blocks\\Chan.quickuvm.yaml", text: chan },
     {
@@ -235,7 +235,7 @@ test("topConfigPaths: scaffold-urile copiilor nu devin config-ul activ", () => {
     },
   ]);
   assert.deepEqual(tops2, ["C:\\ws\\top\\demo.quickuvm.yaml"]);
-  // fara referinte: toate sunt candidate (alegerea alfabetica ramane la host)
+  // without references: all are candidates (the alphabetical choice remains with the host)
   const tops3 = ops.topConfigPaths([
     { path: "a.quickuvm.yaml", text: chan },
     { path: "b.quickuvm.yaml", text: chan },
@@ -256,14 +256,14 @@ test("isComposedChild: copilul compus e detectat (avertismentul K2 #2)", () => {
     { path: "C:\\ws\\examples\\chan.quickuvm.yaml", text: chan },
     { path: "C:\\ws\\examples\\demo_top.quickuvm.yaml", text: top },
   ];
-  // copilul referit ca subenvs[].config -> compus; top-ul -> nu
+  // the child referenced as subenvs[].config -> composed; the top -> not
   assert.equal(ops.isComposedChild(files, "C:\\ws\\examples\\chan.quickuvm.yaml"), true);
   assert.equal(ops.isComposedChild(files, "C:\\ws\\examples\\demo_top.quickuvm.yaml"), false);
-  // comparatie normalizata (case + separatori — fsPath pe Windows poate
-  // diferi in caz de calea gasita de findFiles; includes() brut o rata)
+  // normalized comparison (case + separators — fsPath on Windows may
+  // differ in case from the path found by findFiles; a raw includes() misses it)
   assert.equal(ops.isComposedChild(files, "c:/WS/Examples/DEMO_TOP.quickuvm.yaml"), false);
   assert.equal(ops.isComposedChild(files, "c:/ws/examples/CHAN.quickuvm.yaml"), true);
-  // un singur fisier: n-are cine sa-l compuna
+  // a single file: there is no one to compose it
   assert.equal(ops.isComposedChild([files[0]], files[0].path), false);
 });
 
@@ -285,7 +285,7 @@ test("addScoreboard: two-stream OOO, flow map, nume duplicat refuzat", () => {
     match_key: "id",
   });
   assert.ok(/- \{ ?name: sbd/.test(text), `scoreboard nu e flow:\n${text}`);
-  // single-stream: monitor/match omise
+  // single-stream: monitor/match omitted
   text = ops.addScoreboard(text, { name: "sb2", source: "cmd", match: "in_order" });
   assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[1], {
     name: "sb2",
@@ -328,7 +328,7 @@ test("addVirtualSequence: mode parallel, pasi flow, sequential omite mode", () =
     { agent: "rsp", sequence: "rsp_seq" },
   ]);
   assert.ok(/- \{ ?agent: cmd/.test(text), `pasii nu sunt flow:\n${text}`);
-  // sequential: mode omis (byte-identic cu implicitul)
+  // sequential: mode omitted (byte-identical with the default)
   text = ops.addVirtualSequence(text, {
     name: "seq2",
     mode: "sequential",
@@ -365,14 +365,14 @@ test("removeScoreboard: sterge dupa nume, PASTREAZA blocul analysis gol, idempot
     ops.parseQuvm(text).analysis.scoreboards.map((s) => s.name),
     ["sb2"]
   );
-  // sterge si ultimul -> lista dispare, DAR blocul `analysis` ramane (gol):
-  // fara cheia `analysis`, QuickUVM cade in mod IMPLICIT si reinvie un
-  // scoreboard + coverage auto-cablate (probat in test:e2e — vezi keepAnalysis)
+  // delete the last one too -> the list disappears, BUT the `analysis` block stays (empty):
+  // without the `analysis` key, QuickUVM falls into DEFAULT mode and revives a
+  // scoreboard + auto-wired coverage (proven in test:e2e — see keepAnalysis)
   text = ops.removeScoreboard(text, "sb2");
   assert.deepEqual(ops.parseQuvm(text).analysis, {});
   assert.ok(!/scoreboards:/.test(text), `lista goala nu s-a curatat:\n${text}`);
   assert.ok(/analysis:/.test(text), `blocul analysis a fost sters:\n${text}`);
-  // idempotent: nume inexistent -> text neschimbat (apply devine no-op)
+  // idempotent: nonexistent name -> unchanged text (apply becomes a no-op)
   const fix = ops.setDut(ops.newConfigText("s"), DUT);
   assert.equal(ops.removeScoreboard(fix, "nope"), fix);
 });
@@ -384,7 +384,7 @@ test("removeCoverage: sterge un agent, pastreaza restul si blocul analysis gol",
   text = ops.removeCoverage(text, "cmd");
   assert.deepEqual(ops.parseQuvm(text).analysis.coverage, ["rsp"]);
   text = ops.removeCoverage(text, "rsp");
-  // blocul `analysis` ramane gol (altfel QuickUVM reinvie default-urile)
+  // the `analysis` block stays empty (otherwise QuickUVM revives the defaults)
   assert.deepEqual(ops.parseQuvm(text).analysis, {});
   assert.ok(/analysis:/.test(text), `blocul analysis a fost sters:\n${text}`);
 });
@@ -426,9 +426,9 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   const cfg = ops.parseQuvm(text);
   assert.deepEqual(cfg.agents.map((a) => a.name), ["rsp"]);
   assert.deepEqual(cfg.analysis.coverage, ["rsp"]);
-  // sbd (source=cmd) si sb3 (monitor=cmd) dispar; sb2 (source=rsp) ramane
+  // sbd (source=cmd) and sb3 (monitor=cmd) disappear; sb2 (source=rsp) stays
   assert.deepEqual(cfg.analysis.scoreboards.map((s) => s.name), ["sb2"]);
-  // only_cmd (doar cmd) dispare; smoke ramane fara pasul cmd
+  // only_cmd (only cmd) disappears; smoke stays without the cmd step
   assert.deepEqual(cfg.virtual_sequences.map((v) => v.name), ["smoke"]);
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
@@ -445,19 +445,19 @@ test("setScoreboardField: seteaza/reseteaza campuri, arunca la scoreboard inexis
   assert.ok(/- \{ ?name: sbd/.test(text), `scoreboard nu mai e flow:\n${text}`);
   text = ops.setScoreboardField(text, "sbd", "source", "drv");
   assert.equal(ops.parseQuvm(text).analysis.scoreboards[0].source, "drv");
-  // reset la implicit sterge campul: match=in_order, match_key gol, monitor gol
+  // reset to default deletes the field: match=in_order, match_key empty, monitor empty
   text = ops.setScoreboardField(text, "sbd", "match", "in_order");
   text = ops.setScoreboardField(text, "sbd", "match_key", "");
   text = ops.setScoreboardField(text, "sbd", "monitor", undefined);
   assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0], { name: "sbd", source: "drv" });
-  // max_latency numeric
+  // numeric max_latency
   text = ops.setScoreboardField(text, "sbd", "max_latency", 16);
   assert.equal(ops.parseQuvm(text).analysis.scoreboards[0].max_latency, 16);
   assert.throws(
     () => ops.setScoreboardField(text, "nope", "match", "out_of_order"),
     /nu exista/
   );
-  // source e obligatoriu: golirea lui e refuzata (nu corupe scoreboard-ul)
+  // source is mandatory: emptying it is refused (does not corrupt the scoreboard)
   assert.throws(() => ops.setScoreboardField(text, "sbd", "source", ""), /obligatoriu/);
   assert.throws(
     () => ops.setScoreboardField(text, "sbd", "source", undefined),
@@ -466,8 +466,8 @@ test("setScoreboardField: seteaza/reseteaza campuri, arunca la scoreboard inexis
 });
 
 test("remove*: no-op pastreaza byte-identic containerele goale scrise de mana", () => {
-  // fisier scris de mana cu blocuri goale: o stergere fara tinta NU trebuie
-  // sa le atinga (WorkspaceEdit gol; regresie prinsa la recenzia adversariala)
+  // hand-written file with empty blocks: a deletion with no target must NOT
+  // touch them (empty WorkspaceEdit; regression caught in the adversarial review)
   const hand = [
     "project: { name: s }",
     "agents:",
@@ -495,7 +495,7 @@ test("removeAgent: pastreaza un vseq cu body gol scris de mana", () => {
     "",
   ].join("\n");
   const cfg = ops.parseQuvm(ops.removeAgent(text, "cmd"));
-  // uses_cmd (golit de cmd) dispare; placeholder (body gol pre-existent) ramane
+  // uses_cmd (emptied of cmd) disappears; placeholder (pre-existing empty body) stays
   assert.deepEqual(cfg.virtual_sequences.map((v) => v.name), ["placeholder"]);
   assert.deepEqual(cfg.agents.map((a) => a.name), ["rsp"]);
 });
@@ -504,12 +504,12 @@ test("setScoreboardField: cascada — monitor gol / match in_order curata match_
   let text = ops.addScoreboard(ops.setDut(ops.newConfigText("s"), DUT), {
     name: "sbd", source: "cmd", monitor: "rsp", match: "out_of_order", matchKey: "id",
   });
-  // match -> in_order sterge si match_key (schema: key doar la out_of_order)
+  // match -> in_order also deletes match_key (schema: key only at out_of_order)
   let t2 = ops.setScoreboardField(text, "sbd", "match", "in_order");
   assert.deepEqual(ops.parseQuvm(t2).analysis.scoreboards[0], {
     name: "sbd", source: "cmd", monitor: "rsp",
   });
-  // monitor gol (single-stream) sterge match + match_key deodata
+  // empty monitor (single-stream) deletes match + match_key at once
   let t3 = ops.setScoreboardField(text, "sbd", "monitor", undefined);
   assert.deepEqual(ops.parseQuvm(t3).analysis.scoreboards[0], {
     name: "sbd", source: "cmd",
@@ -523,7 +523,7 @@ test("addProbe: flow map, width=1 omisa, coverage doar cand e cerut, duplicat re
     name: "lvl", path: "u_fifo.level", width: 3,
   });
   assert.ok(/- \{ ?name: lvl/.test(text), `proba nu e flow:\n${text}`);
-  // width 1 = implicitul QuickUVM -> omis; coverage doar cand e cerut
+  // width 1 = the QuickUVM default -> omitted; coverage only when requested
   text = ops.addProbe(text, { name: "busy", path: "u_ctl.busy", width: 1, coverage: true });
   assert.deepEqual(ops.parseQuvm(text).probes[1], {
     name: "busy", path: "u_ctl.busy", coverage: true,
@@ -540,12 +540,12 @@ test("removeProbe: sterge dupa nume, curata lista goala, idempotent", () => {
   text = ops.addProbe(text, { name: "busy", path: "u.busy" });
   text = ops.removeProbe(text, "lvl");
   assert.deepEqual(ops.parseQuvm(text).probes.map((p) => p.name), ["busy"]);
-  // ultima -> cheia `probes` dispare (spre deosebire de `analysis`, absenta
-  // listei `probes` e byte-identica pentru generator — vezi keepAnalysis)
+  // the last one -> the `probes` key disappears (unlike `analysis`, the absence
+  // of the `probes` list is byte-identical for the generator — see keepAnalysis)
   text = ops.removeProbe(text, "busy");
   assert.equal(ops.parseQuvm(text).probes, undefined);
   assert.ok(!/probes:/.test(text), `lista goala nu s-a curatat:\n${text}`);
-  // idempotent: tinta lipsa -> text original byte-identic
+  // idempotent: missing target -> original byte-identical text
   const fix = ops.setDut(ops.newConfigText("s"), DUT);
   assert.equal(ops.removeProbe(fix, "nope"), fix);
 });
@@ -555,9 +555,9 @@ test("addConnections: flow, dedup pe (from,to), no-op byte-identic", () => {
   text = ops.addConnections(text, [{ from: "p1.dout", to: "c1.din" }]);
   assert.deepEqual(ops.parseQuvm(text).connections, [{ from: "p1.dout", to: "c1.din" }]);
   assert.ok(/- \{ ?from: p1.dout/.test(text), `conexiunea nu e flow:\n${text}`);
-  // idempotent pe pereche: acelasi (from,to) nu se dubleaza -> text neschimbat
+  // idempotent per pair: the same (from,to) is not duplicated -> unchanged text
   assert.equal(ops.addConnections(text, [{ from: "p1.dout", to: "c1.din" }]), text);
-  // o pereche noua se adauga
+  // a new pair is added
   text = ops.addConnections(text, [{ from: "p1.dout", to: "c1.din" }, { from: "c1.dout", to: "p1.din" }]);
   assert.deepEqual(ops.parseQuvm(text).connections.length, 2);
 });
@@ -569,10 +569,10 @@ test("removeConnection: sterge perechea, curata lista goala, idempotent", () => 
   );
   const before = text;
   text = ops.removeConnection(text, "p1.dout", "c1.din");
-  assert.equal(ops.parseQuvm(text).connections, undefined); // ultima -> cheia dispare
-  // idempotent: perechea lipsa -> text original byte-identic
+  assert.equal(ops.parseQuvm(text).connections, undefined); // the last one -> the key disappears
+  // idempotent: missing pair -> original byte-identical text
   assert.equal(ops.removeConnection(text, "nope", "nope"), text);
-  // no-op cand perechea nu se potriveste
+  // no-op when the pair does not match
   assert.equal(ops.removeConnection(before, "x.a", "y.b"), before);
 });
 
@@ -580,20 +580,20 @@ test("setAgentActive: pasiv scrie active:false, activ sterge cheia, no-op idempo
   let text = ops.createAgent(ops.setDut(ops.newConfigText("s"), DUT), {
     name: "cons", inputs: [{ name: "din", width: 8 }], outputs: [],
   });
-  // -> pasiv
+  // -> passive
   text = ops.setAgentActive(text, "cons", false);
   assert.equal(ops.parseQuvm(text).agents[0].active, false);
-  // no-op byte-identic cand e deja pasiv
+  // byte-identical no-op when already passive
   assert.equal(ops.setAgentActive(text, "cons", false), text);
-  // -> activ sterge cheia (implicitul QuickUVM)
+  // -> active deletes the key (the QuickUVM default)
   text = ops.setAgentActive(text, "cons", true);
   assert.equal(ops.parseQuvm(text).agents[0].active, undefined);
   assert.ok(!/active:/.test(text), `active nu s-a sters:\n${text}`);
-  // agent inexistent -> arunca
+  // nonexistent agent -> throws
   assert.throws(() => ops.setAgentActive(text, "nope", false), /nu exista/);
 });
 
-// fisier de inspectie manuala, util la depanare
+// file for manual inspection, useful for debugging
 writeFileSync(join(outDir, "sample.yaml"),
   ops.ignorePorts(
     ops.createAgent(ops.setDut(ops.newConfigText("demo"), DUT), {

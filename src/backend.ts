@@ -1,7 +1,7 @@
-// Rularea backend-ului semantic (backend/svmodel.py) ca proces copil:
-// debounce la salvare, colectare stdout (modelul JSON) si stderr
-// (diagnostice slang -> Problems). La esec, modelul vechi ramane valabil
-// si se anunta `model/stale` (invalidare gratioasa, docs/01).
+// Running the semantic backend (backend/svmodel.py) as a child process:
+// debounce on save, collecting stdout (the JSON model) and stderr
+// (slang diagnostics -> Problems). On failure, the old model stays valid
+// and `model/stale` is announced (graceful invalidation, docs/01).
 
 import { ChildProcess, spawn } from "child_process";
 import * as path from "path";
@@ -9,7 +9,7 @@ import * as vscode from "vscode";
 import { resolveFileList } from "./filelist";
 import { ProjectModel, validateModel } from "./model";
 
-/** linie de diagnostic slang: fisier:linie:coloana: severitate: mesaj */
+/** a slang diagnostic line: file:line:column: severity: message */
 const DIAG_RE = /^(.+?):(\d+):(\d+): (error|warning|note): (.*)$/;
 
 const SEVERITY: Record<string, vscode.DiagnosticSeverity> = {
@@ -21,9 +21,9 @@ const SEVERITY: Record<string, vscode.DiagnosticSeverity> = {
 export class Backend implements vscode.Disposable {
   private readonly modelEmitter = new vscode.EventEmitter<ProjectModel>();
   private readonly staleEmitter = new vscode.EventEmitter<number>();
-  /** model nou, validat */
+  /** new, validated model */
   readonly onModel = this.modelEmitter.event;
-  /** compilare esuata: numarul de erori; modelul vechi ramane */
+  /** compilation failed: the error count; the old model stays */
   readonly onStale = this.staleEmitter.event;
 
   private proc: ChildProcess | undefined;
@@ -36,7 +36,7 @@ export class Backend implements vscode.Disposable {
     private readonly diagnostics: vscode.DiagnosticCollection
   ) {}
 
-  /** Programeaza o rulare cu debounce (implicit setarea quickuvm.debounceMs). */
+  /** Schedules a debounced run (defaults to the quickuvm.debounceMs setting). */
   schedule(delayMs?: number): void {
     const cfg = vscode.workspace.getConfiguration("quickuvm");
     const delay = delayMs ?? cfg.get<number>("debounceMs", 400);
@@ -48,7 +48,7 @@ export class Backend implements vscode.Disposable {
 
   private async run(): Promise<void> {
     if (this.proc) {
-      // o rulare e in curs: se reprogrameaza una singura dupa incheiere
+      // a run is in progress: a single re-run is scheduled after it finishes
       this.rerunAfter = true;
       return;
     }
@@ -102,8 +102,8 @@ export class Backend implements vscode.Disposable {
     this.log.appendLine(`[backend] ${python} ${args.join(" ")}`);
 
     const started = Date.now();
-    // PYTHONUTF8: diagnosticele slang pot cita surse cu Unicode; consola
-    // Windows implicita e cp1252 si sys.stderr.write ar crapa (capcana quick-uvm)
+    // PYTHONUTF8: slang diagnostics can cite Unicode sources; the default
+    // Windows console is cp1252 and sys.stderr.write would crash (quick-uvm pitfall)
     const proc = spawn(python, args, {
       cwd: root.uri.fsPath,
       shell: false,
@@ -154,7 +154,7 @@ export class Backend implements vscode.Disposable {
     });
   }
 
-  /** Parseaza diagnosticele slang din stderr in Problems; intoarce nr. de erori. */
+  /** Parses the slang diagnostics from stderr into Problems; returns the error count. */
   private publishDiagnostics(
     stderr: string,
     root: vscode.WorkspaceFolder

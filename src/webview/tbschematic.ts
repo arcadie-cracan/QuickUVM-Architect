@@ -1,9 +1,9 @@
-// Layout + desen pentru vederea de verificare, PLAT PER NIVEL (faza 3b,
-// docs/05, decizia D24): ELK layered (ca vederea-schema RTL), blocuri
-// desenate ca CUTII UML (stereotip + compartimente text), steaguri de
-// granita pentru conexiunile care traverseaza nivelul, muchii rutate cu
-// ruterul A* comun. Fara compound/nesting — structura interna a unui bloc
-// se descopera prin dublu-clic (drill), la nivelul urmator.
+// Layout + drawing for the verification view, FLAT PER LEVEL (phase 3b,
+// docs/05, decision D24): ELK layered (like the RTL schematic view), blocks
+// drawn as UML BOXES (stereotype + text compartments), boundary
+// flags for the connections that cross the level, edges routed with
+// the common A* router. No compound/nesting — a block's internal structure
+// is discovered by double-click (drill), at the next level.
 
 import type { ElkNode } from "elkjs/lib/elk.bundled.js";
 import { Rect, route, RouteRequest } from "./router";
@@ -16,20 +16,20 @@ interface ElkLike {
 
 const STUB = 10;
 const BPORT_H = 16;
-const PIN_TOP = 40; // primul port sub banda de titlu (multiplu de 8)
+const PIN_TOP = 40; // the first port below the title band (multiple of 8)
 const PIN_PITCH = 16;
-const LINE_H = 13; // inaltimea unei linii de compartiment
+const LINE_H = 13; // the height of a compartment line
 
 function ceilGrid(v: number): number {
   return Math.ceil(v / 8) * 8;
 }
 
-/** dimensiunea cutiei UML: titlu + stereotip + compartimente, si min pentru porturi */
+/** the UML box's size: title + stereotype + compartments, and min for ports */
 function boxSize(
   n: TbNode,
   measure: (t: string) => number
 ): { w: number; h: number } {
-  let textH = 22; // banda de titlu
+  let textH = 22; // the title band
   if (n.stereotype) {
     textH += 14;
   }
@@ -57,7 +57,7 @@ function boxSize(
   return { w, h };
 }
 
-/** geometria porturilor pe grila (centre la PIN_TOP + i*PITCH, pe fiecare latura) */
+/** the ports' geometry on the grid (centers at PIN_TOP + i*PITCH, on each side) */
 function portGeometry(
   n: TbNode,
   size: { w: number; h: number }
@@ -94,10 +94,10 @@ export interface TbBPlaced {
   x: number;
   y: number;
   w: number;
-  /** rasturnare locala pe orizontala (D24): oglindeste forma in jurul centrului
-   *  propriu si muta ancora pe latura opusa a steagului — NU schimba latura ELK
-   *  (pozitia ramane, deci nu se incalca FIRST/LAST_SEPARATE). La un steag inout
-   *  (hexagon simetric) doar ancora sare de la un varf la celalalt. */
+  /** local horizontal flip (D24): mirrors the shape around its own
+   *  center and moves the anchor to the flag's opposite side — does NOT change the ELK side
+   *  (the position stays, so FIRST/LAST_SEPARATE is not violated). At an inout flag
+   *  (symmetric hexagon) only the anchor jumps from one tip to the other. */
   flipH?: boolean;
 }
 
@@ -108,15 +108,15 @@ export interface TbLayout {
   height: number;
 }
 
-/** rasturnarea unui bloc/steag TB (ca RTL): H = laturile vest<->est, V =
- *  ordinea porturilor pe fiecare latura (docs/04) */
+/** the flip of a TB block/flag (like RTL): H = the west<->east sides, V =
+ *  the ports' order on each side (docs/04) */
 export interface Flip {
   h: boolean;
   v: boolean;
 }
 
-/** porturile unui nod dupa rasturnare: laturile schimbate la H, ordinea
- *  inversata pe fiecare latura la V (aceeasi logica ca `layoutSchematic`) */
+/** a node's ports after flipping: the sides swapped at H, the order
+ *  reversed on each side at V (the same logic as `layoutSchematic`) */
 function flipPorts(ports: TbPort[], flip: Flip): TbPort[] {
   if (!flip.h && !flip.v) {
     return ports;
@@ -135,7 +135,7 @@ function flipPorts(ports: TbPort[], flip: Flip): TbPort[] {
   ];
 }
 
-/** Layout PLAT: ELK layered cu porturi FIXED_POS si steaguri FIRST/LAST_SEPARATE. */
+/** FLAT layout: ELK layered with FIXED_POS ports and FIRST/LAST_SEPARATE flags. */
 export async function layoutTb(
   elk: ElkLike,
   scene: TbScene,
@@ -150,17 +150,17 @@ export async function layoutTb(
     { id: string; x: number; y: number; side: "WEST" | "EAST" }[]
   >();
 
-  // Steagurile NU se rastoarna: latura lor e dictata de directia muchiei
-  // (FIRST_SEPARATE = fara muchii de intrare, LAST_SEPARATE = fara muchii de
-  // iesire — ELK ARUNCA altfel, in modul interactiv). Un `flips` cu id de
-  // steag (samanta veche) se ignora. Un steag INOUT (ambele sensuri, ex.
-  // `<if>` la nivel de agent: driver->if->monitor) nu poate satisface NICIUNA
-  // dintre constrangeri, deci NU primeste layerConstraint — ELK il aseaza intr-un
-  // strat de mijloc (fara aruncare, si fara ocolul if->monitor de dinainte).
-  // NOTA (probat empiric, iul. 2026): chiar FARA layerConstraint, ELK layered
-  // aseaza un steag directional pe latura ceruta de muchie (sursa->stanga,
-  // tinta->dreapta) si IGNORA o samanta pe latura opusa — deci mutarea unui
-  // steag directional pe latura cealalta nu e realizabila prin seminte.
+  // The flags do NOT flip: their side is dictated by the edge's direction
+  // (FIRST_SEPARATE = no incoming edges, LAST_SEPARATE = no outgoing
+  // edges — ELK THROWS otherwise, in interactive mode). A `flips` with a flag
+  // id (an old seed) is ignored. An INOUT flag (both directions, e.g.
+  // `<if>` at the agent level: driver->if->monitor) cannot satisfy EITHER
+  // of the constraints, so it does NOT receive a layerConstraint — ELK places it in a
+  // middle layer (without throwing, and without the earlier if->monitor detour).
+  // NOTE (empirically proven, Jul. 2026): even WITHOUT a layerConstraint, ELK layered
+  // places a directional flag on the side required by the edge (source->left,
+  // target->right) and IGNORES a seed on the opposite side — so moving a
+  // directional flag to the other side is not achievable via seeds.
   for (const b of scene.boundary) {
     children.push({
       id: b.id,
@@ -202,9 +202,9 @@ export async function layoutTb(
     });
   }
 
-  // pozitiile detinute de utilizator devin seminte pentru ELK interactiv
-  // (docs/04, ca vederea-schema RTL): nodurile cunoscute raman pe loc, doar
-  // elementele noi primesc pozitii inserate in context
+  // the positions owned by the user become seeds for interactive ELK
+  // (docs/04, like the RTL schematic view): the known nodes stay in place, only
+  // the new elements receive positions inserted in context
   if (seeds?.size) {
     for (const c of children) {
       const s = seeds.get(c.id ?? "");
@@ -221,9 +221,9 @@ export async function layoutTb(
       "elk.direction": "RIGHT",
       "elk.edgeRouting": "ORTHOGONAL",
       "elk.separateConnectedComponents": "false",
-      // cu seminte: mod interactiv (pozitiile date ordoneaza straturile/
-      // randurile); cycleBreaking ramane implicit (INTERACTIVE ar intra in
-      // conflict cu LAST_SEPARATE pe steaguri — vezi layoutSchematic)
+      // with seeds: interactive mode (the given positions order the layers/
+      // rows); cycleBreaking stays default (INTERACTIVE would come into
+      // conflict with LAST_SEPARATE on flags — see layoutSchematic)
       ...(seeds?.size
         ? {
             "elk.interactive": "true",
@@ -255,8 +255,8 @@ export async function layoutTb(
     if (bset.has(c.id ?? "")) {
       const b = scene.boundary.find((bb) => bb.id === c.id);
       if (b) {
-        // rasturnarea locala nu atinge ELK (pozitia ramane); e pur geometrica,
-        // consumata de drawBoundary/anchor
+        // the local flip does not touch ELK (the position stays); it's purely geometric,
+        // consumed by drawBoundary/anchor
         boundary.set(b.id, {
           b,
           x,
@@ -267,7 +267,7 @@ export async function layoutTb(
       }
       continue;
     }
-    const n = effNode.get(c.id ?? ""); // copia rasturnata (porturi re-plasate)
+    const n = effNode.get(c.id ?? ""); // the flipped copy (ports re-placed)
     if (!n) {
       continue;
     }
@@ -277,9 +277,9 @@ export async function layoutTb(
       { x: number; y: number; side: "WEST" | "EAST" }
     >();
     for (const p of geo) {
-      // offset RELATIV la originea nodului (ca porturile ELK): ancora se
-      // calculeaza din n.x/n.y curent (vezi `anchor`), deci porturile urmeaza
-      // nodul la drag fara re-layout
+      // offset RELATIVE to the node's origin (like ELK's ports): the anchor is
+      // computed from the current n.x/n.y (see `anchor`), so the ports follow
+      // the node on drag without re-layout
       ports.set(p.id, { x: p.x, y: p.y, side: p.side });
     }
     nodes.set(n.id, {
@@ -299,7 +299,7 @@ export async function layoutTb(
   };
 }
 
-// ------------------------------------------------------------------ desen
+// ------------------------------------------------------------------ drawing
 
 const CLASS: Record<string, string> = {
   tbdut: "tb-dut",
@@ -324,7 +324,7 @@ export function drawTb(
   for (const p of layout.nodes.values()) {
     viewport.append(drawBox(p));
   }
-  // grupul muchiilor deasupra nodurilor, reutilizabil la re-rutarea din drag
+  // the edges' group above the nodes, reusable when re-routing from drag
   const edges = el("g", { class: "tb-edges" });
   viewport.append(edges);
   drawTbEdges(scene, layout, edges);
@@ -395,14 +395,14 @@ function drawBox(p: TbPlaced): SVGGElement {
     }
     y += 2;
   }
-  // porturile: linie scurta + eticheta pe latura
+  // the ports: short line + label on the side
   for (const port of n.ports) {
     const a = p.ports.get(port.id);
     if (!a) {
       continue;
     }
     const west = port.side === "WEST";
-    const py = a.y; // port relativ la originea nodului (grupul are deja translate)
+    const py = a.y; // port relative to the node's origin (the group already has translate)
     g.append(
       el("line", {
         class: `tb-stub${port.iface ? " iface" : ""}`,
@@ -416,12 +416,12 @@ function drawBox(p: TbPlaced): SVGGElement {
         {
           class: "tb-pin",
           x: String(west ? -STUB - 2 : p.w + STUB + 2),
-          // eticheta mereu DEASUPRA portului (nu pe randul firului: firul iese
-          // orizontal la py, deci nu taie numele), pe AMBELE laturi — alinierea
-          // verticala e CONSTANTA la rasturnare (H schimba latura vest<->est,
-          // dar nu si sus/jos; cererea utilizatorului). Anchorul (end la vest,
-          // start la est) tine eticheta pe latura exterioara a blocului, deci
-          // porturile care se privesc raman separate orizontal
+          // the label always ABOVE the port (not on the wire's row: the wire exits
+          // horizontally at py, so it does not cross the name), on BOTH sides — the vertical
+          // alignment is CONSTANT under flipping (H changes the west<->east side,
+          // but not top/bottom; the user's request). The anchor (end at west,
+          // start at east) keeps the label on the block's outer side, so
+          // the ports that face each other stay horizontally separated
           y: String(py - 5),
           "text-anchor": west ? "end" : "start",
         },
@@ -441,18 +441,18 @@ function drawBoundary(p: TbBPlaced): SVGGElement {
   g.dataset.id = b.id;
   const w = p.w;
   const notch = 6;
-  // rasturnarea locala (p.flipH) oglindeste forma in jurul centrului: varful si
-  // baza isi schimba latura (hexagonul inout e simetric, deci ramane neschimbat)
+  // the local flip (p.flipH) mirrors the shape around the center: the tip and
+  // the base swap sides (the inout hexagon is symmetric, so it stays unchanged)
   const west = (b.side === "WEST") !== Boolean(p.flipH);
   const pointRight = `M 0 0 H ${w - notch} L ${w} ${BPORT_H / 2} L ${w - notch} ${BPORT_H} H 0 Z`;
   const pointLeft = `M ${w} 0 H ${notch} L 0 ${BPORT_H / 2} L ${notch} ${BPORT_H} H ${w} Z`;
-  // varful arata directia datelor fata de nivel: `in` -> spre interiorul
-  // diagramei, `out` -> spre exterior, `inout` -> dreptunghi (bidirectional,
-  // ex. interfata `<if>`, care nu are o directie unica)
+  // the tip shows the data's direction relative to the level: `in` -> toward the diagram's
+  // interior, `out` -> toward the exterior, `inout` -> rectangle (bidirectional,
+  // e.g. the `<if>` interface, which does not have a single direction)
   let d: string;
   if (b.dir === "inout") {
-    // hexagon turtit: fuziunea varfului de iesire (dreapta) cu cel de intrare
-    // (stanga) — portul bidirectional are ambele sensuri
+    // flattened hexagon: the fusion of the exit tip (right) with the entry tip
+    // (left) — the bidirectional port has both directions
     d = `M ${notch} 0 H ${w - notch} L ${w} ${BPORT_H / 2} L ${w - notch} ${BPORT_H} H ${notch} L 0 ${BPORT_H / 2} Z`;
   } else {
     const inward = b.dir !== "out";
@@ -487,9 +487,9 @@ function anchor(
 ): Anchor | null {
   const b = layout.boundary.get(nodeId);
   if (b) {
-    // steag de granita: iesirea e spre interior (est pentru vest, invers).
-    // Rasturnarea locala (flipH) muta ancora pe latura opusa a steagului —
-    // oglindita fata de centrul propriu, la fel ca forma
+    // boundary flag: the exit is toward the interior (east for west, and vice versa).
+    // The local flip (flipH) moves the anchor to the flag's opposite side —
+    // mirrored about its own center, the same as the shape
     const west = (b.b.side === "WEST") !== Boolean(b.flipH);
     return {
       x: west ? b.x + b.w : b.x,
@@ -505,15 +505,15 @@ function anchor(
     const a = n.ports.get(portId);
     if (a) {
       const dir: 1 | -1 = a.side === "WEST" ? -1 : 1;
-      // porturile sunt relative la originea nodului: absolut = n.x/n.y + offset
+      // the ports are relative to the node's origin: absolute = n.x/n.y + offset
       return { x: n.x + a.x + dir * STUB, y: n.y + a.y, dir };
     }
   }
   return { x: n.x + n.w + STUB, y: n.y + n.h / 2, dir: 1 };
 }
 
-/** (re)ruteaza muchiile TB in `group` (reutilizabil la drag, ca `routeEdges`
- *  pentru RTL): golește grupul si redeseneaza traseele din pozitiile curente */
+/** (re)routes the TB edges into `group` (reusable on drag, like `routeEdges`
+ *  for RTL): empties the group and redraws the routes from the current positions */
 export function drawTbEdges(
   scene: TbScene,
   layout: TbLayout,
@@ -555,10 +555,10 @@ export function drawTbEdges(
       el("path", {
         class: "tb-edge-line",
         d,
-        // sageata la capat (tinta) pe TOATE muchiile: arata sensul datelor,
-        // deci si directia porturilor (sursa = iesire, tinta = intrare); o
-        // interfata are doua muchii — driver->if si if->monitor — deci ambele
-        // sensuri se vad
+        // arrow at the end (target) on ALL edges: shows the data's direction,
+        // hence also the ports' direction (source = output, target = input); an
+        // interface has two edges — driver->if and if->monitor — so both
+        // directions are visible
         "marker-end": "url(#arrow)",
       }),
       el("title", {}, e.net ?? e.kind)

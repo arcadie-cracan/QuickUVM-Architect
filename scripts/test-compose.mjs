@@ -1,9 +1,9 @@
-// Teste Node pentru derivarea PURA a conexiunilor H1 (src/compose.ts —
-// net-urile vederii parintelui -> connections): npm run test:compose
+// Node tests for the PURE derivation of the H1 connections (src/compose.ts —
+// the parent view's nets -> connections): npm run test:compose
 //
-// Modele SINTETICE pentru topologia pipeline (modelul de regresie soc_top e o
-// STEA — toate net-urile ating porturi proprii — deci nu are net inter-bloc;
-// il folosim pentru cazul „steaua nu deriva nimic").
+// SYNTHETIC models for the pipeline topology (the soc_top regression model is a
+// STAR — all nets touch own ports — so it has no inter-block net;
+// we use it for the „the star derives nothing" case).
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -15,7 +15,7 @@ const outFile = join(mkdtempSync(join(tmpdir(), "quickuvm-compose-")), "compose.
 await esbuild.build({
   entryPoints: ["src/compose.ts"], outfile: outFile,
   bundle: true, format: "esm", platform: "node", logLevel: "silent",
-  // compose trage yamlops -> pachetul CJS `yaml`: shim-ul standard esbuild
+  // compose pulls in yamlops -> the CJS package `yaml`: the standard esbuild shim
   banner: {
     js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   },
@@ -26,7 +26,7 @@ const { deriveConnections, parentComposition, subenvMapping, subenvName, planWir
 let passed = 0;
 function test(name, fn) { fn(); passed += 1; console.log(`  ok ${name}`); }
 
-// constructor de model sintetic: instante + module cu porturi
+// synthetic model constructor: instances + modules with ports
 function mkModel(view) {
   const modules = {};
   const instances = [{ path: "top", module: "sys", params: {}, loc: null }];
@@ -59,12 +59,12 @@ const SUBS = new Map([["u_prod", "u_prod"], ["u_cons", "u_cons"]]);
 test("pipeline: un net iesire->intrare devine o conexiune; sink identificat", () => {
   const r = deriveConnections(PIPE, "top", SUBS);
   assert.deepEqual(r.connections, [{ from: "u_prod.dout", to: "u_cons.din", width: 8 }]);
-  assert.deepEqual(r.sinks, ["u_cons"]); // agentul lui u_cons trebuie pasiv
+  assert.deepEqual(r.sinks, ["u_cons"]); // the agent of u_cons must be passive
   assert.deepEqual(r.warnings, []);
 });
 
 test("directia conteaza: from = IESIREA sursei, to = INTRAREA destinatiei", () => {
-  // acelasi model, dar interogam ca u_cons sa fie sursa nu ar aparea (are doar `in`)
+  // same model, but querying with u_cons as source would not appear (it has only `in`)
   const r = deriveConnections(PIPE, "top", SUBS);
   assert.equal(r.connections[0].from, "u_prod.dout");
   assert.equal(r.connections[0].to, "u_cons.din");
@@ -72,7 +72,7 @@ test("directia conteaza: from = IESIREA sursei, to = INTRAREA destinatiei", () =
 
 test("subenv necompus: capatul catre el se ignora (nu se cableaza la un ne-subenv)", () => {
   const r = deriveConnections(PIPE, "top", new Map([["u_prod", "u_prod"]]));
-  assert.deepEqual(r.connections, []); // u_cons nu e in map
+  assert.deepEqual(r.connections, []); // u_cons is not in the map
 });
 
 test("net de granita (atinge <port>.X) NU e conexiune inter-bloc", () => {
@@ -99,8 +99,8 @@ test("multi-driver: doua iesiri pe acelasi net -> avertisment, nimic cablat", ()
 });
 
 test("nepotrivire de latime (module DIFERITE) -> avertisment, DAR se cableaza", () => {
-  // generatorul face verificarea autoritara: nu aruncam o conexiune reala,
-  // doar avertizam (regresie prinsa la recenzie — skip-ul pierdea conexiuni)
+  // the generator does the authoritative check: we don't drop a real connection,
+  // we only warn (regression caught in review — the skip lost connections)
   const m = mkModel({
     children: {
       u_a: { module: "a", ports: [{ name: "o", dir: "out", width: 8 }] },
@@ -114,9 +114,9 @@ test("nepotrivire de latime (module DIFERITE) -> avertisment, DAR se cableaza", 
 });
 
 test("feedthrough: un net care atinge SI un port propriu ramane conexiune inter-bloc", () => {
-  // portul parintelui `y` condus de u_a.o SI citit de u_b.i: net `y` =
-  // [<port>.y, u_a.o, u_b.i]. Vechea garda de granita arunca tot net-ul si
-  // pierdea perechea reala u_a->u_b (regresie prinsa la recenzie)
+  // the parent port `y` driven by u_a.o AND read by u_b.i: net `y` =
+  // [<port>.y, u_a.o, u_b.i]. The old boundary guard dropped the whole net and
+  // lost the real pair u_a->u_b (regression caught in review)
   const m = mkModel({
     children: {
       u_a: { module: "a", ports: [{ name: "o", dir: "out", width: 8 }] },
@@ -130,8 +130,8 @@ test("feedthrough: un net care atinge SI un port propriu ramane conexiune inter-
 });
 
 test("acelasi modul (parametri per-instanta): latimea partajata NU blocheaza cablarea", () => {
-  // doua instante ale aceluiasi modul: latimea din definitia-per-nume e comuna,
-  // deci nesigura la parametri diferiti — nu verificam, quick-uvm decide
+  // two instances of the same module: the width from the per-name definition is common,
+  // so unreliable under different parameters — we don't check, quick-uvm decides
   const m = mkModel({
     children: {
       u_a: { module: "stage", ports: [{ name: "o", dir: "out", width: 8 }, { name: "i", dir: "in", width: 8 }] },
@@ -169,7 +169,7 @@ test("numele subenv difera de rel: capetele folosesc NUMELE subenv", () => {
 
 test("modelul de regresie (soc_top) e o STEA: nicio conexiune inter-bloc", () => {
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
-  // toti copiii lui soc_top, cheiati rel->nume (ca subenv-uri)
+  // all children of soc_top, keyed rel->name (as subenvs)
   const subs = new Map([
     ["u_add", "u_add"], ["u_inv", "u_inv"],
     ["g_ch[0].u_ch", "u_ch0"], ["g_ch[1].u_ch", "u_ch1"], ["g_ch[2].u_ch", "u_ch2"],
@@ -182,8 +182,8 @@ test("modelul de regresie (soc_top) e o STEA: nicio conexiune inter-bloc", () =>
 
 test("parentComposition: dintr-un bloc -> parintele imediat + copiii-bloc directi", () => {
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
-  // din vederea chan-ului g_ch[1].u_ch: parintele e u_soc (soc_top), iar
-  // copiii-bloc directi sunt u_add, u_inv si cele trei canale (bus_i = interfata, exclus)
+  // from the chan view g_ch[1].u_ch: the parent is u_soc (soc_top), and the
+  // direct block-children are u_add, u_inv and the three channels (bus_i = interface, excluded)
   const pc = parentComposition(model, "demo_top.u_soc.g_ch[1].u_ch");
   assert.equal(pc.parentPath, "demo_top.u_soc");
   assert.deepEqual(pc.childRels.sort(), [
@@ -208,7 +208,7 @@ test("parentComposition: parintele lui u_soc e demo_top; copiii lui = u_soc (bus
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
   const pc = parentComposition(model, "demo_top.u_soc");
   assert.equal(pc.parentPath, "demo_top");
-  // demo_top are u_soc (bloc) si bus_i (interfata, exclus) -> un singur copil-bloc
+  // demo_top has u_soc (block) and bus_i (interface, excluded) -> a single block-child
   assert.deepEqual(pc.childRels, ["u_soc"]);
 });
 
@@ -224,16 +224,16 @@ test("subenvMapping: rel adanc mapat; numele ambigue se exclud + raporteaza", ()
     schema_version: 1, tops: ["top"], modules: {}, views: {},
     instances: [
       { path: "top", module: "sys", params: {}, loc: null },
-      // rel ADANC (membru de generate) — nu se filtreaza dupa `.` (#3)
+      // DEEP rel (generate member) — not filtered by `.` (#3)
       { path: "top.g_ch[0].u_ch", module: "chan", params: {}, loc: null },
-      // coliziune many-to-one: ambele rel-uri dau acelasi nume `u_x_1`
+      // many-to-one collision: both rels produce the same name `u_x_1`
       { path: "top.u_x[1]", module: "m1", params: {}, loc: null },
       { path: "top.u_x_1", module: "m2", params: {}, loc: null },
     ],
   };
   const r = subenvMapping(model, "top", ["g_ch_0_u_ch", "u_x_1", undefined]);
   assert.equal(r.subenvOf.get("g_ch[0].u_ch"), "g_ch_0_u_ch");
-  // ambele pretendente la `u_x_1` au fost scoase (mai bine nimic decat misrutat)
+  // both candidates for `u_x_1` were removed (better nothing than misrouted)
   assert.deepEqual(r.ambiguous, ["u_x_1"]);
   assert.equal(r.subenvOf.size, 1);
 });
@@ -271,8 +271,8 @@ test("planWireEdits: connections pe top + agentul sink-ului pus pasiv", () => {
 });
 
 test("planWireEdits: doua sinks spre ACELASI fisier copil se PLIAZA (#4)", () => {
-  // bloc partajat: doua instante de `chan` refera acelasi config; pasivizarile
-  // trebuie pliate intr-UN singur text, nu doua inlocuiri care se corup
+  // shared block: two `chan` instances reference the same config; the passivations
+  // must be folded into ONE single text, not two replacements that corrupt each other
   const shared = `dut:
   name: chan
 agents:
@@ -305,17 +305,17 @@ agents:
   const plan = planWireEdits("dut:\n  name: top\n", subenvs, derived, children);
   assert.equal(plan.childTexts.size, 1, "UN singur text final per fisier");
   const child = plan.childTexts.get("file:///ws/chan.quickuvm.yaml");
-  // AMBELE pasivizari prezente in acelasi text (pliate pe textul in evolutie)
+  // BOTH passivations present in the same text (folded onto the evolving text)
   const passives = child.match(/active: false/g) ?? [];
   assert.equal(passives.length, 2, child);
   assert.deepEqual(plan.passivated, ["u_c0.a1", "u_c1.a2"]);
 });
 
 test("planWireEdits: TOTI agentii cu porturi conduse devin pasivi (nu doar primul)", () => {
-  // bug real confirmat empiric la recenzia adversariala: porturile conduse ale
-  // unui sink pot apartine unor agenti DIFERITI; quick-uvm refuza generarea
-  // daca ORICARE ramane activ — find() pasiviza doar primul si gestul raporta
-  // succes pe o stare rupta
+  // real bug empirically confirmed in the adversarial review: the driven ports of
+  // a sink can belong to DIFFERENT agents; quick-uvm refuses generation
+  // if ANY stays active — find() passivated only the first and the gesture reported
+  // success on a broken state
   const twoAgents = `dut:
   name: duo
 agents:
@@ -354,9 +354,9 @@ agents:
 
 test("planWireEdits: sink fara config/fisier/agent -> manual, restul merg", () => {
   const subenvs = [
-    { name: "u_a" }, // fara config
-    { name: "u_b", config: "missing.quickuvm.yaml" }, // fisier necitibil
-    { name: "u_c", config: "skeleton.quickuvm.yaml" }, // schelet fara agenti
+    { name: "u_a" }, // no config
+    { name: "u_b", config: "missing.quickuvm.yaml" }, // unreadable file
+    { name: "u_c", config: "skeleton.quickuvm.yaml" }, // skeleton without agents
   ];
   const derived = {
     connections: [
@@ -373,7 +373,7 @@ test("planWireEdits: sink fara config/fisier/agent -> manual, restul merg", () =
   assert.deepEqual(plan.manual, ["u_a", "u_b", "u_c"]);
   assert.deepEqual(plan.passivated, []);
   assert.equal(plan.childTexts.size, 0, "scheletul neschimbat nu se scrie");
-  // conexiunile se scriu oricum pe top (pasivizarea e responsabilitatea userului)
+  // the connections are written to top anyway (passivation is the user's responsibility)
   assert.match(plan.topText, /connections:/);
 });
 

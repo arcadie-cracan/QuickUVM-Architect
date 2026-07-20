@@ -1,7 +1,7 @@
-// Validare end-to-end a fluxului fazei 2 (criteriul din docs/06): de la un
-// DUT din examples/ la un testbench QuickUVM generat, exclusiv prin mutatiile
-// pe care le-ar produce actiunile extensiei (yamlops) — fara YAML de mana.
-// Cere quick-uvm instalat (sau importabil prin python): npm run test:e2e
+// End-to-end validation of the phase 2 flow (the criterion from docs/06): from a
+// DUT in examples/ to a generated QuickUVM testbench, exclusively through the mutations
+// that the extension's actions would produce (yamlops) — no hand-written YAML.
+// Requires quick-uvm installed (or importable via python): npm run test:e2e
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
@@ -11,7 +11,7 @@ import { basename, join } from "node:path";
 import { pathToFileURL } from "node:url";
 import esbuild from "esbuild";
 
-/** caile complete ale fisierelor generate (recursiv) */
+/** the full paths of the generated files (recursive) */
 function listFiles(dir) {
   const out = [];
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -43,7 +43,7 @@ function quickUvm(args, cwd) {
   const env = { ...process.env, PYTHONUTF8: "1" };
   let r = spawnSync("quick-uvm", args, { cwd, env, encoding: "utf8" });
   if (r.error?.code === "ENOENT") {
-    // fallback-ul extensiei: modulul instalat, prin python (generate.ts)
+    // the extension's fallback: the installed module, via python (generate.ts)
     r = spawnSync(
       "python",
       ["-c", "from quick_uvm.cli import main; main()", ...args],
@@ -53,8 +53,8 @@ function quickUvm(args, cwd) {
   return r;
 }
 
-// varianta care NU arunca: pentru scenariile care se ASTEAPTA sa esueze
-// (constrangeri quick-uvm). Intoarce {status, out} pentru un top compus.
+// the variant that does NOT throw: for the scenarios that are EXPECTED to fail
+// (quick-uvm constraints). Returns {status, out} for a composed top.
 function quickUvmComposed(topText, producerText, consumerText) {
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-comp-"));
   writeFileSync(join(dir, "sys_top.quickuvm.yaml"), topText);
@@ -71,7 +71,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const dir = mkdtempSync(join(tmpdir(), `quickuvm-e2e-${name}-`));
   const cfg = join(dir, `${name}.quickuvm.yaml`);
   writeFileSync(cfg, yamlText);
-  // config-urile copil ale compunerii H1, linga config-ul top (docs/03)
+  // the H1 composition's child configs, next to the top config (docs/03)
   for (const [file, text] of Object.entries(extraFiles)) {
     writeFileSync(join(dir, file), text);
   }
@@ -88,9 +88,9 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   return dir;
 }
 
-// --- scenariul 1: adder combinational (echivalentul actiunilor pe examples/)
-// setDut: niciun candidat de ceas -> combinational (confirmat in QuickPick);
-// createAgentFromPins pe {din, dout}: din -> inputs, dout -> outputs.
+// --- scenario 1: combinational adder (equivalent of the actions on examples/)
+// setDut: no clock candidate -> combinational (confirmed in QuickPick);
+// createAgentFromPins on {din, dout}: din -> inputs, dout -> outputs.
 {
   let text = ops.newConfigText("adder");
   text = ops.setDut(text, {
@@ -116,9 +116,9 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   ]);
 }
 
-// --- scenariul 2: soc_top secvential — clk/rst_n euristic, agent pe
-// din/sum/inv, ch_out (tablou unpacked) exclus si ignorat explicit, iar
-// portul de interfata bus ramane nemapat (se configureaza separat).
+// --- scenario 2: sequential soc_top — clk/rst_n heuristic, agent on
+// din/sum/inv, ch_out (unpacked array) excluded and explicitly ignored, and
+// the bus interface port stays unmapped (configured separately).
 {
   let text = ops.newConfigText("soc_top");
   text = ops.setDut(text, {
@@ -138,8 +138,8 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     ],
   });
   text = ops.ignorePorts(text, ["ch_out"]);
-  // felia 2 a vederii de verificare: un colector de coverage + un scoreboard
-  // single-stream adaugate prin mutatiile de editare (echivalentul paletei)
+  // slice 2 of the verification view: a coverage collector + a single-stream
+  // scoreboard added through the editing mutations (equivalent of the palette)
   text = ops.addCoverage(text, "datapath");
   text = ops.addScoreboard(text, { name: "sbd", source: "datapath" });
   generate("soc_top", text, [
@@ -153,12 +153,12 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   ]);
 }
 
-// --- scenariul 3: compunere H1 (createSubenv, docs/03) — top-ul refera trei
-// blocuri copil prin config-uri proprii, construite si ele exclusiv prin
-// yamlops (echivalentul scheletului creat de actiune + agentul configurat
-// ulterior de utilizator, fluxul recursiv). Doua combinational + unul cu
-// ceas: copiii cu ceas (single-clock, cel mult un reset) sunt acceptati de
-// QuickUVM din slice-ul M1 clocked-subenv (verificat pe HEAD, iul. 2026).
+// --- scenario 3: H1 composition (createSubenv, docs/03) — the top references three
+// child blocks through their own configs, also built exclusively through
+// yamlops (equivalent of the skeleton created by the action + the agent configured
+// later by the user, the recursive flow). Two combinational + one with a
+// clock: the clocked children (single-clock, at most one reset) are accepted by
+// QuickUVM from the M1 clocked-subenv slice (verified on HEAD, Jul. 2026).
 {
   const comb = (m) => ({
     module: m,
@@ -218,12 +218,12 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   );
 }
 
-// --- scenariul 4: STERGEREA (felia 2 a vederii de verificare) — cascada lui
-// removeAgent verificata contra generatorului REAL. Valoarea testului: daca
-// stergerea ar lasa o referinta moarta (un scoreboard cu monitor == agentul
-// sters, o intrare de coverage orfana), Pydantic din QuickUVM ar REFUZA
-// config-ul si `generate` ar iesi != 0 — testele pure de yamlops nu pot prinde
-// asta. In plus, artefactele componentelor sterse trebuie sa DISPARA.
+// --- scenario 4: DELETION (slice 2 of the verification view) — removeAgent's
+// cascade verified against the REAL generator. The test's value: if the
+// deletion left a dead reference (a scoreboard with monitor == the deleted
+// agent, an orphan coverage entry), QuickUVM's Pydantic would REFUSE the
+// config and `generate` would exit != 0 — the pure yamlops tests cannot catch
+// that. In addition, the artifacts of the deleted components must DISAPPEAR.
 {
   const soc = {
     module: "soc_top",
@@ -250,8 +250,8 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   text = ops.ignorePorts(text, ["ch_out"]);
   text = ops.addCoverage(text, "cmd");
   text = ops.addCoverage(text, "rsp");
-  // scoreboard two-stream: monitorul e `rsp` — stergerea lui trebuie sa duca
-  // si scoreboard-ul, altfel ramane o referinta moarta
+  // two-stream scoreboard: the monitor is `rsp` — deleting it must also take
+  // the scoreboard, otherwise a dead reference remains
   text = ops.addScoreboard(text, {
     name: "sbd",
     source: "cmd",
@@ -264,7 +264,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     steps: [{ agent: "cmd", sequence: "cmd_seq" }],
   });
 
-  // baza: ambii agenti si coverage-urile lor exista
+  // baseline: both agents and their coverages exist
   const beforeDir = generate("soc_top", text, [
     "cmd_if.sv",
     "cmd_cov.svh",
@@ -274,17 +274,17 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const before = listFiles(join(beforeDir, "tb")).map((f) => basename(f));
   assert.ok(before.some((f) => f.startsWith("rsp_")), "baza nu are artefacte rsp_*");
 
-  // stergerea agentului `rsp` (gestul din diagrama), cu cascada
+  // deleting the `rsp` agent (the gesture from the diagram), with cascade
   const afterAgent = ops.removeAgent(text, "rsp");
   const cfg = ops.parseQuvm(afterAgent);
   assert.deepEqual(cfg.agents.map((a) => a.name), ["cmd"]);
-  assert.deepEqual(cfg.analysis.coverage, ["cmd"]); // coverage-ul lui rsp a cazut
-  assert.equal(cfg.analysis.scoreboards, undefined); // sbd avea monitor=rsp
-  assert.deepEqual(cfg.virtual_sequences.map((v) => v.name), ["smoke"]); // doar cmd
+  assert.deepEqual(cfg.analysis.coverage, ["cmd"]); // rsp's coverage fell away
+  assert.equal(cfg.analysis.scoreboards, undefined); // sbd had monitor=rsp
+  assert.deepEqual(cfg.virtual_sequences.map((v) => v.name), ["smoke"]); // only cmd
 
-  // generatorul real ACCEPTA config-ul ramas (daca ar fi ramas o referinta
-  // moarta — sbd cu monitor=rsp — Pydantic l-ar fi refuzat), iar artefactele
-  // agentului sters dispar
+  // the real generator ACCEPTS the remaining config (if a dead reference had
+  // remained — sbd with monitor=rsp — Pydantic would have refused it), and the
+  // deleted agent's artifacts disappear
   const afterDir = generate("soc_top", afterAgent, ["cmd_if.sv", "cmd_cov.svh"]);
   const orphans = listFiles(join(afterDir, "tb"))
     .map((f) => basename(f))
@@ -292,11 +292,11 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   assert.deepEqual(orphans, [], `artefacte rsp_* ramase: ${orphans.join(", ")}`);
   console.log("  ok    stergere: removeAgent(rsp) — cascada acceptata de generator, rsp_* disparute");
 
-  // Stergerea ULTIMULUI element din `analysis`: blocul trebuie sa ramana GOL
-  // (`analysis: {}`), ca QuickUVM sa ramana in mod DECLARAT. Daca l-am curata,
-  // ar cadea in mod IMPLICIT si ar REINVIA un scoreboard + un coverage
-  // auto-cablate la primary agent — adica stergi ceva si primesti inapoi mai
-  // mult (regresie reala prinsa exact aici; vezi `keepAnalysis` in yamlops).
+  // Deleting the LAST element from `analysis`: the block must stay EMPTY
+  // (`analysis: {}`), so that QuickUVM stays in DECLARED mode. If we cleaned it,
+  // it would fall into DEFAULT mode and REVIVE a scoreboard + a coverage
+  // auto-wired to the primary agent — i.e. you delete something and get back
+  // more (a real regression caught exactly here; see `keepAnalysis` in yamlops).
   const afterCov = ops.removeCoverage(afterAgent, "cmd");
   assert.deepEqual(ops.parseQuvm(afterCov).analysis, {}, "blocul analysis nu a ramas gol");
   const covDir = generate("soc_top", afterCov, ["cmd_if.sv"]);
@@ -315,10 +315,10 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   console.log("  ok    stergere: analysis golit ramane `{}` — fara reinvierea default-urilor");
 }
 
-// --- scenariul 5: PROBA WHITEBOX (K2, felia 3) — proba construita de gestul
-// extensiei (calea RELATIVA la instanta DUT, latimea din model) ajunge efectiv
-// in XMR-ul din tb_top. Verifica si constrangerea H1, care e motivul pentru
-// care `proposeProbe` refuza gestul pe un bench de subsistem.
+// --- scenario 5: WHITEBOX PROBE (K2, slice 3) — the probe built by the
+// extension's gesture (the path RELATIVE to the DUT instance, the width from the model) actually reaches
+// the XMR in tb_top. Also checks the H1 constraint, which is the reason
+// why `proposeProbe` refuses the gesture on a subsystem bench.
 {
   const soc = {
     module: "soc_top",
@@ -335,7 +335,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     outputs: [{ name: "sum", width: 8 }],
   });
   text = ops.ignorePorts(text, ["ch_out", "inv"]);
-  // proba pe iesirea sumatorului INTERN: calea e relativa la instanta DUT
+  // probe on the INTERNAL adder's output: the path is relative to the DUT instance
   text = ops.addProbe(text, { name: "add_out", path: "u_add.dout", width: 8 });
 
   const dir = generate("soc_top", text, ["soc_top_probe_if.sv"]);
@@ -344,19 +344,19 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     files.find((f) => basename(f) === "tb_top.sv"),
     "utf8"
   );
-  // XMR-ul: quick-uvm lipeste calea VERBATIM dupa `dut_inst.`
+  // the XMR: quick-uvm pastes the path VERBATIM after `dut_inst.`
   assert.ok(
     /assign\s+probe_if\.add_out\s*=\s*dut_inst\.u_add\.dout\s*;/.test(tb),
     `XMR-ul probei lipseste din tb_top:\n${tb}`
   );
-  // fara coverage: monitorul de proba NU se genereaza
+  // without coverage: the probe monitor is NOT generated
   assert.ok(
     !files.some((f) => basename(f) === "soc_top_probe_monitor.svh"),
     "probe_monitor generat desi nicio proba nu cere coverage"
   );
   console.log("  ok    proba: XMR `probe_if.add_out = dut_inst.u_add.dout` in tb_top");
 
-  // coverage: true pe o proba => monitorul de probe apare in env
+  // coverage: true on a probe => the probe monitor appears in env
   const withCov = ops.addProbe(text, {
     name: "busy",
     path: "u_inv.dout",
@@ -370,7 +370,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   );
   console.log("  ok    proba: coverage: true -> soc_top_probe_monitor.svh");
 
-  // stergerea probei: artefactele ei dispar, restul se genereaza curat
+  // deleting the probe: its artifacts disappear, the rest is generated cleanly
   const noProbe = ops.removeProbe(text, "add_out");
   assert.equal(ops.parseQuvm(noProbe).probes, undefined);
   const delDir = generate("soc_top", noProbe, ["tb_top.sv"]);
@@ -380,7 +380,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   );
   console.log("  ok    proba: removeProbe -> artefactele probei dispar");
 
-  // H1 (motivul refuzului din proposeProbe): quick-uvm REFUZA probes+subenvs
+  // H1 (the reason for proposeProbe's refusal): quick-uvm REFUSES probes+subenvs
   let h1 = ops.setDut(ops.newConfigText("soc_top"), soc);
   h1 = ops.addProbe(h1, { name: "x", path: "u_add.dout", width: 8 });
   h1 = ops.createSubenvs(h1, [
@@ -413,11 +413,11 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   console.log("  ok    proba: H1 confirmat — probes + subenvs refuzat de generator");
 }
 
-// --- scenariul 6: COMPUNEREA DERIVATA (felia 3) — conexiunile inter-bloc
-// scrise de `addConnections` (echivalentul derivarii din net-urile vederii
-// parintelui) ajung in `assign`-ul fizic din tb_top. Blocul DESTINATIE are
-// agent PASIV (constrangere quick-uvm sondata empiric: un `to` cu agent activ
-// ar fi refuzat).
+// --- scenario 6: DERIVED COMPOSITION (slice 3) — the inter-block connections
+// written by `addConnections` (equivalent of the derivation from the parent
+// view's nets) reach the physical `assign` in tb_top. The DESTINATION block has
+// a PASSIVE agent (quick-uvm constraint probed empirically: a `to` with an active agent
+// would be refused).
 {
   const producer = `project: {name: producer}
 dut: {name: producer, clock: clk, reset: "", combinational: true}
@@ -440,7 +440,7 @@ agents:
       inputs: [{name: din, width: 8}]
       outputs: [{name: cout, width: 8, randomize: false}]
 `;
-  // top-ul, construit prin MUTATIILE reale: setDut + createSubenvs + addConnections
+  // the top, built through the real MUTATIONS: setDut + createSubenvs + addConnections
   let top = ops.setDut(ops.newConfigText("sys_top"), {
     module: "sys_top", clock: "clk", reset: null,
     resetActiveLow: false, externalReset: false, combinational: true,
@@ -459,16 +459,16 @@ agents:
     listFiles(join(dir, "tb")).find((f) => basename(f) === "tb_top.sv"),
     "utf8"
   );
-  // firul fizic inter-bloc: `assign <dst>_<if>_inst.din = <src>_<if>_inst.dout;`
+  // the physical inter-block wire: `assign <dst>_<if>_inst.din = <src>_<if>_inst.dout;`
   assert.ok(
     /assign\s+c1_\w*if\w*_inst\.din\s*=\s*p1_\w*if\w*_inst\.dout\s*;/.test(tb),
     `conexiunea inter-bloc lipseste din tb_top:\n${tb.split("\n").filter((l) => /assign|probe|connect/i.test(l)).join("\n")}`
   );
   console.log("  ok    compunere: connections -> `assign c1...din = p1...dout` in tb_top");
 
-  // constrangerea de pasivitate: un agent-destinatie ACTIV e refuzat de
-  // quick-uvm, iar `setAgentActive(false)` (flip-ul din wireConnections) il
-  // repara — dovada ca gestul produce un bench care chiar se genereaza.
+  // the passivity constraint: an ACTIVE destination agent is refused by
+  // quick-uvm, and `setAgentActive(false)` (the flip from wireConnections)
+  // repairs it — proof that the gesture produces a bench that actually generates.
   const consumerActive = `project: {name: consumer}
 dut: {name: consumer, clock: clk, reset: "", combinational: true}
 agents:
@@ -482,18 +482,18 @@ agents:
   const active = quickUvmComposed(top, producer, consumerActive);
   assert.notEqual(active.status, 0, "un agent-destinatie ACTIV ar fi trebuit refuzat");
   assert.match(active.out, /passive|active/i, "alt motiv de esec decat pasivitatea");
-  // flip-ul: setAgentActive pune cons_agent pasiv -> genereaza curat
+  // the flip: setAgentActive makes cons_agent passive -> generates cleanly
   const consumerFixed = ops.setAgentActive(consumerActive, "cons_agent", false);
   assert.equal(ops.parseQuvm(consumerFixed).agents[0].active, false);
   const fixed = quickUvmComposed(top, producer, consumerFixed);
   assert.equal(fixed.status, 0, `flip-ul la pasiv nu a reparat generarea:\n${fixed.out.slice(-400)}`);
   console.log("  ok    compunere: agent activ refuzat, setAgentActive(pasiv) repara generarea");
 
-  // LOCK INVERSAT (quick-uvm >= 1.0.0): hibridul `subenvs` + agenti proprii e
-  // LEGAL — agenti de granita (H2). Vechiul test tocmai si-a facut treaba (a
-  // prins re-permiterea), diagnosticul "hybrid" a fost scos din ConfigService;
-  // acum lock-ul pazeste sensul INVERS: daca generatorul l-ar re-interzice,
-  // gestul de compunere cu agenti la top ar muri tacut.
+  // INVERTED LOCK (quick-uvm >= 1.0.0): the `subenvs` + own agents hybrid is
+  // LEGAL — boundary agents (H2). The old test just did its job (it
+  // caught the re-permitting), the "hybrid" diagnostic was removed from ConfigService;
+  // now the lock guards the INVERSE meaning: if the generator re-forbade it,
+  // the compose-with-agents-at-top gesture would die silently.
   const hybridTop = ops.createAgent(top, {
     name: "topcmd", inputs: [{ name: "z", width: 8 }], outputs: [],
   });
@@ -502,7 +502,7 @@ agents:
     `hibridul (agenti de granita H2) ar trebui sa genereze curat:\n${hyb.out.slice(-400)}`);
   console.log("  ok    compunere: hibrid (subenvs + agenti de granita) ACCEPTAT de generator (1.0)");
 
-  // stergerea conexiunii: firul dispare, restul se genereaza curat
+  // deleting the connection: the wire disappears, the rest is generated cleanly
   const noConn = ops.removeConnection(top, "p1.dout", "c1.din");
   assert.equal(ops.parseQuvm(noConn).connections, undefined);
   const d2 = generate("sys_top", noConn, ["tb_top.sv"], {

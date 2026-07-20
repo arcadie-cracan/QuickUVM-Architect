@@ -1,5 +1,5 @@
-// Teste Node pentru scena PLATA PER NIVEL a vederii de verificare
-// (src/webview/tbscene.ts — QuvmConfig + focus -> TbScene, fara DOM):
+// Node tests for the FLAT PER-LEVEL scene of the verification view
+// (src/webview/tbscene.ts — QuvmConfig + focus -> TbScene, no DOM):
 //   npm run test:tbscene
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
@@ -53,9 +53,9 @@ test("nivel testbench (focus=''): DUT + Env, Env cu drill", () => {
   assert.deepEqual(ids, ["dut", "env"]);
   assert.equal(nodeById(s, "env").drill, "env");
   assert.equal(nodeById(s, "dut").drill, null);
-  // interfata env <-> dut, per agent
+  // env <-> dut interface, per agent
   assert.ok(s.edges.some((e) => e.id === "e:if:cmd" && e.kind === "iface"));
-  // Env are componentele listate ca text UML (compartimente)
+  // Env has the components listed as UML text (compartments)
   const env = nodeById(s, "env");
   assert.ok(env.compartments.some((c) => c.items.includes("cmd")));
   assert.ok(env.stereotype.includes("env"));
@@ -70,13 +70,13 @@ test("nivel Env (focus='env'): agenti + analiza + boundary interfata", () => {
   const ids = s.nodes.map((n) => n.id);
   assert.ok(ids.includes("agent:cmd") && ids.includes("agent:rsp"));
   assert.ok(ids.includes("sb:sbd") && ids.includes("cov:cmd") && ids.includes("vsqr"));
-  // agentul are drill + componente in compartimente
+  // the agent has drill + components in compartments
   const cmd = nodeById(s, "agent:cmd");
   assert.equal(cmd.drill, "agent:cmd");
   assert.ok(cmd.compartments.some((c) => c.items.includes("sequencer")));
   assert.equal(cmd.stereotype, "«active agent»");
   assert.equal(nodeById(s, "agent:rsp").stereotype, "«passive agent»");
-  // steaguri de granita: interfata catre DUT + internals (config are probe)
+  // boundary flags: interface to the DUT + internals (config has probes)
   const bids = s.boundary.map((b) => b.id).sort();
   assert.deepEqual(bids, ["<if>.cmd", "<if>.rsp", "<internals>"]);
   // agent.if -> boundary; agent.ap -> scoreboard
@@ -92,7 +92,7 @@ test("nivel agent (focus='agent:cmd'): sequencer/driver/monitor + boundary", () 
   );
   const ids = s.nodes.map((n) => n.id).sort();
   assert.deepEqual(ids, ["u.driver", "u.monitor", "u.sequencer"]);
-  // granite: sqr (vsqr), if (DUT), ap
+  // boundaries: sqr (vsqr), if (DUT), ap
   const bids = s.boundary.map((b) => b.id).sort();
   assert.deepEqual(bids, ["<ap>", "<if>", "<sqr>"]);
   // sequencer -> driver -> if; if -> monitor -> ap
@@ -100,9 +100,9 @@ test("nivel agent (focus='agent:cmd'): sequencer/driver/monitor + boundary", () 
   assert.ok(s.edges.some((e) => e.source === "u.driver" && e.target === "<if>"));
   assert.ok(s.edges.some((e) => e.source === "<if>" && e.target === "u.monitor"));
   assert.ok(s.edges.some((e) => e.source === "u.monitor" && e.target === "<ap>"));
-  // directia granitelor, dedusa din muchii: sqr = intrare (spre sequencer),
-  // if = interfata bidirectionala (driver conduce + monitor esantioneaza),
-  // ap = iesire (de la monitor)
+  // the boundaries' direction, inferred from edges: sqr = input (toward sequencer),
+  // if = bidirectional interface (driver drives + monitor samples),
+  // ap = output (from monitor)
   const dir = (id) => s.boundary.find((b) => b.id === id).dir;
   assert.equal(dir("<sqr>"), "in");
   assert.equal(dir("<if>"), "inout");
@@ -136,11 +136,11 @@ test("bench subsystem: DUT prefix de clasa, nu se deseneaza; Env cu subenvs", ()
   assert.equal(nodeById(s, "dut"), undefined);
   assert.ok(nodeById(s, "sub:u_a") && nodeById(s, "sub:u_b"));
   assert.ok(s.edges.some((e) => e.source === "sub:u_a" && e.target === "sub:u_b"));
-  // drill in blocul compus (docs/05): `config:<CALE>` (calea config-ului, nu
-  // numele) cand subenv-ul are config — fiecare bloc deschide fisierul LUI
+  // drill into the composed block (docs/05): `config:<PATH>` (the config path, not
+  // the name) when the subenv has a config — each block opens ITS file
   assert.equal(nodeById(s, "sub:u_a").drill, "config:a.yaml");
   assert.equal(nodeById(s, "sub:u_b").drill, "config:b.yaml");
-  // un subenv FARA config ramane frunza (nimic de deschis)
+  // a subenv WITHOUT a config stays a leaf (nothing to open)
   const noCfg = buildTbScene(
     { dut: { name: "top" }, subenvs: [{ name: "u_x" }, { name: "u_y", config: "y.yaml" }] },
     "env",
@@ -151,9 +151,9 @@ test("bench subsystem: DUT prefix de clasa, nu se deseneaza; Env cu subenvs", ()
 });
 
 test("subenv-uri cu ACELASI nume: noduri distincte, fiecare cu config-ul lui", () => {
-  // YAML scris de mana, invalid pt quick-uvm dar desenat onest: id-urile de nod
-  // se dedup (#n), iar drill-ul poarta calea proprie — al doilea bloc NU se
-  // prabuseste tacut in primul (recenzie adversariala loose-ends)
+  // hand-written YAML, invalid for quick-uvm but drawn honestly: the node ids
+  // dedup (#n), and the drill carries its own path — the second block does NOT
+  // collapse silently into the first (adversarial review loose-ends)
   const s = buildTbScene(
     {
       dut: { name: "top" },
@@ -168,7 +168,7 @@ test("subenv-uri cu ACELASI nume: noduri distincte, fiecare cu config-ul lui", (
   const subs = s.nodes.filter((n) => n.kind === "tbsubenv");
   assert.equal(subs.length, 2);
   assert.deepEqual(subs.map((n) => n.id).sort(), ["sub:ch", "sub:ch#2"]);
-  // fiecare drill deschide FISIERUL LUI (nu ambele pe primul)
+  // each drill opens ITS FILE (not both on the first)
   assert.deepEqual(subs.map((n) => n.drill).sort(), [
     "config:a.quickuvm.yaml",
     "config:b.quickuvm.yaml",
@@ -181,9 +181,9 @@ test("subenv cu config ABSOLUT: drill-ul poarta calea absoluta ca atare", () => 
     "env",
     null
   );
-  // host-ul (openSubenvConfig) o rezolva cu Uri.file, nu joinPath
+  // the host (openSubenvConfig) resolves it with Uri.file, not joinPath
   assert.equal(nodeById(s, "sub:u").drill, "config:C:/abs/x.quickuvm.yaml");
-  // la nivelul top al unui subsystem PUR (subenvs, fara agenti): doar Env
+  // at the top level of a PURE subsystem (subenvs, no agents): only Env
   const topS = buildTbScene(
     { dut: { name: "top" }, subenvs: [{ name: "u_a", config: "a.yaml" }] },
     "",
@@ -193,8 +193,8 @@ test("subenv cu config ABSOLUT: drill-ul poarta calea absoluta ca atare", () => 
 });
 
 test("bench hibrid (DUT + agenti + subenvs): DUT desenat + interfata env<->dut", () => {
-  // demo_top: soc_top e DUT-ul verificat direct de agent1, iar canalele sunt
-  // sub-env-uri — DUT-ul TREBUIE sa apara (D24: radacina TB = DUT + Env)
+  // demo_top: soc_top is the DUT verified directly by agent1, and the channels are
+  // sub-envs — the DUT MUST appear (D24: TB root = DUT + Env)
   const cfg = {
     dut: { name: "soc_top", clock: "clk", reset: "rst_n" },
     agents: [{ name: "agent1", interface: "reg_bus" }],
@@ -204,13 +204,13 @@ test("bench hibrid (DUT + agenti + subenvs): DUT desenat + interfata env<->dut",
   const top = buildTbScene(cfg, "", "demo.quickuvm.yaml");
   assert.deepEqual(top.nodes.map((n) => n.id).sort(), ["dut", "env"]);
   assert.equal(nodeById(top, "dut").label, "soc_top");
-  // Env listeaza si agentii, si sub-env-urile
+  // Env lists both the agents and the sub-envs
   const env = nodeById(top, "env");
   assert.ok(env.compartments.some((c) => c.items.includes("agent1")));
   assert.ok(env.compartments.some((c) => c.items.includes("u_ch0")));
-  // interfata env <-> dut (agentul isi conduce DUT-ul direct)
+  // env <-> dut interface (the agent drives its DUT directly)
   assert.ok(top.edges.some((e) => e.id === "e:if:agent1" && e.source === "env" && e.target === "dut"));
-  // la nivelul env, granita <if> catre DUT apare (hasDut)
+  // at the env level, the <if> boundary to the DUT appears (hasDut)
   const envLvl = buildTbScene(cfg, "env", "demo.quickuvm.yaml");
   assert.ok(envLvl.boundary.some((b) => b.id === "<if>.agent1"));
 });
@@ -229,7 +229,7 @@ test("probe 'tap' nu colizioneaza; probele in compartiment + granita internals",
   const ids = probes.ports.map((p) => p.id);
   assert.equal(new Set(ids).size, ids.length);
   assert.ok(s.boundary.some((b) => b.id === "<internals>"));
-  // muchia internals tinteste conectorul WEST renumit, nu semnalul EAST
+  // the internals edge targets the renamed WEST connector, not the EAST signal
   const e = s.edges.find((x) => x.id === "e:probes");
   assert.equal(e.targetPort, "probes._tap");
   assert.equal(probes.ports.find((pp) => pp.id === "probes._tap").side, "WEST");
