@@ -80,10 +80,28 @@ export function setDut(text: string, spec: DutSpec): string {
   // cadenta de ceas exista si la DUT combinational (docs QuickUVM / exemple)
   doc.setIn(["dut", "clock"], spec.clock ?? "clk");
   doc.setIn(["dut", "reset"], spec.reset ?? "");
-  setOrDelete(doc, ["dut", "reset_active_low"],
-    spec.reset !== null && !spec.resetActiveLow ? false : undefined);
-  setOrDelete(doc, ["dut", "external_reset"],
-    spec.externalReset ? true : undefined);
+  // quick-uvm >= 1.0.0: polaritatea/externalitatea stau in cheia TOP-LEVEL
+  // `reset:` (dut.reset e doar numele portului); vechile chei pe `dut` sunt
+  // RESPINSE de generator cu eroare-ghid. Maparea se scrie doar la abatere de
+  // la implicituri si dispare cand redevine implicita. O LISTA `reset:` scrisa
+  // de mana (domenii multi-reset, cu active_low propriu per domeniu) NU se
+  // atinge; deleteIn se apara de intermediar lipsa (yaml arunca altfel).
+  if (!isSeq(doc.getIn(["reset"]))) {
+    const setOrDrop = (key: string, value: boolean | undefined): void => {
+      if (value !== undefined) {
+        doc.setIn(["reset", key], value);
+      } else if (isMap(doc.getIn(["reset"]))) {
+        doc.deleteIn(["reset", key]);
+      }
+    };
+    setOrDrop("active_low",
+      spec.reset !== null && !spec.resetActiveLow ? false : undefined);
+    setOrDrop("external", spec.externalReset ? true : undefined);
+    const resetBlock = doc.getIn(["reset"]);
+    if (isMap(resetBlock) && resetBlock.items.length === 0) {
+      doc.deleteIn(["reset"]);
+    }
+  }
   setOrDelete(doc, ["dut", "combinational"],
     spec.combinational ? true : undefined);
   return doc.toString(TO_STRING);
@@ -147,6 +165,21 @@ export function createSubenvs(text: string, specs: SubenvSpec[]): string {
   const doc = parse(text);
   if (doc.getIn(["layout"]) !== "packaged") {
     doc.setIn(["layout"], "packaged");
+  }
+  // Un top de subsistem PUR (fara agenti proprii) e un INVELIS combinational
+  // (conventia corpusului QuickUVM: `dut: {combinational: true, reset: ''}`):
+  // quick-uvm >= 1.0.0 REFUZA la generate un ceas de top pe care nimic nu-l
+  // conecteaza la DUT (garda de ceas-fantoma din tb_top). Un top HIBRID
+  // (agenti de granita, H2) isi pastreaza ceasul — agentii il leaga.
+  const agentsNode = doc.getIn(["agents"]);
+  const hasAgents = isSeq(agentsNode) && agentsNode.items.length > 0;
+  if (!hasAgents) {
+    doc.setIn(["dut", "combinational"], true);
+    doc.setIn(["dut", "reset"], "");
+    // configul de reset al unui port care nu mai exista e decoratie moarta
+    if (isMap(doc.getIn(["reset"]))) {
+      doc.deleteIn(["reset"]);
+    }
   }
   const existing = doc.getIn(["subenvs"]);
   const names = new Set<string>();
@@ -429,7 +462,7 @@ export function removeVirtualSequence(text: string, name: string): string {
  *  intrarea lui de coverage, scoreboard-urile al caror `source` SAU `monitor`
  *  e agentul (un flux disparut face scoreboard-ul fara sens — se sterge
  *  intreg, nu se degradeaza) si pasii de vseq care-l folosesc (secventa dispare
- *  daca TOTI pasii ei erau ai agentului). `subenv_scoreboards` foloseste chei
+ *  daca TOTI pasii ei erau ai agentului). scoreboard-urile cross-bloc (intrari `analysis.scoreboards`) folosesc chei
  *  `bloc.port`, nu nume de agenti, deci nu e atins. Idempotent daca agentul nu
  *  exista (text original byte-identic). Se curata doar blocurile pe care ACEASTA
  *  operatie le-a golit — un `virtual_sequences: [{body: []}]` scris de mana
@@ -670,7 +703,8 @@ export function isComposedChild(
   );
 }
 
-/** Adauga porturi la lista ignoratelor (x_quickuvm_architect.ignored_ports, D15). */
+/** Adauga porturi la waiver-ul `dut.unverified_ports` (D15; quick-uvm >= 1.0.0 —
+ *  cheie de schema de prim rang, fostul bloc `x_quickuvm_architect` e respins). */
 export function ignorePorts(text: string, ports: string[]): string {
   const doc = parse(text);
   const current = readIgnored(doc);
@@ -786,7 +820,7 @@ function pruneEmptySeq(doc: Document, path: (string | number)[]): void {
 
 
 function readIgnored(doc: Document): string[] {
-  const node = doc.getIn(["x_quickuvm_architect", "ignored_ports"]);
+  const node = doc.getIn(["dut", "unverified_ports"]);
   if (!isSeq(node)) {
     return [];
   }
@@ -799,16 +833,13 @@ function readIgnored(doc: Document): string[] {
 
 function writeIgnored(doc: Document, ports: string[]): void {
   if (ports.length === 0) {
-    doc.deleteIn(["x_quickuvm_architect", "ignored_ports"]);
-    const block = doc.getIn(["x_quickuvm_architect"]);
-    if (isMap(block) && block.items.length === 0) {
-      doc.deleteIn(["x_quickuvm_architect"]);
-    }
+    // doar cheia dispare — blocul `dut` ramane (e configuratie obligatorie)
+    doc.deleteIn(["dut", "unverified_ports"]);
     return;
   }
   const seq = doc.createNode(ports) as YAMLSeq;
   seq.flow = true;
-  doc.setIn(["x_quickuvm_architect", "ignored_ports"], seq);
+  doc.setIn(["dut", "unverified_ports"], seq);
 }
 
 /** Portii agentului ca mape flow pe o linie: `- {name: din, width: 8}`. */

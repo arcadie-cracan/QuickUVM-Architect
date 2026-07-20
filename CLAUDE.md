@@ -123,6 +123,23 @@ Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
 
 ## Capcane cunoscute (descoperite la validare)
 
+> **Referința de schemă autoritară e `docs/quickuvm-schema-reference.md`**
+> (sondată empiric pe quick-uvm 1.0.0: verdicte A1–A26, tabele de chei,
+> mesajele de eroare verbatim). Notele de mai jos marchează local ce s-a
+> schimbat la 1.0; la conflict, referința câștigă. Extensia poate condiționa
+> pe `quick-uvm --version` >= 1.0.0 (schema e înghețată, deprecările vin cu
+> erori-ghid).
+
+- **Waiver-ul de porturi (D15) e cheia DE SCHEMĂ `dut.unverified_ports`**
+  (quick-uvm >= 1.0.0): 1.0 respinge ORICE cheie necunoscută
+  (extra="forbid", inclusiv prefixul `x_`), așa că vechiul bloc
+  `x_quickuvm_architect` a fost PROMOVAT în schemă, nu ocolit. Regula:
+  intenție de verificare → cheie de schemă; stare de vedere → sidecar; fără
+  coș `x_` intermediar. Un port waived pe care un agent îl conectează e
+  REFUZAT de generator la generate („connected by agent ... Remove it from
+  one side") → diagnosticul `ignored-and-mapped` e acum ERROR, iar la golire
+  dispare DOAR cheia (blocul `dut` rămâne — e configurație obligatorie).
+
 - pyslang 11 e organizat pe submodule: `from pyslang.driver import Driver`,
   `from pyslang import ast`; multe metode C++ `getX()` sunt proprietăți `x`.
 - `Driver.reportCompilation` poate întoarce valori neintuitive, iar cu
@@ -247,7 +264,10 @@ Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
   (regresie reală pe common_cells). Sufixele active-jos includ `_ni`/`_bi`
   (convenția PULP — `src_rst_ni`); nu restrânge regexul la `_n|_b` —
   `ACTIVE_LOW_RE` stă în `src/heuristics.ts` (pur) și e blocat de
-  `test:heuristics`.
+  `test:heuristics`. ATENȚIE 1.0: polaritatea/externalitatea NU se mai scriu
+  pe `dut` (`reset_active_low`/`external_reset` sunt RESPINSE cu eroare-ghid)
+  — `setDut` scrie maparea TOP-LEVEL `reset: {active_low, external}` și nu
+  atinge o LISTĂ `reset:` scrisă de mână (domenii multi-reset).
 - **Validarea compunerii (`subenvs`) s-a călit în quick-uvm** (re-sondat pe
   build-ul curent 0.9.2, iul. 2026 — utilizatorul a mai lucrat la generator;
   `models.py` a crescut de la ~2600 la 3216 de linii). Reguli DURE noi de care
@@ -259,11 +279,15 @@ Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
   trebuie unice între config-uri de bloc DISTINCTE — două `subenvs` către
   ACELAȘI config (ex. `g_ch[0].u_ch` și `g_ch[1].u_ch`, ambele `chan`) sunt OK
   (același env-package reutilizat), fiindcă `createSubenvs` numește agentul
-  `<modul>_a` (distinct per modul). **HIBRIDUL E INTERZIS** (re-sondat pentru
-  „Compose into parent bench", iul. 2026): „a bench with `subenvs` ... must not
-  define its own `agents`" — un bench cu subenv-uri **nu mai poate avea agenți
-  proprii**, deci stilul `demo_top` (subenvs + agent propriu) e acum respins de
-  generator; fiecare nivel de compunere e subsistem PUR. **Nesting-ul
+  `<modul>_a` (distinct per modul). **HIBRIDUL E DIN NOU LEGAL** (quick-uvm >= 1.0.0,
+  re-sondat empiric: agenți de graniță, H2): un bench cu `subenvs` POATE avea
+  agenți proprii la top — diagnosticul „hybrid" a fost SCOS din ConfigService,
+  iar lock-ul din `test:e2e` păzește acum sensul invers (dacă generatorul l-ar
+  re-interzice, gestul de compunere cu agenți la top ar muri tăcut). Un top de
+  subsistem PUR (fără agenți) rămâne un ÎNVELIȘ combinational
+  (`dut: {combinational: true, reset: ''}`) — `createSubenvs` îl setează așa,
+  altfel garda de ceas-fantomă din 1.0 refuză generarea (un ceas de top
+  neconectat la DUT). **Nesting-ul
   FUNCȚIONEAZĂ**: un subenv al cărui config e el însuși subsistem e acceptat
   (compunere pe mai multe niveluri validă, dar fiecare nivel cere ≥2). Corolar
   pentru „Compose into parent bench" (`composeIntoParent` → `parentComposition`
@@ -271,8 +295,8 @@ Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
   gestul compune blocul + FRAȚII lui în părintele imediat (≥2). Restul faptelor
   despre probe (cele 3 bug-uri, regulile de validare) rămân VALIDE pe acest
   build — re-confirmate empiric.
-- **Blocul `analysis:` comută QuickUVM între mod implicit și declarat** (probat
-  pe 0.9.2, `test:e2e` scenariul 4): FĂRĂ cheia `analysis:`, generatorul intră în
+- **Blocul `analysis:` comută QuickUVM între mod implicit și declarat**
+  (probat pe 0.9.2, RE-CONFIRMAT pe 1.0.0; `test:e2e` scenariul 4): FĂRĂ cheia `analysis:`, generatorul intră în
   mod **implicit** și auto-cablează un scoreboard ȘI un colector de coverage la
   „primary agent" (`// Scoreboard (wired to primary agent: cmd)` în env); CU
   `analysis:` — chiar `{}` gol — intră în mod **declarat** și cablează exact ce e
@@ -296,15 +320,18 @@ Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
   liniștit. Refuzuri reale ale generatorului (toate replicate în `proposeProbe`,
   `src/probe.ts`): `probes` + `subenvs` = **eroare dură** (H1); nume care se
   ciocnește cu o interfață/port de agent, cu ceasul sau reset-ul (același
-  namespace tb_top/config-DB); agenți multi-instanțiați; >1 domeniu de ceas.
-  **Trei bug-uri reale în 0.9.2** de care depinde ce oferim: (1) `layout:
-  packaged` + probă cu `coverage` → `env_pkg` nu include `probe_monitor` (tip
-  necunoscut, nu compilează) — de aceea nu oferim `coverage` pe config-uri
-  packaged; (2) un bloc-frunză **compus ca subenv** își generează fișierele de
-  probă, dar tb_top-ul subsistemului n-are instanță `probe_if`, nici XMR, nici
-  `config_db`, iar `probe_if.sv` nu intră în filelist → **exit 0, rupt tăcut**;
-  extensia avertizează (`isComposedChild`); (3) `struct` + `coverage` crapă
-  generatorul.
+  namespace tb_top/config-DB); agenți multi-instanțiați (`instances`; cu
+  `replicas` merge). ATENȚIE 1.0: >1 domeniu de ceas NU se mai refuză —
+  proba are câmp `clock:` care alege domeniul de eșantionare.
+  **Bug-urile din 0.9.2, re-verificate pe 1.0.0** (repro + xrun): (1) `layout:
+  packaged` + probă cu `coverage` → `env_pkg` nu include `probe_monitor`
+  (xmvlog *E,NOIPRT, tip necunoscut) — ÎNCĂ RUPT, nu oferim `coverage` pe
+  config-uri packaged; (2) un bloc-frunză **compus ca subenv** își generează
+  fișierele de probă, dar tb_top-ul subsistemului n-are instanță `probe_if`,
+  nici XMR, nici `config_db`, iar `probe_if.sv` nu intră în filelist →
+  **exit 0, rupt tăcut** — ÎNCĂ RUPT, extensia avertizează (`isComposedChild`);
+  (3) `struct` + `coverage` crăpa generatorul — REPARAT în 1.0 (generează și
+  compilează curat).
 - **Lățimea unui net NU e în model** și derivarea naivă e GREȘITĂ: `ViewNet` are
   doar `{name, endpoints, fanout, render}`. Lățimea se ia DOAR de la un capăt
   care e **același semnal** — portul propriu al modulului vederii (svmodel
@@ -315,9 +342,11 @@ Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
   (`netWidth` în `src/probe.ts`, testat în `test:probe`). Corolar: **nu se pot
   sonda semnale interne pure** (registre de stare, fire din `assign`) — modelul
   emite net-uri doar din conexiunile porturilor instanțelor-copil.
-- **Cheile de compunere H1 `connections` și `subenv_scoreboards`** — sondat
-  empiric pe build-ul curent 0.9.2 (`SubenvConnection`/`SubenvScoreboard`;
-  `test:e2e` scenariul 6): valide DOAR pe un bench cu `subenvs`; primul token al
+- **Cheile de compunere: `connections` și scoreboard-urile cross-bloc** — sondat
+  empiric (1.0.0: cheia `subenv_scoreboards` NU mai există — e respinsă cu
+  eroare-ghid; un scoreboard cross-bloc e o intrare `analysis.scoreboards` cu
+  capete calificate `<subenv>.<agent>`, vezi `isCrossBlockSb` în
+  `src/quickuvm.ts`; `test:e2e` scenariul 6): valide DOAR pe un bench cu `subenvs`; primul token al
   oricărui capăt e **numele instanței subenv** (`subenvs[].name`), nu `dut.name`.
   `connections: [{from: <subenv>.<port>, to: <subenv>.<port>}]` — `from` = port de
   **ieșire** al blocului sursă, `to` = port de **intrare** al blocului destinație,
@@ -325,9 +354,9 @@ Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
   trebuie PASIV** (`active: false`); generează un `assign` FIZIC în tb_top. Firul
   cablează **porturi de interfață de agent**, deci copiii trebuie să aibă agenți
   ÎNAINTE (de asta compunerea derivată e un gest separat de `createSubenv`, care
-  scheletul copiilor nu creează agenți). `subenv_scoreboards: [{name, source:
-  <subenv>.<AGENT>, monitor: <subenv>.<AGENT>}]` — cheiat pe **AGENT**, nu port
-  (corectură față de nota veche). Niciuna nu comută moduri (absența = byte-identică),
+  scheletul copiilor nu creează agenți). Scoreboard-ul cross-bloc: `analysis: {scoreboards: [{name, source:
+  <subenv>.<AGENT>, monitor: <subenv>.<AGENT>}]}` — cheiat pe **AGENT**, nu
+  port; intră sub regula `keepAnalysis` (maparea `analysis` nu se șterge). Niciuna nu comută moduri (absența = byte-identică),
   deci listele goale se curăță liniștit. Derivarea din model: `deriveConnections`
   în `src/compose.ts` (pur, `test:compose`) — net inter-bloc = un net FĂRĂ capăt
   `<port>.X`, cu o ieșire și una+ intrări între subenv-uri; direcția din `port.dir`,
@@ -451,12 +480,10 @@ TB = DUT + Env (D24); DUT-ul se desenează
 când există `dut.name` ȘI e verificat direct — config frunză SAU hibrid:
 `hasDut = dut.name && (fără subenvs || are agenți)`; se omite la subsistemele
 PURE (subenvs fără agenți), unde `dut.name` e doar containerul de împachetare
-(`buildTbScene` în `src/webview/tbscene.ts`). **ATENȚIE — hibridul (subenvs +
-agenți proprii, stilul vechi `demo_top`) e ACUM INTERZIS de quick-uvm** (`generate`
-îl refuză; `ConfigService` pune un diagnostic dur pe blocul `agents`). Ramura
-hibridă a lui `hasDut` a rămas ca să deseneze onest și un config invalid (agenții
-lui nu dispar tăcut din diagramă), NU fiindcă ar fi valid — vezi capcana din
-secțiunea de compunere. Layout+desen plat în
+(`buildTbScene` în `src/webview/tbscene.ts`). ATENȚIE 1.0 — hibridul (subenvs +
+agenți proprii) e LEGAL (agenți de graniță H2): ramura hibridă a lui `hasDut`
+desenează un config VALID acum; diagnosticul dur a fost scos (vezi capcana
+actualizată din secțiunea de compunere). Layout+desen plat în
 `src/webview/tbschematic.ts`
 (ELK layered, porturi FIXED_POS pe grilă, ruterul A* comun cu nodurile ca
 obstacole; izolat de `schematic.ts` RTL). Navigare: `tb/focus`

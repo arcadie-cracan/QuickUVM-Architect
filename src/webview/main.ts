@@ -822,7 +822,7 @@ function drawPin(
       : deco?.role === "reset"
         ? "\nrole: reset (excluded from agents)"
         : deco?.role === "ignored"
-          ? "\nexplicitly ignored (x_quickuvm_architect)"
+          ? "\ndeliberately unverified (dut.unverified_ports)"
           : "";
   g.append(
     portLabelText(
@@ -2879,7 +2879,7 @@ function renderInspector(): void {
       const del = (kind: string, dname: string): void =>
         postAction("deleteComponent", { kind, name: dname });
       // editorul de proprietati (doar scoreboard-urile din `analysis`, id `sb:`;
-      // NU cele cross-bloc `xsb:` = subenv_scoreboards)
+      // NU cele cross-bloc `xsb:` = analysis.scoreboards cu capete calificate)
       if (selNode.kind === "tbsb" && selNode.id.startsWith("sb:")) {
         const sb = state.config?.analysis?.scoreboards?.find(
           (s) => (s.name ?? "sbd") === selNode.label

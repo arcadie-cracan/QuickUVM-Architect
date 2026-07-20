@@ -27,14 +27,6 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
           message: `DUT module "${String(f.params.module)}" does not exist in the current design`,
         });
         break;
-      case "hybrid":
-        out.push({
-          scope: "env",
-          severity: f.severity,
-          message:
-            "a bench with subenvs must not define its own agents (hybrid rejected by quick-uvm)",
-        });
-        break;
       case "port-claimed": {
         const msg = `port "${port}" is already claimed by agent "${agent}"`;
         out.push({ scope: "port", port, severity: f.severity, message: msg });

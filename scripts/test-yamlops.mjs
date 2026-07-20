@@ -58,8 +58,28 @@ test("setDut: scrie dut-ul si pastreaza restul", () => {
   assert.equal(cfg.dut.name, "soc_top");
   assert.equal(cfg.dut.clock, "clk");
   assert.equal(cfg.dut.reset, "rst_n");
-  assert.equal(cfg.dut.reset_active_low, undefined); // implicit true, omis
+  assert.equal(cfg.reset, undefined); // implicituri -> fara bloc `reset:`
   assert.equal(cfg.project.name, "demo");
+});
+
+test("setDut: abaterile de reset merg in cheia TOP-LEVEL `reset:` (1.0)", () => {
+  let text = ops.setDut(ops.newConfigText("demo"), {
+    ...DUT, resetActiveLow: false, externalReset: true,
+  });
+  assert.deepEqual(ops.parseQuvm(text).reset,
+    { active_low: false, external: true });
+  // vechile chei pe dut NU se mai scriu (1.0 le respinge cu eroare-ghid)
+  assert.ok(!/reset_active_low|external_reset/.test(text));
+  // revenirea la implicituri sterge blocul
+  text = ops.setDut(text, DUT);
+  assert.equal(ops.parseQuvm(text).reset, undefined);
+});
+
+test("setDut: o LISTA `reset:` scrisa de mana nu se atinge", () => {
+  const withList = ops.setDut(ops.newConfigText("demo"), DUT) +
+    "reset:\n  - {name: wrst_n, clock: wclk}\n";
+  const text = ops.setDut(withList, { ...DUT, resetActiveLow: false });
+  assert.ok(Array.isArray(ops.parseQuvm(text).reset));
 });
 
 test("setDut combinational: reset gol + combinational true", () => {
@@ -127,13 +147,14 @@ test("createAgent: nume duplicat => eroare", () => {
 test("ignorePorts: uniune sortata, fara duplicate; unignore curata blocul", () => {
   let text = ops.ignorePorts(ops.newConfigText("demo"), ["scan_en", "dbg"]);
   text = ops.ignorePorts(text, ["dbg", "test_mode"]);
-  assert.deepEqual(ops.parseQuvm(text).x_quickuvm_architect.ignored_ports, [
+  assert.deepEqual(ops.parseQuvm(text).dut.unverified_ports, [
     "dbg",
     "scan_en",
     "test_mode",
   ]);
   text = ops.unignorePorts(text, ["dbg", "scan_en", "test_mode"]);
-  assert.equal(ops.parseQuvm(text).x_quickuvm_architect, undefined);
+  // cheia dispare; blocul `dut` (configuratie obligatorie) ramane
+  assert.equal(ops.parseQuvm(text).dut?.unverified_ports, undefined);
 });
 
 test("setAgentPortWidth: actualizeaza si stie sa omita width=1", () => {
@@ -332,7 +353,7 @@ test("round-trip: YAML-ul generat trece prin parseQuvm nealterat semantic", () =
   const again = ops.parseQuvm(text);
   assert.equal(again.dut.name, "soc_top");
   assert.equal(again.agents.length, 1);
-  assert.deepEqual(again.x_quickuvm_architect.ignored_ports, ["scan_en"]);
+  assert.deepEqual(again.dut.unverified_ports, ["scan_en"]);
 });
 
 test("removeScoreboard: sterge dupa nume, PASTREAZA blocul analysis gol, idempotent", () => {

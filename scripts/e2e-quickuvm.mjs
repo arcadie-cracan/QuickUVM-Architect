@@ -489,17 +489,18 @@ agents:
   assert.equal(fixed.status, 0, `flip-ul la pasiv nu a reparat generarea:\n${fixed.out.slice(-400)}`);
   console.log("  ok    compunere: agent activ refuzat, setAgentActive(pasiv) repara generarea");
 
-  // LOCK pe regula „hibrid interzis": un top cu `subenvs` + agenti PROPRII e
-  // refuzat. E ASUMPTIA pe care se bazeaza diagnosticul din ConfigService — daca
-  // quick-uvm ar re-permite hibridul, diagnosticul ar deveni fals-pozitiv si
-  // testul asta ar prinde divergenta.
+  // LOCK INVERSAT (quick-uvm >= 1.0.0): hibridul `subenvs` + agenti proprii e
+  // LEGAL — agenti de granita (H2). Vechiul test tocmai si-a facut treaba (a
+  // prins re-permiterea), diagnosticul "hybrid" a fost scos din ConfigService;
+  // acum lock-ul pazeste sensul INVERS: daca generatorul l-ar re-interzice,
+  // gestul de compunere cu agenti la top ar muri tacut.
   const hybridTop = ops.createAgent(top, {
     name: "topcmd", inputs: [{ name: "z", width: 8 }], outputs: [],
   });
   const hyb = quickUvmComposed(hybridTop, producer, consumerFixed);
-  assert.notEqual(hyb.status, 0, "hibridul (subenvs + agenti proprii) ar fi trebuit refuzat");
-  assert.match(hyb.out, /agents/i, "alt motiv de esec decat hibridul");
-  console.log("  ok    compunere: hibrid (subenvs + agenti proprii) refuzat de generator");
+  assert.equal(hyb.status, 0,
+    `hibridul (agenti de granita H2) ar trebui sa genereze curat:\n${hyb.out.slice(-400)}`);
+  console.log("  ok    compunere: hibrid (subenvs + agenti de granita) ACCEPTAT de generator (1.0)");
 
   // stergerea conexiunii: firul dispare, restul se genereaza curat
   const noConn = ops.removeConnection(top, "p1.dout", "c1.din");

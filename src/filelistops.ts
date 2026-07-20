@@ -48,7 +48,9 @@ export function renderFlist(lines: string[]): string {
  */
 export function outputDirExclude(outputDir: string): string | null {
   const outDir = outputDir.trim().replace(/\\/g, "/").replace(/\/+$/, "");
-  if (!outDir || outDir === "." || path.isAbsolute(outDir)) {
+  // absoluta pe ORICE platforma: pe Linux, path.isAbsolute nu recunoaste
+  // "C:\..." (regresie reala: testul de outputDir absolut pica pe posix)
+  if (!outDir || outDir === "." || path.isAbsolute(outDir) || /^[A-Za-z]:\//.test(outDir)) {
     return null;
   }
   return `${outDir}/**`;

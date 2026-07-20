@@ -2,9 +2,9 @@
 // in Node (scripts/test-configcheck.mjs). Functia intoarce FINDINGS
 // structurate (kind + span + parametri + cod), iar host-ul (config.ts) le
 // mapeaza pe vscode.Diagnostic cu mesajele localizate prin l10n.t (D19:
-// sirurile vizibile raman in host). Capcana reala blocata aici: hibridul
-// `subenvs` + `agents` nevid e INTERZIS de quick-uvm curent (sondat empiric,
-// docs/03) — diagnosticul dur trebuie emis pe blocul `agents`.
+// sirurile vizibile raman in host). NOTA (quick-uvm >= 1.0.0): hibridul
+// `subenvs` + `agents` e LEGAL acum (agenti de granita, H2) — vechiul
+// diagnostic dur "hybrid" a fost SCOS; nu-l reintroduce.
 
 import { Document, isMap, isSeq } from "yaml";
 import type { ProjectModel } from "./model";
@@ -16,15 +16,14 @@ export const WIDTH_CODE = "quickuvm.width";
 export type FindingKind =
   /** dut.name nu exista in modelul curent — {module} */
   | "dut-missing"
-  /** subenvs + agents nevid (hibrid interzis de quick-uvm) */
-  | "hybrid"
   /** port revendicat de doi agenti — {port, agent} (primul proprietar) */
   | "port-claimed"
   /** port disparut din modul — {port, dut}; intra si in `orphans` */
   | "port-orphan"
   /** latime YAML != model — {port, declared, expected}; poarta `code` */
   | "width-mismatch"
-  /** port si ignorat, si mapat pe agent — {port, agent} */
+  /** port si waived (dut.unverified_ports), si mapat pe agent — {port, agent};
+   *  quick-uvm 1.0 refuza combinatia la generate, deci severitatea e error */
   | "ignored-and-mapped";
 
 export interface Finding {
@@ -87,19 +86,6 @@ export function checkConfig(
     });
   }
 
-  // hibridul e INTERZIS de quick-uvm curent: un bench cu `subenvs` NU poate
-  // avea agenti proprii — un nivel de compunere e subsistem PUR. `agents: []`
-  // sau absent e OK; doar NEVID + `subenvs` se refuza (altfel `generate`
-  // esueaza). Diagnostic DUR pe blocul `agents`.
-  if (cfg.subenvs?.length && cfg.agents?.length) {
-    findings.push({
-      kind: "hybrid",
-      span: spanOf(ydoc.getIn(["agents"], true)),
-      severity: "error",
-      params: {},
-    });
-  }
-
   const modelPorts = new Map((def?.ports ?? []).map((p) => [p.name, p.width]));
   const claimedBy = new Map<string, string>();
   const agentsNode = ydoc.getIn(["agents"]);
@@ -158,14 +144,15 @@ export function checkConfig(
     }
   });
 
-  for (const ignored of cfg.x_quickuvm_architect?.ignored_ports ?? []) {
+  // quick-uvm >= 1.0.0 REFUZA la generate un port waived pe care un agent il
+  // conecteaza ("connected by agent ... Remove it from one side"), deci
+  // diagnosticul replica zidul generatorului: severitate ERROR, nu warning.
+  for (const ignored of cfg.dut?.unverified_ports ?? []) {
     if (claimedBy.has(ignored)) {
       findings.push({
         kind: "ignored-and-mapped",
-        span: spanOf(
-          ydoc.getIn(["x_quickuvm_architect", "ignored_ports"], true)
-        ),
-        severity: "warning",
+        span: spanOf(ydoc.getIn(["dut", "unverified_ports"], true)),
+        severity: "error",
         params: { port: ignored, agent: claimedBy.get(ignored) ?? "" },
       });
     }
