@@ -1,5 +1,5 @@
-// Teste Node pentru mutatiile pure ale sidecar-ului de layout
-// (src/sidecarops.ts), pe modelul de regresie examples/model.json:
+// Node tests for the pure mutations of the layout sidecar
+// (src/sidecarops.ts), on the regression model examples/model.json:
 //   npm run test:sidecar
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -17,7 +17,7 @@ await esbuild.build({
   format: "esm",
   platform: "node",
   logLevel: "silent",
-  // pachetul CJS `yaml` cere shim-ul createRequire la legarea ESM
+  // the CJS package `yaml` needs the createRequire shim at ESM bundling
   banner: {
     js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   },
@@ -43,8 +43,8 @@ test("roundtrip: pozitii + fold supravietuiesc serializarii", () => {
   assert.deepEqual(back.views["demo_top.u_soc"].nodes["g_ch[0..2].u_ch"], {
     collapsed: false,
   });
-  // camera nu se persista (stare de sesiune, docs/04): un camp mostenit
-  // dintr-un fisier vechi dispare la serializare
+  // the camera is not persisted (session state, docs/04): a field inherited
+  // from an old file disappears on serialization
   assert.equal(text.includes("camera"), false);
 });
 
@@ -153,7 +153,7 @@ test("setFlip: persista doar true; prune la revenirea la implicit", () => {
   });
   ops.setFlip(d, "demo_top", "u_soc", false, false);
   assert.deepEqual(d.views, {});
-  // flip + pozitie: revenirea la ne-rasturnat pastreaza pozitia
+  // flip + position: returning to non-flipped keeps the position
   ops.setNodePos(d, "demo_top", "u_soc", 8, 16);
   ops.setFlip(d, "demo_top", "u_soc", true, false);
   ops.setFlip(d, "demo_top", "u_soc", false, false);
@@ -172,7 +172,7 @@ test("clearPositions: sterge x/y, pastreaza pliaje si rasturnari", () => {
     "g_ch[0..2].u_ch": { collapsed: false },
     u_inv: { flipH: true },
   });
-  // alta vedere ramane neatinsa
+  // another view stays untouched
   assert.deepEqual(d.views["demo_top"].nodes["u_soc"], { x: 1, y: 2 });
 });
 
@@ -195,14 +195,14 @@ test("setPositions: snapshot-ul scrie tot, pastreaza pliaje/rasturnari", () => {
 
 test("setNetRender: abaterea se persista; alegerea sugestiei o sterge", () => {
   const d = ops.emptySidecar();
-  // din are render=label in model (fanout 9); utilizatorul cere fir
+  // din has render=label in the model (fanout 9); the user requests wire
   ops.setNetRender(d, "demo_top.u_soc", "din", "wire", "label");
   assert.deepEqual(d.views["demo_top.u_soc"].nets, { din: { render: "wire" } });
   const back = ops.parseSidecar(ops.serializeSidecar(d));
   assert.deepEqual(back.views["demo_top.u_soc"].nets, {
     din: { render: "wire" },
   });
-  // revenirea la sugestie sterge override-ul si vederea goala dispare
+  // returning to the suggestion deletes the override and the empty view disappears
   ops.setNetRender(d, "demo_top.u_soc", "din", "label", "label");
   assert.deepEqual(d.views, {});
 });
@@ -232,7 +232,7 @@ test("invalidate: net disparut migreaza cu kind=net; reaparut se restaureaza", (
       lastSeen: "2026-07-11",
     },
   ]);
-  // "reaparitia": orfanul primeste numele unui net real si se restaureaza
+  // "reappearance": the orphan gets the name of a real net and is restored
   d.orphans[0].node = "sum";
   ops.invalidate(d, model, "2026-07-12");
   assert.deepEqual(d.views["demo_top.u_soc"].nets, {

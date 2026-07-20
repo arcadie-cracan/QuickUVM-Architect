@@ -1,8 +1,8 @@
-// Codul webview-ului: cele doua vederi RTL (docs/05) — contextul unui modul
-// (dreptunghi cu pinii pe laturi, ELK cu porturi FIXED_ORDER) si schema
-// (instante + interconect, scena din scene.ts, layout/desen din schematic.ts).
-// SVG generat manual (docs/04), pan/zoom si selectie simpla. Fara framework
-// (docs/01, decizia D5).
+// The webview code: the two RTL views (docs/05) — the context of a module
+// (rectangle with pins on the sides, ELK with FIXED_ORDER ports) and the schematic
+// (instances + interconnect, scene from scene.ts, layout/drawing from schematic.ts).
+// SVG generated manually (docs/04), pan/zoom and simple selection. No framework
+// (docs/01, decision D5).
 
 import ELK from "elkjs/lib/elk.bundled.js";
 import type { ElkNode } from "elkjs/lib/elk.bundled.js";
@@ -35,24 +35,24 @@ declare function acquireVsCodeApi(): {
 const vscode = acquireVsCodeApi();
 const elk = new ELK();
 
-const STUB = 14; // lungimea liniei de pin, in px, in afara dreptunghiului
+const STUB = 14; // the length of the pin line, in px, outside the rectangle
 
-// ----------------------------------------------------------------- stare
+// ----------------------------------------------------------------- state
 
 interface State {
   model: ProjectModel | undefined;
   viewId: string | undefined;
-  /** modul de afisare al vederii curente (docs/05) */
+  /** the display mode of the current view (docs/05) */
   mode: ViewMode;
   selection: Set<string>;
-  /** starea derivata din YAML-ul QuickUVM; null = fara configuratie */
+  /** the state derived from the QuickUVM YAML; null = no configuration */
   overlay: OverlayConfig | null;
-  /** configuratia parsata + calea ei, pentru vederea de verificare (docs/05) */
+  /** the parsed configuration + its path, for the verification (TB) view (docs/05) */
   config: QuvmConfig | null;
   configPath: string | null;
-  /** nivelul curent al vederii de verificare (D24): "", "env", "agent:X" */
+  /** the current level of the verification (TB) view (D24): "", "env", "agent:X" */
   tbFocus: string;
-  // transformarea de pan/zoom a vederii
+  // the pan/zoom transform of the view
   tx: number;
   ty: number;
   k: number;
@@ -72,26 +72,26 @@ const state: State = {
   k: 1,
 };
 
-/** pinii vederii-simbol curente (goi in schema — dezactiveaza actiunile) */
+/** the pins of the current symbol view (empty in the schematic — disables the actions) */
 let currentPins: PinSpec[] = [];
 
-/** scena vederii-schema curente, pentru inspector */
+/** the scene of the current schematic view, for the inspector */
 let currentScene: SchematicScene | null = null;
 
-/** scena+layoutul vederii de verificare (ierarhica), pentru inspector */
+/** the scene+layout of the verification (TB) view (hierarchical), for the inspector */
 let currentTbScene: TbScene | null = null;
 let currentTbLayout: TbLayout | null = null;
-/** grupul muchiilor TB, re-rutat live la drag (ca `currentEdgesGroup` la RTL) */
+/** the group of TB edges, re-routed live on drag (like `currentEdgesGroup` in RTL) */
 let currentTbEdgesGroup: SVGGElement | null = null;
 
-/** layoutul ELK curent (pozitiile nodurilor; mutate in timpul drag-ului) */
+/** the current ELK layout (the node positions; mutated during the drag) */
 let currentLayout: ElkNode | null = null;
 
-/** grupul SVG al muchiilor, re-rutat live in timpul drag-ului */
+/** the SVG group of the edges, re-routed live during the drag */
 let currentEdgesGroup: SVGGElement | null = null;
 
-/** copia locala a sidecar-ului de layout (docs/04); gesturile proprii o tin
- *  la zi — host-ul nu trimite ecou la propriile mutatii (docs/05) */
+/** the local copy of the layout sidecar (docs/04); our own gestures keep it
+ *  up to date — the host does not echo back its own moves (docs/05) */
 let sidecar: SidecarData = { schema_version: 1, views: {}, orphans: [] };
 
 function sidecarNode(viewId: string, nodeId: string): SidecarNode {
@@ -101,12 +101,12 @@ function sidecarNode(viewId: string, nodeId: string): SidecarNode {
 }
 
 /**
- * Cheia de sidecar/camera a vederii curente. Vederile RTL folosesc `viewId`;
- * vederea de verificare are un `focus` (nivel: ""/env/agent:X) sub aceeasi
- * cheie `tb:<config>`, iar id-urile nodurilor se repeta intre nivelurile de
- * agent (`u.sequencer` la agent:cmd si agent:rsp) — deci pozitiile se cheiaza
- * per nivel: `tb:<config>|<focus>`. Cheia ramane prefixata cu `tb:`, deci
- * invalidarea sidecar-ului fata de modelul RTL n-o atinge (docs/04).
+ * The sidecar/camera key of the current view. RTL views use `viewId`;
+ * the verification (TB) view has a `focus` (level: ""/env/agent:X) under the same
+ * key `tb:<config>`, and the node ids repeat between the agent
+ * levels (`u.sequencer` at agent:cmd and agent:rsp) — so the positions are keyed
+ * per level: `tb:<config>|<focus>`. The key stays prefixed with `tb:`, so
+ * the invalidation of the sidecar against the RTL model does not touch it (docs/04).
  */
 function layoutKey(): string | undefined {
   if (!state.viewId) {
@@ -115,7 +115,7 @@ function layoutKey(): string | undefined {
   return state.mode === "tb" ? `${state.viewId}|${state.tbFocus}` : state.viewId;
 }
 
-/** dreptunghiul care cuprinde cutiile+steagurile TB (dupa drag-uri/seminte) */
+/** the rectangle that encloses the TB boxes+flags (after drags/seeds) */
 function tbBounds(layout: TbLayout): { x: number; y: number; w: number; h: number } {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   const acc = (x: number, y: number, w: number, h: number): void => {
@@ -136,8 +136,8 @@ function tbBounds(layout: TbLayout): { x: number; y: number; w: number; h: numbe
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
-/** pliajele expandate explicit, per vedere; initializate din sidecar la
- *  layout/full, persistate prin fold/toggled */
+/** the explicitly expanded folds, per view; initialized from the sidecar at
+ *  layout/full, persisted through fold/toggled */
 const expandedFolds = new Map<string, Set<string>>();
 
 function expandedFor(viewId: string): Set<string> {
@@ -149,11 +149,11 @@ function expandedFor(viewId: string): Set<string> {
   return s;
 }
 
-/** ultima vedere de design vizitata (viewId + mod) — tinta butonului
- *  „Design" din header-ul vederii de verificare (docs/05) */
+/** the last design view visited (viewId + mode) — the target of the
+ *  „Design" button from the header of the verification (TB) view (docs/05) */
 let lastRtl: { viewId: string; mode: "symbol" | "schematic" } | null = null;
 
-/** configuratia curenta are ceva desenabil in vederea de verificare? */
+/** does the current configuration have anything drawable in the verification (TB) view? */
 function tbAvailable(): boolean {
   const c = state.config;
   return Boolean(
@@ -161,8 +161,8 @@ function tbAvailable(): boolean {
   );
 }
 
-/** comutarea locala pe vederea de verificare (docs/05): cheia vine din
- *  calea config-ului; host-ul afla prin nav/drill (titlu + vedere curenta) */
+/** the local switch to the verification (TB) view (docs/05): the key comes from
+ *  the config path; the host finds out through nav/drill (title + current view) */
 function openTbView(): void {
   if (state.mode === "tb" || !tbAvailable()) {
     return;
@@ -182,9 +182,9 @@ function openTbView(): void {
   void render(true);
 }
 
-/** intoarcerea din vederea de verificare la ultima vedere de design (RTL) —
- *  revine la vederea si modul de dinainte de intrarea in TB (D24: nu mai exista
- *  comutator, deci un singur buton „Design", nu Symbol/Schematic) */
+/** the return from the verification (TB) view to the last design view (RTL) —
+ *  returns to the view and mode from before entering TB (D24: there is no longer a
+ *  switch, so a single „Design" button, not Symbol/Schematic) */
 function leaveTbView(): void {
   const target = lastRtl?.viewId ?? state.model?.tops[0];
   if (!target) {
@@ -202,18 +202,18 @@ function leaveTbView(): void {
   void render(true);
 }
 
-/** preferintele UI din setarile extensiei (mesajul ui/config, docs/05) */
+/** the UI preferences from the extension settings (the ui/config message, docs/05) */
 let uiConfig: UiConfig = { lasso: "contain", decorations: true };
 
-/** camerele per vedere — stare de SESIUNE, nu de proiect (docs/04): prima
- *  deschidere a unei vederi se incadreaza mereu in fereastra; cadrul se
- *  pastreaza doar la comutarea intre vederi in aceeasi sesiune */
+/** the cameras per view — SESSION state, not project state (docs/04): the first
+ *  opening of a view always fits into the window; the frame is
+ *  kept only when switching between views in the same session */
 const sessionCameras = new Map<
   string,
   { cx: number; cy: number; zoom: number }
 >();
 
-/** generatia randarii: o randare inceputa mai tarziu o anuleaza pe cea veche */
+/** the render generation: a render started later cancels the old one */
 let renderGen = 0;
 
 function persistState(): void {
@@ -230,7 +230,7 @@ function post(message: WebviewMessage): void {
   vscode.postMessage(message);
 }
 
-// ---------------------------------------------------------------- mesaje
+// ---------------------------------------------------------------- messages
 
 window.addEventListener("message", (e: MessageEvent) => {
   const m = e.data as HostMessage;
@@ -238,18 +238,18 @@ window.addEventListener("message", (e: MessageEvent) => {
     case "model/full":
       state.model = m.model;
       hideBanner();
-      // vederea de verificare (tb:...) nu e o instanta RTL: recompilarea nu
-      // o re-cheia pe tops[0] (re-cheierea ar citi/polua sidecar-ul vederii
-      // RTL cu nodurile TB — regresie prinsa de review-ul advers)
+      // the verification (TB) view (tb:...) is not an RTL instance: recompilation does not
+      // re-key it onto tops[0] (re-keying would read/pollute the sidecar of the
+      // RTL view with the TB nodes — regression caught by the adversarial review)
       if (
         !state.viewId ||
         (!state.viewId.startsWith("tb:") && !findInstance(state.viewId))
       ) {
-        // recheiere pe top: la prima deschidere (viewId nedefinit) host-ul
-        // trimite oricum un view/show explicit imediat dupa model/full, deci
-        // un nav/drill de aici ar concura cu el si ar lasa host-ul pe top;
-        // la recompilare (vederea curenta a disparut) NU vine view/show, deci
-        // aici resincronizam ierarhia noi (docs/05)
+        // re-key onto top: on the first opening (viewId undefined) the host
+        // sends an explicit view/show anyway right after model/full, so
+        // a nav/drill from here would race with it and leave the host on top;
+        // on recompilation (the current view disappeared) NO view/show comes, so
+        // here we resynchronize the hierarchy ourselves (docs/05)
         const wasStaleView = Boolean(state.viewId);
         state.viewId = m.model.tops[0];
         if (state.mode === "tb") {
@@ -279,8 +279,8 @@ window.addEventListener("message", (e: MessageEvent) => {
       } else if (m.viewId.startsWith("tb:")) {
         state.mode = "tb";
       } else if (state.mode === "tb") {
-        // vedere RTL ceruta fara mod (click in ierarhie) cand era deschisa
-        // vederea de verificare: modul tb nu se mosteneste
+        // RTL view requested without a mode (click in the hierarchy) when the
+        // verification (TB) view was open: the tb mode is not inherited
         state.mode = "symbol";
       }
       state.selection.clear();
@@ -292,19 +292,19 @@ window.addEventListener("message", (e: MessageEvent) => {
       state.selection = new Set(m.ids);
       applySelectionClasses();
       renderInspector();
-      // ecou spre host: fara el, panel.selection ramanea goala dupa un reveal
-      // si comenzile din paleta care o citesc actionau pe nimic (recenzia
-      // adversariala a sincronizarii); remaparea pe pliaje o face presentScene
+      // echo to the host: without it, panel.selection stayed empty after a reveal
+      // and the palette commands that read it acted on nothing (the
+      // adversarial review of the synchronization); the remapping onto folds is done by presentScene
       postSelection();
       break;
     case "probe/highlight":
-      // cross-probing editor->diagrama: halou persistent, NU selectie —
-      // selectia de lucru a utilizatorului ramane neatinsa (docs/05)
+      // cross-probing editor->diagram: persistent halo, NOT selection —
+      // the user's working selection stays untouched (docs/05)
       probeTargets = m.targets;
       applySelectionClasses();
       break;
     case "status/decorations":
-      // decoratiile de stare quick-uvm (docs/05): badge-uri + cip generate
+      // the quick-uvm status decorations (docs/05): badges + generate chip
       statusDecos = m.decos;
       genStatus = m.generate;
       applyStatusBadges();
@@ -327,8 +327,8 @@ window.addEventListener("message", (e: MessageEvent) => {
       state.config = m.config;
       state.configPath = m.configPath;
       if (state.mode === "tb") {
-        // alt config activ => alta cheie de vedere: pozitiile nu se scriu
-        // sub cheia vechiului config
+        // another active config => another view key: the positions are not written
+        // under the old config's key
         const key = `tb:${m.configPath ?? ""}`;
         if (state.viewId !== key) {
           state.viewId = key;
@@ -340,22 +340,22 @@ window.addEventListener("message", (e: MessageEvent) => {
       }
       break;
     case "export/request":
-      exportSvg(); // comanda din paleta; butonul ⤓ face acelasi lucru local
+      exportSvg(); // command from the palette; the ⤓ button does the same thing locally
       break;
     case "theme/changed":
-      void render(); // re-masurare text cu fontul temei curente
+      void render(); // re-measure text with the current theme's font
       break;
     case "ui/config": {
       const { v: _v2, type: _t2, ...ui } = m;
       uiConfig = ui;
-      // vocabularul de desen se ascunde prin clasa pe canvas (CSS), fara
-      // re-randare — slash+latime, junction dots (docs/04)
+      // the drawing vocabulary is hidden through a class on the canvas (CSS), without
+      // re-rendering — slash+width, junction dots (docs/04)
       canvas.classList.toggle("decor-off", uiConfig.decorations === false);
       break;
     }
     case "layout/full":
-      // sursa de adevar pentru pozitii/pliaje/rasturnari: starea locala se
-      // reconstruieste integral (editare externa, invalidare, curatare)
+      // the source of truth for positions/folds/flips: the local state is
+      // reconstructed entirely (external edit, invalidation, cleanup)
       sidecar = m.sidecar;
       expandedFolds.clear();
       for (const [viewId, view] of Object.entries(sidecar.views)) {
@@ -368,21 +368,21 @@ window.addEventListener("message", (e: MessageEvent) => {
       void render(true);
       break;
     default:
-      break; // mesaje ale fazelor urmatoare
+      break; // messages of the following phases
   }
 });
 
-// ------------------------------------------------------------ construire
+// ------------------------------------------------------------ construction
 
 interface PinSpec {
-  id: string; // ID stabil relativ la vedere: `<port>.din` (docs/02)
+  id: string; // stable ID relative to the view: `<port>.din` (docs/02)
   name: string;
   label: string;
   side: "WEST" | "EAST";
   iface: boolean;
   bus: boolean;
   mult: string | null;
-  /** sectiunea pinului in vederea-simbol (grupare pe rol, docs/04) */
+  /** the pin's section in the symbol view (grouping by role, docs/04) */
   section: "clock/reset" | "signals";
   tooltip: string;
   labelW: number;
@@ -393,8 +393,8 @@ function findInstance(path: string): Instance | undefined {
 }
 
 function isClockOrReset(name: string, dir: string, width: number | null): boolean {
-  // doar euristica de asezare (grupare stanga-jos); rolurile reale se
-  // stabilesc la configurare, in fazele urmatoare (docs/02, docs/03)
+  // only a placement heuristic (bottom-left grouping); the real roles are
+  // established at configuration, in the following phases (docs/02, docs/03)
   return dir === "in" && width === 1 && /clk|clock|rst|reset/i.test(name);
 }
 
@@ -432,7 +432,7 @@ function buildPins(def: ModuleDef): PinSpec[] {
     } else if (p.dir === "in") {
       west.push(spec);
     } else {
-      east.push(spec); // out, inout, ref — pe dreapta
+      east.push(spec); // out, inout, ref — on the right
     }
   }
 
@@ -455,7 +455,7 @@ function buildPins(def: ModuleDef): PinSpec[] {
     });
   }
 
-  // intrari de date, apoi interfete, apoi ceas/reset — stanga-jos (docs/05)
+  // data inputs, then interfaces, then clock/reset — bottom-left (docs/05)
   return [...west, ...clkRst, ...east];
 }
 
@@ -466,7 +466,7 @@ async function layoutSymbol(
   const measure = measurer();
   const westPins = pins.filter((p) => p.side === "WEST");
   const eastPins = pins.filter((p) => p.side === "EAST");
-  // FIXED_ORDER numara in sens orar: EAST sus->jos, WEST jos->sus
+  // FIXED_ORDER counts clockwise: EAST top->bottom, WEST bottom->top
   const index = new Map<string, number>();
   eastPins.forEach((p, i) => index.set(p.id, i));
   [...westPins].reverse().forEach((p, i) => index.set(p.id, eastPins.length + i));
@@ -505,12 +505,12 @@ async function layoutSymbol(
   return elk.layout(graph);
 }
 
-// ---------------------------------------------------------------- desen
+// ---------------------------------------------------------------- drawing
 
 /**
- * Antetul vederii: breadcrumb clicabil pe segmentele-instanta ale caii
- * (urcarea din docs/05), modulul cu parametrii efectivi si comutatorul
- * Symbol/Schematic (doar cand instanta are schema).
+ * The view header: breadcrumb clickable on the instance segments of the path
+ * (the ascent from docs/05), the module with the effective parameters and the
+ * Symbol/Schematic switch (only when the instance has a schematic).
  */
 function renderHeader(inst: Instance): void {
   head.replaceChildren();
@@ -534,7 +534,7 @@ function renderHeader(inst: Instance): void {
       );
       crumbs.append(a);
     } else {
-      // segment generate (g_ch[1]) sau instanta curenta: text simplu
+      // generate segment (g_ch[1]) or current instance: plain text
       crumbs.append(h("span", "seg", s));
     }
   });
@@ -545,13 +545,13 @@ function renderHeader(inst: Instance): void {
   if (params) {
     head.append(h("span", "params", `  #(${params})`));
   }
-  // fara comutator Symbol/Schematic (D24): vederea e derivata din nodul
-  // selectat in ierarhie — radacina „top module" -> simbolul top-ului, restul
-  // modulelor -> schema interna (frunzele cad gratios pe simbol)
+  // no Symbol/Schematic switch (D24): the view is derived from the node
+  // selected in the hierarchy — the „top module" root -> the top's symbol, the rest
+  // of the modules -> internal schematic (leaves fall gracefully onto the symbol)
   const tgl = h("span", "mode-toggle");
   if (tbAvailable()) {
-    // a treia vedere (docs/05): diagrama mediului de verificare al
-    // config-ului activ — punct de intrare vizibil, nu doar comanda
+    // the third view (docs/05): the diagram of the verification environment of the
+    // active config — a visible entry point, not just a command
     const tb = h("button", "mbtn", "Testbench");
     tb.title = "Open the verification view of the active QuickUVM config";
     tb.addEventListener("click", openTbView);
@@ -572,28 +572,28 @@ function renderHeader(inst: Instance): void {
   ex.addEventListener("click", exportSvg);
   tgl.append(ex);
   head.append(tgl);
-  updateGenChip(); // cipul de stare generate (docs/05)
+  updateGenChip(); // the generate status chip (docs/05)
 }
 
-/** "Re-aranjeaza tot" (docs/04): singura cale de re-layout total — sterge
- *  pozitiile vederii (pliaje/rasturnari raman) si revine la ELK complet */
+/** "Re-arrange all" (docs/04): the only path to a full re-layout — deletes
+ *  the view's positions (folds/flips remain) and returns to full ELK */
 function relayoutAll(): void {
   const key = layoutKey();
   if (!key || state.mode === "symbol") {
-    return; // simbolul nu are pozitii detinute de utilizator
+    return; // the symbol has no user-owned positions
   }
-  pushPosUndo(capturePositions()); // ⟲ accidental se anuleaza cu Ctrl+Z
+  pushPosUndo(capturePositions()); // an accidental ⟲ is undone with Ctrl+Z
   const nodes = sidecar.views[key]?.nodes ?? {};
   for (const n of Object.values(nodes)) {
     delete n.x;
     delete n.y;
   }
-  sessionCameras.delete(key); // incadrare proaspata pe noul layout
+  sessionCameras.delete(key); // fresh fit onto the new layout
   post({ v: 1, type: "relayout/request", viewId: key, scope: "all" });
   void render(true);
 }
 
-// -------------------------------------------------------------- navigare
+// -------------------------------------------------------------- navigation
 
 function navigateTo(path: string, mode?: ViewMode): void {
   state.viewId = path;
@@ -603,8 +603,8 @@ function navigateTo(path: string, mode?: ViewMode): void {
   state.selection.clear();
   postSelection();
   persistState();
-  // host-ul actualizeaza titlul, vederea curenta si ierarhia (docs/05); modul
-  // distinge simbolul top-ului (radacina) de schema (nodul instantei)
+  // the host updates the title, the current view and the hierarchy (docs/05); the mode
+  // distinguishes the top's symbol (root) from the schematic (the instance node)
   post({ v: 1, type: "nav/drill", instancePath: path, mode: state.mode });
   void render(true);
 }
@@ -612,11 +612,11 @@ function navigateTo(path: string, mode?: ViewMode): void {
 function toggleFold(foldId: string): void {
   const viewId = state.viewId ?? "";
   const s = expandedFor(viewId);
-  const collapsed = s.delete(foldId); // era expandat -> se pliaza la loc
+  const collapsed = s.delete(foldId); // was expanded -> folds back
   if (!collapsed) {
     s.add(foldId);
   }
-  // oglinda locala + persistenta in sidecar (docs/04)
+  // local mirror + persistence in the sidecar (docs/04)
   const n = sidecarNode(viewId, foldId);
   if (collapsed) {
     delete n.collapsed;
@@ -627,12 +627,12 @@ function toggleFold(foldId: string): void {
   void render();
 }
 
-/** rasturnarea unui bloc (docs/04): H = laturile vest<->est, V = ordinea
- *  pinilor pe fiecare latura; persistata in sidecar prin node/flipped */
-/** nivelul 4 (docs/04): comuta un net intre fir si eticheta; alegerea
- *  egala cu sugestia din model sterge override-ul (host-ul face la fel) */
-/** netul de care aparține un pin/steag selectat (din muchii sau eticheta),
- *  ca secțiunea Net a inspectorului să fie descoperibilă de pe orice capăt */
+/** flipping a block (docs/04): H = the west<->east sides, V = the order
+ *  of the pins on each side; persisted in the sidecar through node/flipped */
+/** level 4 (docs/04): toggles a net between wire and label; a choice
+ *  equal to the model's suggestion deletes the override (the host does the same) */
+/** the net a selected pin/flag belongs to (from edges or label),
+ *  so that the inspector's Net section is discoverable from any endpoint */
 function netOfPin(id: string): string | null {
   if (!currentScene) {
     return null;
@@ -641,12 +641,12 @@ function netOfPin(id: string): string | null {
     if (!e.net) {
       continue;
     }
-    // pin de copil (sourcePort/targetPort) sau steag de granita (source/target nod)
+    // child pin (sourcePort/targetPort) or boundary flag (source/target node)
     if (e.sourcePort === id || e.targetPort === id || e.source === id || e.target === id) {
       return e.net;
     }
   }
-  // net etichetat (fara muchie): din bport.nets / pin.nets sau numele portului
+  // labeled net (without an edge): from bport.nets / pin.nets or the port name
   if (id.startsWith("<port>.")) {
     const b = currentScene.boundary.find((bb) => bb.id === id);
     return b?.nets[0] ?? id.slice("<port>.".length);
@@ -683,7 +683,7 @@ function toggleNetRender(net: string): void {
 }
 
 function toggleFlip(nodeId: string, axis: "h" | "v"): void {
-  const key = layoutKey(); // viewId la RTL, tb:<config>|<focus> la TB
+  const key = layoutKey(); // viewId in RTL, tb:<config>|<focus> in TB
   if (!key || state.mode === "symbol") {
     return;
   }
@@ -710,13 +710,13 @@ function toggleFlip(nodeId: string, axis: "h" | "v"): void {
   void render();
 }
 
-/** decorul unui pin, derivat din overlay (agent, rol, ignorat) */
+/** the decoration of a pin, derived from the overlay (agent, role, ignored) */
 interface PinDeco {
   color: number | undefined;
   role: string | undefined;
 }
 
-/** marcaj de forma per agent: culoarea e dublata de forma (accesibilitate) */
+/** shape marker per agent: the color is doubled by the shape (accessibility) */
 function agentMarker(color: number, x: number, y: number): SVGElement {
   const hollow = color >= 4;
   const attrs: Record<string, string> = {
@@ -731,12 +731,12 @@ function agentMarker(color: number, x: number, y: number): SVGElement {
         ...attrs,
         x: String(x - 3.2), y: String(y - 3.2), width: "6.4", height: "6.4",
       });
-    case 2: // romb
+    case 2: // diamond
       return el("path", {
         ...attrs,
         d: `M ${x} ${y - 4.2} L ${x + 4.2} ${y} L ${x} ${y + 4.2} L ${x - 4.2} ${y} Z`,
       });
-    default: // triunghi
+    default: // triangle
       return el("path", {
         ...attrs,
         d: `M ${x} ${y - 4} L ${x + 4} ${y + 3.4} L ${x - 4} ${y + 3.4} Z`,
@@ -751,8 +751,8 @@ function drawPin(
   deco?: PinDeco
 ): SVGGElement {
   const west = spec.side === "WEST";
-  const x0 = west ? 0 : nodeW; // marginea dreptunghiului
-  const xOut = west ? -STUB : nodeW + STUB; // capatul liber al pinului
+  const x0 = west ? 0 : nodeW; // the edge of the rectangle
+  const xOut = west ? -STUB : nodeW + STUB; // the free end of the pin
   const mx = (x0 + xOut) / 2;
 
   const g = el("g", { class: `pin${spec.iface ? " iface" : ""}` });
@@ -766,7 +766,7 @@ function drawPin(
   }
 
   if (spec.iface) {
-    // pin gros: culoare + hasura (accesibilitate, docs/05)
+    // thick pin: color + hatching (accessibility, docs/05)
     g.append(
       el("line", {
         class: "stub",
@@ -786,7 +786,7 @@ function drawPin(
       })
     );
     if (spec.bus) {
-      // linia taiata a magistralei, pe mijlocul pinului
+      // the bus slash line, at the middle of the pin
       g.append(
         el("line", {
           class: "bus-slash",
@@ -797,8 +797,8 @@ function drawPin(
     }
   }
   if (spec.mult) {
-    // multiplicitatea tabloului unpacked; ancorata pe latura (nu centrata),
-    // ca sa nu taie frontiera simbolului pe stub-ul scurt (ca in schema)
+    // the multiplicity of the unpacked array; anchored on the side (not centered),
+    // so it does not cut across the symbol boundary on the short stub (as in the schematic)
     g.append(
       el(
         "text",
@@ -813,7 +813,7 @@ function drawPin(
     );
   }
   if (deco?.color !== undefined) {
-    // marcajul de agent, dincolo de capatul liber al pinului
+    // the agent marker, beyond the free end of the pin
     g.append(agentMarker(deco.color, west ? xOut - 7 : xOut + 7, py));
   }
   const roleNote =
@@ -841,8 +841,8 @@ function drawPin(
 }
 
 /**
- * Goleste canvas-ul si il repopuleaza cu defs-urile comune (hasura pentru
- * interfete, sageata pentru muchii) si cu grupul viewport de pan/zoom.
+ * Empties the canvas and repopulates it with the common defs (hatching for
+ * interfaces, arrow for edges) and with the pan/zoom viewport group.
  */
 function resetCanvas(): SVGGElement {
   canvas.replaceChildren();
@@ -862,9 +862,9 @@ function resetCanvas(): SVGGElement {
     refY: "4",
     markerWidth: "8",
     markerHeight: "8",
-    // dimensiune FIXA (nu scalata cu grosimea firului): altfel firul de
-    // interfata gros face o sageata uriasa, iar la hover (fir mai subtire)
-    // sageata se micsoreaza
+    // FIXED size (not scaled with the wire thickness): otherwise the thick
+    // interface wire makes a huge arrow, and on hover (thinner wire)
+    // the arrow shrinks
     markerUnits: "userSpaceOnUse",
     orient: "auto-start-reverse",
   });
@@ -876,7 +876,7 @@ function resetCanvas(): SVGGElement {
   return viewport;
 }
 
-/** inaltimea gap-ului dintre sectiunile de pini in vederea-simbol (docs/04) */
+/** the height of the gap between the pin sections in the symbol view (docs/04) */
 const SECTION_GAP = 18;
 
 function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
@@ -888,10 +888,10 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   let nodeH = ctx.height ?? 100;
   const byId = new Map(pins.map((p) => [p.id, p]));
 
-  // sectiuni de pini pe rol (docs/04): clock/reset sunt deja grupate jos-stanga
-  // (buildPins). Facem gruparea VIZIBILA — gap + divizor + titluri — deplasand
-  // grupul clock/reset in jos (ELK FIXED_ORDER nu lasa gol per-grup) si
-  // marind cutia. Doar in vederea-simbol si doar cand exista ambele sectiuni
+  // pin sections by role (docs/04): clock/reset are already grouped bottom-left
+  // (buildPins). We make the grouping VISIBLE — gap + divider + titles — by moving
+  // the clock/reset group down (ELK FIXED_ORDER does not leave a gap per-group) and
+  // enlarging the box. Only in the symbol view and only when both sections exist
   const westPorts = (ctx.ports ?? [])
     .filter((p) => byId.get(p.id)?.side === "WEST")
     .sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
@@ -934,8 +934,8 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   );
   vp.append(node);
 
-  // divizorul + titlurile sectiunilor de pini (rol, docs/04): doar cand
-  // grupul clock/reset a fost separat prin gap (dividerY >= 0)
+  // the divider + the titles of the pin sections (role, docs/04): only when
+  // the clock/reset group was separated by a gap (dividerY >= 0)
   if (dividerY >= 0) {
     node.append(
       el("line", {
@@ -948,12 +948,12 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
         "clock / reset"
       )
     );
-    // sectiunea de sus (semnale) e implicita prin contrast cu eticheta
-    // clock/reset de sub divizor — nu o etichetam separat (ar concura cu
-    // numele modulului cand primul pin e sus)
+    // the top section (signals) is implicit through contrast with the
+    // clock/reset label below the divider — we do not label it separately (it would compete with
+    // the module name when the first pin is at the top)
   }
 
-  // overlay-ul se aplica doar cand configuratia vizeaza modulul afisat
+  // the overlay is applied only when the configuration targets the displayed module
   const ov =
     state.overlay && state.overlay.dut === inst.module ? state.overlay : null;
   const pinAgent = new Map<string, number>();
@@ -972,10 +972,10 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   }
   applySelectionClasses();
   applyStatusBadges();
-  refreshMinimap(); // simbolul nu are minimap (incape mereu) — il scoate
+  refreshMinimap(); // the symbol has no minimap (it always fits) — removes it
 }
 
-// ------------------------------------------------------------ interactiune
+// ------------------------------------------------------------ interaction
 
 function applyTransform(): void {
   viewport?.setAttribute(
@@ -992,11 +992,11 @@ interface Bounds {
   h: number;
 }
 
-/** limitele continutului la ultima randare (pentru fit) */
+/** the content bounds at the last render (for fit) */
 let contentBounds: Bounds = { x: 0, y: 0, w: 200, h: 100 };
 
-/** dreptunghiul care cuprinde toate nodurile layoutului (dupa drag-uri,
- *  continutul poate depasi dreptunghiul ELK initial, inclusiv spre negativ) */
+/** the rectangle that encloses all the layout's nodes (after drags,
+ *  the content can exceed the initial ELK rectangle, including toward negatives) */
 function layoutBounds(layout: ElkNode): Bounds {
   let minX = Infinity;
   let minY = Infinity;
@@ -1016,12 +1016,12 @@ function layoutBounds(layout: ElkNode): Bounds {
   return { x: minX, y: minY, w: maxX - minX, h: maxY - minY };
 }
 
-/** ultima dimensiune cunoscuta a canvas-ului (pentru pastrarea centrului) */
+/** the last known dimension of the canvas (for keeping the center) */
 let lastVW = 0;
 let lastVH = 0;
 
-/** camera curenta e o incadrare automata (se recalculeaza la resize),
- *  nu una a utilizatorului (pan/zoom/camera persistata) */
+/** the current camera is an automatic fit (recomputed on resize),
+ *  not a user one (pan/zoom/persisted camera) */
 let autoCam = true;
 
 function fit(b: Bounds): void {
@@ -1037,13 +1037,13 @@ function fit(b: Bounds): void {
   applyTransform();
 }
 
-/** incadreaza diagrama in fereastra (tasta F / butonul din antet);
- *  camera rezultata se persista ca la orice pan/zoom */
+/** fits the diagram into the window (the F key / the button in the header);
+ *  the resulting camera is persisted as with any pan/zoom */
 function fitView(): void {
   if (state.mode === "schematic" && currentLayout) {
-    contentBounds = layoutBounds(currentLayout); // drag-urile au miscat lumea
+    contentBounds = layoutBounds(currentLayout); // the drags moved the world
   } else if (state.mode === "tb" && currentTbLayout) {
-    contentBounds = tbBounds(currentTbLayout); // idem: pozitiile din drag/seminte
+    contentBounds = tbBounds(currentTbLayout); // same: the positions from drag/seeds
   }
   fit(contentBounds);
   scheduleCameraSave();
@@ -1055,24 +1055,24 @@ function postSelection(): void {
 
 // ------------------------------------------------------------------ minimap
 
-// Navigatorul de ansamblu (docs/04): miniatura scenei intr-un colt + dreptunghiul
-// zonei vizibile; click/drag pe el muta camera. Miniatura e o COPIE VIE prin
-// <use href="#viewport"> — zero re-randare, orice schimbare (drag, selectie,
-// ghidaje) apare instant; transformul U = M ∘ V⁻¹ (minimap.ts, pur, testat in
-// test:minimap) anuleaza camera copiata si aduce lumea la scara minimapului.
-// Doar in vederile-schema (RTL + TB) — simbolul incape mereu. Stare de sesiune
-// (ca si camera), tasta M comuta.
+// The overview navigator (docs/04): a thumbnail of the scene in a corner + the rectangle
+// of the visible area; click/drag on it moves the camera. The thumbnail is a LIVE COPY through
+// <use href="#viewport"> — zero re-rendering, any change (drag, selection,
+// guides) appears instantly; the transform U = M ∘ V⁻¹ (minimap.ts, pure, tested in
+// test:minimap) cancels the copied camera and brings the world to the minimap's scale.
+// Only in the schematic views (RTL + TB) — the symbol always fits. Session state
+// (like the camera), the M key toggles it.
 const MM_W = 180;
 const MM_H = 120;
 const MM_PAD = 8;
 const MM_MARGIN = 12;
 let minimapOn = true;
 let mmLayout: MmLayout | null = null;
-/** pozitia coltului minimapului in canvas (pentru client->local la pointer) */
+/** the position of the minimap's corner in the canvas (for client->local at the pointer) */
 let mmPos = { x: 0, y: 0 };
 let mmDragging = false;
 
-/** salt/pan de camera din pozitia pointerului pe minimap */
+/** camera jump/pan from the pointer position on the minimap */
 function mmJump(e: PointerEvent): void {
   if (!mmLayout) {
     return;
@@ -1088,13 +1088,13 @@ function mmJump(e: PointerEvent): void {
   );
   state.tx = cam.tx;
   state.ty = cam.ty;
-  autoCam = false; // camera e de-acum a utilizatorului
+  autoCam = false; // the camera is now the user's
   applyTransform();
   scheduleCameraSave();
 }
 
-/** actualizare IEFTINA per cadru (apelata din applyTransform): transformul
- *  copiei <use> + dreptunghiul de vedere; geometria din minimap.ts (pur) */
+/** CHEAP per-frame update (called from applyTransform): the transform
+ *  of the <use> copy + the view rectangle; the geometry from minimap.ts (pure) */
 function updateMinimap(): void {
   if (!mmLayout) {
     return;
@@ -1105,10 +1105,10 @@ function updateMinimap(): void {
   }
   const vw = canvas.clientWidth || 800;
   const vh = canvas.clientHeight || 600;
-  // auto-corectia ancorarii: refreshMinimap poate rula cu canvasul inca
-  // ascuns (ecranul de bun-venit, clientWidth=0 -> fallback); cum camera se
-  // aplica dupa ce canvasul devine vizibil, prima trecere pe aici vede
-  // dimensiunea reala si muta minimapul in coltul corect
+  // the auto-correction of the anchoring: refreshMinimap can run with the canvas still
+  // hidden (the welcome screen, clientWidth=0 -> fallback); since the camera is
+  // applied after the canvas becomes visible, the first pass through here sees
+  // the real dimension and moves the minimap into the correct corner
   const px = vw - MM_W - MM_MARGIN;
   const py = vh - MM_H - MM_MARGIN;
   if (px !== mmPos.x || py !== mmPos.y) {
@@ -1129,10 +1129,10 @@ function updateMinimap(): void {
   }
 }
 
-/** (re)construieste minimapul: dupa fiecare randare (resetCanvas goleste
- *  canvasul), la drag-end/undo (limitele lumii s-au miscat), la resize
- *  (repozitionare in colt) si la toggle (tasta M). In afara vederilor-schema
- *  sau fara continut, il scoate. */
+/** (re)builds the minimap: after each render (resetCanvas empties
+ *  the canvas), at drag-end/undo (the world bounds moved), at resize
+ *  (repositioning in the corner) and at toggle (the M key). Outside the schematic views
+ *  or without content, removes it. */
 function refreshMinimap(): void {
   const old = canvas.querySelector<SVGGElement>("#minimap");
   const b = !minimapOn || !viewport
@@ -1144,7 +1144,7 @@ function refreshMinimap(): void {
         : null;
   if (!b || b.w <= 0 || b.h <= 0) {
     mmLayout = null;
-    mmDragging = false; // elementul care detinea gestul dispare
+    mmDragging = false; // the element that owned the gesture disappears
     old?.remove();
     return;
   }
@@ -1155,10 +1155,10 @@ function refreshMinimap(): void {
   };
   let g = old;
   if (!g) {
-    // reconstructie de la zero (resetCanvas a sters minimapul): vechiul hit
-    // rect — singurul care reseta flag-ul la pointerup — nu mai exista, deci
-    // un drag de minimap intrerupt de re-randare se anuleaza aici (recenzia
-    // adversariala a minimapului: altfel hover-ul fara buton pana camera)
+    // reconstruction from scratch (resetCanvas deleted the minimap): the old hit
+    // rect — the only one that reset the flag on pointerup — no longer exists, so
+    // a minimap drag interrupted by re-rendering is cancelled here (the
+    // adversarial review of the minimap: otherwise the buttonless hover pans the camera)
     mmDragging = false;
     g = el("g", { id: "minimap" });
     const clip = el("clipPath", { id: "mm-clip" });
@@ -1178,8 +1178,8 @@ function refreshMinimap(): void {
       class: "mm-hit",
       x: "0", y: "0", width: String(MM_W), height: String(MM_H),
     });
-    // gesturile pe minimap NU ajung la canvas (altfel pointerdown ar porni
-    // lasso-ul, iar click-ul de dupa ar goli selectia)
+    // the gestures on the minimap do NOT reach the canvas (otherwise pointerdown would start
+    // the lasso, and the click after it would clear the selection)
     hit.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) {
         return;
@@ -1187,11 +1187,11 @@ function refreshMinimap(): void {
       e.stopPropagation();
       e.preventDefault();
       mmDragging = true;
-      mmJump(e); // saltul intai — captura poate arunca (pointer expirat)
+      mmJump(e); // the jump first — the capture can throw (expired pointer)
       try {
         hit.setPointerCapture(e.pointerId);
       } catch {
-        // fara captura, pan-ul merge cat timp pointerul ramane pe minimap
+        // without capture, the pan works as long as the pointer stays on the minimap
       }
     });
     hit.addEventListener("pointermove", (e) => {
@@ -1201,19 +1201,19 @@ function refreshMinimap(): void {
       }
     });
     hit.addEventListener("pointerup", (e) => {
-      // stopPropagation DOAR cand gestul e al minimapului: un gest de canvas
-      // sub-prag (lasso/drag < DRAG_MIN, inca fara captura) eliberat peste
-      // minimap trebuie sa ajunga la curatarea canvas-ului, altfel ramane un
-      // marquee/drag fantoma (recenzia adversariala a minimapului)
+      // stopPropagation ONLY when the gesture is the minimap's: a sub-threshold
+      // canvas gesture (lasso/drag < DRAG_MIN, still without capture) released over
+      // the minimap must reach the canvas cleanup, otherwise a ghost
+      // marquee/drag remains (the adversarial review of the minimap)
       if (mmDragging) {
         mmDragging = false;
         e.stopPropagation();
       }
     });
-    // caile de anulare resetau flag-ul doar pe pointerup-ul propriu: fara
-    // acestea, un pointercancel (touch/pen) sau pierderea capturii lasau
-    // mmDragging blocat true -> hover fara buton pana camera (recenzia
-    // adversariala a minimapului)
+    // the cancellation paths reset the flag only on their own pointerup: without
+    // these, a pointercancel (touch/pen) or the loss of capture left
+    // mmDragging stuck true -> buttonless hover pans the camera (the
+    // adversarial review of the minimap)
     hit.addEventListener("pointercancel", () => {
       mmDragging = false;
     });
@@ -1233,8 +1233,8 @@ function refreshMinimap(): void {
       hit
     );
   }
-  // (re)atasare la final: randarea re-creeaza viewport-ul sub el, iar minimapul
-  // trebuie sa ramana DEASUPRA continutului
+  // (re)attach at the end: the render re-creates the viewport under it, and the minimap
+  // must stay ABOVE the content
   canvas.append(g);
   g.setAttribute("transform", `translate(${mmPos.x},${mmPos.y})`);
   updateMinimap();
@@ -1242,62 +1242,62 @@ function refreshMinimap(): void {
 
 // --------------------------------------------------------------- export SVG
 
-/** proprietatile inline-uite la export: CSS-ul webview-ului e extern si
- *  tematizat prin var(--vscode-*) — nu calatoreste cu fisierul */
+/** the properties inlined at export: the webview's CSS is external and
+ *  themed through var(--vscode-*) — it does not travel with the file */
 const EXPORT_PROPS = [
   "fill", "fill-opacity", "stroke", "stroke-width", "stroke-dasharray",
   "stroke-linecap", "stroke-linejoin", "stroke-opacity", "opacity",
   "font-family", "font-size", "font-weight", "font-style",
   "text-anchor", "dominant-baseline", "letter-spacing", "visibility",
-  // marcaje pur-CSS ale textelor: titlurile TB (uppercase) si porturile
-  // ignorate (line-through) — omise, exportul difera vizibil de ecran
+  // pure-CSS markings of the texts: the TB titles (uppercase) and the ignored
+  // ports (line-through) — if omitted, the export differs visibly from the screen
   "text-transform", "text-decoration",
 ] as const;
 
 /**
- * Serializeaza vederea curenta ca SVG AUTONOM si o trimite host-ului
- * (export/result, docs/05): stilurile CALCULATE se inline-uiesc (culorile
- * temei curente se coc in fisier), camera de sesiune se inlocuieste cu un
- * viewBox pe continut, iar fundalul temei se coace intr-un rect (exportul
- * transparent e ilizibil pe fundal alb/negru). Stilurile se citesc pe CLONA
- * atasata off-screen, NU pe original: clona n-are `.selected` (ridicata) si
- * nu e sub pointer, deci `:hover`/`:selected` nu se coc in export.
+ * Serializes the current view as a STANDALONE SVG and sends it to the host
+ * (export/result, docs/05): the COMPUTED styles are inlined (the current
+ * theme's colors are baked into the file), the session camera is replaced with a
+ * viewBox on the content, and the theme's background is baked into a rect (a
+ * transparent export is illegible on a white/black background). The styles are read on the CLONE
+ * attached off-screen, NOT on the original: the clone has no `.selected` (stripped) and
+ * is not under the pointer, so `:hover`/`:selected` are not baked into the export.
  */
 function exportSvg(): void {
-  // ecranul de bun-venit ramane VIZIBIL peste un viewport eventual populat
-  // de o vedere anterioara (render() nu-l goleste) — gate-ul se ia dupa
-  // overlay, nu doar dupa DOM (regresie reala prinsa la validarea manuala:
-  // exportul de pe welcome deschidea dialogul de salvare). Sub un BANNER,
-  // exportul ramane permis: dedesubt e ultimul desen valid (invariantul 5)
+  // the welcome screen stays VISIBLE over a viewport possibly populated
+  // by a previous view (render() does not empty it) — the gate is taken by
+  // the overlay, not just by the DOM (a real regression caught in manual
+  // validation: exporting from welcome opened the save dialog). Under a BANNER,
+  // the export stays allowed: underneath is the last valid drawing (invariant 5)
   if (!viewport || !viewport.hasChildNodes() || !empty.hidden) {
     post({ v: 1, type: "export/result", viewId: state.viewId ?? "", svg: "" });
     return;
   }
   const MARGIN = 16;
-  // bbox-ul continutului in spatiul lumii (getBBox ignora transformul
-  // propriu al viewport-ului = exact camera pe care o aruncam)
+  // the content's bbox in world space (getBBox ignores the viewport's
+  // own transform = exactly the camera we are discarding)
   const bb = viewport.getBBox();
   const clone = canvas.cloneNode(true) as SVGSVGElement;
   clone.querySelectorAll(".selected").forEach((n) =>
     n.classList.remove("selected")
   );
-  // haloul de cross-probing e stare de sesiune, nu continut: fara el, galbenul
-  // s-ar coace permanent in fisier (recenzia adversariala a sincronizarii)
+  // the cross-probing halo is session state, not content: without it, the yellow
+  // would be baked permanently into the file (the adversarial review of the synchronization)
   clone.querySelectorAll(".xprobe").forEach((n) =>
     n.classList.remove("xprobe")
   );
-  // badge-urile de stare sunt diagnostic de sesiune, nu continut (docs/05)
+  // the status badges are a session diagnostic, not content (docs/05)
   clone.querySelectorAll(".status-badge").forEach((n) => n.remove());
-  clone.removeAttribute("id"); // fara reguli `#canvas` + fara id duplicat
-  // atasam off-screen: stilurile se rezolva din stylesheet FARA :hover
-  // (pointerul e pe UI-ul real, nu pe clona) si fara :selected (ridicata)
+  clone.removeAttribute("id"); // no `#canvas` rules + no duplicate id
+  // attach off-screen: the styles resolve from the stylesheet WITHOUT :hover
+  // (the pointer is on the real UI, not on the clone) and without :selected (stripped)
   clone.style.position = "absolute";
   clone.style.left = "-100000px";
   clone.style.top = "0";
   document.body.append(clone);
-  // culorile din color-mix se calculeaza ca `color(srgb r g b / a)` — sintaxa
-  // CSS Color 4, pe care uneltele SVG externe (Inkscape, convertoare PDF) pot
-  // sa n-o parseze; se normalizeaza la rgba() clasic
+  // the colors from color-mix are computed as `color(srgb r g b / a)` — CSS
+  // Color 4 syntax, which external SVG tools (Inkscape, PDF converters) may
+  // not parse; they are normalized to classic rgba()
   const legacyColor = (v: string): string =>
     v.replace(
       /color\(srgb ([\d.]+) ([\d.]+) ([\d.]+)(?: \/ ([\d.]+))?\)/g,
@@ -1311,7 +1311,7 @@ function exportSvg(): void {
   const nodes = clone.querySelectorAll<SVGElement>("*");
   const styles: string[] = [];
   for (const n of nodes) {
-    const cs = getComputedStyle(n); // citire (fara mutatii intre citiri)
+    const cs = getComputedStyle(n); // read (no mutations between reads)
     let style = "";
     for (const p of EXPORT_PROPS) {
       const v = cs.getPropertyValue(p);
@@ -1321,12 +1321,12 @@ function exportSvg(): void {
     }
     styles.push(style);
   }
-  nodes.forEach((n, i) => n.setAttribute("style", styles[i])); // scriere
+  nodes.forEach((n, i) => n.setAttribute("style", styles[i])); // write
   clone.remove();
-  clone.removeAttribute("style"); // scoatem pozitionarea off-screen
+  clone.removeAttribute("style"); // remove the off-screen positioning
 
   clone.querySelector<SVGGElement>("#viewport")?.removeAttribute("transform");
-  // minimapul e chrome de UI (navigator), nu continut — nu intra in export
+  // the minimap is UI chrome (navigator), not content — it does not go into the export
   clone.querySelector<SVGGElement>("#minimap")?.remove();
   clone.setAttribute("xmlns", SVG_NS);
   const w = Math.ceil(bb.width + 2 * MARGIN);
@@ -1348,15 +1348,15 @@ function exportSvg(): void {
   post({ v: 1, type: "export/result", viewId: state.viewId ?? "", svg });
 }
 
-// --- decoratiile de stare quick-uvm (docs/05): validarile model<->YAML ca
-// badge-uri pe elemente + rezultatul ultimului generate ca cip in antet;
-// maparea pe id-urile vederii curente e pura (statusIdsRtl/Tb, src/status.ts)
+// --- the quick-uvm status decorations (docs/05): the model<->YAML validations as
+// badges on elements + the result of the last generate as a chip in the header;
+// the mapping onto the current view's ids is pure (statusIdsRtl/Tb, src/status.ts)
 let statusDecos: StatusDeco[] = [];
 let genStatus: GenerateStatus | null = null;
 
-/** badge ⚠/✕ in coltul dreapta-sus al fiecarui element vizat, cu mesajele in
- *  tooltip; idempotent (scoate badge-urile vechi), rulat dupa fiecare randare
- *  si la status/decorations */
+/** ⚠/✕ badge in the top-right corner of each targeted element, with the messages in
+ *  the tooltip; idempotent (removes the old badges), run after each render
+ *  and at status/decorations */
 function applyStatusBadges(): void {
   canvas.querySelectorAll(".status-badge").forEach((b) => b.remove());
   if (!statusDecos.length) {
@@ -1394,7 +1394,7 @@ function applyStatusBadges(): void {
     try {
       bb = g.getBBox();
     } catch {
-      return; // element inca neatasat/invizibil
+      return; // element still unattached/invisible
     }
     const cx = bb.x + bb.width;
     const cy = bb.y;
@@ -1412,8 +1412,8 @@ function applyStatusBadges(): void {
   });
 }
 
-/** cipul de stare al ultimului „Genereaza testbench" din antet (docs/05);
- *  idempotent, rulat de ambele antete si la status/decorations */
+/** the status chip of the last „Generate testbench" from the header (docs/05);
+ *  idempotent, run by both headers and at status/decorations */
 function updateGenChip(): void {
   head.querySelector(".gen-chip")?.remove();
   const tgl = head.querySelector(".mode-toggle");
@@ -1434,14 +1434,14 @@ function updateGenChip(): void {
   tgl.prepend(chip);
 }
 
-// --- cross-probing editor->diagrama (docs/05): haloul .xprobe, DISTINCT de
-// selectie — tintele vin prin probe/highlight, maparea pe id-urile vederii
-// curente e pura (probeIds, src/locmap.ts)
+// --- cross-probing editor->diagram (docs/05): the .xprobe halo, DISTINCT from
+// selection — the targets come through probe/highlight, the mapping onto the
+// current view's ids is pure (probeIds, src/locmap.ts)
 let probeTargets: XprobeTarget[] = [];
 
-/** harta cale->modul, memoizata pe referinta modelului: probeCtx ruleaza in
- *  applySelectionClasses (si la lasso, per pointermove) — reconstructia per
- *  apel ar fi O(instante) pe fiecare miscare de mouse cu haloul activ */
+/** path->module map, memoized on the model reference: probeCtx runs in
+ *  applySelectionClasses (and at lasso, per pointermove) — reconstruction per
+ *  call would be O(instances) on each mouse move with the halo active */
 let instModuleCache: { model: ProjectModel | undefined; map: Map<string, string> } = {
   model: undefined,
   map: new Map(),
@@ -1458,8 +1458,8 @@ function instModuleByPath(): Map<string, string> {
   return instModuleCache.map;
 }
 
-/** contextul vederii curente pentru probeIds; modulul nodurilor se ia din
- *  model (SceneNode nu-l poarta separat de subtitlu) */
+/** the current view's context for probeIds; the module of the nodes is taken from
+ *  the model (SceneNode does not carry it separately from the subtitle) */
 function probeCtx(): ProbeViewCtx {
   const byPath = instModuleByPath();
   if (state.mode === "schematic" && currentScene) {
@@ -1485,8 +1485,8 @@ function probeCtx(): ProbeViewCtx {
 }
 
 function applySelectionClasses(): void {
-  // haloul se recalculeaza aici (nu se tine un Set cache): functia ruleaza
-  // dupa fiecare randare/navigare, deci maparea urmeaza mereu scena curenta
+  // the halo is recomputed here (no cached Set is kept): the function runs
+  // after each render/navigation, so the mapping always follows the current scene
   const probe = new Set(
     probeTargets.length ? probeIds(probeTargets, probeCtx()) : []
   );
@@ -1503,8 +1503,8 @@ canvas.addEventListener("click", (e) => {
   }
   const target = (e.target as Element).closest<SVGElement>("[data-id]");
   if (!target) {
-    // Shift+click pe fundal / element fara data-id (ex. muchie iface): gest de
-    // con — NU golim selectia existenta (altfel un rateu ar sterge conul)
+    // Shift+click on the background / element without data-id (e.g. iface edge): cone
+    // gesture — we do NOT clear the existing selection (otherwise a miss would erase the cone)
     if (!e.shiftKey && state.selection.size) {
       state.selection.clear();
       applySelectionClasses();
@@ -1515,10 +1515,10 @@ canvas.addEventListener("click", (e) => {
   }
   const id = target.dataset.id ?? "";
   if (e.shiftKey && state.mode === "schematic" && currentScene) {
-    // conul de conectivitate (docs/04, faza 4): Shift+click = tot ce e condus
-    // de element (aval); Shift+Alt+click = tot ce il conduce (amonte).
-    // coneOf clasifica id-ul (nod/steag, nume de net, sau pin) — un click pe
-    // interiorul unui pin porneste din net-urile lui, nu dintr-un net inexistent
+    // the connectivity cone (docs/04, phase 4): Shift+click = everything driven
+    // by the element (downstream); Shift+Alt+click = everything that drives it (upstream).
+    // coneOf classifies the id (node/flag, net name, or pin) — a click on the
+    // interior of a pin starts from its nets, not from a nonexistent net
     const cone = coneOf(currentScene, id, e.altKey ? "up" : "down");
     if (cone) {
       state.selection = cone;
@@ -1526,7 +1526,7 @@ canvas.addEventListener("click", (e) => {
       postSelection();
       renderInspector();
     }
-    return; // Shift e mereu gest de con; id nerecunoscut => selectia ramane
+    return; // Shift is always a cone gesture; an unrecognized id => the selection stays
   }
   if (e.ctrlKey || e.metaKey) {
     if (!state.selection.delete(id)) {
@@ -1541,15 +1541,15 @@ canvas.addEventListener("click", (e) => {
   renderInspector();
 });
 
-// cross-probing la hover (faza 4, docs/05): dupa o scurta stationare pe un
-// pin din vederile RTL, host-ul reveleaza declaratia portului in editoarele
-// DEJA vizibile (ne-intruziv: nu deschide tab-uri, nu fura focusul; setarea
-// quickuvm.hoverCrossProbe il stinge in host). Saltul complet = dublu-click.
+// cross-probing on hover (phase 4, docs/05): after a short dwell on a
+// pin in the RTL views, the host reveals the port declaration in the
+// ALREADY visible editors (non-intrusive: it does not open tabs, does not steal focus; the
+// quickuvm.hoverCrossProbe setting turns it off in the host). The full jump = double-click.
 let hoverTimer: ReturnType<typeof setTimeout> | undefined;
 let hoverKey = "";
 canvas.addEventListener("pointerover", (e) => {
   if (state.mode === "tb" || e.buttons !== 0) {
-    return; // vederea TB nu are surse SV; in timpul drag-ului, nimic
+    return; // the TB view has no SV sources; during the drag, nothing
   }
   const pin = (e.target as Element).closest<SVGElement>(".pin, .bport");
   const port = pin?.dataset.port;
@@ -1560,12 +1560,12 @@ canvas.addEventListener("pointerover", (e) => {
       : state.viewId;
   const key = port && owner ? `${owner}|${port}` : "";
   if (key === hoverKey) {
-    return; // acelasi pin (pointerover pe copiii lui): pastreaza programarea
+    return; // the same pin (pointerover on its children): keep the scheduling
   }
   clearTimeout(hoverTimer);
   hoverKey = key;
   if (!key) {
-    return; // a iesit pe fundal/alt element: anuleaza revelarea programata
+    return; // exited onto the background/another element: cancel the scheduled reveal
   }
   hoverTimer = setTimeout(() => {
     post({
@@ -1577,20 +1577,20 @@ canvas.addEventListener("pointerover", (e) => {
   }, 300);
 });
 canvas.addEventListener("pointerleave", () => {
-  // iesirea din canvas NU declanseaza pointerover (doar leave): fara anulare,
-  // un timer programat ar trage dupa ce pointerul a parasit diagrama
+  // exiting the canvas does NOT trigger pointerover (only leave): without cancellation,
+  // a scheduled timer would fire after the pointer has left the diagram
   clearTimeout(hoverTimer);
   hoverKey = "";
 });
 
-// dublu-click, regula unica dupa tinta (docs/05): pe pin — declaratia
-// portului; pe pliaj — expandare; pe bloc — "intra in el": schema daca
-// exista, la frunze chiar sursa modulului. Ctrl+dublu-click pe bloc =
-// sursa modulului, oriunde.
+// double-click, single rule by target (docs/05): on a pin — the port
+// declaration; on a fold — expansion; on a block — "enter it": the schematic if it
+// exists, at leaves the module source itself. Ctrl+double-click on a block =
+// the module source, anywhere.
 canvas.addEventListener("dblclick", (e) => {
   if (state.mode === "tb") {
-    // drill pe un bloc cu structura (D24): coboara la nivelul lui;
-    // pe un subenv (`config:`), deschide config-ul blocului compus
+    // drill on a block with structure (D24): descends to its level;
+    // on a subenv (`config:`), opens the config of the composed block
     const box = (e.target as Element).closest<SVGElement>(".tbnode.drill");
     if (box?.dataset.drill) {
       tbOpen(box.dataset.drill);
@@ -1604,9 +1604,9 @@ canvas.addEventListener("dblclick", (e) => {
   const pin = t.closest<SVGElement>(".pin, .bport");
   if (pin) {
     const port = pin.dataset.port;
-    // simbol: pinii apartin modulului vederii; schema: instantei copil
-    // (data-inst) sau modulului vederii (granita); pinii pliajelor nu au
-    // o singura sursa — se ignora
+    // symbol: the pins belong to the view's module; schematic: to the child
+    // instance (data-inst) or to the view's module (boundary); the pins of the folds do not have
+    // a single source — they are ignored
     const owner =
       state.mode === "schematic"
         ? pin.dataset.inst ?? (pin.dataset.bport ? state.viewId : undefined)
@@ -1625,7 +1625,7 @@ canvas.addEventListener("dblclick", (e) => {
     }
     if (!node.dataset.inst) {
       if (node.dataset.id) {
-        toggleFold(node.dataset.id); // pliaj: dublu-click = expandare
+        toggleFold(node.dataset.id); // fold: double-click = expansion
       }
       return;
     }
@@ -1634,7 +1634,7 @@ canvas.addEventListener("dblclick", (e) => {
     if (!t.closest(".node")) {
       return;
     }
-    instPath = state.viewId; // simbolul contextului e blocul instantei curente
+    instPath = state.viewId; // the context symbol is the current instance's block
   }
   if (!instPath) {
     return;
@@ -1644,7 +1644,7 @@ canvas.addEventListener("dblclick", (e) => {
   } else if (hasSchematic(state.model, instPath)) {
     navigateTo(instPath, "schematic");
   } else {
-    openSrc({ viewId: instPath }); // frunza: "schema" e chiar codul
+    openSrc({ viewId: instPath }); // leaf: the "schematic" is the code itself
   }
 });
 
@@ -1660,23 +1660,23 @@ canvas.addEventListener(
     state.tx = cx - ((cx - state.tx) * k2) / state.k;
     state.ty = cy - ((cy - state.ty) * k2) / state.k;
     state.k = k2;
-    autoCam = false; // camera e de-acum a utilizatorului
+    autoCam = false; // the camera is now the user's
     applyTransform();
     scheduleCameraSave();
   },
   { passive: false }
 );
 
-// ---------------------------------------------------------- drag si pan
+// ---------------------------------------------------------- drag and pan
 
-const GRID = 8; // snap pe grila la drag (docs/04)
-const DRAG_MIN = 5; // px pe ecran sub care gestul ramane click
+const GRID = 8; // grid snap on drag (docs/04)
+const DRAG_MIN = 5; // screen px below which the gesture stays a click
 
 interface DragItem {
   nodeId: string;
   el: SVGGElement;
-  /** holder-ul mutabil de pozitie + dimensiuni: ElkNode (RTL: width/height) sau
-   *  TbPlaced/TbBPlaced (TB: w/h) — ambele au x/y mutabile */
+  /** the mutable holder of position + dimensions: ElkNode (RTL: width/height) or
+   *  TbPlaced/TbBPlaced (TB: w/h) — both have mutable x/y */
   child: {
     x?: number;
     y?: number;
@@ -1685,38 +1685,38 @@ interface DragItem {
     w?: number;
     h?: number;
   };
-  origX: number; // nodul, in coordonatele diagramei
+  origX: number; // the node, in the diagram coordinates
   origY: number;
 }
 
 interface DragState {
   items: DragItem[];
-  /** nodul APUCAT (sub cursor): el se aliniaza; grupul se muta cu el */
+  /** the GRABBED node (under the cursor): it aligns; the group moves with it */
   primary: string;
-  startX: number; // pointer, px ecran
+  startX: number; // pointer, screen px
   startY: number;
   moved: boolean;
-  /** pozitiile INTREGII vederi la apasare — intrarea de undo a mutarii */
+  /** the positions of the ENTIRE view at press — the undo entry of the move */
   before: PosMap | null;
 }
-/** pragul de aliniere la drag, in px ECRAN (diagrama: impartit la zoom) */
+/** the alignment threshold on drag, in SCREEN px (diagram: divided by zoom) */
 const ALIGN_THRESH = 6;
 let alignGuideEls: SVGElement[] = [];
 let drag: DragState | undefined;
-/** un drag incheiat nu trebuie sa declanseze si click-ul de selectie */
+/** a finished drag must not also trigger the selection click */
 let suppressClick = false;
 
-// lasso: dreptunghi de selectie pornit cu click-stanga pe fundal (docs/04);
-// pe simbol selecteaza pini (gestul pentru "Agent from selection"), pe
-// schema selecteaza blocuri si steaguri; Ctrl = adaugare la selectie
+// lasso: a selection rectangle started with a left-click on the background (docs/04);
+// on the symbol it selects pins (the gesture for "Agent from selection"), on the
+// schematic it selects blocks and flags; Ctrl = add to the selection
 interface Marquee {
-  x0: number; // pointer, px ecran
+  x0: number; // pointer, screen px
   y0: number;
-  /** baza selectiei: cea existenta la Ctrl, goala altfel */
+  /** the base of the selection: the existing one with Ctrl, empty otherwise */
   base: Set<string>;
-  /** dreptunghiul SVG, creat abia dupa pragul DRAG_MIN */
+  /** the SVG rectangle, created only after the DRAG_MIN threshold */
   rect: SVGRectElement | null;
-  /** tintele cu dreptunghiurile lor pe ecran, cache la pornire */
+  /** the targets with their rectangles on the screen, cached at the start */
   candidates: { id: string; r: DOMRect }[] | null;
 }
 let marquee: Marquee | undefined;
@@ -1734,32 +1734,32 @@ function marqueeCandidates(): { id: string; r: DOMRect }[] {
   }));
 }
 
-// --- drag polimorf: aceeasi mecanica pentru schema RTL si vederea de
-// verificare, doar structura layoutului si re-rutarea difera (docs/04)
+// --- polymorphic drag: the same mechanics for the RTL schematic and the
+// verification (TB) view, only the layout structure and the re-routing differ (docs/04)
 
-/** vederea curenta e editabila prin drag (pozitiile apartin utilizatorului)? */
+/** is the current view editable by drag (the positions belong to the user)? */
 function draggable(): boolean {
   return state.mode === "schematic" || state.mode === "tb";
 }
-/** selectorul elementelor mutabile din DOM, dupa mod */
+/** the selector of the movable elements from the DOM, by mode */
 function dragSelector(): string {
   return state.mode === "tb"
     ? ".tbnode[data-id], .tb-bport[data-id]"
     : ".inode[data-id], .bport[data-id]";
 }
-/** holder-ul mutabil de pozitie al unui nod: ElkNode (RTL) sau TbPlaced/
- *  TbBPlaced (TB) — ambele au x/y mutabile */
+/** the mutable position holder of a node: ElkNode (RTL) or TbPlaced/
+ *  TbBPlaced (TB) — both have mutable x/y */
 function dragChild(id: string): DragItem["child"] | undefined {
   if (state.mode === "tb") {
     return currentTbLayout?.nodes.get(id) ?? currentTbLayout?.boundary.get(id);
   }
   return currentLayout?.children?.find((c) => c.id === id);
 }
-/** punctele de aliniere ale unui nod plasat la (x,y): CAPETELE pinilor lui
- *  (varfurile stub-urilor, `tips` din pinTipOffsets — cererea utilizatorului:
- *  ghidajele trec prin capetele pinilor, nu prin marginile blocului) sau, daca
- *  n-are pini, centrul lui (steag de granita). RTL: steagul de granita e tot
- *  nod ELK (in children); TB: TbPlaced (porturi) / TbBPlaced */
+/** the alignment points of a node placed at (x,y): the ENDS of its pins
+ *  (the tips of the stubs, `tips` from pinTipOffsets — the user's request:
+ *  the guides pass through the pin ends, not through the block edges) or, if
+ *  it has no pins, its center (boundary flag). RTL: the boundary flag is also an
+ *  ELK node (in children); TB: TbPlaced (ports) / TbBPlaced */
 function nodeAlignPts(
   id: string,
   x: number,
@@ -1781,10 +1781,10 @@ function nodeAlignPts(
   const c = currentLayout?.children?.find((ch) => ch.id === id);
   return c ? [{ x: x + (c.width ?? 0) / 2, y: y + (c.height ?? 0) / 2 }] : [];
 }
-/** toate punctele de aliniere (capete de pini + ancore de steaguri) ale vederii
- *  curente, EXCLUZAND `exclude` — tintele pentru ghidajele de aliniere.
- *  Alinierea la CAPETELE PINILOR (nu la marginile blocului) tine firele drepte
- *  si trece ghidajul prin varfuri (docs/04) */
+/** all the alignment points (pin ends + flag anchors) of the current
+ *  view, EXCLUDING `exclude` — the targets for the alignment guides.
+ *  Aligning to the PIN ENDS (not to the block edges) keeps the wires straight
+ *  and passes the guide through the tips (docs/04) */
 function nodePortPoints(
   exclude: Set<string>,
   tips: Map<string, AlignPt[]> | null
@@ -1805,8 +1805,8 @@ function nodePortPoints(
   }
   return out;
 }
-/** deseneaza ghidajele de aliniere in viewport (spatiu diagrama); le curata
- *  intai. Liniile sunt `non-scaling-stroke` (1px la orice zoom) */
+/** draws the alignment guides in the viewport (diagram space); clears them
+ *  first. The lines are `non-scaling-stroke` (1px at any zoom) */
 function renderAlignGuides(a: AlignSnap): void {
   clearAlignGuides();
   if (!viewport) {
@@ -1837,7 +1837,7 @@ function clearAlignGuides(): void {
   }
   alignGuideEls = [];
 }
-/** re-ruteaza muchiile la pozitiile curente (drag live) */
+/** re-routes the edges to the current positions (live drag) */
 function dragReroute(): void {
   if (state.mode === "tb") {
     if (currentTbScene && currentTbLayout && currentTbEdgesGroup) {
@@ -1847,7 +1847,7 @@ function dragReroute(): void {
     routeEdges(currentScene, currentLayout, currentEdgesGroup);
   }
 }
-/** itereaza toate pozitiile vederii curente (pentru snapshot-ul total D21) */
+/** iterates all the positions of the current view (for the total snapshot D21) */
 function dragEachPos(cb: (id: string, x: number, y: number) => void): void {
   if (state.mode === "tb") {
     if (currentTbLayout) {
@@ -1865,18 +1865,18 @@ function dragEachPos(cb: (id: string, x: number, y: number) => void): void {
   }
 }
 
-// -------------------------------------------- undo/redo de pozitii (docs/04)
+// -------------------------------------------- undo/redo of positions (docs/04)
 
-/** istoricul de POZITII al sesiunii, per cheie de layout (RTL: viewId; TB:
- *  `tb:<config>|<focus>`): Ctrl+Z/Ctrl+Y anuleaza/reface mutarile de blocuri
- *  si re-aranjarile ⟲. Doar pozitii (nu flip/pliaj) si doar sesiune —
- *  fiecare pas aplicat se persista normal prin `layout/snapshot`, ca orice
- *  gest de pozitie (sidecar-ul ramane sursa persistata) */
+/** the session's POSITIONS history, per layout key (RTL: viewId; TB:
+ *  `tb:<config>|<focus>`): Ctrl+Z/Ctrl+Y undo/redo the block moves
+ *  and the ⟲ re-arrangements. Only positions (not flip/fold) and only session —
+ *  each applied step is persisted normally through `layout/snapshot`, like any
+ *  position gesture (the sidecar remains the persisted source) */
 type PosMap = Record<string, { x: number; y: number }>;
 const posHistory = new Map<string, { undo: PosMap[]; redo: PosMap[] }>();
 const POS_HISTORY_MAX = 50;
 
-/** pozitiile curente ale vederii (toate, D21), sau null fara layout */
+/** the current positions of the view (all, D21), or null without a layout */
 function capturePositions(): PosMap | null {
   const nodes: PosMap = {};
   let count = 0;
@@ -1889,7 +1889,7 @@ function capturePositions(): PosMap | null {
   return count ? nodes : null;
 }
 
-/** impinge starea DINAINTEA unui gest de pozitie; un gest nou goleste redo-ul */
+/** pushes the state BEFORE a position gesture; a new gesture clears the redo */
 function pushPosUndo(before: PosMap | null): void {
   const key = layoutKey();
   if (!key || !before) {
@@ -1904,8 +1904,8 @@ function pushPosUndo(before: PosMap | null): void {
   posHistory.set(key, h);
 }
 
-/** aplica un snapshot: oglinda sidecar + persistare + re-randare (semintele
- *  totale forteaza exact pozitiile; camera ramane pe loc) */
+/** applies a snapshot: sidecar mirror + persistence + re-render (the total
+ *  seeds force the positions exactly; the camera stays in place) */
 function applyPositions(key: string, nodes: PosMap): void {
   for (const [id, p] of Object.entries(nodes)) {
     const n = sidecarNode(key, id);
@@ -1935,13 +1935,13 @@ function undoPositions(redo: boolean): void {
 
 let pan: { x: number; y: number } | undefined;
 canvas.addEventListener("pointerdown", (e) => {
-  // orice apasare anuleaza un peek de hover programat: altfel ar trage in
-  // mijlocul unui drag/click abia inceput
+  // any press cancels a scheduled hover peek: otherwise it would fire in the
+  // middle of a drag/click just started
   clearTimeout(hoverTimer);
   hoverKey = "";
-  // drag de nod sau de steag de granita in schema, cu butonul stang
-  // (docs/04: pozitiile apartin utilizatorului); butonul de pliaj isi
-  // pastreaza click-ul
+  // drag of a node or of a boundary flag in the schematic, with the left button
+  // (docs/04: the positions belong to the user); the fold button keeps its
+  // click
   if (e.button === 0 && draggable()) {
     const t = e.target as Element;
     const nodeEl = t.closest<SVGElement>(
@@ -1949,9 +1949,9 @@ canvas.addEventListener("pointerdown", (e) => {
     );
     if (nodeEl && !t.closest(".foldbtn")) {
       const pressedId = nodeEl.dataset.id ?? "";
-      // conventia editoarelor de diagrame: drag pe un membru al selectiei
-      // muta toata selectia; drag pe un element din afara ei muta doar
-      // elementul, fara sa atinga selectia
+      // the convention of diagram editors: dragging a member of the selection
+      // moves the whole selection; dragging an element outside it moves only
+      // the element, without touching the selection
       const ids =
         state.selection.has(pressedId) && state.selection.size > 1
           ? [...state.selection]
@@ -1965,7 +1965,7 @@ canvas.addEventListener("pointerdown", (e) => {
         const el2 = byId.get(id);
         const child = dragChild(id);
         if (el2 && child) {
-          // doar noduri/steaguri; net-urile sau pinii din selectie se ignora
+          // only nodes/flags; the nets or pins in the selection are ignored
           items.push({
             nodeId: id,
             el: el2,
@@ -1976,23 +1976,23 @@ canvas.addEventListener("pointerdown", (e) => {
         }
       }
       if (items.length) {
-        // doar candidat la drag: pointerul NU se captureaza inca — captura
-        // retinteste click-ul spre canvas (Chrome) si ar strica selectia;
-        // captura se face abia cand pragul DRAG_MIN e depasit (pointermove)
+        // only a drag candidate: the pointer is NOT captured yet — capture
+        // re-targets the click to the canvas (Chrome) and would break the selection;
+        // the capture is done only when the DRAG_MIN threshold is exceeded (pointermove)
         drag = {
           items,
           primary: pressedId,
           startX: e.clientX,
           startY: e.clientY,
           moved: false,
-          before: capturePositions(), // intrarea de undo (push la drag-end)
+          before: capturePositions(), // the undo entry (push at drag-end)
         };
         return;
       }
     }
   }
-  // click-stanga pe fundal: lasso de selectie; pan-ul e rezervat
-  // butonului din mijloc
+  // left-click on the background: selection lasso; the pan is reserved for
+  // the middle button
   const onElement = (e.target as Element).closest("[data-id]");
   if (e.button === 0 && !onElement) {
     marquee = {
@@ -2005,7 +2005,7 @@ canvas.addEventListener("pointerdown", (e) => {
     return;
   }
   if (e.button === 1) {
-    e.preventDefault(); // fara autoscroll-ul implicit al butonului din mijloc
+    e.preventDefault(); // without the default autoscroll of the middle button
     pan = { x: e.clientX - state.tx, y: e.clientY - state.ty };
     canvas.classList.add("panning");
     canvas.setPointerCapture(e.pointerId);
@@ -2017,23 +2017,23 @@ canvas.addEventListener("pointermove", (e) => {
     const dy = e.clientY - drag.startY;
     if (!drag.moved) {
       if (Math.abs(dx) + Math.abs(dy) < DRAG_MIN) {
-        return; // inca gest de click, nu de drag
+        return; // still a click gesture, not a drag
       }
       drag.moved = true;
       canvas.setPointerCapture(e.pointerId);
     }
-    // aliniere la PORTURILE vecinilor (ghidaje) SAU snap pe grila, per axa:
-    // porturile nodului primar (apucat) se aliniaza la un port al altui bloc;
-    // grupul se muta cu aceeasi deplasare, deci offseturile relative dintre
-    // membrii selectiei se pastreaza exact
+    // alignment to the neighbors' PORTS (guides) OR grid snap, per axis:
+    // the ports of the primary (grabbed) node align to a port of another block;
+    // the group moves with the same displacement, so the relative offsets between
+    // the selection members are kept exactly
     const primaryId = drag.primary;
     const prim = drag.items.find((it) => it.nodeId === primaryId) ?? drag.items[0];
     const rawX = prim.origX + dx / state.k;
     const rawY = prim.origY + dy / state.k;
     const draggedIds = new Set(drag.items.map((it) => it.nodeId));
-    // capetele pinilor RTL (varfuri de stub, cu marcatoarele) sunt punctele de
-    // aliniere — ghidajele trec prin ele, nu prin marginile blocului; TB nu are
-    // stub-uri, foloseste porturile direct (tips=null)
+    // the RTL pin ends (stub tips, with the markers) are the alignment
+    // points — the guides pass through them, not through the block edges; TB has no
+    // stubs, it uses the ports directly (tips=null)
     const tips =
       state.mode === "schematic" && currentScene && currentLayout
         ? pinTipOffsets(currentScene, currentLayout)
@@ -2043,7 +2043,7 @@ canvas.addEventListener("pointermove", (e) => {
       nodePortPoints(draggedIds, tips),
       ALIGN_THRESH / state.k
     );
-    // aliniere daca exista (poate fi off-grid), altfel snap pe grila
+    // alignment if it exists (can be off-grid), otherwise grid snap
     const finalX = a.vLine ? rawX + a.dx : Math.round(rawX / GRID) * GRID;
     const finalY = a.hLine ? rawY + a.dy : Math.round(rawY / GRID) * GRID;
     const gdx = finalX - prim.origX;
@@ -2055,9 +2055,9 @@ canvas.addEventListener("pointermove", (e) => {
       it.child.y = ny;
       it.el.setAttribute("transform", `translate(${nx},${ny})`);
     }
-    // traseele urmeaza pozitiile curente (docs/04): re-rutare live (RTL sau TB)
+    // the routes follow the current positions (docs/04): live re-routing (RTL or TB)
     dragReroute();
-    renderAlignGuides(a); // deasupra muchiilor re-rutate
+    renderAlignGuides(a); // above the re-routed edges
     return;
   }
   if (marquee) {
@@ -2065,7 +2065,7 @@ canvas.addEventListener("pointermove", (e) => {
     const dy = e.clientY - marquee.y0;
     if (!marquee.rect) {
       if (Math.abs(dx) + Math.abs(dy) < DRAG_MIN) {
-        return; // inca gest de click
+        return; // still a click gesture
       }
       marquee.rect = el("rect", { class: "marquee" });
       canvas.append(marquee.rect);
@@ -2081,9 +2081,9 @@ canvas.addEventListener("pointermove", (e) => {
     marquee.rect.setAttribute("y", String(y1 - cb.top));
     marquee.rect.setAttribute("width", String(x2 - x1));
     marquee.rect.setAttribute("height", String(y2 - y1));
-    // selectia live: baza (Ctrl) plus tintele dreptunghiului — implicit
-    // doar cele complet cuprinse ("window selection"); cu
-    // quickuvm.lassoMode=intersect, si cele doar atinse ("crossing")
+    // the live selection: the base (Ctrl) plus the rectangle's targets — by default
+    // only those completely enclosed ("window selection"); with
+    // quickuvm.lassoMode=intersect, also those merely touched ("crossing")
     const hit = new Set(marquee.base);
     for (const c of marquee.candidates ?? []) {
       const inside =
@@ -2101,7 +2101,7 @@ canvas.addEventListener("pointermove", (e) => {
   if (pan) {
     state.tx = e.clientX - pan.x;
     state.ty = e.clientY - pan.y;
-    autoCam = false; // camera e de-acum a utilizatorului
+    autoCam = false; // the camera is now the user's
     applyTransform();
   }
 });
@@ -2109,13 +2109,13 @@ canvas.addEventListener("pointerup", (e) => {
   if (drag) {
     const key = layoutKey();
     if (drag.moved && key) {
-      pushPosUndo(drag.before); // mutarea devine anulabila cu Ctrl+Z
-      // primul gest de pozitie face aranjamentul INTREGII vederi al
-      // utilizatorului (docs/04): se persista toate pozitiile curente, nu
-      // doar elementele trase — cu seminte partiale, ELK interactiv ar
-      // re-plasa elementele nepersistate (steaguri, noduri neatinse) altfel
-      // decat layout-ul pe care il vede utilizatorul acum. Cheia e per nivel
-      // la TB (`tb:<config>|<focus>`), viewId la RTL
+      pushPosUndo(drag.before); // the move becomes undoable with Ctrl+Z
+      // the first position gesture makes the arrangement of the user's ENTIRE
+      // view (docs/04): all the current positions are persisted, not
+      // just the dragged elements — with partial seeds, interactive ELK would
+      // re-place the unpersisted elements (flags, untouched nodes) differently
+      // than the layout the user sees now. The key is per level
+      // in TB (`tb:<config>|<focus>`), viewId in RTL
       const nodes: Record<string, { x: number; y: number }> = {};
       dragEachPos((id, x, y) => {
         const n = sidecarNode(key, id);
@@ -2129,10 +2129,10 @@ canvas.addEventListener("pointerup", (e) => {
     clearAlignGuides();
     drag = undefined;
     canvas.releasePointerCapture(e.pointerId);
-    refreshMinimap(); // limitele lumii s-au putut misca odata cu blocul
-    // si limitele pentru fit se actualizeaza (ca in fitView): altfel un
-    // resize cu autoCam ar incadra pe limitele PRE-drag, divergent de
-    // minimap (recenzia adversariala a minimapului)
+    refreshMinimap(); // the world bounds may have moved along with the block
+    // and the bounds for fit are updated (as in fitView): otherwise a
+    // resize with autoCam would fit onto the PRE-drag bounds, divergent from
+    // the minimap (the adversarial review of the minimap)
     if (state.mode === "schematic" && currentLayout) {
       contentBounds = layoutBounds(currentLayout);
     } else if (state.mode === "tb" && currentTbLayout) {
@@ -2146,9 +2146,9 @@ canvas.addEventListener("pointerup", (e) => {
       canvas.releasePointerCapture(e.pointerId);
       postSelection();
       renderInspector();
-      suppressClick = true; // click-ul de dupa lasso nu goleste selectia
+      suppressClick = true; // the click after the lasso does not clear the selection
     }
-    // fara prag depasit: click simplu — handler-ul de click decide
+    // without the threshold exceeded: a simple click — the click handler decides
     marquee = undefined;
     return;
   }
@@ -2164,8 +2164,8 @@ canvas.addEventListener("pointerup", (e) => {
 
 let camTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** retine camera vederii (stare de sesiune) dupa ce pan/zoom-ul s-a
- *  stabilizat; center-based: centrul vizibil in coordonate diagrama + zoom */
+/** retains the view's camera (session state) after the pan/zoom has
+ *  stabilized; center-based: the visible center in diagram coordinates + zoom */
 function scheduleCameraSave(): void {
   if (camTimer) {
     clearTimeout(camTimer);
@@ -2184,10 +2184,10 @@ function scheduleCameraSave(): void {
 }
 
 /**
- * La redimensionarea panoului: incadrarile automate se recalculeaza, iar
- * camerele utilizatorului isi pastreaza centrul (fara continut "fugit" in
- * afara ferestrei — prima incadrare poate rula inainte ca webview-ul sa
- * aiba dimensiunea finala).
+ * On panel resize: the automatic fits are recomputed, and the
+ * user's cameras keep their center (without content "escaped" outside
+ * the window — the first fit can run before the webview
+ * has the final dimension).
  */
 function onViewportResize(): void {
   const vw = canvas.clientWidth;
@@ -2197,7 +2197,7 @@ function onViewportResize(): void {
   }
   if (autoCam) {
     fit(contentBounds);
-    refreshMinimap(); // colt nou de ancorare dupa redimensionare
+    refreshMinimap(); // new anchoring corner after resize
     return;
   }
   if (lastVW && lastVH) {
@@ -2209,21 +2209,21 @@ function onViewportResize(): void {
   }
   lastVW = vw;
   lastVH = vh;
-  refreshMinimap(); // colt nou de ancorare + dreptunghi de vedere nou
+  refreshMinimap(); // new anchoring corner + new view rectangle
 }
-// ambele surse, deduplicate prin garda pe dimensiuni: ResizeObserver pe
-// containerul #main (nu pe canvas — RO nu se declanseaza pe elemente SVG
-// in Chromium) si evenimentul window.resize (RO livreaza pe cadre de
-// randare, care in documente ascunse/throttled nu ruleaza)
+// both sources, deduplicated through a guard on dimensions: ResizeObserver on
+// the #main container (not on the canvas — RO does not fire on SVG elements
+// in Chromium) and the window.resize event (RO delivers on render
+// frames, which in hidden/throttled documents do not run)
 new ResizeObserver(onViewportResize).observe(
   document.getElementById("main") as HTMLElement
 );
 window.addEventListener("resize", onViewportResize);
 
 window.addEventListener("keydown", (e) => {
-  // tastele comanda diagrama doar cand NU editezi un camp din inspector
-  // (match_key/max_latency/select-uri) — altfel "f"/"h"/"Delete" ar declansa
-  // gesturi in loc sa ajunga in camp
+  // the keys command the diagram only when you are NOT editing a field in the inspector
+  // (match_key/max_latency/selects) — otherwise "f"/"h"/"Delete" would trigger
+  // gestures instead of reaching the field
   const t = e.target as HTMLElement | null;
   if (
     t &&
@@ -2236,7 +2236,7 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     if (ctxMenu) {
-      closeCtxMenu(); // Escape inchide intai meniul contextual, nu selectia
+      closeCtxMenu(); // Escape closes the context menu first, not the selection
       return;
     }
     if (state.selection.size) {
@@ -2248,8 +2248,8 @@ window.addEventListener("keydown", (e) => {
     }
   }
   const key = e.key.toLowerCase();
-  // undo/redo de POZITII (docs/04): Ctrl+Z / Ctrl+Shift+Z sau Ctrl+Y —
-  // inaintea bail-ului pe modificatori
+  // undo/redo of POSITIONS (docs/04): Ctrl+Z / Ctrl+Shift+Z or Ctrl+Y —
+  // before the bail on modifiers
   if ((e.ctrlKey || e.metaKey) && !e.altKey) {
     if (key === "z" || key === "y") {
       e.preventDefault();
@@ -2260,9 +2260,9 @@ window.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) {
     return;
   }
-  // Delete/Backspace: sterge componenta TB selectata — acelasi gest ca butonul
-  // Delete din inspector (host: confirmare modala + cascada la agent). Doar in
-  // vederea TB; RTL n-are stergere (nodurile vin din design, nu din config)
+  // Delete/Backspace: deletes the selected TB component — the same gesture as the
+  // Delete button in the inspector (host: modal confirmation + cascade to the agent). Only in
+  // the TB view; RTL has no deletion (the nodes come from the design, not from the config)
   if ((key === "delete" || key === "backspace") && state.mode === "tb") {
     const node = currentTbScene?.nodes.find((n) => state.selection.has(n.id));
     const target = node ? tbDeleteTarget(node) : null;
@@ -2272,21 +2272,21 @@ window.addEventListener("keydown", (e) => {
     }
     return;
   }
-  // F: incadreaza diagrama in fereastra
+  // F: fits the diagram into the window
   if (key === "f") {
     fitView();
     return;
   }
-  // M: comuta minimapul (navigatorul de ansamblu, docs/04)
+  // M: toggles the minimap (the overview navigator, docs/04)
   if (key === "m") {
     minimapOn = !minimapOn;
     refreshMinimap();
     return;
   }
-  // sageti: deruleaza viewport-ul (pan din tastatura, cererea utilizatorului).
-  // Conventie de scroll: jos = vezi continut de dedesubt (continutul urca).
-  // Pas mai mare cu Shift; tinut apasat -> derulare continua (keydown repeta).
-  // Camera devine a utilizatorului si se salveaza ca la pan-ul cu mouse-ul.
+  // arrows: scroll the viewport (keyboard pan, the user's request).
+  // Scroll convention: down = you see content below (the content rises).
+  // Bigger step with Shift; held down -> continuous scroll (keydown repeats).
+  // The camera becomes the user's and is saved as with the mouse pan.
   if (
     key === "arrowup" ||
     key === "arrowdown" ||
@@ -2309,11 +2309,11 @@ window.addEventListener("keydown", (e) => {
     scheduleCameraSave();
     return;
   }
-  // H/V: rasturnarea BLOCULUI selectat (docs/04) — la RTL si la vederea TB.
-  // La vederea TB, H rastoarna si un STEAG de granita selectat: rasturnare
-  // LOCALA pe orizontala (oglindeste forma + muta ancora pe latura opusa a
-  // steagului), fara sa-i schimbe pozitia/latura ELK — deci nu incalca
-  // FIRST/LAST_SEPARATE. V nu are sens pe un steag (o singura conexiune).
+  // H/V: flipping the selected BLOCK (docs/04) — in RTL and in the TB view.
+  // In the TB view, H also flips a selected boundary FLAG: LOCAL horizontal
+  // flip (mirrors the shape + moves the anchor to the opposite side of the
+  // flag), without changing its ELK position/side — so it does not violate
+  // FIRST/LAST_SEPARATE. V makes no sense on a flag (a single connection).
   if (key === "h" || key === "v") {
     let nodeId: string | undefined;
     if (state.mode === "schematic") {
@@ -2332,12 +2332,12 @@ window.addEventListener("keydown", (e) => {
   }
 });
 
-// --------------------------------------------- meniu contextual (vederea TB)
+// --------------------------------------------- context menu (the TB view)
 
 interface CtxItem {
   label: string;
   action: () => void;
-  /** actiune distructiva (stergere): se coloreaza ca atare */
+  /** destructive action (deletion): it is colored as such */
   danger?: boolean;
 }
 
@@ -2348,7 +2348,7 @@ function closeCtxMenu(): void {
   ctxMenu = null;
 }
 
-/** deschide meniul la (x,y) — pozitie `fixed`, incadrata in fereastra */
+/** opens the menu at (x,y) — `fixed` position, fitted into the window */
 function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
   closeCtxMenu();
   if (!items.length) {
@@ -2371,10 +2371,10 @@ function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
 }
 
 /**
- * Clic-dreapta in vederile RTL (simbol/schema, docs/05): „Go to source" pe
- * orice tinta cu sursa cunoscuta (aceeasi rezolutie de proprietar ca la
- * dublu-click), plus navigare/pliaj/rasturnare pe blocuri. Pe fundal si pe
- * tintele fara actiuni (pinii pliajelor) ramane meniul nativ.
+ * Right-click in the RTL views (symbol/schematic, docs/05): „Go to source" on
+ * any target with a known source (the same owner resolution as on
+ * double-click), plus navigation/fold/flip on blocks. On the background and on
+ * the targets without actions (the pins of the folds) the native menu remains.
  */
 function rtlContextMenu(e: MouseEvent): void {
   const t = e.target as Element;
@@ -2416,12 +2416,12 @@ function rtlContextMenu(e: MouseEvent): void {
         action: () => openSrc({ viewId: inst }),
       });
     } else if (id) {
-      // pliaj: expandarea e actiunea lui naturala (ca dublu-click-ul)
+      // fold: expansion is its natural action (like the double-click)
       items.push({ label: "Expand group", action: () => toggleFold(id) });
-      // membrii unui pliaj impart ACELASI modul (criteriul plierii, docs/05),
-      // deci definitia se deschide prin primul membru: `g_ch[0..2].u_ch` ->
-      // `g_ch[0].u_ch`. Doar cand id-ul se rezolva complet (fara `[*]` ramase
-      // dintr-un generate multidimensional)
+      // the members of a fold share the SAME module (the folding criterion, docs/05),
+      // so the definition is opened through the first member: `g_ch[0..2].u_ch` ->
+      // `g_ch[0].u_ch`. Only when the id resolves completely (without `[*]` left over
+      // from a multidimensional generate)
       const memberRel = id.replace(/\[(\d+)\.\.\d+\]/, "[$1]");
       if (state.viewId && !memberRel.includes("[*]") && memberRel !== id) {
         const member = `${state.viewId}.${memberRel}`;
@@ -2442,7 +2442,7 @@ function rtlContextMenu(e: MouseEvent): void {
       );
     }
   } else if (block) {
-    // vederea-simbol: blocul E modulul vederii
+    // the symbol view: the block IS the view's module
     const vid = state.viewId;
     if (vid) {
       items.push({
@@ -2453,7 +2453,7 @@ function rtlContextMenu(e: MouseEvent): void {
   }
   if (!items.length) {
     closeCtxMenu();
-    return; // fundal / tinta fara actiuni: meniul nativ
+    return; // background / target without actions: the native menu
   }
   e.preventDefault();
   if (selectId && !state.selection.has(selectId)) {
@@ -2465,23 +2465,23 @@ function rtlContextMenu(e: MouseEvent): void {
   openCtxMenu(e.clientX, e.clientY, items);
 }
 
-// Clic-dreapta pe o componenta din vederea de verificare: Open / Flip / Delete.
-// Actiunile sunt ACELEASI ca in inspector si pe tasta Delete — `tbDeleteTarget`
-// ramane sursa unica de rezolutie id->nume, iar confirmarea modala e a host-ului.
+// Right-click on a component in the verification (TB) view: Open / Flip / Delete.
+// The actions are the SAME as in the inspector and on the Delete key — `tbDeleteTarget`
+// remains the single source of id->name resolution, and the modal confirmation is the host's.
 canvas.addEventListener("contextmenu", (e) => {
   if (state.mode !== "tb") {
-    rtlContextMenu(e); // vederile RTL: Go to source / Open / pliaj / flip
+    rtlContextMenu(e); // RTL views: Go to source / Open / fold / flip
     return;
   }
   const el = (e.target as Element).closest<SVGElement>(".tbnode, .tb-bport");
   const id = el?.dataset.id;
   if (!el || !id) {
     closeCtxMenu();
-    return; // pe fundal: meniul implicit
+    return; // on the background: the default menu
   }
   e.preventDefault();
-  // conventia editoarelor: clic-dreapta pe un element din AFARA selectiei il
-  // selecteaza; pe unul din selectie pastreaza selectia
+  // the editors' convention: right-click on an element OUTSIDE the selection
+  // selects it; on one from the selection it keeps the selection
   if (!state.selection.has(id)) {
     state.selection = new Set([id]);
     applySelectionClasses();
@@ -2509,7 +2509,7 @@ canvas.addEventListener("contextmenu", (e) => {
       });
     }
     if (node.kind === "tbvsqr") {
-      // vsqr agrega TOATE secventele: cate o intrare per secventa
+      // vsqr aggregates ALL the sequences: one entry per sequence
       for (const v of state.config?.virtual_sequences ?? []) {
         const vn = v.name;
         if (vn) {
@@ -2522,7 +2522,7 @@ canvas.addEventListener("contextmenu", (e) => {
         }
       }
     } else if (node.kind === "tbprobe") {
-      // idem pentru probe (nodul le agrega pe toate)
+      // same for probes (the node aggregates them all)
       for (const p of state.config?.probes ?? []) {
         const pn = p.name;
         if (pn) {
@@ -2536,7 +2536,7 @@ canvas.addEventListener("contextmenu", (e) => {
       }
     }
   } else {
-    // steag de granita: doar rasturnarea LOCALA pe orizontala (V n-are sens)
+    // boundary flag: only the LOCAL horizontal flip (V makes no sense)
     items.push({
       label: "Flip horizontal (H)",
       action: () => toggleFlip(id, "h"),
@@ -2545,8 +2545,8 @@ canvas.addEventListener("contextmenu", (e) => {
   openCtxMenu(e.clientX, e.clientY, items);
 });
 
-// inchiderea meniului: clic in afara (capture, ca sa preceada handlerele
-// canvas-ului) si zoom; Escape e tratat in handler-ul de taste
+// closing the menu: click outside (capture, so it precedes the canvas
+// handlers) and zoom; Escape is handled in the key handler
 window.addEventListener(
   "pointerdown",
   (e) => {
@@ -2557,9 +2557,9 @@ window.addEventListener(
   true
 );
 canvas.addEventListener("wheel", () => closeCtxMenu(), { passive: true });
-// focusul iese din webview (clic in Design Hierarchy, editor, alta panela):
-// evenimentele de pointer NU ajung la webview, deci `blur` e singura cale de
-// a inchide meniul (altfel ramanea deschis peste noua selectie)
+// the focus leaves the webview (click in Design Hierarchy, editor, another panel):
+// the pointer events do NOT reach the webview, so `blur` is the only way to
+// close the menu (otherwise it stayed open over the new selection)
 window.addEventListener("blur", closeCtxMenu);
 
 // ------------------------------------------------------------- inspector
@@ -2600,13 +2600,13 @@ function button(
   const b = h("button", `btn${secondary ? " secondary" : ""}`, label);
   b.disabled = !enabled;
   if (!enabled && disabledHint) {
-    b.title = disabledHint; // motivul dezactivarii, vizibil la hover
+    b.title = disabledHint; // the reason for disabling, visible on hover
   }
   b.addEventListener("click", onClick);
   return b;
 }
 
-/** un rand de proprietate in inspector: eticheta + control (select/input) */
+/** a property row in the inspector: label + control (select/input) */
 function tbPropRow(label: string, control: HTMLElement): HTMLElement {
   const row = h("div", "prop-row");
   row.append(h("label", "prop-label", label), control);
@@ -2614,15 +2614,15 @@ function tbPropRow(label: string, control: HTMLElement): HTMLElement {
 }
 
 /**
- * Editorul de proprietati al unui scoreboard (felia 2): source/monitor/match/
- * match_key/max_latency, editare inline in inspector -> actiunea editScoreboard
- * (un WorkspaceEdit per schimbare; diagrama se re-randeaza la config/full).
- * Camp gol = reset la implicit (host-ul sterge campul din YAML).
+ * The property editor of a scoreboard (slice 2): source/monitor/match/
+ * match_key/max_latency, inline editing in the inspector -> the editScoreboard action
+ * (one WorkspaceEdit per change; the diagram re-renders at config/full).
+ * Empty field = reset to default (the host deletes the field from the YAML).
  */
 function tbScoreboardEditor(sb: QuvmScoreboard): void {
   const name = sb.name;
   if (!name) {
-    return; // fara nume nu-l putem identifica pentru editare
+    return; // without a name we cannot identify it for editing
   }
   const agents = (state.config?.agents ?? [])
     .map((a) => a.name)
@@ -2634,8 +2634,8 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
 
   const srcSel = h("select", "prop");
   for (const a of agents) {
-    // sursa difera de monitor (A2), ca la add — dar pastreaza sursa curenta
-    // vizibila chiar daca un config scris de mana are source==monitor
+    // the source differs from the monitor (A2), as at add — but keep the current source
+    // visible even if a hand-written config has source==monitor
     if (a === sb.monitor && a !== sb.source) {
       continue;
     }
@@ -2654,7 +2654,7 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
   monSel.append(none);
   for (const a of agents) {
     if (a === sb.source) {
-      continue; // monitorul difera de sursa (A2 two-stream)
+      continue; // the monitor differs from the source (A2 two-stream)
     }
     const o = h("option", "", a);
     o.value = a;
@@ -2674,14 +2674,14 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
     o.selected = (sb.match ?? "in_order") === v;
     matchSel.append(o);
   }
-  matchSel.disabled = !sb.monitor; // match are sens doar two-stream
+  matchSel.disabled = !sb.monitor; // match makes sense only two-stream
   matchSel.addEventListener("change", () => send("match", matchSel.value));
   inspector.append(tbPropRow("Match", matchSel));
 
   const keyIn = h("input", "prop");
   keyIn.value = sb.match_key ?? "";
   keyIn.placeholder = "key field";
-  keyIn.disabled = sb.match !== "out_of_order"; // ceruta doar out-of-order
+  keyIn.disabled = sb.match !== "out_of_order"; // required only out-of-order
   keyIn.addEventListener("change", () => send("match_key", keyIn.value));
   inspector.append(tbPropRow("Match key", keyIn));
 
@@ -2695,12 +2695,12 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
 }
 
 /**
- * Componenta ștergibilă a unui nod TB selectat: `{kind, name, label}` sau null.
- * Sursă unică de adevăr pentru butonul Delete din inspector ȘI pentru tasta
- * Delete — ca rezoluția id→nume să nu poată devia între ele. Întoarce null
- * pentru ce NU se șterge printr-un gest unic: `tbvsqr` (agregă toate
- * secvențele → ștergere per-secvență în inspector), DUT/Env/unit/subenv/probe
- * și scoreboard-urile cross-bloc `xsb:` sau cele fără nume.
+ * The deletable component of a selected TB node: `{kind, name, label}` or null.
+ * The single source of truth for the Delete button in the inspector AND for the
+ * Delete key — so that the id→name resolution cannot diverge between them. Returns null
+ * for what is NOT deleted through a single gesture: `tbvsqr` (aggregates all
+ * the sequences → per-sequence deletion in the inspector), DUT/Env/unit/subenv/probe
+ * and the cross-block scoreboards `xsb:` or the ones without a name.
  */
 function tbDeleteTarget(
   node: TbScene["nodes"][number]
@@ -2732,8 +2732,8 @@ function selectPins(names: string[]): void {
   renderInspector();
 }
 
-/** Inspectorul lateral: configuratie, DUT, agenti, acoperire, actiuni.
- *  Fara stare proprie: totul e derivat din model + overlay (invariantul 2). */
+/** The side inspector: configuration, DUT, agents, coverage, actions.
+ *  Without own state: everything is derived from the model + overlay (invariant 2). */
 function renderInspector(): void {
   if (!inspector) {
     return;
@@ -2744,10 +2744,10 @@ function renderInspector(): void {
   const matches = Boolean(ov && inst && ov.dut === inst.module);
   const sel = [...state.selection];
   const selNames = sel.map((s) => s.replace(/^<port>\./, ""));
-  // pinii selectabili pentru gesturile de agent: pinii simbolului SAU
-  // steagurile granitei din vederea-schema — porturile modulului vederii,
-  // cu aceleasi ID-uri stabile `<port>.x` (restrictia la simbol era
-  // mostenire de faza 2, nu decizie de design)
+  // the selectable pins for the agent gestures: the symbol's pins OR
+  // the boundary flags from the schematic view — the ports of the view's module,
+  // with the same stable IDs `<port>.x` (the restriction to the symbol was
+  // a phase 2 legacy, not a design decision)
   const byName = new Map<string, { name: string; iface: boolean }>(
     currentPins.map((p) => [p.name, p])
   );
@@ -2759,10 +2759,10 @@ function renderInspector(): void {
   const selPins = selNames
     .map((n) => byName.get(n))
     .filter((p): p is { name: string; iface: boolean } => Boolean(p));
-  // pinii unui BLOC COPIL din schema = porturile modulului acelui bloc:
-  // gestul de agent tinteste config-ul blocului (fluxul recursiv, docs/03).
-  // Conditii: niciun pin de granita in selectie si toti pinii aceleiasi
-  // instante (pliajele se exclud — n-au o singura instanta-tinta)
+  // the pins of a CHILD BLOCK from the schematic = the ports of that block's module:
+  // the agent gesture targets the block's config (the recursive flow, docs/03).
+  // Conditions: no boundary pin in the selection and all pins of the same
+  // instance (the folds are excluded — they have no single target instance)
   let childAgent:
     | { viewId: string; pins: { port: string; iface: boolean }[] }
     | null = null;
@@ -2853,7 +2853,7 @@ function renderInspector(): void {
     const selNode = currentTbScene?.nodes.find((n) =>
       state.selection.has(n.id)
     );
-    // agentul selectat preincarca sursa gesturilor de adaugare (docs/05)
+    // the selected agent preloads the source of the add gestures (docs/05)
     const selAgent = selNode?.kind === "tbagent" ? selNode.label : undefined;
     if (selNode) {
       inspector.append(
@@ -2869,17 +2869,17 @@ function renderInspector(): void {
           button("Open (double-click)", true, () => tbOpen(target), true)
         );
       }
-      // rasturnare (docs/04): H = laturile porturilor vest<->est, V = ordinea
+      // flip (docs/04): H = the west<->east sides of the ports, V = the order
       inspector.append(
         button("Flip horizontal (H)", true, () => toggleFlip(selNode.id, "h"), true),
         button("Flip vertical (V)", true, () => toggleFlip(selNode.id, "v"), true)
       );
-      // editare + stergere per tipul componentei (felia 2). Scoreboard/coverage/
-      // vseq sunt frunze; agentul cade in cascada (host: confirmare modala).
+      // editing + deletion per component type (slice 2). Scoreboard/coverage/
+      // vseq are leaves; the agent falls in cascade (host: modal confirmation).
       const del = (kind: string, dname: string): void =>
         postAction("deleteComponent", { kind, name: dname });
-      // editorul de proprietati (doar scoreboard-urile din `analysis`, id `sb:`;
-      // NU cele cross-bloc `xsb:` = analysis.scoreboards cu capete calificate)
+      // the property editor (only the scoreboards from `analysis`, id `sb:`;
+      // NOT the cross-block ones `xsb:` = analysis.scoreboards with qualified endpoints)
       if (selNode.kind === "tbsb" && selNode.id.startsWith("sb:")) {
         const sb = state.config?.analysis?.scoreboards?.find(
           (s) => (s.name ?? "sbd") === selNode.label
@@ -2888,14 +2888,14 @@ function renderInspector(): void {
           tbScoreboardEditor(sb);
         }
       }
-      // buton Delete — ACEEASI rezolvare id->nume ca tasta Delete pe diagrama
-      // (tbDeleteTarget), ca sa nu poata devia una de alta
+      // Delete button — the SAME id->name resolution as the Delete key on the diagram
+      // (tbDeleteTarget), so they cannot diverge from each other
       const dt = tbDeleteTarget(selNode);
       if (dt) {
         inspector.append(button(dt.label, true, () => del(dt.kind, dt.name), true));
       }
-      // vsqr / probes agrega TOATE intrarile lor: stergerea e per-intrare (tasta
-      // Delete pe ele n-are tinta unica, deci butoanele raman singura cale aici)
+      // vsqr / probes aggregate ALL their entries: deletion is per-entry (the Delete
+      // key on them has no single target, so the buttons remain the only way here)
       if (selNode.kind === "tbvsqr") {
         for (const v of state.config?.virtual_sequences ?? []) {
           const vn = v.name;
@@ -2916,9 +2916,9 @@ function renderInspector(): void {
         }
       }
     }
-    // steag de granita selectat: rasturnare LOCALA pe orizontala (oglindeste
-    // forma + muta ancora pe latura opusa a steagului, fara sa-i schimbe
-    // pozitia/latura ELK). La un steag inout (hexagon) muta doar varful ancorat.
+    // selected boundary flag: LOCAL horizontal flip (mirrors the
+    // shape + moves the anchor to the opposite side of the flag, without changing its
+    // ELK position/side). On an inout flag (hexagon) it moves only the anchored tip.
     const selB = !selNode
       ? currentTbScene?.boundary.find((b) => state.selection.has(b.id))
       : undefined;
@@ -2935,9 +2935,9 @@ function renderInspector(): void {
         button("Flip horizontal (H)", true, () => toggleFlip(selB.id, "h"), true)
       );
     }
-    // paleta de adaugare (felia 2, docs/05): conexiunile nu sunt muchii
-    // libere in QuickUVM — sursa/monitor sunt campuri, deci "adauga" creeaza
-    // componenta DEJA conectata (agentul selectat preincarca sursa)
+    // the add palette (slice 2, docs/05): the connections are not free
+    // edges in QuickUVM — source/monitor are fields, so "add" creates the
+    // component ALREADY connected (the selected agent preloads the source)
     const hasAgents = Boolean(state.config?.agents?.length);
     const hasActive = Boolean(
       state.config?.agents?.some((a) => a.active !== false)
@@ -2970,10 +2970,10 @@ function renderInspector(): void {
 
   if (state.mode === "schematic" && state.model && state.viewId) {
     const nets = state.model.views[state.viewId]?.nets ?? [];
-    // netul se selecteaza prin fir/eticheta (data-id = numele netului), DAR si
-    // dintr-un pin/steag: la o selectie de UN pin ii derivam netul, ca sa fie
-    // comutatorul fir/eticheta descoperibil de pe orice capat (observatie la
-    // validare — B1)
+    // the net is selected through the wire/label (data-id = the net's name), BUT also
+    // from a pin/flag: on a selection of ONE pin we derive its net, so that
+    // the wire/label toggle is discoverable from any endpoint (observation at
+    // validation — B1)
     let selNet = nets.find((n) => state.selection.has(n.name));
     if (!selNet && state.selection.size === 1) {
       const nm = netOfPin([...state.selection][0]);
@@ -2997,11 +2997,11 @@ function renderInspector(): void {
           true
         )
       );
-      // proba whitebox (K2, felia 3): calea XMR si latimea se derivă din model
-      // pe host (src/probe.ts) — webview-ul trimite doar (viewId, net). Host-ul
-      // refuză cu motiv dacă netul nu e sondabil (unpacked, interfață, bench de
-      // subsistem, port deja mapat pe agent).
-      // `ov` e umbrit aici de override-ul de net: DUT-ul se ia din overlay
+      // whitebox probe (K2, slice 3): the XMR path and the width are derived from the model
+      // on the host (src/probe.ts) — the webview sends only (viewId, net). The host
+      // refuses with a reason if the net is not probeable (unpacked, interface, subsystem
+      // bench, port already mapped to an agent).
+      // `ov` is shadowed here by the net override: the DUT is taken from the overlay
       inspector.append(
         button(
           "Create probe",
@@ -3056,18 +3056,18 @@ function renderInspector(): void {
   }
 
   inspector.append(h("h3", "", "Actions"));
-  // blocurile selectate in vederea-schema (instante si pliaje, nu interfete):
-  // tinta actiunii "Create subenv" (docs/03)
+  // the blocks selected in the schematic view (instances and folds, not interfaces):
+  // the target of the "Create subenv" action (docs/03)
   const selBlocks =
     state.mode === "schematic" && currentScene
       ? currentScene.nodes.filter(
           (n) => state.selection.has(n.id) && n.kind !== "iface"
         )
       : [];
-  // gestul de agent: pinii granitei/simbolului tintesc modulul vederii;
-  // pinii unui bloc copil tintesc modulul blocului (viewId explicit in
-  // args); nepotrivirea de DUT se rezolva pe host, in flux — butoanele nu
-  // mai stau moarte pe vederile ne-DUT
+  // the agent gesture: the boundary/symbol pins target the view's module;
+  // the pins of a child block target the block's module (explicit viewId in
+  // args); the DUT mismatch is resolved on the host, in the flow — the buttons no
+  // longer sit dead on the non-DUT views
   const agentPins = selPins.length
     ? selPins.map((p) => ({ port: p.name, iface: p.iface }))
     : childAgent?.pins ?? [];
@@ -3079,8 +3079,8 @@ function renderInspector(): void {
   const selectable = agentPins.filter((p) => !p.iface);
   const ifaceSel =
     agentPins.length === 1 && agentPins[0].iface ? agentPins[0] : undefined;
-  // actiunile pe pini primesc DOAR pinii rezolvati — in schema, selectia
-  // poate contine si blocuri/pliaje, care nu sunt porturi ale DUT-ului
+  // the actions on pins receive ONLY the resolved pins — in the schematic, the selection
+  // can also contain blocks/folds, which are not ports of the DUT
   const pinIds = agentPins.map((p) => `<port>.${p.port}`);
   const allIgnored =
     selPins.length > 0 && selPins.every((p) => roles[p.name] === "ignored");
@@ -3096,14 +3096,14 @@ function renderInspector(): void {
     ),
     button(
       `Create subenv${selBlocks.length ? ` (${selBlocks.length})` : ""}`,
-      // nepotrivirea de DUT se rezolva IN flux (config dedicat blocului,
-      // docs/03) — butonul nu mai sta mort pe vederile ne-DUT
+      // the DUT mismatch is resolved IN the flow (a config dedicated to the block,
+      // docs/03) — the button no longer sits dead on the non-DUT views
       selBlocks.length > 0,
       () => postAction("createSubenv", { nodes: selBlocks.map((n) => n.id) })
     ),
-    // felia 3: compune blocul CURENT + fratii lui in bench-ul parinte imediat
-    // (createSubenv initiat din copil). Doar cand vederea are un parinte (nu e
-    // un modul top); host-ul calculeaza parintele + copiii-bloc directi
+    // slice 3: composes the CURRENT block + its siblings into the immediate parent bench
+    // (createSubenv initiated from the child). Only when the view has a parent (is not
+    // a top module); the host computes the parent + the direct child blocks
     button(
       "Compose into parent bench",
       Boolean(
@@ -3113,9 +3113,9 @@ function renderInspector(): void {
       true,
       "open a non-top block — it gets composed into its immediate parent bench"
     ),
-    // compunerea derivata (felia 3): scrie `connections` din net-urile inter-bloc
-    // ale acestui subsistem. Doar pe vederea PROPRIE a DUT-ului (`matches`) — pe
-    // alte vederi n-are sens; host-ul mai valideaza ca are subenvs
+    // the derived composition (slice 3): writes `connections` from the inter-block nets
+    // of this subsystem. Only on the DUT's OWN view (`matches`) — on
+    // other views it makes no sense; the host also validates that it has subenvs
     button(
       "Wire connections from design",
       matches,
@@ -3136,7 +3136,7 @@ function renderInspector(): void {
   );
 }
 
-// ---------------------------------------------------------------- randare
+// ---------------------------------------------------------------- render
 
 function showBanner(text: string): void {
   banner.textContent = text;
@@ -3165,7 +3165,7 @@ async function render(refit = false): Promise<void> {
   }
   empty.hidden = true;
   if (state.mode === "schematic" && !hasSchematic(state.model, state.viewId)) {
-    // frunza fara schema: cade gratios pe simbol (docs/05)
+    // leaf without a schematic: falls gracefully onto the symbol (docs/05)
     state.mode = "symbol";
     persistState();
   }
@@ -3184,7 +3184,7 @@ async function render(refit = false): Promise<void> {
       return;
     }
     if (!(await presentScene(scene, gen))) {
-      return; // o randare mai noua a inceput intre timp
+      return; // a newer render has started in the meantime
     }
   } else {
     currentScene = null;
@@ -3210,10 +3210,10 @@ async function render(refit = false): Promise<void> {
 }
 
 /**
- * Pipeline-ul comun al vederilor cu noduri multiple (vederea-schema si
- * vederea de verificare): layout ELK cu semintele/rasturnarile din sidecar,
- * fortarea semintelor, lumea pe grila, pin-uirea D21 si desenul cu ruterul
- * propriu. Intoarce false daca o randare mai noua a inceput intre timp.
+ * The common pipeline of the multi-node views (the schematic view and
+ * the verification (TB) view): ELK layout with the seeds/flips from the sidecar,
+ * forcing the seeds, the grid world, the D21 pinning and the drawing with the own
+ * router. Returns false if a newer render has started in the meantime.
  */
 interface Boxed {
   x?: number;
@@ -3223,11 +3223,11 @@ interface Boxed {
 }
 
 /**
- * Cel mai apropiat loc liber pe grilă pentru `child`, evitând suprapunerea
- * (cu margine `pad`) cu celelalte noduri; `null` dacă deja e liber sau nu se
- * găsește în raza de căutare. Scanează pe cercuri de rază crescătoare,
- * preferând JOS (membrii unui pliaj se așază firesc în coloană sub poziția
- * inserată de ELK). Pur — doar aritmetică pe cutii.
+ * The closest free spot on the grid for `child`, avoiding overlap
+ * (with margin `pad`) with the other nodes; `null` if it is already free or is not
+ * found within the search radius. Scans on circles of increasing radius,
+ * preferring DOWN (the members of a fold naturally settle in a column below the position
+ * inserted by ELK). Pure — only arithmetic on boxes.
  */
 function freeSpot(
   child: Boxed,
@@ -3256,7 +3256,7 @@ function freeSpot(
     return null;
   }
   for (let r = GRID; r <= 60 * GRID; r += GRID) {
-    // ordinea preferă jos, apoi sus, apoi lateral/diagonale
+    // the order prefers down, then up, then lateral/diagonals
     const cands: [number, number][] = [
       [x0, y0 + r], [x0, y0 - r], [x0 + r, y0], [x0 - r, y0],
       [x0 + r, y0 + r], [x0 - r, y0 + r], [x0 + r, y0 - r], [x0 - r, y0 - r],
@@ -3278,18 +3278,18 @@ async function presentScene(
   if (!viewId) {
     return false;
   }
-  // rasturnarile intra in geometria porturilor la layout (docs/04):
-  // ELK ruteaza spre pozitiile deja rasturnate, deci traseele lui raman
-  // valabile si pe noduri rasturnate
+  // the flips enter the port geometry at layout (docs/04):
+  // ELK routes toward the already-flipped positions, so its routes remain
+  // valid even on flipped nodes
   const nodesOv = sidecar.views[viewId]?.nodes ?? {};
   const flips = new Map<string, Flip>(
     Object.entries(nodesOv)
       .filter(([, o]) => o.flipH || o.flipV)
       .map(([id, o]) => [id, { h: Boolean(o.flipH), v: Boolean(o.flipV) }])
   );
-  // pozitiile detinute de utilizator devin seminte pentru ELK interactiv:
-  // nodurile cunoscute raman pe loc, doar elementele noi primesc pozitii,
-  // inserate in contextul celor existente (docs/04, invariantul 3)
+  // the user-owned positions become seeds for interactive ELK:
+  // the known nodes stay in place, only the new elements receive positions,
+  // inserted in the context of the existing ones (docs/04, invariant 3)
   const seeds = new Map<string, { x: number; y: number }>();
   for (const [id, o] of Object.entries(nodesOv)) {
     if (o.x !== undefined && o.y !== undefined) {
@@ -3308,10 +3308,10 @@ async function presentScene(
   }
   currentScene = scene;
   currentLayout = layout;
-  // selectia ceruta de host (select/reveal) poate referi membri de generate
-  // PLIATI (rel-uri care nu exista in DOM): remapare pe scena curenta
-  // (rel -> pliajul prin memberPaths; pur, locmap.ts), cu ecou spre host —
-  // altfel „Reveal in Diagram" naviga corect dar selecta nimic
+  // the selection requested by the host (select/reveal) can refer to FOLDED generate
+  // members (rels that do not exist in the DOM): remapping onto the current scene
+  // (rel -> the fold through memberPaths; pure, locmap.ts), with an echo to the host —
+  // otherwise „Reveal in Diagram" navigated correctly but selected nothing
   if (state.selection.size) {
     const remapped = remapSelection(
       [...state.selection],
@@ -3332,9 +3332,9 @@ async function presentScene(
       renderInspector();
     }
   }
-  // semintele se forteaza exact (ELK interactiv le poate deplasa usor);
-  // cu orice override de pozitie, traseele ELK nu mai sunt valabile ->
-  // re-rutare naiva
+  // the seeds are forced exactly (interactive ELK can move them slightly);
+  // with any position override, the ELK routes are no longer valid ->
+  // naive re-routing
   for (const child of layout.children ?? []) {
     const s = seeds.get(child.id);
     if (s) {
@@ -3342,31 +3342,31 @@ async function presentScene(
       child.y = s.y;
     }
   }
-  // lumea pe grila e universala (docs/04): TOATE pozitiile se rotunjesc
-  // la grila, in orice vedere — ancorele cad pe randuri de grila (ruterul
-  // scoate trasee integral ortogonale) si alinierea pin-la-pin e mereu
-  // posibila; pozitiile ELK sunt fractionare, saltul e sub o jumatate
-  // de pas
+  // the grid world is universal (docs/04): ALL positions are rounded
+  // to the grid, in any view — the anchors fall on grid rows (the router
+  // produces fully orthogonal routes) and pin-to-pin alignment is always
+  // possible; the ELK positions are fractional, the jump is under half
+  // a step
   for (const child of layout.children ?? []) {
     child.x = Math.round((child.x ?? 0) / GRID) * GRID;
     child.y = Math.round((child.y ?? 0) / GRID) * GRID;
   }
-  // vedere aranjata (are seminte): elementele FARA samanta — noi din
-  // recompilare, membri de pliaj proaspat expandati sau ramase dintr-un
-  // sidecar partial — se pin-uiesc acum, ca semintele sa ramana totale si
-  // nicio randare viitoare sa nu le mai poata muta (docs/04); vederile
-  // neatinse (fara seminte) raman complet automate, nu se persista nimic
+  // arranged view (has seeds): the elements WITHOUT a seed — new from
+  // recompilation, fold members freshly expanded or left over from a
+  // partial sidecar — are pinned now, so that the seeds remain total and
+  // no future render can move them again (docs/04); the untouched
+  // views (without seeds) stay completely automatic, nothing is persisted
   if (seeds.size) {
     const children = layout.children ?? [];
-    // nudge anti-suprapunere: pe o vedere aranjata, D21 pinuieste TOTI vecinii,
-    // deci ELK interactiv nu-i poate impinge sa faca loc — membrii unui pliaj
-    // proaspat expandat (elemente FARA samanta) pot ateriza peste noduri
-    // pinuite. Ii mutam pe cel mai apropiat loc liber pe grila, fara sa atingem
-    // blocurile utilizatorului (observatie la validare); vederea proaspata
-    // (fara seminte) trece prin ELK complet, deci nu are nevoie de nudge
+    // anti-overlap nudge: on an arranged view, D21 pins ALL the neighbors,
+    // so interactive ELK cannot push them to make room — the members of a
+    // freshly expanded fold (elements WITHOUT a seed) can land on top of pinned
+    // nodes. We move them to the closest free spot on the grid, without touching
+    // the user's blocks (observation at validation); the fresh view
+    // (without seeds) goes through full ELK, so it does not need a nudge
     for (const child of children) {
       if (seeds.has(child.id)) {
-        continue; // element pinuit al utilizatorului: nu se misca
+        continue; // a user-pinned element: it does not move
       }
       const spot = freeSpot(child, children, 24);
       if (spot) {
@@ -3395,9 +3395,9 @@ async function presentScene(
   currentEdgesGroup = drawSchematic(
     scene, layout, vp, { onToggleFold: toggleFold }
   );
-  // centrare fina a semnelor {}/[] in chip-uri: imediat, apoi re-aplicata pe
-  // cadrul urmator si dupa incarcarea fontului editorului — in webview primul
-  // getBBox poate rula inainte ca fontul sa fie aplicat, lasand semnul descentrat
+  // fine centering of the {}/[] signs in the chips: immediately, then re-applied on
+  // the next frame and after the editor font loads — in the webview the first
+  // getBBox can run before the font is applied, leaving the sign off-center
   centerChipSigns(vp);
   requestAnimationFrame(() => centerChipSigns(canvas));
   if (document.fonts?.ready) {
@@ -3410,24 +3410,24 @@ async function presentScene(
   return true;
 }
 
-/** camera de dupa randare: cea de sesiune a vederii sau incadrare automata */
+/** the camera after the render: the view's session one or an automatic fit */
 function applyCameraAfterRender(refit: boolean): void {
   const camKey = layoutKey();
   if (!camKey) {
     return;
   }
   if (refit || state.k === 1) {
-    // camera de sesiune a vederii are prioritate; altfel incadrare
-    // automata. Camera e center-based: cx/cy = centrul vizibil in
-    // coordonatele diagramei — robust la redimensionarea panoului.
+    // the view's session camera has priority; otherwise automatic
+    // fit. The camera is center-based: cx/cy = the visible center in
+    // the diagram coordinates — robust to panel resize.
     const cam = sessionCameras.get(camKey);
     if (cam) {
       const vw = canvas.clientWidth || 800;
       const vh = canvas.clientHeight || 600;
       const tx = vw / 2 - cam.cx * cam.zoom;
       const ty = vh / 2 - cam.cy * cam.zoom;
-      // plasa de siguranta: o camera care ar lasa continutul complet in
-      // afara ferestrei (date corupte, continut mutat radical) se ignora
+      // safety net: a camera that would leave the content completely
+      // outside the window (corrupt data, content moved radically) is ignored
       const bx = contentBounds.x * cam.zoom + tx;
       const by = contentBounds.y * cam.zoom + ty;
       const visible =
@@ -3455,15 +3455,15 @@ function applyCameraAfterRender(refit: boolean): void {
 }
 
 /**
- * Vederea de verificare (faza 3b felia 1, docs/05): scena TB pura din
- * configuratia QuickUVM + acelasi pipeline de layout/rutare/pozitii ca
- * vederea-schema; cheia vederii e `tb:<cale-config>`, pozitiile traiesc in
- * sidecar sub ea, cu toata mecanica D21.
+ * The verification (TB) view (phase 3b slice 1, docs/05): the pure TB scene from
+ * the QuickUVM configuration + the same layout/routing/positions pipeline as
+ * the schematic view; the view key is `tb:<config-path>`, the positions live in
+ * the sidecar under it, with all the D21 mechanics.
  */
 async function renderTb(refit: boolean): Promise<void> {
   if (state.viewId && !state.viewId.startsWith("tb:")) {
-    // desincronizare mod/cheie (nu ar trebui sa se intample): vederea RTL
-    // are prioritate, nu desenam scena TB sub cheia ei
+    // mode/key desynchronization (should not happen): the RTL view
+    // has priority, we do not draw the TB scene under its key
     state.mode = "symbol";
     persistState();
     return render(true);
@@ -3476,12 +3476,12 @@ async function renderTb(refit: boolean): Promise<void> {
   empty.hidden = true;
   const gen = ++renderGen;
   currentPins = [];
-  // nivelul curent (D24): "" testbench, "env", "agent:X". La un focus
-  // inexistent (config schimbat), cade pe radacina.
+  // the current level (D24): "" testbench, "env", "agent:X". On a nonexistent
+  // focus (config changed), it falls onto the root.
   let scene = buildTbScene(state.config, state.tbFocus, state.configPath);
   if (!scene && state.tbFocus !== "") {
-    // nivelul focus a disparut (config schimbat): cade pe radacina si
-    // anunta host-ul, ca reveal-ul din arbore sa nu ramana pe nivelul vechi
+    // the focus level disappeared (config changed): it falls onto the root and
+    // notifies the host, so that the reveal from the tree does not stay on the old level
     state.tbFocus = "";
     post({ v: 1, type: "tb/focus", focus: "", select: null });
     scene = buildTbScene(state.config, "", state.configPath);
@@ -3502,8 +3502,8 @@ async function renderTb(refit: boolean): Promise<void> {
   }
   renderTbHeader(scene);
   hideBanner();
-  // pozitiile detinute de utilizator (per nivel) devin seminte pentru ELK
-  // interactiv (docs/04, aceeasi mecanica D21 ca vederea-schema RTL)
+  // the user-owned positions (per level) become seeds for interactive
+  // ELK (docs/04, the same D21 mechanics as the RTL schematic view)
   const key = layoutKey();
   const nodesOv = (key && sidecar.views[key]?.nodes) || {};
   const seeds = new Map<string, { x: number; y: number }>();
@@ -3512,16 +3512,16 @@ async function renderTb(refit: boolean): Promise<void> {
       seeds.set(id, { x: o.x, y: o.y });
     }
   }
-  // rasturnarile detinute de utilizator (H = laturi, V = ordine), ca la RTL
+  // the user-owned flips (H = sides, V = order), as in RTL
   const flips = new Map<string, Flip>(
     Object.entries(nodesOv)
       .filter(([, o]) => o.flipH || o.flipV)
       .map(([id, o]) => [id, { h: Boolean(o.flipH), v: Boolean(o.flipV) }])
   );
-  // ELK poate arunca la configuratii invalide (ex. un layerConstraint
-  // FIRST/LAST_SEPARATE incompatibil cu directia muchiei): prindem eroarea ca
-  // randarea sa nu esueze TACIT (diagrama ar ramane inghetata pe starea veche,
-  // fara nicio explicatie — regresie reala prinsa la flip pe steag)
+  // ELK can throw on invalid configurations (e.g. a layerConstraint
+  // FIRST/LAST_SEPARATE incompatible with the edge direction): we catch the error so that
+  // the render does not fail SILENTLY (the diagram would stay frozen on the old state,
+  // without any explanation — a real regression caught at flip on a flag)
   let layout: TbLayout;
   try {
     layout = await layoutTb(
@@ -3539,10 +3539,10 @@ async function renderTb(refit: boolean): Promise<void> {
     return;
   }
   if (gen !== renderGen) {
-    return; // o randare mai noua a inceput intre timp
+    return; // a newer render has started in the meantime
   }
-  // semintele se forteaza exact (ELK interactiv le poate deplasa usor);
-  // porturile sunt relative, deci ancorele urmeaza pozitia fortata
+  // the seeds are forced exactly (interactive ELK can move them slightly);
+  // the ports are relative, so the anchors follow the forced position
   for (const [id, s] of seeds) {
     const n = layout.nodes.get(id);
     if (n) {
@@ -3555,9 +3555,9 @@ async function renderTb(refit: boolean): Promise<void> {
       b.y = s.y;
     }
   }
-  // lumea pe grila e universala (docs/04): TOATE pozitiile se rotunjesc la
-  // grila, in orice vedere (ca presentScene) — o samanta externa/corupta
-  // off-grid nu produce fire strambe, iar D21 pin-uieste tot pe grila
+  // the grid world is universal (docs/04): ALL positions are rounded to
+  // the grid, in any view (like presentScene) — an external/corrupt off-grid
+  // seed does not produce crooked wires, and D21 pins everything on the grid
   for (const p of layout.nodes.values()) {
     p.x = Math.round(p.x / GRID) * GRID;
     p.y = Math.round(p.y / GRID) * GRID;
@@ -3566,9 +3566,9 @@ async function renderTb(refit: boolean): Promise<void> {
     p.x = Math.round(p.x / GRID) * GRID;
     p.y = Math.round(p.y / GRID) * GRID;
   }
-  // D21: intr-o vedere aranjata (are seminte), elementele FARA samanta —
-  // noi din editarea config-ului, ramase dintr-un sidecar partial — se
-  // pin-uiesc acum, ca semintele sa ramana totale (docs/04)
+  // D21: in an arranged view (has seeds), the elements WITHOUT a seed —
+  // new from editing the config, left over from a partial sidecar — are
+  // pinned now, so that the seeds remain total (docs/04)
   if (seeds.size && key) {
     const fresh: Record<string, { x: number; y: number }> = {};
     const pin = (id: string, x: number, y: number): void => {
@@ -3604,7 +3604,7 @@ async function renderTb(refit: boolean): Promise<void> {
   applyCameraAfterRender(refit);
 }
 
-/** navigare pe niveluri in vederea de verificare (drill / breadcrumb, D24) */
+/** navigation by levels in the verification (TB) view (drill / breadcrumb, D24) */
 function tbNavigate(focus: string, select: string | null = null): void {
   state.tbFocus = focus;
   state.selection = new Set(select ? [select] : []);
@@ -3612,13 +3612,13 @@ function tbNavigate(focus: string, select: string | null = null): void {
   void render(true);
 }
 
-/** deschide tinta unui drill TB: nivel LOCAL (tb/focus) sau, cu prefixul
- *  `config:<subenv>`, config-ul blocului compus — host-ul il deschide cu
- *  editorul implicit, adica diagrama TB per-fisier (felia 4, docs/05) */
+/** opens the target of a TB drill: a LOCAL level (tb/focus) or, with the
+ *  `config:<subenv>` prefix, the config of the composed block — the host opens it with
+ *  the default editor, that is the per-file TB diagram (slice 4, docs/05) */
 function tbOpen(drill: string): void {
   if (drill.startsWith("config:")) {
-    // `config:<cale>` — chiar calea config-ului copil (poate contine `:` pe
-    // Windows: `config:C:/x.yaml`); taiem DOAR primul prefix
+    // `config:<path>` — the very path of the child config (can contain `:` on
+    // Windows: `config:C:/x.yaml`); we cut ONLY the first prefix
     post({
       v: 1,
       type: "action/request",
@@ -3630,7 +3630,7 @@ function tbOpen(drill: string): void {
   tbNavigate(drill);
 }
 
-/** antetul vederii de verificare: breadcrumb pe niveluri + intoarcere RTL */
+/** the header of the verification (TB) view: breadcrumb by levels + RTL return */
 function renderTbHeader(scene: TbScene | null): void {
   head.replaceChildren();
   const crumbs = h("span", "crumbs");
@@ -3652,7 +3652,7 @@ function renderTbHeader(scene: TbScene | null): void {
   head.append(crumbs);
   const tgl = h("span", "mode-toggle");
   if (state.model) {
-    // un singur buton de intoarcere la design (D24: fara Symbol/Schematic)
+    // a single button to return to the design (D24: without Symbol/Schematic)
     const back = h("button", "mbtn", "Design");
     back.title = "Back to the design views";
     back.addEventListener("click", () => leaveTbView());
@@ -3664,7 +3664,7 @@ function renderTbHeader(scene: TbScene | null): void {
   fitBtn.title = "Fit to window (F)";
   fitBtn.addEventListener("click", fitView);
   tgl.append(fitBtn);
-  // Re-aranjeaza tot (docs/04): sterge pozitiile nivelului si revine la ELK
+  // Re-arrange all (docs/04): deletes the level's positions and returns to ELK
   const rl = h("button", "mbtn", "⟲");
   rl.title = "Re-arrange all (discards node positions)";
   rl.addEventListener("click", relayoutAll);
@@ -3674,7 +3674,7 @@ function renderTbHeader(scene: TbScene | null): void {
   ex.addEventListener("click", exportSvg);
   tgl.append(ex);
   head.append(tgl);
-  updateGenChip(); // cipul de stare generate (docs/05)
+  updateGenChip(); // the generate status chip (docs/05)
 }
 
 post({ v: 1, type: "ready" });

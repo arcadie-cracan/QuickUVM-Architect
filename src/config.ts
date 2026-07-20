@@ -1,8 +1,8 @@
-// Serviciul de configurare QuickUVM: descopera fisierul YAML, il urmareste,
-// deriva overlay-ul pentru webview si valideaza YAML<->model ca diagnostice.
-// YAML-ul e sursa de adevar (invariantul 2): serviciul nu tine stare proprie —
-// orice actiune produce un WorkspaceEdit prin `apply`, iar overlay-ul se
-// recalculeaza din textul curent al documentului (inclusiv nesalvat).
+// The QuickUVM configuration service: discovers the YAML file, watches it,
+// derives the overlay for the webview and validates YAML<->model as diagnostics.
+// The YAML is the source of truth (invariant 2): the service keeps no state of its own —
+// any action produces a WorkspaceEdit through `apply`, and the overlay is
+// recomputed from the document's current text (including unsaved).
 
 import * as path from "path";
 import * as vscode from "vscode";
@@ -14,15 +14,15 @@ import { decosFromFindings } from "./status";
 import { agentPorts, QuvmConfig } from "./quickuvm";
 import { newConfigText, topConfigPaths } from "./yamlops";
 
-// re-export: codul quick-fix-ului de latime traieste in nucleul pur
+// re-export: the width quick-fix code lives in the pure core
 export { WIDTH_CODE } from "./configcheck";
 
 /**
- * Suprafata minima pe care gesturile de EDITARE TB (add/delete/edit) o cer de la
- * o sursa de configuratie: config-ul parsat, URI-ul si un `apply` de mutatie
- * (felia 4). `ConfigService` o satisface (config-ul ACTIV), iar editorul
- * per-fisier (`CustomTextEditor`) o implementeaza pe DOCUMENTUL deschis — asa
- * gesturile din `actions.ts` merg identic pe oricare, fara duplicare.
+ * The minimal surface that the TB EDITING gestures (add/delete/edit) require from
+ * a configuration source: the parsed config, the URI and a mutation `apply`
+ * (slice 4). `ConfigService` satisfies it (the ACTIVE config), and the
+ * per-file editor (`CustomTextEditor`) implements it on the open DOCUMENT — so
+ * the gestures in `actions.ts` work identically on either, without duplication.
  */
 export interface TbEditTarget {
   readonly current: QuvmConfig;
@@ -34,7 +34,7 @@ const GLOB = "**/*.quickuvm.yaml";
 
 export class ConfigService implements vscode.Disposable {
   private readonly overlayEmitter = new vscode.EventEmitter<OverlayConfig | null>();
-  /** overlay-ul re-derivat dupa orice schimbare de YAML sau de model */
+  /** the overlay re-derived after any change to the YAML or the model */
   readonly onOverlay = this.overlayEmitter.event;
 
   private readonly disposables: vscode.Disposable[] = [];
@@ -42,11 +42,11 @@ export class ConfigService implements vscode.Disposable {
   private uri: vscode.Uri | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  /** ultima stare derivata, retrimisa webview-ului la `ready` */
+  /** the last derived state, re-sent to the webview on `ready` */
   lastOverlay: OverlayConfig | null = null;
-  /** decoratiile de stare derivate din ultimele validari (docs/05) */
+  /** the status decorations derived from the last validations (docs/05) */
   decorations: StatusDeco[] = [];
-  /** ultima configuratie parsata (pentru comenzi si validari) */
+  /** the last parsed configuration (for commands and validations) */
   current: QuvmConfig = {};
 
   constructor(
@@ -89,13 +89,13 @@ export class ConfigService implements vscode.Disposable {
   }
 
   /**
-   * Gaseste fisierul de configuratie: setarea explicita, apoi glob.
-   * Stabilitate: configuratia activa (`prev`) NU se schimba cat timp fisierul
-   * ei exista — crearea config-urilor de bloc de catre createSubenv (docs/03)
-   * nu trebuie sa comute tacit config-ul activ (regresie reala: scaffold-ul
-   * `chan.quickuvm.yaml` castiga alfabetic si "fura" overlay-ul si actiunile).
-   * La alegerea initiala dintre mai multe fisiere, cele referite ca
-   * `subenvs[].config` de un alt fisier (copiii) se exclud.
+   * Finds the configuration file: the explicit setting, then glob.
+   * Stability: the active configuration (`prev`) does NOT change as long as its
+   * file exists — the creation of block configs by createSubenv (docs/03)
+   * must not silently switch the active config (a real regression: the
+   * `chan.quickuvm.yaml` scaffold wins alphabetically and "steals" the overlay and the actions).
+   * On the initial choice among multiple files, those referenced as
+   * `subenvs[].config` by another file (the children) are excluded.
    */
   private async discover(prev?: vscode.Uri): Promise<vscode.Uri | undefined> {
     const root = vscode.workspace.workspaceFolders?.[0];
@@ -120,7 +120,7 @@ export class ConfigService implements vscode.Disposable {
       return undefined;
     }
     if (prev && found.some((u) => u.fsPath === prev.fsPath)) {
-      return prev; // stabilitate: fisierul activ inca exista
+      return prev; // stability: the active file still exists
     }
     if (found.length === 1) {
       return found[0];
@@ -145,8 +145,8 @@ export class ConfigService implements vscode.Disposable {
   }
 
   /**
-   * Fisierul de configuratie, creat la nevoie (prima actiune de configurare).
-   * Numele nou: `<modulDut>.quickuvm.yaml` in radacina workspace-ului.
+   * The configuration file, created when needed (the first configuration action).
+   * The new name: `<modulDut>.quickuvm.yaml` in the workspace root.
    */
   async ensureConfig(dutModule: string): Promise<vscode.Uri | undefined> {
     await this.refresh(true);
@@ -170,11 +170,11 @@ export class ConfigService implements vscode.Disposable {
   }
 
   /**
-   * Creeaza (daca lipseste) si ACTIVEAZA config-ul dedicat unui modul —
-   * fluxul recursiv al compunerii (docs/03): fiecare nivel isi are fisierul.
-   * Activarea e de sesiune (descoperirea stabila o pastreaza cat exista
-   * fisierul); pentru persistenta intre sesiuni: quickuvm.configFile sau
-   * comanda "Choose Active Config".
+   * Creates (if missing) and ACTIVATES the config dedicated to a module —
+   * the recursive flow of the composition (docs/03): each level has its own file.
+   * Activation is per-session (stable discovery keeps it while the file
+   * exists); for persistence across sessions: quickuvm.configFile or
+   * the "Choose Active Config" command.
    */
   async createConfigFor(dutModule: string): Promise<vscode.Uri | undefined> {
     const root = vscode.workspace.workspaceFolders?.[0];
@@ -197,7 +197,7 @@ export class ConfigService implements vscode.Disposable {
     return uri;
   }
 
-  /** Toate fisierele *.quickuvm.yaml din workspace (pentru chooseConfig). */
+  /** All the *.quickuvm.yaml files in the workspace (for chooseConfig). */
   async listConfigs(): Promise<vscode.Uri[]> {
     const root = vscode.workspace.workspaceFolders?.[0];
     if (!root) {
@@ -211,8 +211,8 @@ export class ConfigService implements vscode.Disposable {
   }
 
   /**
-   * Aplica o mutatie yamlops pe textul curent, ca un singur WorkspaceEdit
-   * (undo/redo nativ). Documentul ramane nesalvat — utilizatorul decide.
+   * Applies a yamlops mutation on the current text, as a single WorkspaceEdit
+   * (native undo/redo). The document stays unsaved — the user decides.
    */
   async apply(mutate: (text: string) => string): Promise<boolean> {
     if (!this.uri) {
@@ -238,15 +238,15 @@ export class ConfigService implements vscode.Disposable {
     );
     const ok = await vscode.workspace.applyEdit(edit);
     if (ok) {
-      // sincron, nu debounced: apelantii citesc `current` imediat dupa apply
-      // (checkDut dupa "Set this module as DUT" avorta tacit pe stare veche —
-      // regresie reala prinsa la validarea pe common_cells)
+      // synchronous, not debounced: callers read `current` right after apply
+      // (checkDut after "Set this module as DUT" silently aborted on stale state —
+      // a real regression caught during validation on common_cells)
       await this.refresh();
     }
     return ok;
   }
 
-  /** Re-deriva overlay-ul si diagnosticele din YAML-ul si modelul curente. */
+  /** Re-derives the overlay and the diagnostics from the current YAML and model. */
   async refresh(rediscover = false): Promise<void> {
     if (rediscover || !this.uri) {
       this.uri = await this.discover(this.uri);
@@ -260,7 +260,7 @@ export class ConfigService implements vscode.Disposable {
     try {
       doc = await vscode.workspace.openTextDocument(this.uri);
     } catch {
-      // fisier sters sau ilizibil: configuratia dispare, overlay-ul si el
+      // deleted or unreadable file: the configuration disappears, and so does the overlay
       this.uri = undefined;
       this.publish(null, []);
       return;
@@ -283,11 +283,11 @@ export class ConfigService implements vscode.Disposable {
     }
 
     this.current = (ydoc.toJS() as QuvmConfig) ?? {};
-    // nucleul validarilor e PUR (configcheck.ts, testat); aici doar mapam
-    // findings -> vscode.Diagnostic cu mesajele localizate (D19)
+    // the validation core is PURE (configcheck.ts, tested); here we only map
+    // findings -> vscode.Diagnostic with the localized messages (D19)
     const res = checkConfig(ydoc, this.current, this.model);
-    // decoratiile de stare pentru diagrama (docs/05): derivare pura din
-    // aceleasi findings; extension.ts le posteaza la onOverlay
+    // the status decorations for the diagram (docs/05): pure derivation from
+    // the same findings; extension.ts posts them at onOverlay
     this.decorations = decosFromFindings(res.findings);
     for (const f of res.findings) {
       const range = f.span
@@ -371,7 +371,7 @@ export class ConfigService implements vscode.Disposable {
   }
 }
 
-/** Quick-fix-ul „actualizeaza latimea la N" (docs/03), pe diagnosticul WIDTH_CODE. */
+/** The "update the width to N" quick-fix (docs/03), on the WIDTH_CODE diagnostic. */
 export class WidthFixProvider implements vscode.CodeActionProvider {
   static readonly metadata: vscode.CodeActionProviderMetadata = {
     providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
@@ -406,7 +406,7 @@ export class WidthFixProvider implements vscode.CodeActionProvider {
   }
 }
 
-// ------------------------------------------------------------------ utilitare
+// ------------------------------------------------------------------ utilities
 
 function diag(
   range: vscode.Range,
@@ -418,7 +418,7 @@ function diag(
   return d;
 }
 
-/** Mesajul localizat al unui finding din nucleul pur (l10n ramane aici, D19). */
+/** The localized message of a finding from the pure core (l10n stays here, D19). */
 function findingMessage(f: Finding): string {
   const p = f.params;
   switch (f.kind) {

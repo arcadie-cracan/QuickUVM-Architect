@@ -1,5 +1,5 @@
-// Declaratie pentru varianta bundled a elkjs (fara worker), folosita in
-// webview. Tipurile vin din pachetul elkjs (lib/main -> elk-api).
+// Declaration for the bundled variant of elkjs (no worker), used in the
+// webview. The types come from the elkjs package (lib/main -> elk-api).
 declare module "elkjs/lib/elk.bundled.js" {
   export * from "elkjs";
   export { default } from "elkjs";

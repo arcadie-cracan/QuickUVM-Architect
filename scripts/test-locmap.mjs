@@ -1,7 +1,7 @@
-// Teste Node pentru cross-probing-ul editor->diagrama (src/locmap.ts):
+// Node tests for the editor->diagram cross-probing (src/locmap.ts):
 //   npm run test:locmap
-// Ruleaza pe modelul REAL (examples/model.json) — aceleasi fapte pe care le
-// verifica si testele svmodel, deci o schimbare de fixture pica zgomotos aici.
+// Runs on the REAL model (examples/model.json) — the same facts that the
+// svmodel tests also check, so a fixture change fails noisily here.
 import assert from "node:assert/strict";
 import { readFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -38,19 +38,19 @@ test("buildLocIndex: fisierele modelului, intrari sortate pe linie", () => {
   for (let i = 1; i < chan.length; i++) {
     assert.ok(chan[i - 1].line <= chan[i].line);
   }
-  // porturile sunt exactOnly, modulul nu
+  // the ports are exactOnly, the module is not
   assert.ok(chan.find((e) => e.target.kind === "port").exactOnly);
   assert.ok(!chan.find((e) => e.target.kind === "module").exactOnly);
 });
 
 test("resolveLoc: exact pe linia unui port -> portul", () => {
-  // chan.sv:7 = declaratia portului din
+  // chan.sv:7 = the declaration of port din
   const t = resolveLoc(idx.get("chan.sv"), 7);
   assert.deepEqual(t, [{ kind: "port", module: "chan", port: "din" }]);
 });
 
 test("resolveLoc: linia instantierii generate -> TOATE instantele", () => {
-  // soc_top.sv:24 = `chan #(.W(CW)) u_ch` — impartita de g_ch[0..2]
+  // soc_top.sv:24 = `chan #(.W(CW)) u_ch` — shared by g_ch[0..2]
   const t = resolveLoc(idx.get("soc_top.sv"), 24);
   assert.equal(t.length, 3);
   assert.ok(t.every((x) => x.kind === "instance"));
@@ -65,9 +65,9 @@ test("resolveLoc: linia instantierii generate -> TOATE instantele", () => {
 });
 
 test("resolveLoc: cuprindere — sub instantiere cade pe instanta de deasupra", () => {
-  // soc_top.sv:22 (linie goala) si 23 (`for (genvar…`) sunt intre u_inv (21)
-  // si g_ch (24): cea mai apropiata deasupra care cuprinde e instanta u_inv
-  // (porturile NU se intind — doar exact)
+  // soc_top.sv:22 (empty line) and 23 (`for (genvar…`) are between u_inv (21)
+  // and g_ch (24): the closest above that spans is the u_inv instance
+  // (the ports do NOT stretch — only exact)
   assert.deepEqual(resolveLoc(idx.get("soc_top.sv"), 22), [
     { kind: "instance", path: "demo_top.u_soc.u_inv" },
   ]);
@@ -77,8 +77,8 @@ test("resolveLoc: cuprindere — sub instantiere cade pe instanta de deasupra", 
 });
 
 test("resolveLoc: ANSI — antetul si primul port pe aceeasi linie -> portul", () => {
-  // soc_top.sv:3 = `interface reg_bus ... (input logic clk ...)` — modulul
-  // reg_bus si portul clk impart linia; portul e mai specific
+  // soc_top.sv:3 = `interface reg_bus ... (input logic clk ...)` — the module
+  // reg_bus and the port clk share the line; the port is more specific
   const t = resolveLoc(idx.get("soc_top.sv"), 3);
   assert.deepEqual(t, [{ kind: "port", module: "reg_bus", port: "clk" }]);
 });
@@ -88,9 +88,9 @@ test("resolveLoc: inainte de orice element / fisier necunoscut -> nimic", () => 
   assert.deepEqual(resolveLoc(idx.get("nu-exista.sv"), 10), []);
 });
 
-// ------------------------------------------------ probeIds pe vederea curenta
+// ------------------------------------------------ probeIds on the current view
 
-/** contextul vederii demo_top.u_soc cu pliajul g_ch inchis (ca in webview) */
+/** the context of view demo_top.u_soc with the g_ch fold closed (as in the webview) */
 const CTX = {
   mode: "schematic",
   viewId: "demo_top.u_soc",
@@ -127,7 +127,7 @@ test("probeIds: tinta mai adanca -> copilul care o CONTINE", () => {
     probeIds([{ kind: "instance", path: "demo_top.u_soc.u_add.u_deep" }], CTX),
     ["u_add"]
   );
-  // membru de pliaj cu adancime: prin memberPaths
+  // fold member with depth: via memberPaths
   assert.deepEqual(
     probeIds(
       [{ kind: "instance", path: "demo_top.u_soc.g_ch[2].u_ch.u_leaf" }],
@@ -184,8 +184,8 @@ test("probeIds: instantele generate (mai multe tinte) aprind pliajul o data", ()
 });
 
 test("remapSelection: rel-urile membrilor pliati -> pliajul, o singura data", () => {
-  // cazul „Reveal in Diagram" pe linia generate cu pliajul INCHIS (implicitul):
-  // host-ul trimite rel-urile membrilor, dar in DOM exista doar pliajul
+  // the „Reveal in Diagram" case on the generate line with the fold CLOSED (the default):
+  // the host sends the members' rel-s, but only the fold exists in the DOM
   const out = remapSelection(
     ["g_ch[0].u_ch", "g_ch[1].u_ch", "g_ch[2].u_ch"],
     "demo_top.u_soc",

@@ -1,7 +1,7 @@
-// Teste Node pentru euristicile pe nume de semnale (src/heuristics.ts):
+// Node tests for the signal-name heuristics (src/heuristics.ts):
 //   npm run test:heuristics
-// Capcana reala (CLAUDE.md): sufixele active-jos includ _ni/_bi (conventia
-// PULP, ex. src_rst_ni) — restrangerea la _n|_b scria reset_active_low gresit.
+// Real pitfall (CLAUDE.md): the active-low suffixes include _ni/_bi (the PULP
+// convention, e.g. src_rst_ni) — narrowing to _n|_b wrote reset_active_low wrong.
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";

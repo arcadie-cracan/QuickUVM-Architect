@@ -1,28 +1,28 @@
-// Cross-probing editor->diagrama (docs/05, faza 4) — MODUL PUR, partajat de
-// host (extension.ts: urmarirea cursorului + comanda Reveal in Diagram) si de
-// webview (main.ts: maparea tintei pe id-urile vederii curente). Testat in
-// test:locmap pe modelul real (examples/model.json), fara DOM si fara vscode.
+// Editor->diagram cross-probing (docs/05, phase 4) — PURE MODULE, shared by the
+// host (extension.ts: cursor tracking + the Reveal in Diagram command) and the
+// webview (main.ts: mapping the target onto the ids of the current view). Tested in
+// test:locmap on the real model (examples/model.json), without DOM and without vscode.
 
 import type { ProjectModel } from "./model";
 import type { XprobeTarget } from "./protocol";
 
-/** o pozitie sursa cunoscuta de model, cu tinta ei de cross-probing */
+/** a source position known to the model, with its cross-probing target */
 export interface LocEntry {
-  /** fisierul exact ca in model (relativ la cwd-ul slang; host-ul il rezolva
-   *  absolut cu resolveLocPath si il normalizeaza pentru comparare) */
+  /** the file exactly as in the model (relative to slang's cwd; the host resolves it
+   *  absolutely with resolveLocPath and normalizes it for comparison) */
   file: string;
   line: number;
   target: XprobeTarget;
-  /** porturile se potrivesc DOAR exact pe linia declaratiei (decl de o
-   *  linie); instantele si antetele de modul se potrivesc si ca „cel mai
-   *  apropiat deasupra" — cursorul in corpul unei instantieri multi-linie
-   *  sau al unui modul cade pe elementul care il cuprinde */
+  /** ports match ONLY exactly on the declaration line (a one-line
+   *  decl); instances and module headers also match as "the closest
+   *  above" — the cursor in the body of a multi-line instantiation
+   *  or of a module falls on the element that contains it */
   exactOnly: boolean;
 }
 
-/** indexul loc->tinta al modelului: fisier (verbatim din model) -> intrari
- *  sortate pe linie. Instantele generate impart aceeasi linie sursa —
- *  raman intrari separate, resolveLoc le intoarce pe toate. */
+/** the model's loc->target index: file (verbatim from the model) -> entries
+ *  sorted by line. Generated instances share the same source line —
+ *  they remain separate entries, resolveLoc returns them all. */
 export function buildLocIndex(model: ProjectModel): Map<string, LocEntry[]> {
   const idx = new Map<string, LocEntry[]>();
   const add = (e: LocEntry): void => {
@@ -79,9 +79,9 @@ export function buildLocIndex(model: ProjectModel): Map<string, LocEntry[]> {
   return idx;
 }
 
-/** rangul de preferinta la potrivirea EXACTA pe linie: portul e mai specific
- *  decat instanta, instanta decat antetul de modul (stil ANSI pe o linie:
- *  `module m(input a);` — antetul si primul port impart linia) */
+/** the preference rank on EXACT line matching: the port is more specific
+ *  than the instance, the instance than the module header (ANSI style on one line:
+ *  `module m(input a);` — the header and the first port share the line) */
 const KIND_RANK: Record<XprobeTarget["kind"], number> = {
   port: 0,
   instance: 1,
@@ -89,11 +89,11 @@ const KIND_RANK: Record<XprobeTarget["kind"], number> = {
 };
 
 /**
- * Tinta (tintele) de sub cursor: potrivire exacta pe linie (cel mai specific
- * fel castiga), altfel cel mai apropiat element DEASUPRA dintre cele care
- * cuprind (instante/module; porturile doar exact). Mai multe tinte doar cand
- * cea mai buna linie poarta mai multe intrari de acelasi fel — instantele
- * generate impart linia sursa (`g_ch[0..2].u_ch`), toate se evidentiaza.
+ * The target(s) under the cursor: exact line match (the most specific
+ * kind wins), otherwise the closest element ABOVE among those that
+ * contain (instances/modules; ports only exact). Multiple targets only when
+ * the best line carries several entries of the same kind — the generated
+ * instances share the source line (`g_ch[0..2].u_ch`), all are highlighted.
  */
 export function resolveLoc(
   entries: LocEntry[] | undefined,
@@ -125,45 +125,45 @@ export function resolveLoc(
     .map((e) => e.target);
 }
 
-// ------------------------------------------------ maparea pe vederea curenta
+// ------------------------------------------------ mapping onto the current view
 
-/** un nod al vederii-schema curente, cat ii trebuie mapArii (subsetul pur al
- *  SceneNode): pliajele au instPath null si isi poarta membrii in memberPaths */
+/** a node of the current schematic view, as much as the mapping needs (the pure subset of
+ *  SceneNode): folds have instPath null and carry their members in memberPaths */
 export interface ProbeNode {
   id: string;
   instPath: string | null;
   module: string;
-  /** caile instantelor unui nod-pliaj (generate); absent la noduri simple */
+  /** the instance paths of a fold node (generated); absent on simple nodes */
   memberPaths?: string[];
 }
 
-/** contextul vederii curente a webview-ului, cat ii trebuie mapArii */
+/** the context of the webview's current view, as much as the mapping needs */
 export interface ProbeViewCtx {
   mode: "symbol" | "schematic" | "tb";
-  /** calea instantei vederii (RTL); la tb irelevant */
+  /** the view instance path (RTL); irrelevant for tb */
   viewId: string;
-  /** modulul vederii (schema: modulul instantei; simbol: modulul desenat) */
+  /** the view module (schematic: the instance module; symbol: the drawn module) */
   viewModule: string | null;
-  /** nodurile scenei curente (doar schema; simbolul n-are copii) */
+  /** the nodes of the current scene (schematic only; the symbol has no children) */
   nodes: ProbeNode[];
 }
 
 /**
- * Id-urile de evidentiat in vederea CURENTA pentru tintele date; goale cand
- * tinta nu e vizibila aici (non-invaziv — fara navigare). Conventiile de id:
- * nodul-copil = calea relativa la vedere (`u_add`, `g_ch[0].u_ch`, pliaj
- * `g_ch[0..2].u_ch`), pinul = `<nod>.<port>`, portul de granita / pinul de
- * simbol = `<port>.<nume>` (docs/02).
+ * The ids to highlight in the CURRENT view for the given targets; empty when
+ * the target is not visible here (non-invasive — no navigation). The id conventions:
+ * child node = the path relative to the view (`u_add`, `g_ch[0].u_ch`, fold
+ * `g_ch[0..2].u_ch`), the pin = `<node>.<port>`, the boundary port / symbol
+ * pin = `<port>.<name>` (docs/02).
  */
 /**
- * Remapeaza id-urile unei selectii cerute (`select/reveal`) pe scena curenta:
- * un rel de membru de generate (`g_ch[1].u_ch`) trimis de host nu exista in
- * DOM cand pliajul e INCHIS (implicitul) — singurul nod e pliajul
- * (`g_ch[0..2].u_ch`), gasit prin memberPaths (`viewId + "." + rel`). Id-urile
- * care exista (sau nu apartin niciunui pliaj) raman neatinse; dublurile se
- * strang (3 membri -> pliajul o data). Pur, testat in test:locmap — fara el,
- * „Reveal in Diagram" pe linia unei instantieri generate naviga corect dar
- * selecta NIMIC (recenzia adversariala a sincronizarii).
+ * Remaps the ids of a requested selection (`select/reveal`) onto the current scene:
+ * a generate member rel (`g_ch[1].u_ch`) sent by the host does not exist in the
+ * DOM when the fold is CLOSED (the default) — the only node is the fold
+ * (`g_ch[0..2].u_ch`), found through memberPaths (`viewId + "." + rel`). The ids
+ * that exist (or do not belong to any fold) stay untouched; duplicates are
+ * collapsed (3 members -> the fold once). Pure, tested in test:locmap — without it,
+ * "Reveal in Diagram" on the line of a generated instantiation navigated correctly but
+ * selected NOTHING (adversarial review of the synchronization).
  */
 export function remapSelection(
   ids: string[],
@@ -190,13 +190,13 @@ export function probeIds(
   ctx: ProbeViewCtx
 ): string[] {
   if (ctx.mode === "tb") {
-    return []; // cross-probing-ul de design nu atinge vederea de verificare
+    return []; // design cross-probing does not touch the verification (TB) view
   }
   const ids = new Set<string>();
   for (const t of targets) {
     if (t.kind === "instance") {
       if (ctx.mode !== "schematic") {
-        continue; // simbolul nu-si arata copiii; vederea insasi nu se aprinde
+        continue; // the symbol does not show its children; the view itself does not light up
       }
       let containing: { id: string; depth: number } | null = null;
       for (const n of ctx.nodes) {
@@ -205,9 +205,9 @@ export function probeIds(
           containing = null;
           break;
         }
-        // tinta mai adanca decat copiii vederii: se aprinde copilul care o
-        // CONTINE (cel mai adanc asemenea copil); pliajele se cauta prin
-        // membri (instPath e null la pliaj)
+        // target deeper than the view's children: the child that CONTAINS it
+        // lights up (the deepest such child); folds are searched through their
+        // members (instPath is null for a fold)
         const covers =
           (n.instPath !== null && t.path.startsWith(n.instPath + ".")) ||
           n.memberPaths?.some((m) => t.path.startsWith(m + "."));
@@ -223,8 +223,8 @@ export function probeIds(
       }
     } else if (t.kind === "port") {
       if (ctx.viewModule === t.module) {
-        // portul vederii insesi: steag de granita (schema) sau pin (simbol),
-        // ambele cu aceeasi conventie de id
+        // the port of the view itself: boundary flag (schematic) or pin (symbol),
+        // both with the same id convention
         ids.add(`<port>.${t.port}`);
       }
       if (ctx.mode === "schematic") {
@@ -235,7 +235,7 @@ export function probeIds(
         }
       }
     } else {
-      // modul: toate instantele lui din vederea curenta
+      // module: all its instances in the current view
       if (ctx.mode === "schematic") {
         for (const n of ctx.nodes) {
           if (n.module === t.module) {

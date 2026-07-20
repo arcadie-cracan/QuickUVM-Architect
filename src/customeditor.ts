@@ -1,13 +1,13 @@
-// Editorul grafic per-FISIER pentru `*.quickuvm.yaml` (felia 4, D22): diagrama
-// de verificare TB devine editorul IMPLICIT al fisierului, prin
-// `CustomTextEditorProvider`. YAML-ul ramane sursa de adevar (invariantul 2):
-// fiecare gest produce un `WorkspaceEdit` pe DOCUMENT (undo/diff/editare text
-// native), iar orice schimbare de text re-randeaza diagrama din YAML.
+// The per-FILE graphical editor for `*.quickuvm.yaml` (slice 4, D22): the TB
+// verification diagram becomes the DEFAULT editor of the file, via
+// `CustomTextEditorProvider`. The YAML remains the source of truth (invariant 2):
+// each gesture produces a `WorkspaceEdit` on the DOCUMENT (native undo/diff/text
+// editing), and any text change re-renders the diagram from the YAML.
 //
-// Diagrama TB e config-driven (nu are nevoie de modelul RTL — `renderTb` nu-l
-// atinge), deci se randeaza din textul documentului. Gesturile de editare TB
-// (add/delete/edit) trec prin ACELEASI metode din `actions.ts`, dar cu tinta =
-// documentul (`DocumentEditTarget`), nu config-ul activ — vezi `TbEditTarget`.
+// The TB diagram is config-driven (it does not need the RTL model — `renderTb` does
+// not touch it), so it is rendered from the document text. The TB editing gestures
+// (add/delete/edit) go through the SAME methods in `actions.ts`, but with the target =
+// the document (`DocumentEditTarget`), not the active config — see `TbEditTarget`.
 
 import * as vscode from "vscode";
 import type { Actions } from "./actions";
@@ -23,9 +23,9 @@ import type { QuvmConfig } from "./quickuvm";
 import { parseQuvm } from "./yamlops";
 import type { LayoutStore } from "./sidecar";
 
-/** `TbEditTarget` legat de un TextDocument: config-ul e textul lui curent,
- *  iar `apply` scrie un WorkspaceEdit pe el (ca `ConfigService.apply`, dar pe
- *  documentul deschis, nu pe config-ul activ). */
+/** `TbEditTarget` bound to a TextDocument: the config is its current text,
+ *  and `apply` writes a WorkspaceEdit on it (like `ConfigService.apply`, but on
+ *  the open document, not the active config). */
 class DocumentEditTarget implements TbEditTarget {
   constructor(private readonly doc: vscode.TextDocument) {}
 
@@ -52,7 +52,7 @@ class DocumentEditTarget implements TbEditTarget {
       return false;
     }
     if (newText === oldText) {
-      return false; // no-op: fara WorkspaceEdit (ca ConfigService.apply)
+      return false; // no-op: no WorkspaceEdit (like ConfigService.apply)
     }
     const edit = new vscode.WorkspaceEdit();
     edit.replace(
@@ -107,9 +107,9 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       }
     };
 
-    // Orice schimbare a documentului (editare text, undo/redo, sau propriul
-    // WorkspaceEdit al unui gest) re-randeaza diagrama din YAML-ul curent.
-    // Idempotent, fara bucla: `config/full` -> randare nu emite alt edit.
+    // Any change to the document (text editing, undo/redo, or a gesture's own
+    // WorkspaceEdit) re-renders the diagram from the current YAML.
+    // Idempotent, no loop: `config/full` -> render emits no other edit.
     const disposables: vscode.Disposable[] = [
       vscode.workspace.onDidChangeTextDocument((e) => {
         if (e.document.uri.toString() === document.uri.toString()) {
@@ -122,8 +122,8 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         }
       }),
     ];
-    // exporter activ (comanda din paleta): doar cand ACEST editor e tab-ul
-    // vizibil — altfel exportul mergea si de pe Welcome/fisier sursa
+    // active exporter (the palette command): only when THIS editor is the
+    // visible tab — otherwise the export would also run from Welcome/a source file
     const exporter = {
       run: (): void => {
         if (ready) {
@@ -175,8 +175,8 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           });
           break;
         }
-        // layout-ul (drag/flip/pliaj/re-aranjare) merge in sidecar-ul COMUN,
-        // cheiat pe `tb:<cale>` — aceeasi mecanica ca panelul
+        // the layout (drag/flip/fold/re-arrange) goes into the SHARED sidecar,
+        // keyed on `tb:<cale>` — the same mechanics as the panel
         case "layout/snapshot":
           this.layout.positionsSnapshotted(m.viewId, m.nodes);
           break;
@@ -197,16 +197,16 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         case "action/request":
           this.onAction(m.action, m.args, target);
           break;
-        // tb/focus (drill local) si select/changed nu au sincronizare de arbore
-        // in editorul per-fisier — se ignora
+        // tb/focus (local drill) and select/changed have no tree synchronization
+        // in the per-file editor — they are ignored
         default:
           break;
       }
     });
   }
 
-  /** Gesturile de EDITARE TB, aplicate pe DOCUMENT (nu pe config-ul activ).
-   *  Gesturile de DESIGN (createProbe/wireConnections/…) nu apar in vederea TB. */
+  /** The TB EDITING gestures, applied on the DOCUMENT (not on the active config).
+   *  The DESIGN gestures (createProbe/wireConnections/…) do not appear in the TB view. */
   private onAction(
     action: ActionKind,
     args: Record<string, unknown>,
@@ -230,8 +230,8 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         void this.actions.editScoreboard(s("name"), s("field"), s("value"), target);
         break;
       case "openSubenvConfig":
-        // drill in subenv din editorul per-fisier: calea config-ului relativa
-        // la DOCUMENT (nesting-ul H1 coboara nivel cu nivel prin file-uri)
+        // drill into subenv from the per-file editor: the config path relative
+        // to the DOCUMENT (the H1 nesting descends level by level through files)
         void this.actions.openSubenvConfig(s("config"), target);
         break;
       default:

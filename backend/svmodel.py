@@ -1,18 +1,18 @@
 #!/usr/bin/env python3
-"""svmodel — extractor de model de proiect din designuri SystemVerilog, pe pyslang.
+"""svmodel — project-model extractor from SystemVerilog designs, on pyslang.
 
-Produce modelul JSON consumat de extensia VSCode (vezi schema/project-model.schema.json):
-  - ierarhia elaborata de instante (ID-uri stabile = cai ierarhice, generate desfacut)
-  - module cu porturi (directie normalizata, latimi evaluate numeric) si interfete
-  - vederi de interior: pini de instante -> net-uri, expresii de conexiune normalizate,
-    fan-out per net cu sugestia fir/eticheta
+Produces the JSON model consumed by the VSCode extension (see schema/project-model.schema.json):
+  - the elaborated instance hierarchy (stable IDs = hierarchical paths, generate unrolled)
+  - modules with ports (normalized direction, numerically evaluated widths) and interfaces
+  - interior views: instance pins -> nets, normalized connection expressions,
+    fan-out per net with the wire/label hint
 
-Utilizare:
-  python3 svmodel.py -f lista.f --top demo_top            # lista de fisiere (ex. de la bender)
+Usage:
+  python3 svmodel.py -f lista.f --top demo_top            # file list (e.g. from bender)
   python3 svmodel.py file1.sv file2.sv --top demo_top
-Optiuni: --label-threshold N (implicit 4), -o out.json (implicit stdout)
+Options: --label-threshold N (default 4), -o out.json (default stdout)
 
-Validat cu pyslang 11.0 (slang 11).
+Validated with pyslang 11.0 (slang 11).
 """
 import argparse
 import json
@@ -24,15 +24,15 @@ from pyslang import DiagnosticEngine, ast
 SK = ast.SymbolKind
 
 
-# ---------------------------------------------------------------- utilitare
+# ---------------------------------------------------------------- utilities
 
 def norm_dir(d):
-    """'ArgumentDirection.In' -> 'in' (normalizare enum slang)."""
+    """'ArgumentDirection.In' -> 'in' (slang enum normalization)."""
     return str(d).split(".")[-1].lower()
 
 
 def type_info(t):
-    """Latimea in biti a unui tip, inclusiv tablouri unpacked (element x dimensiuni)."""
+    """The bit width of a type, including unpacked arrays (element x dimensions)."""
     total, dims, elem = None, [], t
     while elem.isUnpackedArray:
         r = elem.fixedRange
@@ -59,7 +59,7 @@ class Extractor:
             return None
         return {"file": self.sm.getFileName(l), "line": self.sm.getLineNumber(l)}
 
-    # -------------------------------------------------- porturi si module
+    # -------------------------------------------------- ports and modules
 
     def module_entry(self, body):
         name = body.definition.name
@@ -77,7 +77,7 @@ class Extractor:
                                        "loc": self.loc(body.definition)}
 
     def iface_detail(self, inst):
-        """Semnale + modporturi ale unei instante de interfata elaborate."""
+        """Signals + modports of an elaborated interface instance."""
         sigs, mps = [], {}
         for m in inst.body:
             if m.kind == SK.Variable:
@@ -86,13 +86,13 @@ class Extractor:
                 mps[m.name] = {p.name: norm_dir(p.direction) for p in m}
         return {"signals": sigs, "modports": mps}
 
-    # -------------------------------------------------- expresii de conexiune
+    # -------------------------------------------------- connection expressions
 
     def norm_expr(self, e):
         if e is None:
             return None
         k = type(e).__name__
-        if k == "AssignmentExpression":            # port de iesire: extern = port
+        if k == "AssignmentExpression":            # output port: external = port
             return self.norm_expr(e.left)
         if k == "ConversionExpression":
             return self.norm_expr(e.operand)
@@ -101,14 +101,14 @@ class Extractor:
         if k == "ConcatenationExpression":
             return {"kind": "concat", "parts": [self.norm_expr(o) for o in e.operands]}
         if k == "ElementSelectExpression":
-            idx = e.selector.constant              # in context elaborat: index numeric
+            idx = e.selector.constant              # in elaborated context: numeric index
             return {"kind": "select", "base": self.norm_expr(e.value),
                     "index": str(idx) if idx is not None else None,
                     "text": str(e.syntax).strip() if e.syntax else None}
         if k == "RangeSelectExpression":
             return {"kind": "select", "base": self.norm_expr(e.value),
                     "text": str(e.syntax).strip() if e.syntax else None}
-        if k == "ArbitrarySymbolExpression":       # conexiune de interfata
+        if k == "ArbitrarySymbolExpression":       # interface connection
             return {"kind": "iface",
                     "ref": str(e.syntax).strip() if e.syntax else e.symbol.name}
         if e.constant is not None:
@@ -117,7 +117,7 @@ class Extractor:
                 "text": str(e.syntax).strip() if e.syntax else k}
 
     def base_nets(self, desc):
-        """Net-urile referite de un descriptor (pentru fan-out)."""
+        """The nets referenced by a descriptor (for fan-out)."""
         if not desc:
             return
         if desc["kind"] == "net":
@@ -128,7 +128,7 @@ class Extractor:
         elif desc["kind"] == "select" and desc.get("base"):
             yield from self.base_nets(desc["base"])
 
-    # -------------------------------------------------- parcurgere ierarhie
+    # -------------------------------------------------- hierarchy traversal
 
     def walk(self, inst, path):
         body = inst.body
@@ -156,7 +156,7 @@ class Extractor:
                             blk, hpath, f"{m.name}[{blk.constructIndex}]")
 
     def view(self, inst, hpath):
-        """Vederea de interior: pini -> net-uri, doar daca exista instante copil."""
+        """The interior view: pins -> nets, only if there are child instances."""
         pins, nets = [], {}
         for p in inst.body.portList:
             nets.setdefault(p.name, []).append(f"<port>.{p.name}")
@@ -187,17 +187,17 @@ class Extractor:
 # ---------------------------------------------------------------- API + CLI
 
 def build_model(files=(), flists=(), top=None, label_threshold=4):
-    """Compileaza sursele si intoarce modelul de proiect ca dict.
+    """Compiles the sources and returns the project model as a dict.
 
-    Punct de intrare refolosit de CLI si de testele pytest. Decizia de succes
-    se ia pe diagnosticele compilarii (reportCompilation le-ar inghiti cu
-    quiet=True si intoarce valori neintuitive): toate diagnosticele se scriu
-    formatate pe stderr (fisier:linie:coloana: severitate: mesaj — formatul
-    parsat de extensie), iar la erori se ridica RuntimeError — modelul unei
-    compilari cu erori nu e "valid" si nu se emite (invalidare gratioasa:
-    host-ul pastreaza ultimul model valid).
+    Entry point reused by the CLI and the pytest tests. The success decision
+    is made on the compilation diagnostics (reportCompilation would swallow
+    them with quiet=True and return unintuitive values): all diagnostics are
+    written formatted to stderr (file:line:column: severity: message — the
+    format parsed by the extension), and on errors a RuntimeError is raised —
+    the model of a compilation with errors is not "valid" and is not emitted
+    (graceful invalidation: the host keeps the last valid model).
     """
-    # caile se citeaza: parseCommandLine desparte pe spatii (cai Windows)
+    # paths are quoted: parseCommandLine splits on spaces (Windows paths)
     cmd = "slang " + " ".join(f'"{p}"' for p in files) \
         + "".join(f' -f "{f}"' for f in flists) + f" --top {top}"
     drv = Driver()
@@ -206,7 +206,7 @@ def build_model(files=(), flists=(), top=None, label_threshold=4):
             and drv.parseAllSources()):
         raise RuntimeError("eroare: parsarea surselor a esuat")
     comp = drv.createCompilation()
-    diags = comp.getAllDiagnostics()      # forteaza elaborarea completa
+    diags = comp.getAllDiagnostics()      # forces full elaboration
     if diags:
         sys.stderr.write(DiagnosticEngine.reportAll(drv.sourceManager, diags))
     errors = sum(1 for d in diags if d.isError())

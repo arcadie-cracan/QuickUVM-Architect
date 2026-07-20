@@ -1,10 +1,10 @@
-// Constructia pura a arborelui de verificare (fara `vscode`), testabila in
-// Node (scripts/test-tbtree.mjs). Reflecta ierarhia de niveluri a diagramei
-// TB (D24): Testbench > {DUT, Env > {agenti > {sequencer/driver/monitor},
-// scoreboards, coverage, vsqr, subenvs, probes}}. Fiecare nod poarta `focus`
-// (nivelul care se deschide la click) + `selectId` (blocul de selectat in acel
-// nivel), plus id-uri de identitate `<focus>|<blocId>` pentru reveal invers
-// din diagrama.
+// The pure construction of the verification tree (no `vscode`), testable in
+// Node (scripts/test-tbtree.mjs). Reflects the level hierarchy of the TB
+// diagram (D24): Testbench > {DUT, Env > {agents > {sequencer/driver/monitor},
+// scoreboards, coverage, vsqr, subenvs, probes}}. Each node carries `focus`
+// (the level that opens on click) + `selectId` (the block to select in that
+// level), plus identity ids `<focus>|<blocId>` for reverse reveal
+// from the diagram.
 
 import type { QuvmConfig } from "./quickuvm";
 
@@ -13,9 +13,9 @@ export interface VNode {
   label: string;
   description?: string;
   icon: string;
-  /** nivelul TB deschis la click (focus-ul din buildTbScene) */
+  /** the TB level opened on click (the focus from buildTbScene) */
   focus: string;
-  /** blocul de selectat in acel nivel; null = doar deschide nivelul */
+  /** the block to select in that level; null = just open the level */
   selectId: string | null;
   children: VNode[];
   parent?: VNode;
@@ -23,9 +23,9 @@ export interface VNode {
 
 export interface VTree {
   roots: VNode[];
-  /** reveal drill: focus -> nodul-container al nivelului */
+  /** reveal drill: focus -> the level's container node */
   byFocus: Map<string, VNode>;
-  /** reveal selectie: `<focus>|<blocId>` -> nodul din arbore */
+  /** reveal selection: `<focus>|<blocId>` -> the node in the tree */
   byIdent: Map<string, VNode>;
 }
 
@@ -54,15 +54,15 @@ export function buildVTree(config: QuvmConfig, configPath: string | null): VTree
     if (opts?.description) {
       n.description = opts.description;
     }
-    // identitatea in diagrama: containerele se identifica prin focus-ul lor la
-    // nivelul parintelui; ambele forme se inregistreaza pentru reveal
+    // identity in the diagram: containers are identified by their focus at
+    // the parent level; both forms are registered for reveal
     if (opts?.identFocus !== undefined && opts?.identId !== undefined) {
       byIdent.set(`${opts.identFocus}|${opts.identId}`, n);
     }
     return n;
   };
 
-  // radacina: Testbench (nivelul "")
+  // root: Testbench (the "" level)
   const tb = mk(
     "v:tb",
     config.project?.name ? `${config.project.name} (tb)` : "Testbench",
@@ -84,7 +84,7 @@ export function buildVTree(config: QuvmConfig, configPath: string | null): VTree
     );
   }
 
-  // Env (nivelul "env")
+  // Env (the "env" level)
   const analysisCount =
     (config.analysis?.scoreboards?.length ?? 0) +
     (new Set(config.analysis?.coverage ?? []).size);
@@ -117,7 +117,7 @@ export function buildVTree(config: QuvmConfig, configPath: string | null): VTree
       );
       byFocus.set(focus, agentNode);
       env.children.push(agentNode);
-      // internele agentului: frunze care deschid nivelul agentului + selecteaza
+      // the agent internals: leaves that open the agent level + select
       const units = active
         ? [
             ["u.sequencer", "sequencer", "list-ordered"],

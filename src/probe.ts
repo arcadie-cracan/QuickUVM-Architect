@@ -1,28 +1,28 @@
-// Propunerea unei probe whitebox (K2, docs/03/06) dintr-un net selectat in
-// vederea-schema: rezolvarea instantei DUT, calea XMR relativa la ea si
-// LATIMEA netului. Modul PUR (nu importa `vscode`, nu atinge YAML-ul): host-ul
-// (actions.ts) il foloseste ca sa construiasca `probes[]`, iar testele il
-// ruleaza direct in Node (`npm run test:probe`).
+// Proposal of a whitebox probe (K2, docs/03/06) from a net selected in the
+// schematic view: resolving the DUT instance, the XMR path relative to it and
+// the net WIDTH. PURE module (does not import `vscode`, does not touch the YAML): the host
+// (actions.ts) uses it to build `probes[]`, and the tests
+// run it directly in Node (`npm run test:probe`).
 //
-// Constrangerile de mai jos NU sunt inventate — sunt sondate empiric pe
+// The constraints below are NOT invented — they are probed empirically on
 // quick-uvm 0.9.2 (`quick_uvm/models.py` ProbeConfig + validate_probes):
-//   - `probes` + `subenvs` => eroare dura (H1: nu merg pe bench de subsistem);
-//   - numele probei se ciocneste in namespace-ul tb_top/config-DB cu numele
-//     interfetelor si porturilor de agent, cu ceasul si cu reset-ul;
-//   - `path` e lipit VERBATIM dupa `dut_inst.` in tb_top, deci e relativ la
-//     instanta DUT si nu e validat de generator (o cale gresita trece tacut).
+//   - `probes` + `subenvs` => hard error (H1: they don't work on a subsystem bench);
+//   - the probe name collides in the tb_top/config-DB namespace with the names
+//     of the agent interfaces and ports, with the clock and with the reset;
+//   - `path` is glued VERBATIM after `dut_inst.` in tb_top, so it is relative to
+//     the DUT instance and is not validated by the generator (a wrong path passes silently).
 
 import type { Instance, ProjectModel } from "./model";
 import type { QuvmConfig } from "./quickuvm";
 
 export interface ProbeProposal {
-  /** numele probei: identificator SV derivat din numele netului */
+  /** the probe name: SV identifier derived from the net name */
   name: string;
-  /** calea XMR RELATIVA la instanta DUT (quick-uvm o lipeste dupa `dut_inst.`) */
+  /** the XMR path RELATIVE to the DUT instance (quick-uvm glues it after `dut_inst.`) */
   path: string;
-  /** latimea in biti; null = nederivabila din model (host-ul o cere) */
+  /** the width in bits; null = not derivable from the model (the host requires it) */
   width: number | null;
-  /** nume deja luate: alte probe + interfete/porturi de agent + ceas + reset */
+  /** names already taken: other probes + agent interfaces/ports + clock + reset */
   taken: string[];
 }
 
@@ -31,10 +31,10 @@ export type ProbeCheck =
   | { ok: false; reason: string };
 
 /**
- * Instanta DUT-ului sub care se afla vederea curenta. YAML-ul da DUT-ul ca NUME
- * DE MODUL, nu ca instanta (docs/03), iar un modul poate fi instantiat de mai
- * multe ori: se aleg doar instantele care sunt stramos-sau-ea-insasi a vederii,
- * iar dintre ele CEA MAI LUNGA (cel mai apropiat stramos, la modul imbricat).
+ * The DUT instance under which the current view lies. The YAML gives the DUT as a
+ * MODULE NAME, not as an instance (docs/03), and a module can be instantiated
+ * multiple times: only the instances that are an ancestor-or-itself of the view are
+ * chosen, and among them the LONGEST one (the closest ancestor, for a nested module).
  */
 export function resolveDutInstance(
   model: ProjectModel,
@@ -52,7 +52,7 @@ export function resolveDutInstance(
   return cands.reduce((a, b) => (b.path.length > a.path.length ? b : a));
 }
 
-/** Calea probei: calea elaborata a netului MINUS calea instantei DUT. */
+/** The probe path: the elaborated path of the net MINUS the DUT instance path. */
 export function probePath(
   viewId: string,
   dutPath: string,
@@ -64,22 +64,22 @@ export function probePath(
   if (viewId.startsWith(`${dutPath}.`)) {
     return `${viewId.slice(dutPath.length + 1)}.${netName}`;
   }
-  return null; // vederea nu e sub DUT: calea nu are sens
+  return null; // the view is not under the DUT: the path makes no sense
 }
 
 /**
- * Latimea unui net. NU e in model (`ViewNet` = {name, endpoints, fanout,
- * render}), deci se DERIVA — si derivarea naiva e GRESITA:
+ * The width of a net. It is NOT in the model (`ViewNet` = {name, endpoints, fanout,
+ * render}), so it is DERIVED — and the naive derivation is WRONG:
  *
- *   - `ch_out` are 48 de biti (portul lui soc_top), dar toate capetele-pin sunt
- *     porturi de 16 biti atinse prin `select`;
- *   - `din` are 8 biti, dar pinul `g_ch[0].u_ch.din` e un port de 16 prin
+ *   - `ch_out` has 48 bits (soc_top's port), but all the pin-endpoints are
+ *     16-bit ports touched through `select`;
+ *   - `din` has 8 bits, but the pin `g_ch[0].u_ch.din` is a 16-bit port through
  *     `concat {din,din}`.
  *
- * (dovada in `examples/model.json`). Deci latimea se ia DOAR de la un capat
- * care e ACELASI semnal: portul propriu al modulului vederii (svmodel semanta
- * netul cu numele portului) sau un pin de copil conectat cu NETUL INTREG
- * (`conn.kind === "net"`) — niciodata prin select/concat/expr.
+ * (proof in `examples/model.json`). So the width is taken ONLY from an endpoint
+ * that is the SAME signal: the view module's own port (svmodel names
+ * the net with the port name) or a child pin connected with the WHOLE NET
+ * (`conn.kind === "net"`) — never through select/concat/expr.
  */
 export function netWidth(
   model: ProjectModel,
@@ -91,21 +91,21 @@ export function netWidth(
   if (!view || !net) {
     return { width: null, unpacked: false };
   }
-  // (a) portul propriu al modulului vederii: autoritar (acelasi semnal declarat)
+  // (a) the view module's own port: authoritative (the same declared signal)
   if (net.endpoints.includes(`<port>.${netName}`)) {
     const p = model.modules[view.module]?.ports.find((x) => x.name === netName);
     if (p) {
       return { width: p.width, unpacked: Boolean(p.unpacked_dims?.length) };
     }
   }
-  // (b) un pin de copil legat cu netul INTREG
+  // (b) a child pin tied to the WHOLE net
   for (const ep of net.endpoints) {
     if (ep.startsWith("<port>.")) {
       continue;
     }
     const pin = view.pins.find((p) => p.pin === ep);
     if (pin?.conn?.kind !== "net" || pin.conn.net !== netName) {
-      continue; // select / concat / expr: latimea portului NU e a netului
+      continue; // select / concat / expr: the port width is NOT the net's
     }
     const dot = ep.lastIndexOf(".");
     if (dot < 0) {
@@ -123,19 +123,19 @@ export function netWidth(
       return { width: p.width, unpacked: Boolean(p.unpacked_dims?.length) };
     }
   }
-  return { width: null, unpacked: false }; // toate capetele trec prin select/concat
+  return { width: null, unpacked: false }; // all endpoints pass through select/concat
 }
 
-/** Numele netului, sanitizat ca identificator SystemVerilog (cerinta QuickUVM). */
+/** The net name, sanitized as a SystemVerilog identifier (QuickUVM requirement). */
 export function probeName(netName: string): string {
   const s = netName.replace(/[^A-Za-z0-9_]/g, "_");
   return /^[A-Za-z_]/.test(s) ? s : `p_${s}`;
 }
 
 /**
- * Numele REZERVATE in namespace-ul probei. QuickUVM refuza o proba al carei nume
- * se ciocneste cu o interfata sau un port de agent, cu ceasul sau cu reset-ul
- * (toate ajung in acelasi tb_top / config-DB) — plus, evident, cu alta proba.
+ * The RESERVED names in the probe namespace. QuickUVM refuses a probe whose name
+ * collides with an agent interface or port, with the clock or with the reset
+ * (all end up in the same tb_top / config-DB) — plus, obviously, with another probe.
  */
 export function reservedNames(config: QuvmConfig): string[] {
   const out = new Set<string>();
@@ -164,16 +164,16 @@ export function reservedNames(config: QuvmConfig): string[] {
 }
 
 /**
- * Se poate OFERI coverage functional pe o proba a acestui config? BUG real in
- * quick-uvm 0.9.2: cu `layout: packaged`, env_pkg NU include probe_monitor
- * (tipul ramane necunoscut, testbench-ul nu compileaza) — deci pe config-uri
- * packaged coverage-ul nu se ofera deloc (capcana K2 #1, CLAUDE.md).
+ * Can functional coverage be OFFERED on a probe of this config? A real BUG in
+ * quick-uvm 0.9.2: with `layout: packaged`, env_pkg does NOT include probe_monitor
+ * (the type stays unknown, the testbench does not compile) — so on packaged
+ * configs coverage is not offered at all (K2 pitfall #1, CLAUDE.md).
  */
 export function probeCoverageAllowed(config: QuvmConfig): boolean {
   return (config as { layout?: unknown }).layout !== "packaged";
 }
 
-/** Porturile DUT-ului deja mapate pe un agent (o proba pe ele e redundanta). */
+/** The DUT ports already mapped to an agent (a probe on them is redundant). */
 function agentPortNames(config: QuvmConfig): Set<string> {
   const out = new Set<string>();
   for (const a of config.agents ?? []) {
@@ -187,8 +187,8 @@ function agentPortNames(config: QuvmConfig): Set<string> {
 }
 
 /**
- * Propune o proba pentru netul selectat, sau spune DE CE nu se poate.
- * Mesajele sunt in engleza (D19): host-ul le arata direct utilizatorului.
+ * Proposes a probe for the selected net, or says WHY it is not possible.
+ * The messages are in English (D19): the host shows them directly to the user.
  */
 export function proposeProbe(
   model: ProjectModel,
@@ -196,7 +196,7 @@ export function proposeProbe(
   viewId: string,
   netName: string
 ): ProbeCheck {
-  // H1 (sondat pe 0.9.2): `probes` + `subenvs` => ValueError, exit 1
+  // H1 (probed on 0.9.2): `probes` + `subenvs` => ValueError, exit 1
   if (config.subenvs?.length) {
     return {
       ok: false,
@@ -227,7 +227,7 @@ export function proposeProbe(
   if (path === null) {
     return { ok: false, reason: "the current view is not inside the DUT instance." };
   }
-  // un port de INTERFATA nu e un semnal sondabil (proba e un vector plat)
+  // an INTERFACE port is not a probeable signal (a probe is a flat vector)
   if (model.modules[view.module]?.iface_ports.some((p) => p.name === netName)) {
     return {
       ok: false,
@@ -235,8 +235,8 @@ export function proposeProbe(
     };
   }
   const isOwnPort = net.endpoints.includes(`<port>.${netName}`);
-  // un port al DUT-ului deja mapat pe un agent: proba ar fi redundanta SI numele
-  // s-ar ciocni in tb_top (QuickUVM refuza) — agentul il observa deja
+  // a DUT port already mapped to an agent: the probe would be redundant AND the name
+  // would collide in tb_top (QuickUVM refuses) — the agent already observes it
   if (isOwnPort && viewId === dut.path && agentPortNames(config).has(netName)) {
     return {
       ok: false,

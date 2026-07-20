@@ -1,10 +1,10 @@
-// Teste Node pentru layoutul vederii de verificare (src/webview/tbschematic.ts
-// — layoutTb cu ELK real): npm run test:tblayout
+// Node tests for the verification view layout (src/webview/tbschematic.ts
+// — layoutTb with real ELK): npm run test:tblayout
 //
-// Acopera invariantii cheie ai driftului de la felia „drag + pozitii TB":
-//  - porturile TbPlaced sunt RELATIVE la originea nodului (ancora = n.x +
-//    offset), nu absolute — altfel firele nu urmeaza blocul la drag;
-//  - layoutTb accepta seminte (ELK interactiv) fara sa crape.
+// Covers the key invariants of the drift from the „drag + TB positions" slice:
+//  - the TbPlaced ports are RELATIVE to the node origin (anchor = n.x +
+//    offset), not absolute — otherwise the wires don't follow the block on drag;
+//  - layoutTb accepts seeds (interactive ELK) without crashing.
 import assert from "node:assert/strict";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -29,7 +29,7 @@ await esbuild.build({
   format: "esm",
   platform: "node",
   logLevel: "silent",
-  // `router`/`svg` sunt ESM curat; elkjs (CJS) se leaga prin require in banner
+  // `router`/`svg` are clean ESM; elkjs (CJS) is linked via require in the banner
   banner: {
     js: "import { createRequire as _cr } from 'module'; const require=_cr(import.meta.url);",
   },
@@ -61,13 +61,13 @@ await test("porturile sunt RELATIVE la originea nodului (0 sau w)", async () => 
   let checked = 0;
   for (const p of layout.nodes.values()) {
     for (const port of p.ports.values()) {
-      // relativ: WEST = 0, EAST = latimea nodului. Absolut ar fi p.x + offset,
-      // adica >= p.x (mereu deplasat cu pozitia nodului pe canvas)
+      // relative: WEST = 0, EAST = the node width. Absolute would be p.x + offset,
+      // i.e. >= p.x (always shifted by the node position on the canvas)
       assert.ok(
         port.x === 0 || port.x === p.w,
         `port ${JSON.stringify(port)} nu e relativ (w=${p.w}, node.x=${p.x})`
       );
-      // y-ul portului e relativ (in banda de porturi, < inaltimea nodului)
+      // the port y is relative (in the port band, < the node height)
       assert.ok(port.y >= 0 && port.y <= p.h, `port.y ${port.y} nu e relativ`);
       checked += 1;
     }
@@ -78,13 +78,13 @@ await test("porturile sunt RELATIVE la originea nodului (0 sau w)", async () => 
 await test("layoutTb accepta seminte (ELK interactiv) fara sa crape", async () => {
   const scene = buildTbScene(CFG, "env", "d.yaml");
   const ids = scene.nodes.map((n) => n.id);
-  // seminte partiale: doar cateva noduri au pozitii
+  // partial seeds: only a few nodes have positions
   const seeds = new Map([
     [ids[0], { x: 40, y: 40 }],
     [ids[1] ?? ids[0], { x: 40, y: 200 }],
   ]);
   const layout = await layoutTb(elk, scene, measure, seeds);
-  // toate nodurile scenei apar in layout, porturile raman relative
+  // all scene nodes appear in the layout, the ports stay relative
   for (const n of scene.nodes) {
     assert.ok(layout.nodes.has(n.id), `nodul ${n.id} lipseste din layout`);
   }
@@ -102,7 +102,7 @@ await test("flip H pe un bloc: laturile porturilor se schimba vest<->est", async
   const flipped = await layoutTb(elk, scene, measure, undefined, flips);
   const sideOf = (layout, port) =>
     [...layout.nodes.get("u.monitor").node.ports].find((p) => p.port === port)?.side;
-  // monitorul are if(vest) + ap(est); flip H le schimba latura
+  // the monitor has if(west) + ap(east); flip H swaps their side
   assert.equal(sideOf(plain, "if"), "WEST");
   assert.equal(sideOf(plain, "ap"), "EAST");
   assert.equal(sideOf(flipped, "if"), "EAST");
@@ -110,21 +110,21 @@ await test("flip H pe un bloc: laturile porturilor se schimba vest<->est", async
 });
 
 await test("flip pe steag = rasturnare LOCALA (flipH), fara sa mute latura ELK", async () => {
-  // Flip pe un steag e o rasturnare LOCALA pe orizontala: oglindeste forma +
-  // muta ancora pe latura opusa a steagului, DAR nu-i schimba pozitia/latura
-  // ELK (FIRST/LAST_SEPARATE ramane satisfacut, deci ELK NU arunca — flip pe
-  // latura opusa ar fi aruncat, vezi probele din CLAUDE.md).
+  // Flip on a flag is a LOCAL horizontal mirror: it mirrors the shape +
+  // moves the anchor to the opposite side of the flag, BUT does not change its
+  // ELK position/side (FIRST/LAST_SEPARATE stays satisfied, so ELK does NOT throw —
+  // a flip on the opposite side would have thrown, see the probes in CLAUDE.md).
   const scene = buildTbScene(CFG, "agent:cmd", "d.yaml");
   const plain = await layoutTb(elk, scene, measure);
   const seeds = new Map(scene.nodes.map((n, i) => [n.id, { x: 40 + i * 180, y: 40 }]));
   scene.boundary.forEach((b, i) => seeds.set(b.id, { x: 600, y: 40 + i * 160 }));
   const flips = new Map([["<ap>", { h: true, v: false }]]);
-  const flipped = await layoutTb(elk, scene, measure, seeds, flips); // nu arunca
+  const flipped = await layoutTb(elk, scene, measure, seeds, flips); // does not throw
   const ap0 = plain.boundary.get("<ap>");
   const ap1 = flipped.boundary.get("<ap>");
-  assert.equal(ap1.b.side, ap0.b.side); // latura ELK neschimbata (fara aruncare)
-  assert.equal(ap1.flipH, true); // dar rasturnat local (forma+ancora se oglindesc)
-  assert.ok(!plain.boundary.get("<ap>").flipH); // implicit ne-rasturnat
+  assert.equal(ap1.b.side, ap0.b.side); // ELK side unchanged (no throw)
+  assert.equal(ap1.flipH, true); // but flipped locally (shape+anchor are mirrored)
+  assert.ok(!plain.boundary.get("<ap>").flipH); // non-flipped by default
 });
 
 console.log(`\ntest-tblayout: ${passed} teste au trecut.`);

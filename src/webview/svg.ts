@@ -1,5 +1,5 @@
-// Utilitare SVG partajate de vederile webview-ului (simbol si schema):
-// creare de elemente cu atribute si masurarea textului cu fontul temei.
+// SVG utilities shared by the webview's views (symbol and schematic):
+// element creation with attributes and text measurement with the theme font.
 
 export const SVG_NS = "http://www.w3.org/2000/svg";
 
@@ -18,10 +18,10 @@ export function el<K extends keyof SVGElementTagNameMap>(
   return node;
 }
 
-/** masurator de text cu fontul temei (12px). `mono=true` -> fontul editorului
- *  (--vscode-editor-font-family, monospace), cu care se deseneaza etichetele de
- *  pin/port; masurarea lor cu fontul UI proportional le SUBESTIMA (monospace e
- *  mai lat) si blocurile ieseau prea inguste -> etichete de porturi suprapuse */
+/** text measurer with the theme font (12px). `mono=true` -> the editor font
+ *  (--vscode-editor-font-family, monospace), used to draw the pin/port labels;
+ *  measuring them with the proportional UI font UNDERESTIMATED them (monospace is
+ *  wider) and the blocks came out too narrow -> overlapping port labels */
 export function measurer(): (text: string, mono?: boolean) => number {
   const ctx = document.createElement("canvas").getContext("2d");
   const uiFont = `12px ${getComputedStyle(document.body).fontFamily}`;

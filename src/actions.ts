@@ -1,7 +1,7 @@
-// Actiunile de configurare QuickUVM (docs/03): setDut cu euristici
-// confirmate explicit, agent din selectie de pini (cu inversarea
-// perspectivei!), agent din interfata (desfacerea modportului), ignorare de
-// porturi. Toate produc editari YAML prin ConfigService.apply (WorkspaceEdit).
+// The QuickUVM configuration actions (docs/03): setDut with explicitly
+// confirmed heuristics, agent from a pin selection (with the perspective
+// inversion!), agent from an interface (unfolding the modport), ignoring
+// ports. All produce YAML edits through ConfigService.apply (WorkspaceEdit).
 
 import * as path from "path";
 import * as vscode from "vscode";
@@ -13,7 +13,7 @@ import {
   subenvName,
 } from "./compose";
 import { ConfigService, TbEditTarget } from "./config";
-// euristicile pe nume (inclusiv capcana _ni/_bi) stau in heuristics (pur, testat)
+// the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
@@ -45,7 +45,7 @@ export class Actions {
 
   // ------------------------------------------------------------- setDut
 
-  /** Desemnarea DUT-ului cu propuneri euristice, niciodata aplicate tacit. */
+  /** Designating the DUT with heuristic proposals, never applied silently. */
   async setDut(viewId: string | undefined): Promise<void> {
     const r = this.resolve(viewId);
     if (!r) {
@@ -111,7 +111,7 @@ export class Actions {
     }
     let combinational = !clock && (has("comb") || !items.some((i) => i.id === "comb"));
     if (!clock && !has("comb") && items.some((i) => i.id === "comb")) {
-      // utilizatorul refuza si combinational: alege manual ceasul
+      // the user refuses combinational too: choose the clock manually
       const pick = await vscode.window.showQuickPick(
         oneBitIns.map((p) => p.name),
         { title: vscode.l10n.t("Choose the clock port") }
@@ -131,9 +131,9 @@ export class Actions {
       externalReset: has("external"),
       combinational,
     };
-    // config activ pe ALT dut: alegere explicita — suprascrie dut-ul
-    // config-ului activ (semantica fazei 2) sau creeaza config-ul dedicat
-    // blocului (fluxul recursiv al compunerii, docs/03); nimic tacit
+    // active config on a DIFFERENT dut: explicit choice — overwrite the dut of
+    // the active config (phase 2 semantics) or create the config dedicated to
+    // the block (the recursive composition flow, docs/03); nothing silent
     const activeDut = this.config.current.dut?.name;
     let uri: vscode.Uri | undefined;
     if (activeDut && activeDut !== inst.module && this.config.configUri) {
@@ -171,12 +171,12 @@ export class Actions {
     }
   }
 
-  // ------------------------------------------------- agent din selectie
+  // ------------------------------------------------- agent from selection
 
   /**
-   * Agent din pinii selectati. Directiile YAML sunt din perspectiva DUT-ului
-   * (docs/03): intrarile DUT devin `inputs` (agentul le conduce), iesirile
-   * `outputs` cu randomize: false.
+   * Agent from the selected pins. The YAML directions are from the DUT's
+   * perspective (docs/03): the DUT inputs become `inputs` (the agent drives them), the outputs
+   * `outputs` with randomize: false.
    */
   async createAgentFromPins(
     viewId: string | undefined,
@@ -227,7 +227,7 @@ export class Actions {
       }
       let width = p.width;
       if (p.unpacked_dims) {
-        // tablou unpacked: decizie explicita per port (docs/03)
+        // unpacked array: explicit decision per port (docs/03)
         const flat = vscode.l10n.t("Flatten (width={0})", p.width);
         const choice = await vscode.window.showQuickPick(
           [flat, vscode.l10n.t("Exclude the port")],
@@ -290,9 +290,9 @@ export class Actions {
     }
   }
 
-  // ------------------------------------------------ agent din interfata
+  // ------------------------------------------------ agent from interface
 
-  /** Agent din portul de interfata: desface modportul DUT-ului (docs/03). */
+  /** Agent from the interface port: unfolds the DUT's modport (docs/03). */
   async createAgentFromIface(
     viewId: string | undefined,
     portName: string
@@ -311,7 +311,7 @@ export class Actions {
       return;
     }
 
-    // instanta de interfata conectata: prin vederea parintelui, altfel dupa tip
+    // the connected interface instance: through the parent's view, otherwise by type
     const ifaceInst = this.connectedIface(model, inst, portName, ifp.interface);
     if (!ifaceInst?.iface) {
       void vscode.window.showWarningMessage(
@@ -351,8 +351,8 @@ export class Actions {
         skipped.push(vscode.l10n.t("{0} (no fixed size)", signal));
         continue;
       }
-      // aceeasi inversare de perspectiva: semnal `in` in modportul DUT-ului
-      // => DUT-ul il primeste => agentul il conduce => inputs
+      // the same perspective inversion: an `in` signal in the DUT's modport
+      // => the DUT receives it => the agent drives it => inputs
       if (dir === "in") {
         inputs.push({ name: signal, width });
       } else if (dir === "out") {
@@ -402,12 +402,12 @@ export class Actions {
   // ------------------------------------------------------ createSubenv
 
   /**
-   * Subenv-uri H1 din blocurile selectate in vederea-schema (docs/03): un
-   * subenv per instanta (pliajele se desfac in membri), config-ul copilului
-   * `<modul>.quickuvm.yaml` linga config-ul top, creat la nevoie cu schelet +
-   * dut euristic; params doar cu valori intregi (schema cere dict[str, int]).
-   * Constringerile H1 din QuickUVM (copii doar combinationali; params cer
-   * `parameters:` declarati in agentul blocului) se semnaleaza in confirmare.
+   * H1 subenvs from the blocks selected in the schematic view (docs/03): one
+   * subenv per instance (the folds are unfolded into members), the child's config
+   * `<modul>.quickuvm.yaml` next to the top config, created when needed with a skeleton +
+   * heuristic dut; params with integer values only (the schema requires dict[str, int]).
+   * The QuickUVM H1 constraints (children combinational only; params require
+   * `parameters:` declared in the block's agent) are flagged in the confirmation.
    */
   async createSubenv(
     viewId: string | undefined,
@@ -427,7 +427,7 @@ export class Actions {
       return;
     }
 
-    // selectia -> instante-copil: pliajele se desfac, interfetele se sar
+    // the selection -> child instances: the folds are unfolded, the interfaces are skipped
     const rels = [...new Set(nodeIds.flatMap(expandFold))];
     const targets: { rel: string; child: Instance }[] = [];
     for (const rel of rels) {
@@ -447,7 +447,7 @@ export class Actions {
       return;
     }
 
-    // propuneri: nume unice; subenv-urile deja prezente in YAML se sar
+    // proposals: unique names; the subenvs already present in YAML are skipped
     const existing = new Set(
       (this.config.current.subenvs ?? [])
         .map((s) => s.name)
@@ -503,7 +503,7 @@ export class Actions {
       return;
     }
 
-    // config-urile copil lipsa: schelet + dut euristic, rezumat in confirmare
+    // the missing child configs: skeleton + heuristic dut, summarized in the confirmation
     const dir = vscode.Uri.joinPath(topUri, "..");
     const newConfigs = new Map<string, { uri: vscode.Uri; spec: ops.DutSpec }>();
     for (const p of proposals) {
@@ -539,9 +539,9 @@ export class Actions {
         );
       }
       if (fresh) {
-        // copiii cu ceas sunt acceptati de compunerea H1 din slice-ul M1
-        // clocked-subenv (single-clock, cel mult un reset) — scheletul
-        // euristic satisface mereu conditia
+        // children with a clock are accepted by the H1 composition from the M1
+        // clocked-subenv slice (single-clock, at most one reset) — the heuristic
+        // skeleton always satisfies the condition
         notes.push(
           fresh.spec.combinational
             ? vscode.l10n.t("new config (combinational DUT)")
@@ -571,7 +571,7 @@ export class Actions {
       return;
     }
 
-    // 1. config-urile copil lipsa, doar pentru modulele confirmate
+    // 1. the missing child configs, only for the confirmed modules
     const chosenModules = new Set(picked.map((i) => i.proposal.module));
     const creations = [...newConfigs.entries()].filter(([m]) =>
       chosenModules.has(m)
@@ -593,9 +593,9 @@ export class Actions {
       }
     }
 
-    // gard hibrid: quick-uvm INTERZICE `subenvs` + agenti proprii — daca
-    // config-ul tinta are deja agenti, compunerea l-ar face invalid (generate ar
-    // esua). Confirmam explicit; utilizatorul poate continua (si scoate agentii)
+    // hybrid guard: quick-uvm FORBIDS `subenvs` + own agents — if
+    // the target config already has agents, the composition would make it invalid (generate would
+    // fail). We confirm explicitly; the user can proceed (and remove the agents)
     if ((this.config.current.agents?.length ?? 0) > 0) {
       const PROCEED = vscode.l10n.t("Compose anyway");
       const pick = await vscode.window.showWarningMessage(
@@ -611,7 +611,7 @@ export class Actions {
       }
     }
 
-    // 2. intrarile subenvs in config-ul top (un singur WorkspaceEdit)
+    // 2. the subenvs entries into the top config (a single WorkspaceEdit)
     const specs: ops.SubenvSpec[] = picked.map((i) => ({
       name: i.proposal.name,
       config: i.proposal.configFile,
@@ -642,9 +642,9 @@ export class Actions {
     }
   }
 
-  // ------------------------------------ vederea de verificare (3b, felia 2)
+  // ------------------------------------ the verification view (3b, slice 2)
 
-  /** numele agentilor din config-ul activ */
+  /** the names of the agents from the active config */
   private agentNames(cfg: TbEditTarget, activeOnly = false): string[] {
     return (cfg.current.agents ?? [])
       .filter((a) => !activeOnly || a.active !== false)
@@ -652,7 +652,7 @@ export class Actions {
       .filter((n): n is string => Boolean(n));
   }
 
-  /** un nume unic pentru o intrare noua (`base`, apoi `base2`, `base3`…) */
+  /** a unique name for a new entry (`base`, then `base2`, `base3`…) */
   private static uniqueName(base: string, taken: Set<string>): string {
     if (!taken.has(base)) {
       return base;
@@ -665,8 +665,8 @@ export class Actions {
     }
   }
 
-  /** Colector de coverage pentru un agent (`analysis.coverage`, docs/03).
-   *  `cfg` = config-ul activ (panel) SAU documentul deschis (CustomTextEditor). */
+  /** Coverage collector for an agent (`analysis.coverage`, docs/03).
+   *  `cfg` = the active config (panel) OR the open document (CustomTextEditor). */
   async addCoverage(preselect?: string, cfg: TbEditTarget = this.config): Promise<void> {
     if (!cfg.configUri) {
       return this.warnNoConfig();
@@ -698,7 +698,7 @@ export class Actions {
     }
   }
 
-  /** Scoreboard din fluxurile agentilor (`analysis.scoreboards`, docs/03). */
+  /** Scoreboard from the agents' streams (`analysis.scoreboards`, docs/03). */
   async addScoreboard(preselSource?: string, cfg: TbEditTarget = this.config): Promise<void> {
     if (!cfg.configUri) {
       return this.warnNoConfig();
@@ -788,7 +788,7 @@ export class Actions {
     }
   }
 
-  /** Secventa virtuala coordonand sequencerii agentilor activi (C2, docs/03). */
+  /** Virtual sequence coordinating the sequencers of the active agents (C2, docs/03). */
   async addVirtualSequence(cfg: TbEditTarget = this.config): Promise<void> {
     if (!cfg.configUri) {
       return this.warnNoConfig();
@@ -853,10 +853,10 @@ export class Actions {
   }
 
   /**
-   * Sterge o componenta a mediului de verificare (felia 2), cu confirmare
-   * MODALA. Scoreboard/coverage/vseq sunt frunze (nimeni nu le refera). Pentru
-   * un AGENT, confirmarea rezuma cascada (coverage-ul lui, scoreboard-urile cu
-   * source/monitor == agent, pasii de vseq) — mutatia `removeAgent` o executa.
+   * Deletes a component of the verification environment (slice 2), with a MODAL
+   * confirmation. Scoreboard/coverage/vseq are leaves (no one references them). For
+   * an AGENT, the confirmation summarizes the cascade (its coverage, the scoreboards with
+   * source/monitor == agent, the vseq steps) — the `removeAgent` mutation executes it.
    */
   async deleteComponent(
     kind: string,
@@ -915,7 +915,7 @@ export class Actions {
     }
   }
 
-  /** Rezumatul a ce cade la stergerea unui agent, pentru confirmarea modala. */
+  /** The summary of what falls when an agent is deleted, for the modal confirmation. */
   private agentCascade(name: string, target: TbEditTarget): string[] {
     const cfg = target.current;
     const out: string[] = [];
@@ -932,7 +932,7 @@ export class Actions {
       if (!body.some((st) => st.agent === name)) {
         continue;
       }
-      // secventa dispare doar daca TOTI pasii sunt ai agentului
+      // the sequence disappears only if ALL steps belong to the agent
       out.push(
         body.every((st) => st.agent === name)
           ? vscode.l10n.t('virtual sequence "{0}"', v.name ?? "?")
@@ -943,9 +943,9 @@ export class Actions {
   }
 
   /**
-   * Editeaza un camp al unui scoreboard (felia 2). Valoarea vine din inspector
-   * (editare inline), gol => reseteaza la implicit (match=in_order, camp sters
-   * — vezi `setScoreboardField`). `max_latency` se converteste la numar.
+   * Edits a field of a scoreboard (slice 2). The value comes from the inspector
+   * (inline editing), empty => resets to default (match=in_order, field deleted
+   * — see `setScoreboardField`). `max_latency` is converted to a number.
    */
   async editScoreboard(
     name: string,
@@ -971,7 +971,7 @@ export class Actions {
     if (raw === "") {
       value = undefined;
     } else if (f === "max_latency") {
-      // latenta = numar de cicluri: intreg >= 0 (input-ul are min=0)
+      // latency = number of cycles: integer >= 0 (the input has min=0)
       const n = Number(raw);
       if (!Number.isInteger(n) || n < 0) {
         return;
@@ -986,11 +986,11 @@ export class Actions {
   }
 
   /**
-   * Proba whitebox (K2, felia 3) dintr-un net selectat in vederea-schema:
-   * calea XMR (relativa la instanta DUT) si latimea vin din MODEL prin
-   * `proposeProbe` (src/probe.ts, pur si testat); numele il confirma
-   * utilizatorul. Refuzurile (bench de subsistem, tablou unpacked, interfata,
-   * port deja mapat pe agent) vin tot de acolo, cu motivul afisat ca atare.
+   * Whitebox probe (K2, slice 3) from a net selected in the schematic view:
+   * the XMR path (relative to the DUT instance) and the width come from the MODEL through
+   * `proposeProbe` (src/probe.ts, pure and tested); the name is confirmed by the
+   * user. The refusals (subsystem bench, unpacked array, interface,
+   * port already mapped on an agent) also come from there, with the reason displayed as such.
    */
   async createProbe(viewId: string | undefined, net: string): Promise<void> {
     if (!this.config.configUri) {
@@ -1014,9 +1014,9 @@ export class Actions {
     }
     const p = check.proposal;
 
-    // Latimea: derivata din model cand se poate. Cand NU (toate capetele trec
-    // prin select/concat), o cerem explicit — lasata implicita, QuickUVM face
-    // proba de 1 bit si TRUNCHIAZA tacit un semnal lat.
+    // The width: derived from the model when possible. When NOT (all endpoints go
+    // through select/concat), we ask for it explicitly — left as default, QuickUVM makes
+    // a 1-bit probe and silently TRUNCATES a wide signal.
     let width = p.width ?? undefined;
     if (width === undefined) {
       const raw = await vscode.window.showInputBox({
@@ -1054,8 +1054,8 @@ export class Actions {
       return;
     }
 
-    // Coverage functional pe proba => `<dut>_probe_monitor` in env; gate-ul
-    // anti-bug packaged (K2 #1) sta in probe.ts (pur, testat)
+    // Functional coverage on the probe => `<dut>_probe_monitor` in the env; the
+    // packaged anti-bug gate (K2 #1) lives in probe.ts (pure, tested)
     let coverage = false;
     if (probeCoverageAllowed(this.config.current)) {
       const NO = vscode.l10n.t("$(eye) Observe only");
@@ -1089,10 +1089,10 @@ export class Actions {
   }
 
   /**
-   * Config-ul activ e referit ca `subenvs[].config` de un altul? Probele lui ar
-   * fi generate, dar NU cablate in tb_top-ul subsistemului (fara instanta
-   * probe_if, fara XMR, fara config_db, si nici macar in filelist) — bug real
-   * al quick-uvm 0.9.2, care iese totusi cu 0: esec TACIT, deci avertizam.
+   * Is the active config referenced as `subenvs[].config` by another? Its probes would
+   * be generated, but NOT wired into the subsystem's tb_top (no probe_if
+   * instance, no XMR, no config_db, and not even in the filelist) — a real bug
+   * of quick-uvm 0.9.2, which nevertheless exits with 0: SILENT failure, so we warn.
    */
   private async isComposedChild(): Promise<boolean> {
     const uri = this.config.configUri;
@@ -1109,18 +1109,18 @@ export class Actions {
         text: Buffer.from(await vscode.workspace.fs.readFile(u)).toString("utf8"),
       }))
     );
-    // predicatul pur (yamlops, testat) compara caile normalizat — includes()
-    // pe fsPath brut rata potrivirea la diferente de caz pe Windows
+    // the pure predicate (yamlops, tested) compares the paths normalized — includes()
+    // on the raw fsPath misses the match on case differences on Windows
     return ops.isComposedChild(files, uri.fsPath);
   }
 
   /**
-   * Derivă conexiunile inter-bloc H1 din net-urile vederii-schemă a
-   * subsistemului și le scrie în `connections` (felia 3, „compunerea derivată").
-   * Doar la subsistemul curent (config cu `subenvs`, dut = modulul vederii).
-   * Blocurile DESTINAȚIE trebuie să aibă agent PASIV (`active: false`) — o
-   * constrângere quick-uvm; se AVERTIZEAZĂ (nu se editează tăcut config-urile
-   * copil, care sunt fișiere separate deținute de utilizator).
+   * Derives the inter-block H1 connections from the nets of the subsystem's
+   * schematic view and writes them into `connections` (slice 3, "derived composition").
+   * Only for the current subsystem (config with `subenvs`, dut = the view's module).
+   * The DESTINATION blocks must have a PASSIVE agent (`active: false`) — a
+   * quick-uvm constraint; it is WARNED (the child configs are not edited silently,
+   * as they are separate files owned by the user).
    */
   async wireConnections(viewId: string | undefined): Promise<void> {
     if (!this.config.configUri) {
@@ -1149,8 +1149,8 @@ export class Actions {
       );
       return;
     }
-    // rel-copil -> nume subenv, cu excluderea numelor ambigue: nucleul pur
-    // subenvMapping (compose.ts, testat) — invariantul #3 al compunerii
+    // child-rel -> subenv name, excluding the ambiguous names: the pure core
+    // subenvMapping (compose.ts, tested) — invariant #3 of the composition
     const mapping = subenvMapping(
       model,
       r.inst.path,
@@ -1171,13 +1171,13 @@ export class Actions {
       );
       return;
     }
-    // Edit ATOMIC (un singur undo) pe MAI MULTE fisiere: `connections` pe top +
-    // agentul blocului DESTINATIE pus pasiv in fiecare config-copil (un port de
-    // intrare condus de fir nu poate fi si condus de propriul agent — quick-uvm
-    // refuza altfel). Config-urile copil sunt fisiere separate; le editam
-    // explicit (nu prin ConfigService.apply, care atinge doar config-ul activ).
-    // Host-ul doar CITESTE fisierele; textele noi vin din planWireEdits
-    // (compose.ts, pur, testat — inclusiv plierea pe fisier partajat, #4).
+    // ATOMIC edit (a single undo) on MULTIPLE files: `connections` on the top +
+    // the DESTINATION block's agent set passive in each child config (an input
+    // port driven by a wire cannot also be driven by its own agent — quick-uvm
+    // refuses otherwise). The child configs are separate files; we edit them
+    // explicitly (not through ConfigService.apply, which touches only the active config).
+    // The host only READS the files; the new texts come from planWireEdits
+    // (compose.ts, pure, tested — including the folding on a shared file, #4).
     const topUri = this.config.configUri;
     const dir = vscode.Uri.joinPath(topUri, "..");
     const fullRange = (d: vscode.TextDocument): vscode.Range =>
@@ -1198,7 +1198,7 @@ export class Actions {
         children.set(config, { key: childUri.toString(), text: doc.getText() });
         childDocs.set(childUri.toString(), doc);
       } catch {
-        // fisier lipsa/ilizibil: planificatorul il pune la `manual`
+        // missing/unreadable file: the planner puts it under `manual`
       }
     }
     const plan = planWireEdits(topOld, subenvs, derived, children);
@@ -1221,7 +1221,7 @@ export class Actions {
       );
       return;
     }
-    await this.config.refresh(); // sincron: `current` reflecta imediat noul YAML
+    await this.config.refresh(); // synchronous: `current` immediately reflects the new YAML
 
     const parts = [
       vscode.l10n.t("{0} connection(s) wired", derived.connections.length),
@@ -1232,8 +1232,8 @@ export class Actions {
       );
     }
     if (manual.length) {
-      // scheletul copilului n-are inca agent (createSubenv nu creeaza) sau
-      // config-ul lipseste: utilizatorul configureaza agentul si-l face pasiv
+      // the child's skeleton has no agent yet (createSubenv does not create one) or
+      // the config is missing: the user configures the agent and makes it passive
       parts.push(
         vscode.l10n.t(
           "configure and passivate the agent for: {0}",
@@ -1255,11 +1255,11 @@ export class Actions {
   }
 
   /**
-   * „Compose into parent bench" (felia 3): din vederea unui BLOC, compune blocul
-   * + FRAȚII lui de bloc în bench-ul PĂRINTE imediat. Se reduce la `createSubenv`
-   * țintind părintele (ensureDut recursiv + schelet + subenvs). Un subsistem cere
-   * ≥2 subenv-uri (quick-uvm), deci se compun toți copiii-bloc ai părintelui;
-   * utilizatorul confirmă lista în QuickPick-ul lui createSubenv.
+   * "Compose into parent bench" (slice 3): from a BLOCK's view, composes the block
+   * + its block SIBLINGS into the immediate PARENT bench. It reduces to `createSubenv`
+   * targeting the parent (recursive ensureDut + skeleton + subenvs). A subsystem requires
+   * ≥2 subenvs (quick-uvm), so all the parent's block children are composed;
+   * the user confirms the list in createSubenv's QuickPick.
    */
   async composeIntoParent(viewId: string | undefined): Promise<void> {
     const model = this.getModel();
@@ -1276,7 +1276,7 @@ export class Actions {
       return;
     }
     if (pc.childRels.length < 2) {
-      // constrangere quick-uvm: un subsistem compune >=2 subenv-uri
+      // quick-uvm constraint: a subsystem composes >=2 subenvs
       const parentModule =
         model.instances.find((i) => i.path === pc.parentPath)?.module ?? "?";
       void vscode.window.showWarningMessage(
@@ -1288,20 +1288,20 @@ export class Actions {
       );
       return;
     }
-    // deleagă la createSubenv, ȚINTIND părintele (ensureDut + schelet + subenvs);
-    // utilizatorul confirmă lista copiilor în QuickPick-ul lui createSubenv
+    // delegates to createSubenv, TARGETING the parent (ensureDut + skeleton + subenvs);
+    // the user confirms the list of children in createSubenv's QuickPick
     await this.createSubenv(pc.parentPath, pc.childRels);
   }
 
   /**
-   * Drill în blocul compus (docs/05): deschide fișierul de config `configRel`
-   * (calea din `subenvs[].config`, purtată de drill) cu editorul IMPLICIT al
-   * `*.quickuvm.yaml` — adică diagrama TB per-fișier (felia 4). Calea vine de
-   * la blocul chiar apăsat, deci nume duplicate deschid fișiere distincte.
-   * Rezolvarea imită quick-uvm (pathlib): o cale ABSOLUTĂ e luată ca atare,
-   * doar cea relativă se leagă de directorul config-ului curent. Merge pe
-   * orice țintă TbEditTarget: config-ul activ (panel) sau documentul deschis
-   * (editorul per-fișier — nesting-ul H1 pe niveluri).
+   * Drill into the composed block (docs/05): opens the config file `configRel`
+   * (the path from `subenvs[].config`, carried by the drill) with the DEFAULT editor of
+   * `*.quickuvm.yaml` — i.e. the per-file TB diagram (slice 4). The path comes from
+   * the block actually clicked, so duplicate names open distinct files.
+   * The resolution mimics quick-uvm (pathlib): an ABSOLUTE path is taken as-is,
+   * only the relative one is bound to the current config's directory. It works on
+   * any TbEditTarget: the active config (panel) or the open document
+   * (the per-file editor — H1 nesting across levels).
    */
   async openSubenvConfig(
     configRel: string,
@@ -1311,13 +1311,13 @@ export class Actions {
     if (!uri || !configRel) {
       return;
     }
-    // cale absoluta: NU o lipi ca relativa (Uri.joinPath ar produce o cale
-    // stricata — `/c:/proj/C:/abs/x.yaml`; quick-uvm o accepta ca atare)
+    // absolute path: do NOT append it as relative (Uri.joinPath would produce a
+    // broken path — `/c:/proj/C:/abs/x.yaml`; quick-uvm accepts it as-is)
     const child = path.isAbsolute(configRel)
       ? vscode.Uri.file(configRel)
       : vscode.Uri.joinPath(uri, "..", configRel);
     try {
-      // editorul implicit al *.quickuvm.yaml e QuvmConfigEditor (felia 4)
+      // the default editor of *.quickuvm.yaml is QuvmConfigEditor (slice 4)
       await vscode.commands.executeCommand("vscode.open", child);
     } catch {
       void vscode.window.showWarningMessage(
@@ -1339,10 +1339,10 @@ export class Actions {
   }
 
   /**
-   * Config activ cu dut == modulul vederii — cerinta subenv-urilor (docs/03).
-   * Fara niciun config: fluxul Set as DUT (checkDut). Config activ pe ALT
-   * dut: fluxul recursiv direct din gest — oferta explicita de config
-   * dedicat blocului, apoi Set as DUT pe el; niciun buton mort.
+   * Active config with dut == the view's module — the subenvs' requirement (docs/03).
+   * Without any config: the Set as DUT flow (checkDut). Active config on a DIFFERENT
+   * dut: the recursive flow directly from the gesture — an explicit offer of a config
+   * dedicated to the block, then Set as DUT on it; no dead button.
    */
   private async ensureDutForView(inst: Instance): Promise<boolean> {
     const dut = this.config.current.dut?.name;
@@ -1370,8 +1370,8 @@ export class Actions {
     if (!(await this.config.createConfigFor(inst.module))) {
       return false;
     }
-    // config-ul nou e activ si fara dut: fluxul standard, fara intrebarea
-    // de suprascriere (activeDut e acum undefined)
+    // the new config is active and without a dut: the standard flow, without the
+    // overwrite question (activeDut is now undefined)
     await this.setDut(inst.path);
     return this.config.current.dut?.name === inst.module;
   }
@@ -1394,7 +1394,7 @@ export class Actions {
 
   // ------------------------------------------------------------ intern
 
-  /** Actiunile pe agenti cer un DUT setat si potrivit cu vederea curenta. */
+  /** The agent actions require a DUT that is set and matches the current view. */
   private async checkDut(inst: Instance): Promise<boolean> {
     const dut = this.config.current.dut?.name;
     if (!dut) {
@@ -1440,14 +1440,14 @@ export class Actions {
     });
   }
 
-  /** Instanta de interfata conectata la portul dat, prin vederea parintelui. */
+  /** The interface instance connected to the given port, through the parent's view. */
   private connectedIface(
     model: ProjectModel,
     inst: Instance,
     portName: string,
     ifaceModule: string
   ): Instance | undefined {
-    // parintele = cea mai lunga cale-instanta prefix propriu al caii curente
+    // the parent = the longest instance path that is a proper prefix of the current path
     let parent: Instance | undefined;
     for (const i of model.instances) {
       if (
@@ -1471,7 +1471,7 @@ export class Actions {
         }
       }
     }
-    // fallback: unica instanta a acelui tip de interfata din design
+    // fallback: the sole instance of that interface type in the design
     const candidates = model.instances.filter(
       (i) => i.module === ifaceModule && i.iface
     );
@@ -1479,7 +1479,7 @@ export class Actions {
   }
 }
 
-/** `g_ch[0..2].u_ch` -> caile membrilor; un id fara pliaj ramane ca atare. */
+/** `g_ch[0..2].u_ch` -> the member paths; an id without a fold stays as-is. */
 function expandFold(rel: string): string[] {
   const m = /\[(\d+)\.\.(\d+)\]/.exec(rel);
   if (!m) {
@@ -1492,7 +1492,7 @@ function expandFold(rel: string): string[] {
   return out;
 }
 
-/** dut-ul euristic al unui bloc copil (scheletul din createSubenv, docs/03) */
+/** the heuristic dut of a child block (the skeleton from createSubenv, docs/03) */
 function heuristicDut(module: string, def: ModuleDef | undefined): ops.DutSpec {
   const oneBitIns = (def?.ports ?? []).filter(
     (p) => p.dir === "in" && p.width === 1
@@ -1509,7 +1509,7 @@ function heuristicDut(module: string, def: ModuleDef | undefined): ops.DutSpec {
   };
 }
 
-/** Sugestie de nume de agent din prefixul comun al pinilor selectati. */
+/** Agent name suggestion from the common prefix of the selected pins. */
 export function suggestName(pinNames: string[]): string {
   const names = pinNames.map((n) => n.replace(/^<port>\./, ""));
   if (names.length === 1) {

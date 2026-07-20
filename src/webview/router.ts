@@ -1,39 +1,39 @@
-// Ruterul de interconexiuni (docs/04): rutare ortogonala cu evitare de
-// obstacole pe grila de 8, prototipul propriu A* (varianta Lee cu costuri).
-// Modul pur, fara DOM — testabil in Node (scripts/test-router.mjs).
+// The interconnect router (docs/04): orthogonal routing with obstacle
+// avoidance on the grid of 8, our own A* prototype (Lee variant with costs).
+// Pure module, without DOM — testable in Node (scripts/test-router.mjs).
 //
-// Interfata e fixa (docs/04), ca implementarea sa fie interschimbabila cu
-// alternativa libavoid-WASM la prototipul comparativ:
+// The interface is fixed (docs/04), so the implementation is interchangeable with
+// the libavoid-WASM alternative in the comparative prototype:
 //   route(obstacles, pins, constraints) -> polylines
 //
-// Alegeri de proiectare, la scara diagramei (zeci de obstacole, sute de
-// muchii):
-// - A* pe celule de grila cu stare (x, y, directie): penalizarea coturilor
-//   e parte din cost, deci traseele ies drepte cand pot fi drepte;
-// - obstacolele se umfla cu o celula (traseele nu ating peretii);
-// - ancorele au directie de iesire/intrare impusa (pin vest iese spre
-//   stanga etc.), cu un culoar liber prin obstacolul propriu;
-// - fara evitare muchie-muchie in v1 — doar obstacole si coturi minime.
+// Design choices, at the diagram's scale (tens of obstacles, hundreds of
+// edges):
+// - A* on grid cells with state (x, y, direction): the bend penalty
+//   is part of the cost, so the routes come out straight when they can be straight;
+// - the obstacles inflate by one cell (the routes do not touch the walls);
+// - the anchors have an imposed exit/entry direction (a west pin exits toward
+//   the left etc.), with a free corridor through their own obstacle;
+// - no edge-to-edge avoidance in v1 — only obstacles and minimal bends.
 
 export interface Rect {
   x: number;
   y: number;
   w: number;
   h: number;
-  /** haloul propriu, in px (implicit: haloul global din constrangeri) */
+  /** its own halo, in px (default: the global halo from constraints) */
   pad?: number;
-  /** obstacol MOALE: traversarea costa `cost` per celula in loc sa fie
-   *  interzisa — folosit la texte (etichete/adnotari): cand canalele se
-   *  strang, ruterul trece peste o eticheta in loc sa cada pe fallback
-   *  prin blocuri */
+  /** SOFT obstacle: traversal costs `cost` per cell instead of being
+   *  forbidden — used for texts (labels/annotations): when the channels
+   *  tighten, the router passes over a label instead of falling back to the fallback
+   *  through blocks */
   cost?: number;
 }
 
-/** ancora unei muchii: punctul de pe granita nodului + directia de iesire */
+/** an edge's anchor: the point on the node's boundary + the exit direction */
 export interface RouteAnchor {
   x: number;
   y: number;
-  /** directia orizontala a iesirii din nod: +1 est, -1 vest */
+  /** the horizontal direction of the exit from the node: +1 east, -1 west */
   dir: 1 | -1;
 }
 
@@ -41,40 +41,40 @@ export interface RouteRequest {
   id: string;
   source: RouteAnchor;
   target: RouteAnchor;
-  /** grupul (net-ul) cererii: muchiile aceluiasi grup au voie sa imparta
-   *  trunchiul comun (fan-out), fara penalizare de suprapunere */
+  /** the request's group (the net): edges of the same group are allowed to share
+   *  the common trunk (fan-out), without an overlap penalty */
   group?: string;
 }
 
 export interface RouteConstraints {
-  /** pasul grilei (implicit 8, ca restul geometriei — docs/04) */
+  /** the grid step (default 8, like the rest of the geometry — docs/04) */
   grid?: number;
-  /** costul unui cot, in celule de mers drept (implicit 4) */
+  /** the cost of a bend, in cells of straight travel (default 4) */
   bendPenalty?: number;
-  /** costul suprapunerii paralele cu traseul altui net, per celula
-   *  (implicit 8 — practic interzisa cand exista alt culoar) */
+  /** the cost of parallel overlap with another net's route, per cell
+   *  (default 8 — practically forbidden when another corridor exists) */
   overlapPenalty?: number;
-  /** costul traversarii perpendiculare a traseului altui net (implicit 2 —
-   *  intersectiile sunt permise, dar mai rare cand exista alternativa) */
+  /** the cost of perpendicular crossing of another net's route (default 2 —
+   *  intersections are allowed, but rarer when an alternative exists) */
   crossPenalty?: number;
-  /** haloul din jurul obstacolelor, in px (implicit 16): traseele nu intra
-   *  in halou, deci nu ating stub-urile si etichetele lipite de blocuri;
-   *  ancorele primesc un culoar propriu prin haloul blocului lor */
+  /** the halo around the obstacles, in px (default 16): the routes do not enter
+   *  the halo, so they do not touch the stubs and the labels stuck to the blocks;
+   *  the anchors receive their own corridor through their block's halo */
   halo?: number;
-  /** costul mersului prin inelul de o celula din jurul haloului (implicit
-   *  1): la egalitate de lungime si coturi, traseul prefera canalul larg
-   *  in locul lipirii de blocuri — strambarile obligatorii raman ieftine */
+  /** the cost of traveling through the one-cell ring around the halo (default
+   *  1): at equal length and bends, the route prefers the wide channel
+   *  instead of sticking to the blocks — the mandatory detours stay cheap */
   hugPenalty?: number;
-  /** costul mersului PRIN halou (implicit 6): haloul e scump, nu interzis —
-   *  cand blocurile stau mai aproape decat doua halouri, firul se strecoara
-   *  prin gol platind costul, in loc sa cada pe fallback prin blocuri;
-   *  doar cutiile propriu-zise raman ziduri absolute */
+  /** the cost of traveling THROUGH the halo (default 6): the halo is expensive, not forbidden —
+   *  when the blocks stand closer than two halos, the wire slips
+   *  through the gap paying the cost, instead of falling back to the fallback through blocks;
+   *  only the boxes proper remain absolute walls */
   haloPenalty?: number;
-  /** raza (in celule) in jurul ancorelor proprii in care suprapunerea paralela
-   *  cu alt net NU se penalizeaza (implicit 6): firele care pornesc din aceeasi
-   *  sursa (fan-out) sau converg spre aceeasi destinatie (fan-in) se suprapun
-   *  langa capatul comun, in loc sa fie fortate pe culoare separate; departe de
-   *  capete, penalizarea ramane (net-urile distincte nu se lipesc pe lungime) */
+  /** the radius (in cells) around its own anchors within which parallel overlap
+   *  with another net is NOT penalized (default 6): the wires that start from the same
+   *  source (fan-out) or converge toward the same destination (fan-in) overlap
+   *  near the common end, instead of being forced onto separate corridors; far from
+   *  the ends, the penalty remains (distinct nets do not stick along their length) */
   fanoutRadius?: number;
 }
 
@@ -91,9 +91,9 @@ const DIRS: readonly Point[] = [
 ];
 
 /**
- * Ruteaza fiecare cerere ortogonal, ocolind obstacolele. Intoarce id ->
- * polilinie (in coordonatele diagramei); cererile fara drum lipsesc din
- * rezultat (apelantul decide fallback-ul).
+ * Routes each request orthogonally, going around the obstacles. Returns id ->
+ * polyline (in the diagram coordinates); requests without a path are missing from the
+ * result (the caller decides the fallback).
  */
 export function route(
   obstacles: readonly Rect[],
@@ -109,7 +109,7 @@ export function route(
   const haloPenalty = constraints?.haloPenalty ?? 6;
   const fanoutRadius = constraints?.fanoutRadius ?? 6;
 
-  // -- terenul: bbox-ul obstacolelor si ancorelor + margine de 4 celule
+  // -- the terrain: the bbox of the obstacles and anchors + a 4-cell margin
   let minX = Infinity;
   let minY = Infinity;
   let maxX = -Infinity;
@@ -131,18 +131,18 @@ export function route(
   if (minX === Infinity) {
     return new Map();
   }
-  const M = 4; // margine, in celule
+  const M = 4; // margin, in cells
   const gx0 = Math.floor(minX / grid) - M;
   const gy0 = Math.floor(minY / grid) - M;
   const gw = Math.ceil(maxX / grid) - gx0 + 2 * M;
   const gh = Math.ceil(maxY / grid) - gy0 + 2 * M;
   if (gw <= 0 || gh <= 0 || gw * gh > 1_000_000) {
-    return new Map(); // teren degenerat sau absurd de mare
+    return new Map(); // degenerate or absurdly large terrain
   }
 
-  // -- harti de teren: cutiile obstacolelor dure sunt ziduri; haloul din
-  // jurul lor e COST mare (traversabil in inghesuiala), inelul de dincolo
-  // de halou e cost mic (estetica), textele au costul lor propriu
+  // -- terrain maps: the hard obstacles' boxes are walls; the halo
+  // around them is a large COST (traversable in a crush), the ring beyond
+  // the halo is a small cost (aesthetics), the texts have their own cost
   const inflate = Math.max(1, Math.round(halo / grid));
   const blocked = new Uint8Array(gw * gh);
   const softCost = new Uint16Array(gw * gh);
@@ -153,12 +153,12 @@ export function route(
       : o.pad !== undefined
         ? Math.max(0, Math.round(o.pad / grid))
         : inflate;
-    // cutia propriu-zisa (zid pentru obstacole dure)
+    // the box proper (a wall for hard obstacles)
     const bx1 = Math.floor(o.x / grid) - gx0;
     const by1 = Math.floor(o.y / grid) - gy0;
     const bx2 = Math.ceil((o.x + o.w) / grid) - gx0;
     const by2 = Math.ceil((o.y + o.h) / grid) - gy0;
-    // halou + inel de proximitate (doar obstacole dure)
+    // halo + proximity ring (only hard obstacles)
     const ring = soft ? 0 : 1;
     const x1 = bx1 - inf;
     const y1 = by1 - inf;
@@ -180,8 +180,8 @@ export function route(
     }
   }
 
-  // ocupanta traseelor deja rutate, pe orientari: proprietarul (indexul de
-  // grup) al fiecarei celule; -1 = libera, -2 = folosita de mai multe grupuri
+  // the occupancy of the already-routed routes, by orientation: the owner (the
+  // group index) of each cell; -1 = free, -2 = used by more than one group
   const ownH = new Int32Array(gw * gh).fill(-1);
   const ownV = new Int32Array(gw * gh).fill(-1);
   const groupIdx = new Map<string, number>();
@@ -195,7 +195,7 @@ export function route(
     return g;
   };
 
-  // cele scurte primele: isi iau traseele directe, cele lungi ocolesc
+  // the short ones first: they take their direct routes, the long ones go around
   const ordered = [...requests].sort(
     (a, b) =>
       Math.abs(a.source.x - a.target.x) + Math.abs(a.source.y - a.target.y) -
@@ -213,7 +213,7 @@ export function route(
     });
     if (out) {
       result.set(req.id, out.points);
-      // marcheaza celulele traseului, pe orientarea fiecarui pas
+      // marks the route's cells, by the orientation of each step
       for (let i = 0; i < out.cells.length - 1; i++) {
         const a = out.cells[i];
         const b = out.cells[i + 1];
@@ -237,9 +237,9 @@ interface Terrain {
   bendPenalty: number;
   overlapPenalty: number;
   crossPenalty: number;
-  /** lungimea culoarului liber de la ancore, in celule */
+  /** the length of the free corridor from the anchors, in cells */
   corridor: number;
-  /** raza in jurul ancorelor unde suprapunerea nu se penalizeaza (fan-out/in) */
+  /** the radius around the anchors where overlap is not penalized (fan-out/in) */
   fanoutRadius: number;
   gx0: number;
   gy0: number;
@@ -253,9 +253,9 @@ interface Terrain {
 }
 
 interface RouteResult {
-  /** polilinia finala, in coordonatele diagramei */
+  /** the final polyline, in the diagram coordinates */
   points: Point[];
-  /** celulele de grila traversate (pentru marcarea ocupantei) */
+  /** the traversed grid cells (for marking the occupancy) */
   cells: Point[];
 }
 
@@ -268,11 +268,11 @@ function routeOne(req: RouteRequest, t: Terrain): RouteResult | null {
   const sy = Math.round(req.source.y / grid) - gy0;
   const tx = Math.round(req.target.x / grid) - gx0;
   const ty = Math.round(req.target.y / grid) - gy0;
-  const sDir = req.source.dir > 0 ? 0 : 1; // indexul in DIRS
-  const tDir = req.target.dir > 0 ? 1 : 0; // directia de MERS spre pin
+  const sDir = req.source.dir > 0 ? 0 : 1; // the index in DIRS
+  const tDir = req.target.dir > 0 ? 1 : 0; // the direction of TRAVEL toward the pin
 
-  // culoar liber la ancore: celule pe directia de iesire/intrare care
-  // raman traversabile chiar daca stau in haloul obstacolului propriu
+  // free corridor at the anchors: cells along the exit/entry direction that
+  // stay traversable even if they lie in the own obstacle's halo
   const free = new Set<number>();
   for (let i = 0; i <= corridor; i++) {
     free.add((sy) * gw + (sx + Math.sign(DIRS[sDir].x) * i));
@@ -286,13 +286,13 @@ function routeOne(req: RouteRequest, t: Terrain): RouteResult | null {
     return blocked[idx] === 1 && !free.has(idx);
   };
 
-  // A* cu stare (celula, directie); cost: 1/celula + bendPenalty/cot
+  // A* with state (cell, direction); cost: 1/cell + bendPenalty/bend
   const stateCount = gw * gh * 4;
   const dist = new Float64Array(stateCount).fill(Infinity);
   const prev = new Int32Array(stateCount).fill(-1);
   const sid = (sy * gw + sx) * 4 + sDir;
   dist[sid] = 0;
-  // coada de prioritati minimala (heap binar pe perechi [f, stateId])
+  // minimal priority queue (binary heap on pairs [f, stateId])
   const heap: number[] = [];
   const push = (f: number, id: number): void => {
     heap.push(f, id);
@@ -356,7 +356,7 @@ function routeOne(req: RouteRequest, t: Terrain): RouteResult | null {
     const cx = cell % gw;
     const cy = (cell - cx) / gw;
     for (let nd = 0; nd < 4; nd++) {
-      // fara intoarcere la 180 de grade
+      // no 180-degree turn
       if ((cdir ^ nd) === 1 && (cdir >> 1) === (nd >> 1)) {
         continue;
       }
@@ -365,11 +365,11 @@ function routeOne(req: RouteRequest, t: Terrain): RouteResult | null {
       if (isBlocked(nx, ny)) {
         continue;
       }
-      // suprapunerea paralela cu traseul altui net costa scump; traversarea
-      // perpendiculara e permisa, dar usor penalizata (docs/04). EXCEPTIE: langa
-      // ancorele PROPRII (fan-out la sursa / fan-in la destinatie) suprapunerea
-      // e gratuita — firele care impart un capat se strang acolo, in loc sa fie
-      // fortate pe culoare separate (cererea utilizatorului la validare)
+      // parallel overlap with another net's route is expensive; perpendicular
+      // crossing is allowed, but lightly penalized (docs/04). EXCEPTION: near
+      // the OWN anchors (fan-out at the source / fan-in at the destination) overlap
+      // is free — the wires that share an end gather there, instead of being
+      // forced onto separate corridors (the user's request at validation)
       const idx = ny * gw + nx;
       const along = nd < 2 ? ownH[idx] : ownV[idx];
       const across = nd < 2 ? ownV[idx] : ownH[idx];
@@ -396,7 +396,7 @@ function routeOne(req: RouteRequest, t: Terrain): RouteResult | null {
     return null;
   }
 
-  // reconstructie + simplificare coliniara, inapoi in coordonate diagrama
+  // reconstruction + collinear simplification, back into diagram coordinates
   const cells: Point[] = [];
   for (let cur = goal; cur !== -1; cur = prev[cur]) {
     const cell = (cur - (cur % 4)) / 4;
@@ -411,21 +411,21 @@ function routeOne(req: RouteRequest, t: Terrain): RouteResult | null {
   const emit = (p: Point): void => {
     const n = pts.length;
     if (n >= 1 && pts[n - 1].x === p.x && pts[n - 1].y === p.y) {
-      return; // duplicat exact
+      return; // exact duplicate
     }
     if (
       n >= 2 &&
       ((pts[n - 1].x === pts[n - 2].x && p.x === pts[n - 1].x) ||
         (pts[n - 1].y === pts[n - 2].y && p.y === pts[n - 1].y))
     ) {
-      pts[n - 1] = p; // prelungeste segmentul coliniar
+      pts[n - 1] = p; // extends the collinear segment
     } else {
       pts.push(p);
     }
   };
-  // ancorele exacte se INSEREAZA la capete (nu inlocuiesc punctele de
-  // grila): ancora imparte y-ul cu celula sa, deci stub-ul ramane
-  // orizontal chiar si cu x fractionar — niciodata segmente oblice
+  // the exact anchors are INSERTED at the ends (they do not replace the grid
+  // points): the anchor shares the y with its cell, so the stub stays
+  // horizontal even with a fractional x — never oblique segments
   emit({ x: req.source.x, y: req.source.y });
   for (const c of cells) {
     emit({ x: (c.x + gx0) * grid, y: (c.y + gy0) * grid });

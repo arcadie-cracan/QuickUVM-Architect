@@ -1,9 +1,9 @@
-// Serviciul sidecar-ului de layout (docs/04): incarcare la activare,
-// scriere atomica (temp + rename, coalescata), watcher pentru editari
-// externe (git checkout, editare manuala) si invalidare gratioasa la
-// fiecare model nou. Host-ul e singura autoritate pe fisier; webview-ul
-// primeste continutul prin `layout/full` si cere mutatii prin mesajele
-// `layout/snapshot` / `fold/toggled` / `node/flipped` / `net/render` (docs/05).
+// The layout sidecar service (docs/04): load on activation,
+// atomic write (temp + rename, coalesced), watcher for external
+// edits (git checkout, manual editing) and graceful invalidation on
+// every new model. The host is the sole authority on the file; the webview
+// receives the content through `layout/full` and requests mutations through the
+// `layout/snapshot` / `fold/toggled` / `node/flipped` / `net/render` messages (docs/05).
 
 import * as fs from "fs";
 import * as path from "path";
@@ -24,14 +24,14 @@ import {
 } from "./sidecarops";
 
 const DEFAULT_PATH = ".vscode/quickuvm-architect.yaml";
-/** fereastra in care evenimentele watcher-ului sunt considerate propriile
- *  noastre scrieri, nu editari externe */
+/** the window during which the watcher's events are considered our own
+ *  writes, not external edits */
 const SELF_WRITE_MS = 1500;
 
 export class LayoutStore implements vscode.Disposable {
   private data: SidecarData = emptySidecar();
   private readonly changeEmitter = new vscode.EventEmitter<SidecarData>();
-  /** sidecar schimbat din afara gestului curent (extern, invalidare, curatare) */
+  /** sidecar changed from outside the current gesture (external, invalidation, cleanup) */
   readonly onExternalChange = this.changeEmitter.event;
 
   private watcher: vscode.FileSystemWatcher | undefined;
@@ -48,10 +48,10 @@ export class LayoutStore implements vscode.Disposable {
     return this.data;
   }
 
-  // ------------------------------------------------------- mutatii cerute
+  // ------------------------------------------------------- requested mutations
 
-  /** snapshot-ul pozitiilor intregii vederi (docs/04): drag-end si pin-uirea
-   *  elementelor fara samanta dintr-o vedere aranjata */
+  /** the position snapshot of the whole view (docs/04): drag-end and pinning
+   *  the seedless elements of an arranged view */
   positionsSnapshotted(
     viewId: string,
     nodes: Record<string, { x: number; y: number }>
@@ -75,8 +75,8 @@ export class LayoutStore implements vscode.Disposable {
     this.scheduleSave();
   }
 
-  /** nivelul 4 (docs/04): fir <-> eticheta per net; alegerea egala cu
-   *  sugestia din model sterge override-ul */
+  /** level 4 (docs/04): wire <-> label per net; a choice equal to
+   *  the model's suggestion deletes the override */
   netRender(viewId: string, net: string, render: "wire" | "label"): void {
     const suggestion =
       this.model?.views[viewId]?.nets.find((n) => n.name === net)?.render ??
@@ -85,13 +85,13 @@ export class LayoutStore implements vscode.Disposable {
     this.scheduleSave();
   }
 
-  /** "Re-aranjeaza tot": pozitiile vederii dispar, pliaje/rasturnari raman */
+  /** "Re-arrange all": the view's positions disappear, folds/flips remain */
   relayout(viewId: string): void {
     clearPositions(this.data, viewId);
     this.scheduleSave();
   }
 
-  /** comanda "Clean Orphaned Layout Overrides"; intoarce cate erau */
+  /** the "Clean Orphaned Layout Overrides" command; returns how many there were */
   cleanOrphans(): number {
     const n = this.data.orphans.length;
     if (n) {
@@ -102,7 +102,7 @@ export class LayoutStore implements vscode.Disposable {
     return n;
   }
 
-  /** model nou: invalidare gratioasa (docs/04) — orfanele migreaza, nu se sterg */
+  /** new model: graceful invalidation (docs/04) — the orphans migrate, they are not deleted */
   setModel(model: ProjectModel): void {
     this.model = model;
     const today = new Date().toISOString().slice(0, 10);
@@ -115,7 +115,7 @@ export class LayoutStore implements vscode.Disposable {
     }
   }
 
-  // ------------------------------------------------------------- fisierul
+  // ------------------------------------------------------------- the file
 
   private filePath(): string | undefined {
     const root = vscode.workspace.workspaceFolders?.[0];
@@ -140,13 +140,13 @@ export class LayoutStore implements vscode.Disposable {
           `${this.data.orphans.length} orphan(s)`
       );
     } catch (e) {
-      // fisier corupt sau versiune necunoscuta: nu-l suprascriem orbeste —
-      // il pastram ca .bak si pornim curat (invalidare gratioasa si aici)
+      // corrupt file or unknown version: we do not overwrite it blindly —
+      // we keep it as .bak and start clean (graceful invalidation here too)
       const bak = `${file}.bak`;
       try {
         fs.copyFileSync(file, bak);
       } catch {
-        /* pastrarea .bak e best-effort */
+        /* keeping the .bak is best-effort */
       }
       this.log.appendLine(`[layout] unreadable sidecar (${String(e)}); kept as ${bak}`);
       void vscode.window.showWarningMessage(
@@ -159,8 +159,8 @@ export class LayoutStore implements vscode.Disposable {
     }
   }
 
-  /** scriere atomica, coalescata: temp + rename (rename suprascrie pe Windows
-   *  prin MOVEFILE_REPLACE_EXISTING, deci cititorii nu vad fisiere partiale) */
+  /** atomic, coalesced write: temp + rename (rename overwrites on Windows
+   *  via MOVEFILE_REPLACE_EXISTING, so readers do not see partial files) */
   private scheduleSave(): void {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
@@ -188,7 +188,7 @@ export class LayoutStore implements vscode.Disposable {
     const root = vscode.workspace.workspaceFolders?.[0];
     const file = this.filePath();
     if (!root || !file || !file.startsWith(root.uri.fsPath)) {
-      return; // cale absoluta in afara workspace-ului: fara watcher
+      return; // absolute path outside the workspace: no watcher
     }
     const rel = path.relative(root.uri.fsPath, file).replace(/\\/g, "/");
     this.watcher = vscode.workspace.createFileSystemWatcher(
@@ -196,11 +196,11 @@ export class LayoutStore implements vscode.Disposable {
     );
     const external = (): void => {
       if (Date.now() - this.lastWrite < SELF_WRITE_MS) {
-        return; // propria noastra scriere
+        return; // our own write
       }
       this.load();
       if (this.model) {
-        this.setModel(this.model); // re-valideaza contra modelului curent
+        this.setModel(this.model); // re-validate against the current model
       }
       this.changeEmitter.fire(this.data);
     };
@@ -212,7 +212,7 @@ export class LayoutStore implements vscode.Disposable {
   dispose(): void {
     if (this.saveTimer) {
       clearTimeout(this.saveTimer);
-      this.save(); // nu pierdem ultima mutatie la inchidere
+      this.save(); // do not lose the last mutation on close
     }
     this.watcher?.dispose();
     this.changeEmitter.dispose();

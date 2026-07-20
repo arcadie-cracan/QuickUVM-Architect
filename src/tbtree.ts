@@ -1,7 +1,7 @@
-// Tree view-ul "Verification Hierarchy" (nativ, in sidebar): arborele de
-// niveluri al mediului TB (docs/05, D24). Constructia pura e in
-// src/tbtree-build.ts (testabila in Node); aici e doar ambalajul
-// TreeDataProvider + indicii de reveal.
+// The "Verification Hierarchy" tree view (native, in the sidebar): the
+// level tree of the TB environment (docs/05, D24). The pure construction is in
+// src/tbtree-build.ts (testable in Node); here is only the
+// TreeDataProvider wrapper + the reveal indices.
 
 import * as vscode from "vscode";
 import type { QuvmConfig } from "./quickuvm";
@@ -33,7 +33,7 @@ export class VerificationProvider
     return this.roots.length > 0;
   }
 
-  /** nodul care reprezinta blocul `id` la nivelul `focus` (reveal din diagrama) */
+  /** the node representing block `id` at level `focus` (reveal from the diagram) */
   findByIdent(focus: string, id: string): VNode | undefined {
     return this.byIdent.get(`${focus}|${id}`) ?? this.byFocus.get(focus);
   }

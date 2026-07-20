@@ -1,9 +1,9 @@
-// Teste Node pentru modulul PUR al probelor whitebox (src/probe.ts — rezolvarea
-// instantei DUT, calea XMR si derivarea LATIMII), rulate contra modelului REAL
-// de regresie (examples/model.json): npm run test:probe
+// Node tests for the PURE module of the whitebox probes (src/probe.ts — DUT
+// instance resolution, the XMR path and WIDTH derivation), run against the REAL
+// regression model (examples/model.json): npm run test:probe
 //
-// Miza: derivarea naiva a latimii e GRESITA, iar modelul de regresie contine
-// exact ambele capcane (ch_out prin `select`, din prin `concat`).
+// The stake: naive width derivation is WRONG, and the regression model contains
+// exactly both pitfalls (ch_out via `select`, din via `concat`).
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -36,27 +36,27 @@ function test(name, fn) {
 const SOC = { dut: { name: "soc_top", clock: "clk", reset: "rst_n" } };
 const TOP = { dut: { name: "demo_top", clock: "clk", reset: "rst_n" } };
 
-// ------------------------------------------------------------- latimea
+// ------------------------------------------------------------- the width
 
 test("netWidth: `din` in soc_top = 8 (portul propriu), NU 16 de la pinul concat", () => {
-  // capcana: pinul g_ch[0].u_ch.din e un port de 16 biti, atins prin
-  // `concat {din,din}` — latimea LUI nu e latimea netului
+  // pitfall: the pin g_ch[0].u_ch.din is a 16-bit port, reached through
+  // `concat {din,din}` — ITS width is not the net width
   const w = netWidth(model, "demo_top.u_soc", "din");
   assert.deepEqual(w, { width: 8, unpacked: false });
 });
 
 test("netWidth: `ch_out` in soc_top e UNPACKED (48b, [3]), nu vector plat", () => {
-  // capcana simetrica: pinii g_ch[k].u_ch.dout sunt porturi de 16 prin `select`
+  // symmetric pitfall: the pins g_ch[k].u_ch.dout are 16-bit ports via `select`
   const w = netWidth(model, "demo_top.u_soc", "ch_out");
   assert.equal(w.width, 48);
   assert.equal(w.unpacked, true);
 });
 
 test("netWidth: fara port propriu, latimea vine de la un pin legat cu netul INTREG", () => {
-  // in vederea demo_top, netul `din` nu e port al lui demo_top; singurul capat
-  // e pinul u_soc.din, cu conn.kind === "net" -> portul din al lui soc_top (8b)
+  // in the demo_top view, the net `din` is not a port of demo_top; the only endpoint
+  // is the pin u_soc.din, with conn.kind === "net" -> the din port of soc_top (8b)
   assert.deepEqual(netWidth(model, "demo_top", "din"), { width: 8, unpacked: false });
-  // `clk` la fel: bus_i.clk / u_soc.clk, ambele conn "net" -> 1 bit
+  // `clk` likewise: bus_i.clk / u_soc.clk, both conn "net" -> 1 bit
   assert.deepEqual(netWidth(model, "demo_top", "clk"), { width: 1, unpacked: false });
 });
 
@@ -68,12 +68,12 @@ test("netWidth: net inexistent / vedere inexistenta -> nederivabil, fara excepti
   assert.deepEqual(netWidth(model, "nu.exista", "din"), { width: null, unpacked: false });
 });
 
-// ------------------------------------------------- instanta DUT si calea
+// ------------------------------------------------- the DUT instance and the path
 
 test("resolveDutInstance: numele de MODUL din YAML -> instanta stramos a vederii", () => {
   assert.equal(resolveDutInstance(model, "soc_top", "demo_top.u_soc").path, "demo_top.u_soc");
   assert.equal(resolveDutInstance(model, "demo_top", "demo_top").path, "demo_top");
-  // vederea e DEASUPRA DUT-ului: nicio instanta stramos
+  // the view is ABOVE the DUT: no ancestor instance
   assert.equal(resolveDutInstance(model, "soc_top", "demo_top"), null);
   assert.equal(resolveDutInstance(model, "nu_exista", "demo_top"), null);
 });
@@ -81,7 +81,7 @@ test("resolveDutInstance: numele de MODUL din YAML -> instanta stramos a vederii
 test("probePath: relativa la instanta DUT", () => {
   assert.equal(probePath("demo_top.u_soc", "demo_top.u_soc", "w"), "w");
   assert.equal(probePath("demo_top.u_soc.g_ch[1].u_ch", "demo_top.u_soc", "w"), "g_ch[1].u_ch.w");
-  assert.equal(probePath("demo_top", "demo_top.u_soc", "w"), null); // deasupra DUT-ului
+  assert.equal(probePath("demo_top", "demo_top.u_soc", "w"), null); // above the DUT
 });
 
 test("probeName: sanitizat ca identificator SV", () => {
@@ -102,16 +102,16 @@ test("reservedNames: probe + interfete/porturi de agent + ceas + reset", () => {
   assert.deepEqual(r, ["a_if", "clk", "din", "lvl", "rst_n", "sum"]);
 });
 
-// ------------------------------------------------------------ propunerea
+// ------------------------------------------------------------ the proposal
 
 test("proposeProbe: caz valid — net intern sub DUT, cu latime derivata", () => {
-  // DUT = demo_top: netul `din` din vederea demo_top e INTERN (nu e port)
+  // DUT = demo_top: the net `din` in the demo_top view is INTERNAL (not a port)
   const r = proposeProbe(model, TOP, "demo_top", "din");
   assert.equal(r.ok, true, JSON.stringify(r));
   assert.equal(r.proposal.name, "din");
-  assert.equal(r.proposal.path, "din"); // vederea E instanta DUT
+  assert.equal(r.proposal.path, "din"); // the view IS the DUT instance
   assert.equal(r.proposal.width, 8);
-  assert.ok(r.proposal.taken.includes("clk")); // ceasul e rezervat
+  assert.ok(r.proposal.taken.includes("clk")); // the clock is reserved
 });
 
 test("proposeProbe: REFUZA pe bench de subsistem (H1 — quick-uvm arunca)", () => {
@@ -123,7 +123,7 @@ test("proposeProbe: REFUZA pe bench de subsistem (H1 — quick-uvm arunca)", () 
 
 test("proposeProbe: REFUZA fara DUT si cand vederea nu e sub DUT", () => {
   assert.match(proposeProbe(model, {}, "demo_top.u_soc", "din").reason, /no DUT/i);
-  // DUT = soc_top, dar vederea demo_top e DEASUPRA lui
+  // DUT = soc_top, but the demo_top view is ABOVE it
   assert.match(proposeProbe(model, SOC, "demo_top", "din").reason, /not inside the DUT/i);
 });
 
@@ -147,7 +147,7 @@ test("proposeProbe: REFUZA un port de DUT deja mapat pe agent (redundant)", () =
   const r = proposeProbe(model, cfg, "demo_top.u_soc", "din");
   assert.equal(r.ok, false);
   assert.match(r.reason, /already mapped to an agent/i);
-  // acelasi port, dar NEmapat -> se poate sonda
+  // the same port, but UNmapped -> can be probed
   const ok = proposeProbe(model, cfg, "demo_top.u_soc", "sum");
   assert.equal(ok.ok, true, JSON.stringify(ok));
   assert.equal(ok.proposal.width, 8);
@@ -158,8 +158,8 @@ test("proposeProbe: net inexistent -> refuz explicit, fara exceptie", () => {
 });
 
 test("probeCoverageAllowed: NU pe layout packaged (bug K2 #1 din 0.9.2)", () => {
-  // cu `layout: packaged`, env_pkg nu include probe_monitor -> nu compileaza;
-  // gate-ul trebuie sa refuze DOAR packaged, nu si celelalte layout-uri
+  // with `layout: packaged`, env_pkg does not include probe_monitor -> does not compile;
+  // the gate must refuse ONLY packaged, not the other layouts too
   assert.equal(probeCoverageAllowed({ ...SOC, layout: "packaged" }), false);
   assert.equal(probeCoverageAllowed(SOC), true);
   assert.equal(probeCoverageAllowed({ ...SOC, layout: "flat" }), true);
