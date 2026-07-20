@@ -137,6 +137,39 @@ export function widthClass(w: number | null): string {
 const GLYPH_W = 22;
 
 /**
+ * Geometry of a concat/select marker chip on the EXTENDED pin. The pin extension
+ * runs from the block (`x0`) to the tip (`x0 + out*MARKER_STUB`), where the wire
+ * anchors. The chip is CENTERED on the extension that REMAINS after reserving
+ * `wReserve` near the block for the bus-width marker (`16`/slash), so the two never
+ * overlap; a stub runs past the chip to the tip (user request, Jul 2026 — keep the
+ * pin extension, anchor the wire at its tip). `out` = -1 west / +1 east.
+ */
+function markerChip(
+  x0: number,
+  out: number,
+  wReserve: number
+): { tip: number; chipOuter: number; chipInner: number; center: number } {
+  const tip = x0 + out * MARKER_STUB; // wire anchor / stub tip
+  const zoneInner = x0 + out * wReserve; // block-side end of the chip zone
+  const center = (tip + zoneInner) / 2; // centered on the remaining extension
+  return {
+    tip,
+    center,
+    chipOuter: center + out * (MARKER_CW / 2), // toward the tip
+    chipInner: center - out * (MARKER_CW / 2), // toward the block
+  };
+}
+
+/** the bus-width-marker reserve near the block (the `16`/slash zone the chip must
+ *  clear), capped so the chip + a short tip stub always fit inside MARKER_STUB */
+function widthReserve(wtxt: string): number {
+  return Math.min(
+    MARKER_STUB - MARKER_CW - 4,
+    wtxt ? STUB / 2 + wtxt.length * 6.5 + 2 : STUB / 2
+  );
+}
+
+/**
  * The glyphs of a pin's annotation at the stub's free end (drawing vocabulary,
  * docs/04): `nc` empty circle, `const` tie-cell box with the value, `select`/`concat`
  * netlistsvg wedge (split narrows outward, join widens) + label,
@@ -147,7 +180,8 @@ function drawAnnotation(
   spec: ScenePin,
   xOut: number,
   py: number,
-  west: boolean
+  west: boolean,
+  wReserve: number
 ): SVGElement[] {
   const kind: NoteKind | null = spec.noteKind;
   const out = west ? -1 : 1;
@@ -203,9 +237,12 @@ function drawAnnotation(
     // overlapped with the width label / note); the dimensions and the extended stub
     // come from the module constants MARKER_*
     const brackets = kind === "concat" ? "{}" : "[]";
-    const inner = xOut + out * MARKER_GAP; // the chip's block-facing edge
-    const cx = inner + out * (MARKER_CW / 2);
-    const bx = west ? inner - MARKER_CW : inner;
+    // The chip is centered on the pin extension that remains after the bus-width
+    // marker's reserve (markerChip); the wire anchors at the tip past it, and a
+    // short stub separates the chip from the tip. drawAnnotation gets the plain-
+    // stub end `xOut`, so recover the block edge x0 = xOut - out*STUB.
+    const chip = markerChip(xOut - out * STUB, out, wReserve);
+    const bx = west ? chip.chipOuter : chip.chipInner; // rect left edge
     return [
       el("rect", {
         class: "split-join",
@@ -219,7 +256,7 @@ function drawAnnotation(
         "text",
         {
           class: "split-sign",
-          x: String(cx),
+          x: String(chip.center),
           // y approximately centered as a fallback; the fine centering is done by
           // `centerChipSigns` after rendering. We do NOT use `dominant-baseline`:
           // getBBox + dominant-baseline differ between Chromium versions
@@ -230,7 +267,18 @@ function drawAnnotation(
         },
         brackets
       ),
-      noteText(inner + out * (MARKER_CW + 3)),
+      // the {…}/[hi:lo] note goes ABOVE the chip (the tip side carries the
+      // wire/label, the block side the bus-width marker)
+      el(
+        "text",
+        {
+          class: "conn-note",
+          x: String(chip.center),
+          y: String(py - MARKER_CH / 2 - 3),
+          "text-anchor": "middle",
+        },
+        spec.note ?? ""
+      ),
     ];
   }
   // expr / mixed / another note without a dedicated glyph: plain text
@@ -543,6 +591,26 @@ export function edgeObstacles(
       if (!pin) {
         continue;
       }
+      const west =
+        (port.x ?? 0) + (port.width ?? 0) / 2 < (child.width ?? 0) / 2;
+      const py = (child.y ?? 0) + (port.y ?? 0) + (port.height ?? 0) / 2;
+      // A concat/select decorator is a solid box: wires must never route through
+      // it. Add its rect as a HARD obstacle ALWAYS — even when the pin has a wire
+      // (which otherwise removes the pin's obstacle below). The pin's own wire
+      // connects at the tip, BEYOND the chip, so this never blocks it.
+      if (pin.noteKind === "select" || pin.noteKind === "concat") {
+        const out = west ? -1 : 1;
+        const x0 = west ? (child.x ?? 0) : (child.x ?? 0) + (child.width ?? 0);
+        const wtxt =
+          (pin.bus && pin.width ? `${pin.width}` : "") + (pin.mult ?? "");
+        const chip = markerChip(x0, out, widthReserve(wtxt));
+        obstacles.push({
+          x: Math.min(chip.chipOuter, chip.chipInner),
+          y: py - MARKER_CH / 2,
+          w: MARKER_CW,
+          h: MARKER_CH,
+        });
+      }
       if (wirePins.has(port.id)) {
         continue; // the pin's own wire coexists with the pin's label
       }
@@ -550,9 +618,6 @@ export function edgeObstacles(
       if (!w) {
         continue;
       }
-      const west =
-        (port.x ?? 0) + (port.width ?? 0) / 2 < (child.width ?? 0) / 2;
-      const py = (child.y ?? 0) + (port.y ?? 0) + (port.height ?? 0) / 2;
       // SOFT obstacle (cost, not wall): in narrow channels the router passes
       // over the label instead of falling to the fallback through blocks
       obstacles.push({
@@ -1163,6 +1228,10 @@ function drawPin(
   const xOut = west ? -STUB : nodeW + STUB;
   const stubOut = isMarker ? (west ? -MARKER_STUB : nodeW + MARKER_STUB) : xOut;
   const mx = (x0 + xOut) / 2;
+  // the bus-width label (`16` / `16×3`); its reserve keeps the marker chip clear
+  // of it so the chip centers on the REMAINING pin extension (see markerChip)
+  const wtxt = (spec.bus && spec.width ? `${spec.width}` : "") + (spec.mult ?? "");
+  const wReserve = widthReserve(wtxt);
 
   const g = el("g", {
     class: `pin${spec.iface ? " iface" : ""} ${widthClass(spec.width)}`.trimEnd(),
@@ -1174,24 +1243,23 @@ function drawPin(
   }
 
   if (isMarker) {
-    // concat/select marker pin: the stub no longer PIERCES the chip (the old
-    // "the pin sticks out visibly through the rectangle" request is SUPERSEDED —
-    // on a wide bus the stub is thick and looks like a wire passing through
-    // `{}`/`[]`). It is drawn as TWO segments touching the chip's faces, so
-    // nothing crosses it: block -> block-side face, and tip-side face -> tip
-    // (where the wire anchors, like the label in show-as-label). The faces come
-    // from drawAnnotation's geometry: inner = xOut + out*GAP, outer = inner + out*CW.
+    // concat/select marker pin: the pin extension stays (block -> tip), the wire
+    // anchors at the tip, and the chip is centered on the extension that remains
+    // after the bus-width reserve (markerChip; user request, Jul 2026). The stub
+    // is two segments touching the chip's faces, so nothing crosses it: block ->
+    // block-side face, and tip-side face -> tip.
     const out = west ? -1 : 1;
-    const chipInner = xOut + out * MARKER_GAP;
-    const chipOuter = chipInner + out * MARKER_CW;
+    const chip = markerChip(x0, out, wReserve);
     g.append(
       el("line", {
         class: "stub",
-        x1: String(x0), y1: String(py), x2: String(chipInner), y2: String(py),
+        x1: String(x0), y1: String(py),
+        x2: String(chip.chipInner), y2: String(py),
       }),
       el("line", {
         class: "stub",
-        x1: String(chipOuter), y1: String(py), x2: String(stubOut), y2: String(py),
+        x1: String(chip.chipOuter), y1: String(py),
+        x2: String(stubOut), y2: String(py),
       })
     );
   } else {
@@ -1227,7 +1295,6 @@ function drawPin(
   // short stub (observation at validation). WITHOUT `/`: the slash on the wire is already
   // the bus marker, so `/16` would double the slash. The margin is reserved in
   // estPinText (the label sticks out beyond the stub at wide values)
-  const wtxt = (spec.bus && spec.width ? `${spec.width}` : "") + (spec.mult ?? "");
   if (wtxt) {
     g.append(
       el(
@@ -1242,7 +1309,7 @@ function drawPin(
       )
     );
   }
-  for (const a of drawAnnotation(spec, xOut, py, west)) {
+  for (const a of drawAnnotation(spec, xOut, py, west, wReserve)) {
     g.append(a);
   }
   if (spec.netLabel) {
@@ -1250,9 +1317,8 @@ function drawPin(
     // net's label is selectable (click -> the inspector's Net section, with the
     // wire/label toggle).
     // On a split/join marker pin (concat/select) the label anchors at the TIP of
-    // the extended stub (stubOut = MARKER_STUB), BEYOND the chip — otherwise it
-    // overlapped `{}`/`[]` (the chip sits at xOut+MARKER_GAP; user request: the
-    // name at the extended port boundary, not on top of the marker). Without a
+    // the extended stub (stubOut = MARKER_STUB), at the extended port boundary —
+    // beyond both the chip (centered mid-extension) and the tip stub. Without a
     // marker stubOut == xOut, so plain pins are unchanged.
     const labelX = west ? stubOut - 3 : stubOut + 3;
     const lbl = el(
