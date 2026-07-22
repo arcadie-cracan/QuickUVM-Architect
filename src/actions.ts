@@ -17,6 +17,7 @@ import { ConfigService, TbEditTarget } from "./config";
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
+import type { QuvmConfig } from "./quickuvm";
 import * as ops from "./yamlops";
 
 export class Actions {
@@ -208,6 +209,7 @@ export class Actions {
     const roles = this.config.lastOverlay?.roles ?? {};
     const inputs: ops.AgentPortSpec[] = [];
     const outputs: ops.AgentPortSpec[] = [];
+    const inouts: ops.AgentPortSpec[] = [];
     const skipped: string[] = [];
 
     for (const p of ports) {
@@ -215,9 +217,12 @@ export class Actions {
         skipped.push(vscode.l10n.t("{0} (role {1})", p.name, roles[p.name]));
         continue;
       }
-      if (p.dir === "inout" || p.dir === "ref") {
+      // SV `ref` ports have no QuickUVM equivalent (the schema's port kinds are
+      // inputs/outputs/inouts) — still skipped. `inout`, by contrast, maps to
+      // `ports.inouts[]` (schema §1.5) and is routed below, not dropped.
+      if (p.dir === "ref") {
         skipped.push(
-          vscode.l10n.t("{0} (inout not supported by the QuickUVM schema)", p.name)
+          vscode.l10n.t("{0} (ref port — not a QuickUVM port concept)", p.name)
         );
         continue;
       }
@@ -249,10 +254,12 @@ export class Actions {
         }
         width = p.width;
       }
-      (p.dir === "in" ? inputs : outputs).push({ name: p.name, width });
+      const bucket =
+        p.dir === "in" ? inputs : p.dir === "inout" ? inouts : outputs;
+      bucket.push({ name: p.name, width });
     }
 
-    if (inputs.length + outputs.length === 0) {
+    if (inputs.length + outputs.length + inouts.length === 0) {
       void vscode.window.showWarningMessage(
         vscode.l10n.t(
           "QuickUVM Architect: no usable pin in the selection ({0}).",
@@ -272,12 +279,19 @@ export class Actions {
 
     if (
       await this.config.apply((t) =>
-        ops.createAgent(t, { name, inputs, outputs, seqItemStyle: style })
+        ops.createAgent(t, { name, inputs, outputs, inouts, seqItemStyle: style })
       )
     ) {
-      const note = skipped.length
-        ? vscode.l10n.t(" (excluded: {0})", skipped.join("; "))
-        : "";
+      // keep the main sentence stable; report inouts (and any exclusions) as an
+      // optional parenthetical so the no-inout / no-exclusion case is unchanged
+      const notes: string[] = [];
+      if (inouts.length) {
+        notes.push(vscode.l10n.t("{0} inouts", inouts.length));
+      }
+      if (skipped.length) {
+        notes.push(vscode.l10n.t("excluded: {0}", skipped.join("; ")));
+      }
+      const note = notes.length ? ` (${notes.join("; ")})` : "";
       void vscode.window.showInformationMessage(
         vscode.l10n.t(
           "QuickUVM Architect: agent \"{0}\" with {1} inputs / {2} outputs{3}.",
@@ -593,23 +607,11 @@ export class Actions {
       }
     }
 
-    // hybrid guard: quick-uvm FORBIDS `subenvs` + own agents — if
-    // the target config already has agents, the composition would make it invalid (generate would
-    // fail). We confirm explicitly; the user can proceed (and remove the agents)
-    if ((this.config.current.agents?.length ?? 0) > 0) {
-      const PROCEED = vscode.l10n.t("Compose anyway");
-      const pick = await vscode.window.showWarningMessage(
-        vscode.l10n.t(
-          'The config for "{0}" defines its own agents. QuickUVM rejects a bench that has both agents and subenvs — you will need to remove the agents. Compose anyway?',
-          inst.module
-        ),
-        { modal: true },
-        PROCEED
-      );
-      if (pick !== PROCEED) {
-        return;
-      }
-    }
+    // A bench that keeps its own agents AND composes subenvs is VALID in
+    // QuickUVM 1.0 (assumption A9 lifted): the own agents become boundary agents
+    // (H2), wired at the subsystem boundary — `createSubenvs` already preserves
+    // them (it keeps the top clock only in this hybrid case). So there is no
+    // rejection to guard against: we compose directly, no blocking modal.
 
     // 2. the subenvs entries into the top config (a single WorkspaceEdit)
     const specs: ops.SubenvSpec[] = picked.map((i) => ({
@@ -650,6 +652,24 @@ export class Actions {
       .filter((a) => !activeOnly || a.active !== false)
       .map((a) => a.name)
       .filter((n): n is string => Boolean(n));
+  }
+
+  /** The clock-domain names of a bench: the `name` of each entry when `clock:` is
+   *  a list (multi-domain, schema §1.4), else the single domain (`dut.clock` or the
+   *  default `clk`). Used to offer a probe's sampling domain only when there is a
+   *  real choice (>1 domain). */
+  private static clockDomainNames(cfg: QuvmConfig): string[] {
+    const clock = (cfg as { clock?: unknown }).clock;
+    if (Array.isArray(clock)) {
+      const names = clock.map((d) => {
+        const n = d && typeof d === "object"
+          ? (d as { name?: unknown }).name
+          : undefined;
+        return typeof n === "string" && n ? n : "clk";
+      });
+      return names.length ? names : ["clk"];
+    }
+    return [cfg.dut?.clock ?? "clk"];
   }
 
   /** a unique name for a new entry (`base`, then `base2`, `base3`…) */
@@ -1054,29 +1074,49 @@ export class Actions {
       return;
     }
 
-    // Functional coverage on the probe => `<dut>_probe_monitor` in the env; the
-    // packaged anti-bug gate (K2 #1) lives in probe.ts (pure, tested)
+    // Probe kind: observe-only, functional coverage, or real-valued. Coverage =>
+    // `<dut>_probe_monitor` in the env (the packaged anti-bug gate K2 #1 lives in
+    // probe.ts). `real` is SVA-only (no coverage, schema §1.8), so the three are
+    // mutually exclusive; the real option is offered alongside the coverage pick.
     let coverage = false;
+    let real = false;
     if (probeCoverageAllowed(this.config.current)) {
       const NO = vscode.l10n.t("$(eye) Observe only");
       const YES = vscode.l10n.t("$(graph) Also collect functional coverage");
-      const pick = await vscode.window.showQuickPick([NO, YES], {
+      const REAL = vscode.l10n.t("$(pulse) Real-valued (SVA-only, no coverage)");
+      const pick = await vscode.window.showQuickPick([NO, YES, REAL], {
         title: vscode.l10n.t("Probe: functional coverage"),
       });
       if (!pick) {
         return;
       }
       coverage = pick === YES;
+      real = pick === REAL;
+    }
+
+    // Multi-clock benches: a probe must name the sampling domain (schema §1.8 —
+    // this is what lifted the old >1-domain refusal). Single-clock => undefined,
+    // so the key is omitted and the common path stays byte-identical.
+    let clock: string | undefined;
+    const clockDomains = Actions.clockDomainNames(this.config.current);
+    if (clockDomains.length > 1) {
+      const pick = await vscode.window.showQuickPick(clockDomains, {
+        title: vscode.l10n.t("Probe: sampling clock domain"),
+      });
+      if (!pick) {
+        return;
+      }
+      clock = pick;
     }
 
     const w = width;
     if (
       await this.config.apply((t) =>
-        ops.addProbe(t, { name, path: p.path, width: w, coverage })
+        ops.addProbe(t, { name, path: p.path, width: w, coverage, real, clock })
       )
     ) {
       this.log.appendLine(
-        `[actions] createProbe ${name} -> ${p.path} (${w}b${coverage ? ", coverage" : ""})`
+        `[actions] createProbe ${name} -> ${p.path} (${w}b${coverage ? ", coverage" : ""}${real ? ", real" : ""}${clock ? `, @${clock}` : ""})`
       );
       if (await this.isComposedChild()) {
         void vscode.window.showWarningMessage(
