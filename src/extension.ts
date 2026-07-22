@@ -364,6 +364,10 @@ export function activate(context: vscode.ExtensionContext): void {
     // recompute the "not generated" decoration from the (possibly changed) config
     void genState.refresh(config.configUri);
   });
+  // initial manifest load: onOverlay only fires on a CHANGE, so a config already
+  // discovered at activation would otherwise leave the gen-state (badges + the
+  // per-item generate) empty until the first edit.
+  void genState.refresh(config.configUri);
 
   // cursor tracking (docs/05): debounced, non-invasive — only the .xprobe
   // halo of the current view; a file unknown to the model = turn off
@@ -545,17 +549,25 @@ export function activate(context: vscode.ExtensionContext): void {
     // yielded; its element id is the node id minus the `v:` prefix.
     vscode.commands.registerCommand(
       "quickuvm.generateItem",
-      (node?: { id?: string; label?: string }) => {
+      async (node?: { id?: string; label?: string }) => {
         if (!node?.id) {
           return;
         }
-        const files = genState.scopedFiles(node.id.replace(/^v:/, ""));
+        const nodeId = node.id.replace(/^v:/, "");
+        // The manifest may not be cached yet (never refreshed, or stale) — load it
+        // on demand and retry before giving up.
+        let files = genState.scopedFiles(nodeId);
+        if (!files) {
+          await genState.refresh(config.configUri);
+          files = genState.scopedFiles(nodeId);
+        }
         if (!files) {
           void vscode.window.showWarningMessage(
             vscode.l10n.t(
-              "QuickUVM Architect: could not resolve the files for this element (run Generate Testbench once, or check quick-uvm >= 1.1.0)."
+              "QuickUVM Architect: could not resolve the files for this element — see the QuickUVM Architect output channel (needs quick-uvm >= 1.1.0)."
             )
           );
+          log.show(true);
           return;
         }
         void generator.generateItem(node.label ?? "item", files);
@@ -572,6 +584,10 @@ export function activate(context: vscode.ExtensionContext): void {
         }
         const nodeId = node.id.replace(/^v:/, "");
         const label = node.label ?? "item";
+        // load the manifest on demand if it is not cached yet (as generateItem)
+        if (!genState.primaryFilePath(nodeId)) {
+          await genState.refresh(config.configUri);
+        }
         const primary = genState.primaryFilePath(nodeId);
         if (!primary) {
           void vscode.window.showWarningMessage(
