@@ -150,5 +150,6 @@
   "QuickUVM Architect: nothing to export in this view.": "QuickUVM Architect: nimic de exportat în această vedere.",
   "QuickUVM Architect: open a diagram first (the ⤓ button in the diagram header does the same).": "QuickUVM Architect: deschide întâi o diagramă (butonul ⤓ din header-ul diagramei face același lucru).",
   "QuickUVM Architect: focus a diagram tab first (the ⤓ button in the diagram header does the same).": "QuickUVM Architect: activează întâi un tab de diagramă (butonul ⤓ din header-ul diagramei face același lucru).",
-  "{0} new block config(s) — configure their agents next (recursive flow, docs/03)": "{0} config-uri de bloc noi — configurează-le agenții în continuare (flux recursiv, docs/03)"
+  "{0} new block config(s) — configure their agents next (recursive flow, docs/03)": "{0} config-uri de bloc noi — configurează-le agenții în continuare (flux recursiv, docs/03)",
+  "Not generated — run Generate Testbench": "Negenerat — rulează Generate Testbench"
 }
