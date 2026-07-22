@@ -205,6 +205,10 @@ export type HostMessage =
       type: "status/decorations";
       decos: StatusDeco[];
       generate: GenerateStatus | null;
+      // docs/07 line 1 — TB element ids (agent:<name>, sb:<name>, probes, vsqr) with
+      // no generated code behind them (`genMissing`) or behind the config (`genStale`)
+      genMissing: string[];
+      genStale: string[];
     }
   // level navigation in the verification (TB) view (D24): opens the level
   // `focus` and, optionally, selects the block `select`

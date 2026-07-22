@@ -307,7 +307,10 @@ window.addEventListener("message", (e: MessageEvent) => {
       // the quick-uvm status decorations (docs/05): badges + generate chip
       statusDecos = m.decos;
       genStatus = m.generate;
+      genMissing = new Set(m.genMissing);
+      genStale = new Set(m.genStale);
       applyStatusBadges();
+      applyGenBadges();
       updateGenChip();
       break;
     case "overlay/config": {
@@ -972,6 +975,7 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   }
   applySelectionClasses();
   applyStatusBadges();
+  applyGenBadges();
   refreshMinimap(); // the symbol has no minimap (it always fits) — removes it
 }
 
@@ -1352,6 +1356,10 @@ function exportSvg(): void {
 // badges on elements + the result of the last generate as a chip in the header;
 // the mapping onto the current view's ids is pure (statusIdsRtl/Tb, src/status.ts)
 let statusDecos: StatusDeco[] = [];
+// docs/07 line 1 — TB element ids with no generated code (`genMissing`) / behind the
+// config (`genStale`); drawn as a star / dot badge on the diagram node
+let genMissing = new Set<string>();
+let genStale = new Set<string>();
 let genStatus: GenerateStatus | null = null;
 
 /** ⚠/✕ badge in the top-right corner of each targeted element, with the messages in
@@ -1407,6 +1415,47 @@ function applyStatusBadges(): void {
         st.severity === "error" ? "✕" : "!"
       ),
       el("title", {}, st.messages.join("\n"))
+    );
+    g.append(badge);
+  });
+}
+
+/** docs/07 line 1 — the generation-state badge on a TB node: a star for an element
+ *  with no generated code (`genMissing`), a dot for one behind the config
+ *  (`genStale`). Top-LEFT corner, so it never collides with the status badge
+ *  (top-right). TB mode only; idempotent; run with applyStatusBadges. */
+function applyGenBadges(): void {
+  canvas.querySelectorAll(".gen-badge").forEach((b) => b.remove());
+  if (state.mode !== "tb" || (!genMissing.size && !genStale.size)) {
+    return;
+  }
+  canvas.querySelectorAll<SVGGraphicsElement>("[data-id]").forEach((g) => {
+    const id = g.dataset.id ?? "";
+    const missing = genMissing.has(id);
+    if (!missing && !genStale.has(id)) {
+      return;
+    }
+    let bb: DOMRect;
+    try {
+      bb = g.getBBox();
+    } catch {
+      return;
+    }
+    const badge = el("g", { class: `gen-badge ${missing ? "gen-missing" : "gen-stale"}` });
+    badge.append(
+      el("circle", { cx: String(bb.x), cy: String(bb.y), r: "7" }),
+      el(
+        "text",
+        { x: String(bb.x), y: String(bb.y + 3.5), "text-anchor": "middle" },
+        missing ? "★" : "●"
+      ),
+      el(
+        "title",
+        {},
+        missing
+          ? "Not generated — run Generate Testbench"
+          : "Stale — the config changed since Generate Testbench"
+      )
     );
     g.append(badge);
   });
@@ -3405,6 +3454,7 @@ async function presentScene(
   }
   applySelectionClasses();
   applyStatusBadges();
+  applyGenBadges();
   contentBounds = layoutBounds(layout);
   refreshMinimap();
   return true;
@@ -3599,6 +3649,7 @@ async function renderTb(refit: boolean): Promise<void> {
   applySelectionClasses();
   contentBounds = tbBounds(layout);
   applyStatusBadges();
+  applyGenBadges();
   refreshMinimap();
   renderInspector();
   applyCameraAfterRender(refit);

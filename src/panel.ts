@@ -43,8 +43,14 @@ export interface PanelDeps {
   getOverlay: () => OverlayConfig | null;
   /** the parsed configuration + its path, for the verification (TB) view */
   getConfig?: () => { configPath: string | null; config: QuvmConfig };
-  /** the quick-uvm status decorations (docs/05): validations + the last generate */
-  getStatus?: () => { decos: StatusDeco[]; generate: GenerateStatus | null };
+  /** the quick-uvm status decorations (docs/05): validations + the last generate;
+   *  plus the generation-state element ids (docs/07 line 1) */
+  getStatus?: () => {
+    decos: StatusDeco[];
+    generate: GenerateStatus | null;
+    genMissing: string[];
+    genStale: string[];
+  };
   /** the layout sidecar; absent only in tests */
   layout?: LayoutDeps;
   /** the configuration actions; openSource stays handled in the panel */
@@ -261,6 +267,8 @@ export class DiagramPanel {
         type: "status/decorations",
         decos: s.decos,
         generate: s.generate,
+        genMissing: s.genMissing,
+        genStale: s.genStale,
       });
     }
   }
