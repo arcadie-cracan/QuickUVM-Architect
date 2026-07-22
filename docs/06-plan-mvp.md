@@ -685,6 +685,16 @@ Fixtură nouă pentru cross-probing: `examples-probe/deep_pipe.sv` — 8 module
 `deep_pipe`, ca hover-ul pe pinii `u_a…u_h` să deruleze vizibil sursa
 (configurația de lansare „cross-probing: deep_pipe").
 
+### Faza 5 — post-MVP (bucla de feedback a generării + paritate de schemă)
+
+MVP-ul (Fazele 0–4) e închis. Continuarea planului — trei direcții cerute de
+utilizator (decorația elementelor negenerate, generarea incrementală per-element,
+paritatea GUI ↔ schema QuickUVM) — e detaliată separat în
+[`docs/07-plan-post-mvp.md`](07-plan-post-mvp.md): o fundație comună (manifestul de
+generare QuickUVM) deblochează liniile 1–2, iar linia 3 (paritate) merge în paralel,
+începând cu reparațiile de paritate negativă (agenți inout/hibrizi blocați de gărzi
+stale de la 1.0).
+
 ## Riscuri principale și atenuări
 
 | Risc | Atenuare |
