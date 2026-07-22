@@ -142,6 +142,12 @@
         "icon": "$(run)"
       },
       {
+        "command": "quickuvm.openGeneratedCode",
+        "title": "%cmd.openGeneratedCode%",
+        "category": "QuickUVM Architect",
+        "icon": "$(go-to-file)"
+      },
+      {
         "command": "quickuvm.openConfig",
         "title": "%cmd.openConfig%",
         "category": "QuickUVM Architect"
@@ -230,11 +236,20 @@
           "command": "quickuvm.generateItem",
           "when": "view == quickuvm.verification && viewItem =~ /^vgen-/",
           "group": "navigation"
+        },
+        {
+          "command": "quickuvm.openGeneratedCode",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-/",
+          "group": "navigation"
         }
       ],
       "commandPalette": [
         {
           "command": "quickuvm.generateItem",
+          "when": "false"
+        },
+        {
+          "command": "quickuvm.openGeneratedCode",
           "when": "false"
         },
         {

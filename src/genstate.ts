@@ -118,3 +118,31 @@ export function scopedFilesFor(manifest: Manifest, nodeId: string): string[] | n
   }
   return found ? [...own, ...aggregate] : null;
 }
+
+/**
+ * docs/07 line 2 (2.3) — the representative source file to OPEN for an element:
+ * the agent class / scoreboard / probe interface / virtual sequencer, chosen by
+ * suffix from the element's own files (falling back to the first). `null` if the
+ * element owns no files. The aggregate files are never a "primary".
+ */
+export function primaryFile(manifest: Manifest, nodeId: string): string | null {
+  const own: string[] = [];
+  for (const el of manifest.elements) {
+    if (el.owner !== "aggregate" && ownerToNodeId(el.owner) === nodeId) {
+      own.push(...el.files.map((f) => f.file));
+    }
+  }
+  if (own.length === 0) {
+    return null;
+  }
+  const suffix = nodeId.startsWith("agent:")
+    ? "_agent.svh"
+    : nodeId.startsWith("sb:")
+      ? "_scoreboard.svh"
+      : nodeId === "probes"
+        ? "_probe_if.sv"
+        : nodeId === "vsqr"
+          ? "_virtual_sequencer.svh"
+          : "";
+  return (suffix && own.find((f) => f.endsWith(suffix))) || own[0];
+}
