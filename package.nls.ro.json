@@ -7,6 +7,7 @@
   "cmd.revealInDiagram": "Arată în diagramă",
   "cmd.fixPortWidth": "Actualizează lățimea portului",
   "cmd.generate": "Generează testbench",
+  "cmd.generateItem": "Generează acest element",
   "cmd.ignoreSelection": "Ignoră porturile selectate",
   "cmd.openConfig": "Deschide configurația QuickUVM",
   "cmd.openSchematicView": "Deschide schema",

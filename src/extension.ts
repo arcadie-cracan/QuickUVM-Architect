@@ -540,6 +540,28 @@ export function activate(context: vscode.ExtensionContext): void {
       void generator.generate();
     }),
 
+    // docs/07 line 2 — regenerate just one element's files (+ the aggregate set),
+    // from the verification-hierarchy context menu. `node` is the VNode the tree
+    // yielded; its element id is the node id minus the `v:` prefix.
+    vscode.commands.registerCommand(
+      "quickuvm.generateItem",
+      (node?: { id?: string; label?: string }) => {
+        if (!node?.id) {
+          return;
+        }
+        const files = genState.scopedFiles(node.id.replace(/^v:/, ""));
+        if (!files) {
+          void vscode.window.showWarningMessage(
+            vscode.l10n.t(
+              "QuickUVM Architect: could not resolve the files for this element (run Generate Testbench once, or check quick-uvm >= 1.1.0)."
+            )
+          );
+          return;
+        }
+        void generator.generateItem(node.label ?? "item", files);
+      }
+    ),
+
     vscode.commands.registerCommand("quickuvm.openConfig", async () => {
       const uri = config.configUri;
       if (uri) {

@@ -136,6 +136,12 @@
         "category": "QuickUVM Architect"
       },
       {
+        "command": "quickuvm.generateItem",
+        "title": "%cmd.generateItem%",
+        "category": "QuickUVM Architect",
+        "icon": "$(run)"
+      },
+      {
         "command": "quickuvm.openConfig",
         "title": "%cmd.openConfig%",
         "category": "QuickUVM Architect"
@@ -214,9 +220,23 @@
           "command": "quickuvm.openVerificationView",
           "when": "view == quickuvm.hierarchy && viewItem == instance",
           "group": "quickuvm@2"
+        },
+        {
+          "command": "quickuvm.generateItem",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-/",
+          "group": "inline"
+        },
+        {
+          "command": "quickuvm.generateItem",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-/",
+          "group": "navigation"
         }
       ],
       "commandPalette": [
+        {
+          "command": "quickuvm.generateItem",
+          "when": "false"
+        },
         {
           "command": "quickuvm.revealTbComponent",
           "when": "false"

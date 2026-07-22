@@ -21,7 +21,9 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { ownerToNodeId, classify } = await import(pathToFileURL(outFile));
+const { ownerToNodeId, classify, scopedFilesFor } = await import(
+  pathToFileURL(outFile)
+);
 
 let passed = 0;
 function test(name, fn) {
@@ -94,6 +96,35 @@ test("classify: vseqs collapse onto vsqr — missing wins over stale", () => {
   const { missing, stale } = classify(m, mtimes, 100);
   assert.deepEqual([...missing], ["vsqr"]);
   assert.equal(stale.size, 0);
+});
+
+test("scopedFilesFor: element's own files + the aggregate co-regen set", () => {
+  const m = manifest([
+    el("agent:cmd", ["cmd_agent.svh", "cmd_driver.svh"]),
+    el("agent:rsp", ["rsp_agent.svh"]),
+    el("aggregate", ["d_tb_pkg.sv", "pkg.f"]),
+  ]);
+  const files = scopedFilesFor(m, "agent:cmd");
+  assert.deepEqual(files.sort(), [
+    "cmd_agent.svh",
+    "cmd_driver.svh",
+    "d_tb_pkg.sv",
+    "pkg.f",
+  ]); // cmd's files + aggregate, NOT rsp's
+});
+
+test("scopedFilesFor: vseqs collapse -> all vseq files + aggregate", () => {
+  const m = manifest([
+    el("vseq:a", ["a.svh"]),
+    el("vseq:b", ["b.svh"]),
+    el("aggregate", ["run.f"]),
+  ]);
+  assert.deepEqual(scopedFilesFor(m, "vsqr").sort(), ["a.svh", "b.svh", "run.f"]);
+});
+
+test("scopedFilesFor: unknown element -> null", () => {
+  const m = manifest([el("agent:cmd", ["x"]), el("aggregate", ["y"])]);
+  assert.equal(scopedFilesFor(m, "sb:nope"), null);
 });
 
 console.log(`\ntest-genstate: ${passed} tests passed.`);
