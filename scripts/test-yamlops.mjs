@@ -144,6 +144,34 @@ test("createAgent: nume duplicat => eroare", () => {
     /exista deja/);
 });
 
+test("createAgent: portul inout merge in ports.inouts (schema §1.5)", () => {
+  const text = ops.createAgent(ops.newConfigText("demo"), {
+    name: "sda",
+    inputs: [{ name: "scl_i", width: 1 }],
+    outputs: [],
+    inouts: [
+      { name: "sda", width: 1 },
+      { name: "bus", width: 4 },
+    ],
+  });
+  const cfg = ops.parseQuvm(text);
+  const a = cfg.agents[0];
+  assert.deepEqual(a.ports.inouts[0], { name: "sda" }); // width 1 omitted
+  assert.deepEqual(a.ports.inouts[1], { name: "bus", width: 4 });
+  // an inout is NOT a read-only observation, so no randomize:false is added
+  assert.equal(a.ports.inouts[0].randomize, undefined);
+  assert.ok(/inouts:/.test(text), `inouts nu s-a scris:\n${text}`);
+  assert.ok(/\{ name: bus, width: 4 \}/.test(text), "inout nu e flow");
+});
+
+test("createAgent: fara inouts nu emite cheia (byte-identic cu forma veche)", () => {
+  const spec = { name: "drv", inputs: [{ name: "din", width: 8 }], outputs: [] };
+  const withUndef = ops.createAgent(ops.newConfigText("demo"), spec);
+  const withEmpty = ops.createAgent(ops.newConfigText("demo"), { ...spec, inouts: [] });
+  assert.ok(!/inouts:/.test(withUndef), "inouts nu trebuie emisa fara porturi");
+  assert.equal(withEmpty, withUndef); // [] and undefined produce identical YAML
+});
+
 test("ignorePorts: uniune sortata, fara duplicate; unignore curata blocul", () => {
   let text = ops.ignorePorts(ops.newConfigText("demo"), ["scan_en", "dbg"]);
   text = ops.ignorePorts(text, ["dbg", "test_mode"]);
@@ -532,6 +560,37 @@ test("addProbe: flow map, width=1 omisa, coverage doar cand e cerut, duplicat re
     () => ops.addProbe(text, { name: "lvl", path: "x" }),
     /exista deja/
   );
+});
+
+test("addProbe: campurile modelate (enum/type/packed_dims/struct/real/clock) fac round-trip (§1.8)", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.addProbe(text, {
+    name: "state",
+    path: "u_core.state_q",
+    width: 3,
+    enum: { IDLE: 0, RUN: 1 },
+    type: "state_e",
+    packed_dims: [2, 4],
+    struct: [{ name: "a", width: 8 }],
+    real: true,
+    clock: "fast",
+    coverage: true,
+  });
+  assert.deepEqual(ops.parseQuvm(text).probes[0], {
+    name: "state",
+    path: "u_core.state_q",
+    width: 3,
+    enum: { IDLE: 0, RUN: 1 },
+    type: "state_e",
+    packed_dims: [2, 4],
+    struct: [{ name: "a", width: 8 }],
+    real: true,
+    clock: "fast",
+    coverage: true,
+  });
+  // absent/false fields stay absent: a plain probe is byte-identical to before the fix
+  text = ops.addProbe(text, { name: "busy", path: "u.busy", real: false, clock: undefined });
+  assert.deepEqual(ops.parseQuvm(text).probes[1], { name: "busy", path: "u.busy" });
 });
 
 test("removeProbe: sterge dupa nume, curata lista goala, idempotent", () => {

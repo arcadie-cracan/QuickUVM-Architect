@@ -32,6 +32,9 @@ export interface AgentSpec {
   inputs: AgentPortSpec[];
   /** the DUT outputs the agent observes: they get randomize: false */
   outputs: AgentPortSpec[];
+  /** the DUT bidirectional ports (schema §1.5: `ports.inouts[]`); a minimal
+   *  declaration is just {name, width} — open_drain/pullup are NOT invented here */
+  inouts?: AgentPortSpec[];
   seqItemStyle?: "manual" | "field_macros";
 }
 
@@ -134,6 +137,12 @@ export function createAgent(text: string, spec: AgentSpec): string {
     ports: {
       inputs: spec.inputs.map((p) => port(p, false)),
       outputs: spec.outputs.map((p) => port(p, true)),
+      // inouts get no `randomize: false` (they are not read-only observations);
+      // the key is emitted only when there is at least one, so agents without a
+      // bidirectional port stay byte-identical to the pre-inout output
+      ...(spec.inouts && spec.inouts.length
+        ? { inouts: spec.inouts.map((p) => port(p, false)) }
+        : {}),
     },
   };
   const node = doc.createNode(agent) as YAMLMap;
@@ -599,6 +608,18 @@ export interface ProbeSpec {
   path: string;
   /** omitted at 1 — the QuickUVM default (ProbeConfig.width = 1) */
   width?: number;
+  /** symbolic values (also drives symbolic coverage bins) — schema §1.8 */
+  enum?: Record<string, number>;
+  /** user SV type name for the observed field — schema §1.8 */
+  type?: string;
+  /** packed dimensions of the observed field — schema §1.8 */
+  packed_dims?: number[];
+  /** inline struct members (recursive `{name, width, ...}`) — schema §1.8 */
+  struct?: unknown[];
+  /** real-valued probe (SVA-only, no coverage) — schema §1.8 */
+  real?: boolean;
+  /** multi-clock benches: selects the sampling domain — schema §1.8 */
+  clock?: string;
   /** functional coverage on the probe: creates `<dut>_probe_monitor` in the env */
   coverage?: boolean;
 }
@@ -620,10 +641,21 @@ export function addProbe(text: string, spec: ProbeSpec): string {
       }
     }
   }
+  // Field order follows the schema §1.8 table (name, path, width, the rich
+  // field-type keys, real, clock, coverage). Each is emitted only when present,
+  // so a plain name/path/width probe stays byte-identical to the pre-fix output.
   const entry: Record<string, unknown> = {
     name: spec.name,
     path: spec.path,
     ...(spec.width && spec.width !== 1 ? { width: spec.width } : {}),
+    ...(spec.enum ? { enum: spec.enum } : {}),
+    ...(spec.type ? { type: spec.type } : {}),
+    ...(spec.packed_dims && spec.packed_dims.length
+      ? { packed_dims: spec.packed_dims }
+      : {}),
+    ...(spec.struct && spec.struct.length ? { struct: spec.struct } : {}),
+    ...(spec.real ? { real: true } : {}),
+    ...(spec.clock ? { clock: spec.clock } : {}),
     ...(spec.coverage ? { coverage: true } : {}),
   };
   const node = doc.createNode(entry) as YAMLMap;
@@ -844,7 +876,7 @@ function writeIgnored(doc: Document, ports: string[]): void {
 
 /** The agent's ports as flow maps on one line: `- {name: din, width: 8}`. */
 function flowPortMaps(agent: YAMLMap): void {
-  for (const side of ["inputs", "outputs"]) {
+  for (const side of ["inputs", "outputs", "inouts"]) {
     const list = agent.getIn(["ports", side]);
     if (isSeq(list)) {
       for (const item of list.items) {
