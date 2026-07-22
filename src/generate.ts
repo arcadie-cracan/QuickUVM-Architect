@@ -185,3 +185,23 @@ function run(
     );
   });
 }
+
+/**
+ * Run `quick-uvm <args>` from `cwd`, with the same ENOENT fallback the generate
+ * flow uses (the configured `quickuvm.quickUvm` binary, else the installed module
+ * through `quickuvm.python`). Shared by the generate flow and the generation-state
+ * service (`quick-uvm manifest`).
+ */
+export async function invokeQuickUvm(
+  args: string[],
+  cwd: string,
+  cfg: vscode.WorkspaceConfiguration
+): Promise<{ code: number; out: string; err: string; enoent: boolean }> {
+  const command = cfg.get<string>("quickUvm", "quick-uvm");
+  const r = await run(command, args, cwd);
+  if (!r.enoent) {
+    return r;
+  }
+  const python = cfg.get<string>("python", "python");
+  return run(python, ["-c", "from quick_uvm.cli import main; main()", ...args], cwd);
+}

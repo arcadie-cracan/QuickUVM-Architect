@@ -17,6 +17,8 @@ import { DiagramPanel, openLoc, PanelDeps, runActiveExport } from "./panel";
 import { ActionKind, ViewMode, XprobeTarget } from "./protocol";
 import { LayoutStore } from "./sidecar";
 import { VerificationProvider } from "./tbtree";
+import { GenStateService } from "./genstate-service";
+import { GenDecorationProvider } from "./tbdecorations";
 import { HierarchyProvider, InstanceNode } from "./tree";
 
 let model: ProjectModel | undefined;
@@ -35,8 +37,15 @@ export function activate(context: vscode.ExtensionContext): void {
   const actions = new Actions(() => model, config, log);
   const generator = new Generator(config, log, generateDiags);
   const layout = new LayoutStore(log);
+  // docs/07 line 1 — the "not generated" star on the verification tree, driven by
+  // `quick-uvm manifest` (which elements have no generated code behind them yet).
+  const genState = new GenStateService(log);
+  const genDeco = new GenDecorationProvider(() => genState.ungenerated);
+  genState.onDidChange(() => genDeco.refresh());
   context.subscriptions.push(
-    log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config, layout
+    log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
+    layout, genState, genDeco,
+    vscode.window.registerFileDecorationProvider(genDeco)
   );
 
   const treeView = vscode.window.createTreeView("quickuvm.hierarchy", {
@@ -306,9 +315,13 @@ export function activate(context: vscode.ExtensionContext): void {
   layout.onExternalChange((sidecar) => {
     DiagramPanel.current?.postLayout(sidecar);
   });
-  // the generate status chip is updated after each run (docs/05)
+  // the generate status chip is updated after each run (docs/05); a generate also
+  // (re)creates files, so refresh the "not generated" decoration (docs/07 line 1)
   context.subscriptions.push(
-    generator.onStatus(() => DiagramPanel.current?.postStatus())
+    generator.onStatus(() => {
+      DiagramPanel.current?.postStatus();
+      void genState.refresh(config.configUri);
+    })
   );
   backend.onStale((errors) => {
     DiagramPanel.current?.postStale(errors);
@@ -336,6 +349,8 @@ export function activate(context: vscode.ExtensionContext): void {
       config.configUri ? config.current : null,
       config.configUri ? vscode.workspace.asRelativePath(config.configUri) : null
     );
+    // recompute the "not generated" decoration from the (possibly changed) config
+    void genState.refresh(config.configUri);
   });
 
   // cursor tracking (docs/05): debounced, non-invasive — only the .xprobe

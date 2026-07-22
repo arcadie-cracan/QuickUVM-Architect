@@ -4,6 +4,7 @@
 // TreeDataProvider wrapper + the reveal indices.
 
 import * as vscode from "vscode";
+import { genElementUri } from "./tbdecorations";
 import type { QuvmConfig } from "./quickuvm";
 import { buildVTree, VNode } from "./tbtree-build";
 
@@ -59,6 +60,12 @@ export class VerificationProvider
       ? `${node.label} — ${node.description}`
       : node.label;
     item.iconPath = new vscode.ThemeIcon(node.icon);
+    // A synthetic resourceUri so the GenDecorationProvider can badge an element
+    // with no generated code behind it (docs/07 line 1). The element id is the
+    // node id minus the `v:` tree prefix (agent:<name>, sb:<name>, probes, vsqr,
+    // …); the explicit iconPath/label above still win — resourceUri only drives
+    // the file decoration.
+    item.resourceUri = genElementUri(node.id.replace(/^v:/, ""));
     item.command = {
       command: "quickuvm.revealTbComponent",
       title: vscode.l10n.t("Open in the verification view"),
