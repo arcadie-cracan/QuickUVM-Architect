@@ -10,7 +10,13 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { invokeQuickUvm } from "./generate";
-import { classify, ElementStates, Manifest, scopedFilesFor } from "./genstate";
+import {
+  classify,
+  ElementStates,
+  Manifest,
+  primaryFile,
+  scopedFilesFor,
+} from "./genstate";
 
 export class GenStateService implements vscode.Disposable {
   private _states: ElementStates = { missing: new Set(), stale: new Set() };
@@ -39,6 +45,16 @@ export class GenStateService implements vscode.Disposable {
    *  if the manifest is unavailable or the element is unknown. */
   scopedFiles(nodeId: string): string[] | null {
     return this.manifest ? scopedFilesFor(this.manifest, nodeId) : null;
+  }
+
+  /** The absolute path of the representative file to OPEN for an element (2.3),
+   *  or null if unavailable. */
+  primaryFilePath(nodeId: string): string | null {
+    if (!this.manifest || !this.outDirAbs) {
+      return null;
+    }
+    const f = primaryFile(this.manifest, nodeId);
+    return f ? path.join(this.outDirAbs, f) : null;
   }
 
   /** The config changed (or first load): re-run the manifest, then recompute. */

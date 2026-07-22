@@ -562,6 +562,56 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     ),
 
+    // docs/07 line 2 (2.3) — open an element's generated code; if it hasn't been
+    // generated yet (line 1's `missing`), offer to generate it first, then open.
+    vscode.commands.registerCommand(
+      "quickuvm.openGeneratedCode",
+      async (node?: { id?: string; label?: string }) => {
+        if (!node?.id) {
+          return;
+        }
+        const nodeId = node.id.replace(/^v:/, "");
+        const label = node.label ?? "item";
+        const primary = genState.primaryFilePath(nodeId);
+        if (!primary) {
+          void vscode.window.showWarningMessage(
+            vscode.l10n.t(
+              "QuickUVM Architect: no generated file for {0} yet — run Generate Testbench.",
+              label
+            )
+          );
+          return;
+        }
+        if (genState.missing.has(nodeId)) {
+          const go = await vscode.window.showInformationMessage(
+            vscode.l10n.t(
+              "QuickUVM Architect: {0} has not been generated yet. Generate it now?",
+              label
+            ),
+            { modal: true },
+            vscode.l10n.t("Generate")
+          );
+          if (!go) {
+            return;
+          }
+          const files = genState.scopedFiles(nodeId);
+          if (files) {
+            await generator.generateItem(label, files);
+          }
+        }
+        try {
+          await vscode.window.showTextDocument(vscode.Uri.file(primary));
+        } catch {
+          void vscode.window.showWarningMessage(
+            vscode.l10n.t(
+              "QuickUVM Architect: could not open the generated file for {0} — run Generate Testbench.",
+              label
+            )
+          );
+        }
+      }
+    ),
+
     vscode.commands.registerCommand("quickuvm.openConfig", async () => {
       const uri = config.configUri;
       if (uri) {

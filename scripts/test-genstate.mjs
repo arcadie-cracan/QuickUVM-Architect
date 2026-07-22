@@ -21,7 +21,7 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { ownerToNodeId, classify, scopedFilesFor } = await import(
+const { ownerToNodeId, classify, scopedFilesFor, primaryFile } = await import(
   pathToFileURL(outFile)
 );
 
@@ -125,6 +125,24 @@ test("scopedFilesFor: vseqs collapse -> all vseq files + aggregate", () => {
 test("scopedFilesFor: unknown element -> null", () => {
   const m = manifest([el("agent:cmd", ["x"]), el("aggregate", ["y"])]);
   assert.equal(scopedFilesFor(m, "sb:nope"), null);
+});
+
+test("primaryFile: picks the representative file by suffix, ignores aggregate", () => {
+  const m = manifest([
+    el("agent:cmd", ["cmd_if.sv", "cmd_agent.svh", "cmd_driver.svh"]),
+    el("aggregate", ["cmd_agent.svh_decoy", "tb_pkg.sv"]),
+  ]);
+  assert.equal(primaryFile(m, "agent:cmd"), "cmd_agent.svh"); // _agent.svh, not the if/driver
+  const sb = manifest([el("scoreboard:sbd", ["d_predictor.svh", "d_scoreboard.svh"])]);
+  assert.equal(primaryFile(sb, "sb:sbd"), "d_scoreboard.svh");
+  const pr = manifest([el("probes", ["d_probe_if.sv", "d_probe_monitor.svh"])]);
+  assert.equal(primaryFile(pr, "probes"), "d_probe_if.sv");
+});
+
+test("primaryFile: no suffix match -> first own file; unknown -> null", () => {
+  const m = manifest([el("agent:cmd", ["cmd_if.sv", "cmd_cfg.svh"])]);
+  assert.equal(primaryFile(m, "agent:cmd"), "cmd_if.sv"); // no _agent.svh -> first
+  assert.equal(primaryFile(m, "sb:nope"), null);
 });
 
 console.log(`\ntest-genstate: ${passed} tests passed.`);
