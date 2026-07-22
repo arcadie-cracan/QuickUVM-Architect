@@ -52,14 +52,44 @@ export function ownerToNodeId(owner: string): string | null {
  * `exists` flag is false. Owners with no decoratable node (see `ownerToNodeId`)
  * are ignored; several vseq owners collapse onto the single `vsqr` node.
  */
-export function ungeneratedNodeIds(manifest: Manifest): Set<string> {
-  const out = new Set<string>();
+export interface ElementStates {
+  /** elements with a file that does not exist on disk yet */
+  missing: Set<string>;
+  /** elements whose files all exist but at least one is OLDER than the config
+   *  (edited since last generate) — the generated code is behind the config */
+  stale: Set<string>;
+}
+
+/**
+ * Classify each decoratable element as `missing` (some file absent), `stale` (all
+ * present but a file's mtime predates the config's) or generated (in neither set).
+ * `mtimes` maps a generated filename to its on-disk mtime (ms); a filename absent
+ * from the map is missing. `configMtime` is the config YAML's mtime (ms). Missing
+ * wins over stale when several owners collapse onto one node (vseq → vsqr).
+ *
+ * The `stale` heuristic is intentionally conservative: any config edit marks its
+ * elements stale until the next generate (mtime is coarser than a real dependency
+ * analysis), which is the right prompt — the generated code IS behind the config.
+ */
+export function classify(
+  manifest: Manifest,
+  mtimes: ReadonlyMap<string, number>,
+  configMtime: number
+): ElementStates {
+  const missing = new Set<string>();
+  const stale = new Set<string>();
   for (const el of manifest.elements) {
     const nodeId = ownerToNodeId(el.owner);
     if (nodeId === null) continue;
-    if (el.files.some((f) => !f.exists)) {
-      out.add(nodeId);
+    const files = el.files.map((f) => f.file);
+    if (files.some((f) => !mtimes.has(f))) {
+      missing.add(nodeId);
+    } else if (files.some((f) => (mtimes.get(f) ?? 0) < configMtime)) {
+      stale.add(nodeId);
     }
   }
-  return out;
+  for (const id of missing) {
+    stale.delete(id); // missing wins (e.g. one vseq missing, another stale → vsqr missing)
+  }
+  return { missing, stale };
 }

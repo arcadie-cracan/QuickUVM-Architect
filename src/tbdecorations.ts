@@ -21,9 +21,12 @@ export class GenDecorationProvider implements vscode.FileDecorationProvider {
   private readonly emitter = new vscode.EventEmitter<undefined>();
   readonly onDidChangeFileDecorations = this.emitter.event;
 
-  constructor(private readonly ungenerated: () => ReadonlySet<string>) {}
+  constructor(
+    private readonly missing: () => ReadonlySet<string>,
+    private readonly stale: () => ReadonlySet<string>
+  ) {}
 
-  /** Re-query every decoration (the ungenerated set changed). */
+  /** Re-query every decoration (a state set changed). */
   refresh(): void {
     this.emitter.fire(undefined);
   }
@@ -33,14 +36,22 @@ export class GenDecorationProvider implements vscode.FileDecorationProvider {
       return undefined;
     }
     const elementId = decodeURIComponent(uri.path.replace(/^\//, ""));
-    if (!this.ungenerated().has(elementId)) {
-      return undefined;
+    // `missing` (no generated code) takes precedence over `stale` (behind config).
+    if (this.missing().has(elementId)) {
+      return {
+        badge: "★",
+        tooltip: vscode.l10n.t("Not generated — run Generate Testbench"),
+        color: new vscode.ThemeColor("gitDecoration.untrackedResourceForeground"),
+      };
     }
-    return {
-      badge: "★",
-      tooltip: vscode.l10n.t("Not generated — run Generate Testbench"),
-      color: new vscode.ThemeColor("gitDecoration.untrackedResourceForeground"),
-    };
+    if (this.stale().has(elementId)) {
+      return {
+        badge: "●",
+        tooltip: vscode.l10n.t("Stale — the config changed since Generate Testbench"),
+        color: new vscode.ThemeColor("gitDecoration.modifiedResourceForeground"),
+      };
+    }
+    return undefined;
   }
 
   dispose(): void {

@@ -40,8 +40,15 @@ export function activate(context: vscode.ExtensionContext): void {
   // docs/07 line 1 — the "not generated" star on the verification tree, driven by
   // `quick-uvm manifest` (which elements have no generated code behind them yet).
   const genState = new GenStateService(log);
-  const genDeco = new GenDecorationProvider(() => genState.ungenerated);
-  genState.onDidChange(() => genDeco.refresh());
+  const genDeco = new GenDecorationProvider(
+    () => genState.missing,
+    () => genState.stale
+  );
+  // the tree star (FileDecoration) AND the diagram badges refresh when the set changes
+  genState.onDidChange(() => {
+    genDeco.refresh();
+    DiagramPanel.current?.postStatus();
+  });
   context.subscriptions.push(
     log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
     layout, genState, genDeco,
@@ -167,7 +174,12 @@ export function activate(context: vscode.ExtensionContext): void {
       config: config.current,
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
-    getStatus: () => ({ decos: config.decorations, generate: generator.status }),
+    getStatus: () => ({
+      decos: config.decorations,
+      generate: generator.status,
+      genMissing: [...genState.missing],
+      genStale: [...genState.stale],
+    }),
     layout: {
       get: () => layout.sidecar,
       positionsSnapshotted: (v, nodes) => layout.positionsSnapshotted(v, nodes),

@@ -1,6 +1,7 @@
 // Node tests for the pure generation-state detector (src/genstate.ts): the
-// `quick-uvm manifest` JSON -> the set of verification elements with no generated
-// code behind them. No DOM, no vscode.
+// `quick-uvm manifest` element→files map + on-disk mtimes + the config mtime ->
+// the `missing` (absent) and `stale` (older than the config) element-id sets.
+// No DOM, no vscode.
 //   npm run test:genstate
 
 import assert from "node:assert/strict";
@@ -20,9 +21,7 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { ownerToNodeId, ungeneratedNodeIds } = await import(
-  pathToFileURL(outFile)
-);
+const { ownerToNodeId, classify } = await import(pathToFileURL(outFile));
 
 let passed = 0;
 function test(name, fn) {
@@ -31,10 +30,11 @@ function test(name, fn) {
   passed++;
 }
 
-// a manifest element with all files existing or all missing
-const el = (owner, exists, files = ["f1", "f2"]) => ({
+// a manifest element owning the given files (the `exists` flag is unused by
+// classify — mtimes drive it — but present to match the real manifest shape)
+const el = (owner, files) => ({
   owner,
-  files: files.map((f) => ({ file: f, exists })),
+  files: files.map((f) => ({ file: f, exists: true })),
 });
 const manifest = (elements) => ({
   version: "1.1.0",
@@ -54,38 +54,46 @@ test("ownerToNodeId maps the decoratable owners, null otherwise", () => {
   }
 });
 
-test("ungeneratedNodeIds: missing files -> node id; existing -> not listed", () => {
+test("classify: a missing file -> `missing`; all present & newer -> generated", () => {
   const m = manifest([
-    el("agent:cmd", false), // ungenerated
-    el("agent:rsp", true), // generated
-    el("scoreboard:sbd", false), // ungenerated -> sb:sbd
-    el("aggregate", false), // no node -> ignored even though missing
+    el("agent:cmd", ["a", "b"]),
+    el("scoreboard:sbd", ["c"]),
   ]);
-  const out = ungeneratedNodeIds(m);
-  assert.deepEqual([...out].sort(), ["agent:cmd", "sb:sbd"]);
-});
-
-test("ungeneratedNodeIds: partial (one of many files missing) counts as ungenerated", () => {
-  const m = manifest([
-    {
-      owner: "agent:cmd",
-      files: [
-        { file: "cmd_agent.svh", exists: true },
-        { file: "cmd_driver.svh", exists: false }, // one missing
-      ],
-    },
+  // config at t=100; agent files newer (present), scoreboard file absent
+  const mtimes = new Map([
+    ["a", 200],
+    ["b", 200],
   ]);
-  assert.deepEqual([...ungeneratedNodeIds(m)], ["agent:cmd"]);
+  const { missing, stale } = classify(m, mtimes, 100);
+  assert.deepEqual([...missing], ["sb:sbd"]); // c absent
+  assert.equal(stale.size, 0); // agent:cmd present & newer -> generated
 });
 
-test("ungeneratedNodeIds: several vseq owners collapse onto one vsqr node", () => {
-  const m = manifest([el("vseq:a", true), el("vseq:b", false)]);
-  assert.deepEqual([...ungeneratedNodeIds(m)], ["vsqr"]); // b missing -> vsqr starred
+test("classify: all present but a file older than config -> `stale`", () => {
+  const m = manifest([el("agent:cmd", ["a", "b"])]);
+  const mtimes = new Map([
+    ["a", 200],
+    ["b", 50], // older than config@100
+  ]);
+  const { missing, stale } = classify(m, mtimes, 100);
+  assert.equal(missing.size, 0);
+  assert.deepEqual([...stale], ["agent:cmd"]);
 });
 
-test("ungeneratedNodeIds: nothing missing -> empty set", () => {
-  const m = manifest([el("agent:cmd", true), el("scoreboard:sbd", true)]);
-  assert.equal(ungeneratedNodeIds(m).size, 0);
+test("classify: aggregate/test owners are ignored even if missing", () => {
+  const m = manifest([el("aggregate", ["x"]), el("test:t1", ["y"])]);
+  const { missing, stale } = classify(m, new Map(), 100); // both absent
+  assert.equal(missing.size, 0);
+  assert.equal(stale.size, 0);
+});
+
+test("classify: vseqs collapse onto vsqr — missing wins over stale", () => {
+  const m = manifest([el("vseq:a", ["a"]), el("vseq:b", ["b"])]);
+  // a is stale (older), b is missing -> vsqr should be MISSING, not stale
+  const mtimes = new Map([["a", 50]]); // b absent
+  const { missing, stale } = classify(m, mtimes, 100);
+  assert.deepEqual([...missing], ["vsqr"]);
+  assert.equal(stale.size, 0);
 });
 
 console.log(`\ntest-genstate: ${passed} tests passed.`);
