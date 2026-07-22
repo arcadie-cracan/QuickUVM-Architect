@@ -65,7 +65,20 @@ export class VerificationProvider
     // node id minus the `v:` tree prefix (agent:<name>, sb:<name>, probes, vsqr,
     // …); the explicit iconPath/label above still win — resourceUri only drives
     // the file decoration.
-    item.resourceUri = genElementUri(node.id.replace(/^v:/, ""));
+    const elementId = node.id.replace(/^v:/, "");
+    item.resourceUri = genElementUri(elementId);
+    // docs/07 line 2 — mark the generatable elements so the "Generate this item"
+    // context action can target them (agents, scoreboards, probes, vsqr; NOT the
+    // agent-internal leaves `agent:<name>:u.driver`, which have a second colon).
+    if (/^agent:[^:]+$/.test(elementId)) {
+      item.contextValue = "vgen-agent";
+    } else if (/^sb:/.test(elementId)) {
+      item.contextValue = "vgen-sb";
+    } else if (elementId === "probes") {
+      item.contextValue = "vgen-probes";
+    } else if (elementId === "vsqr") {
+      item.contextValue = "vgen-vsqr";
+    }
     item.command = {
       command: "quickuvm.revealTbComponent",
       title: vscode.l10n.t("Open in the verification view"),

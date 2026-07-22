@@ -130,6 +130,66 @@ export class Generator {
     }
   }
 
+  /** docs/07 line 2 — regenerate just the given output files (one element's files
+   *  + the aggregate co-regen set), via `generate --only`. Reuses the same
+   *  diagnostics + status as a full generate (so the gen-state badges refresh),
+   *  with a lighter prompt. `label` names the element in the confirmation toast. */
+  async generateItem(label: string, files: string[]): Promise<void> {
+    const uri = this.config.configUri;
+    if (!uri || files.length === 0) {
+      return;
+    }
+    // quick-uvm reads from disk: save the dirty document first
+    const doc = await vscode.workspace.openTextDocument(uri);
+    if (doc.isDirty && !(await doc.save())) {
+      return;
+    }
+    const root = vscode.workspace.workspaceFolders?.[0];
+    const cfg = vscode.workspace.getConfiguration("quickuvm", root?.uri);
+    const outDir = cfg.get<string>("outputDir", "tb");
+    const cwd = root?.uri.fsPath ?? path.dirname(uri.fsPath);
+    const args = [
+      "generate",
+      "-c",
+      uri.fsPath,
+      "-o",
+      outDir,
+      ...files.flatMap((f) => ["--only", f]),
+    ];
+    this.log.appendLine(`[generate-item] ${label}: ${files.length} file(s)`);
+    const r = await invokeQuickUvm(args, cwd, cfg);
+    if (r.enoent) {
+      this.setStatus(false, -1, "quick-uvm not found (pip install quick-uvm)");
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: cannot run quick-uvm — install it (pip install quick-uvm) or set quickuvm.quickUvm."
+        )
+      );
+      return;
+    }
+    if (r.out.trim()) {
+      this.log.appendLine(r.out.trimEnd());
+    }
+    if (r.err.trim()) {
+      this.log.appendLine(r.err.trimEnd());
+    }
+    const detail = this.publishDiagnostics(uri, r.code, r.err);
+    this.setStatus(r.code === 0, r.code, detail);
+    if (r.code === 0) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t("QuickUVM Architect: generated {0}.", label)
+      );
+    } else {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: quick-uvm failed (code {0}) — see the Problems panel.",
+          r.code
+        )
+      );
+      this.log.show(true);
+    }
+  }
+
   /** The validation/CLI errors, as a diagnostic on the configuration file;
    *  returns the shortened message, reused by the status chip (docs/05). */
   private publishDiagnostics(

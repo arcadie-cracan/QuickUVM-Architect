@@ -93,3 +93,28 @@ export function classify(
   }
   return { missing, stale };
 }
+
+/**
+ * docs/07 line 2 — the output files to regenerate for one element (`agent:cmd`,
+ * `sb:sbd`, `probes`, `vsqr`): its OWN files plus the `aggregate` co-regen set.
+ * Appending the aggregates always is the safe default — any structural change
+ * (add/remove/rename) needs them, and they are a handful of cheap files. Returns
+ * `null` if the element maps to no owner in the manifest (nothing to generate).
+ */
+export function scopedFilesFor(manifest: Manifest, nodeId: string): string[] | null {
+  const own = new Set<string>();
+  const aggregate: string[] = [];
+  let found = false;
+  for (const el of manifest.elements) {
+    const files = el.files.map((f) => f.file);
+    if (el.owner === "aggregate") {
+      aggregate.push(...files);
+    } else if (ownerToNodeId(el.owner) === nodeId) {
+      found = true;
+      for (const f of files) {
+        own.add(f);
+      }
+    }
+  }
+  return found ? [...own, ...aggregate] : null;
+}

@@ -10,7 +10,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { invokeQuickUvm } from "./generate";
-import { classify, ElementStates, Manifest } from "./genstate";
+import { classify, ElementStates, Manifest, scopedFilesFor } from "./genstate";
 
 export class GenStateService implements vscode.Disposable {
   private _states: ElementStates = { missing: new Set(), stale: new Set() };
@@ -30,6 +30,15 @@ export class GenStateService implements vscode.Disposable {
   }
   get stale(): ReadonlySet<string> {
     return this._states.stale;
+  }
+
+  /** docs/07 line 2 — the output files to regenerate for one element (`agent:cmd`,
+   *  `sb:sbd`, `probes`, `vsqr`): its OWN files plus the `aggregate` co-regen set.
+   *  Appending the aggregates always is the safe default — any structural change
+   *  (add/remove/rename) needs them, and they are a handful of cheap files. `null`
+   *  if the manifest is unavailable or the element is unknown. */
+  scopedFiles(nodeId: string): string[] | null {
+    return this.manifest ? scopedFilesFor(this.manifest, nodeId) : null;
   }
 
   /** The config changed (or first load): re-run the manifest, then recompute. */
