@@ -461,6 +461,68 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
+test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "host", inputs: [{ name: "addr", width: 8 }], outputs: [{ name: "rdata", width: 8 }],
+  });
+  text = ops.addRegisterModel(text, { package: "s_ral_pkg", block: "s_reg_block", bus_agent: "host" });
+  assert.deepEqual(ops.parseQuvm(text).register_model, {
+    package: "s_ral_pkg", block: "s_reg_block", bus_agent: "host",
+  });
+  assert.throws(
+    () => ops.addRegisterModel(text, { package: "x", block: "y", bus_agent: "host" }),
+    /deja/
+  );
+  text = ops.setRegisterModelField(text, "csr_tests", ["hw_reset", "rw"]);
+  text = ops.setRegisterModelField(text, "coverage", true);
+  text = ops.setRegisterModelField(text, "backdoor_root", "tb_top.dut_inst");
+  let rm = ops.parseQuvm(text).register_model;
+  assert.deepEqual(rm.csr_tests, ["hw_reset", "rw"]);
+  assert.equal(rm.coverage, true);
+  assert.equal(rm.backdoor_root, "tb_top.dut_inst");
+  assert.ok(/csr_tests: \[/.test(text), `csr_tests nu e flow:\n${text}`);
+  // default => the key disappears (canonical YAML)
+  text = ops.setRegisterModelField(text, "coverage", false);
+  text = ops.setRegisterModelField(text, "csr_tests", []);
+  text = ops.setRegisterModelField(text, "map", "default_map");
+  rm = ops.parseQuvm(text).register_model;
+  for (const k of ["coverage", "csr_tests", "map"]) {
+    assert.equal(k in rm, false, `${k} la default ar fi trebuit stersa`);
+  }
+  // the three required fields: emptying is refused, not silently written
+  for (const f of ["package", "block", "bus_agent"]) {
+    assert.throws(() => ops.setRegisterModelField(text, f, ""), /obligatoriu/, f);
+  }
+  text = ops.removeRegisterModel(text);
+  assert.equal(ops.parseQuvm(text).register_model, undefined);
+  assert.equal(ops.removeRegisterModel(text), text, "remove pe absent nu e byte-identic");
+  assert.throws(() => ops.setRegisterModelField(text, "adapter", "a"), /nu are/);
+});
+
+test("regress: add e idempotent, remove CASCADEAZA peste tests[].seeds", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.addRegress(text);
+  assert.deepEqual(ops.parseQuvm(text).regress, {});
+  assert.equal(ops.addRegress(text), text, "al doilea addRegress nu e byte-identic");
+  text = ops.setRegressField(text, "seeds", 8);
+  text = ops.setRegressField(text, "simulator", "questa");
+  assert.equal(ops.parseQuvm(text).regress.seeds, 8);
+  assert.equal(ops.parseQuvm(text).regress.simulator, "questa");
+  text = ops.setRegressField(text, "seeds", 1); // default -> sters
+  assert.equal("seeds" in ops.parseQuvm(text).regress, false);
+
+  // QuickUVM REFUZA `tests[].seeds` fara un bloc `regress:`, deci stergerea
+  // blocului trebuie sa ia cu ea si seed-urile (altfel configul nu mai genereaza)
+  const withSeeds = text.replace(/(\n\s+)- \{ name: ([\w]+) \}/, "$1- { name: $2, seeds: 4 }");
+  assert.notEqual(withSeeds, text, "fixture-ul cu seeds nu s-a aplicat");
+  assert.equal(ops.parseQuvm(withSeeds).tests[0].seeds, 4);
+  const removed = ops.removeRegress(withSeeds);
+  assert.equal(ops.parseQuvm(removed).regress, undefined);
+  assert.equal("seeds" in ops.parseQuvm(removed).tests[0], false, "seeds a supravietuit");
+  assert.equal(ops.removeRegress(removed), removed, "remove pe absent nu e byte-identic");
+});
+
 test("setAgentField: seteaza/reseteaza campuri, arunca la agent inexistent", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {

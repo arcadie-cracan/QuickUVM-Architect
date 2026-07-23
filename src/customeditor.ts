@@ -232,6 +232,21 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "editAgent":
         void this.actions.editAgent(s("name"), s("field"), s("value"), target);
         break;
+      case "addRegisterModel":
+        void this.actions.addRegisterModel(target);
+        break;
+      case "removeRegisterModel":
+        void this.actions.removeRegisterModel(target);
+        break;
+      case "editRegisterModel":
+        void this.actions.editRegisterModel(s("field"), s("value"), target);
+        break;
+      case "toggleRegress":
+        void this.actions.toggleRegress(s("value") === "true", target);
+        break;
+      case "editRegress":
+        void this.actions.editRegress(s("field"), s("value"), target);
+        break;
       case "openSubenvConfig":
         // drill into subenv from the per-file editor: the config path relative
         // to the DOCUMENT (the H1 nesting descends level by level through files)

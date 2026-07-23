@@ -583,4 +583,80 @@ agents:
   console.log("  ok    inspector agent: cascada mode->initiator e load-bearing (fara ea: REFUZ)");
 }
 
+// --- scenario 6 (docs/07 P2): the BENCH SETTINGS panel writes configs quick-uvm
+// ACCEPTS. `register_model:` and `regress:` are presence-switched blocks, so the
+// gestures here are add / edit-fields / remove, exactly as the panel emits them.
+{
+  const ral = `package cfg_ral_pkg;
+  import uvm_pkg::*;
+  \`include "uvm_macros.svh"
+  class cfg_reg_block extends uvm_reg_block;
+    \`uvm_object_utils(cfg_reg_block)
+    function new(string name = "cfg_reg_block"); super.new(name, UVM_NO_COVERAGE); endfunction
+    virtual function void build();
+      default_map = create_map("default_map", 0, 4, UVM_LITTLE_ENDIAN);
+      lock_model();
+    endfunction
+  endclass
+endpackage
+`;
+
+  let t = ops.setDut(ops.newConfigText("cfg"), {
+    module: "cfg", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "host",
+    inputs: [{ name: "addr", width: 8 }, { name: "wdata", width: 32 }, { name: "wr", width: 1 }],
+    outputs: [{ name: "rdata", width: 32 }],
+  });
+
+  // (a) add register model + the fields the panel edits (CSR suites, coverage, backdoor)
+  let ralCfg = ops.addRegisterModel(t, {
+    package: "cfg_ral_pkg", block: "cfg_reg_block", bus_agent: "host",
+  });
+  ralCfg = ops.setRegisterModelField(ralCfg, "csr_tests", ["hw_reset", "rw"]);
+  ralCfg = ops.setRegisterModelField(ralCfg, "coverage", true);
+  ralCfg = ops.setRegisterModelField(ralCfg, "backdoor_root", "tb_top.dut_inst");
+  generate("ral_bench", ralCfg, ["reg_adapter.svh", "cfg_reg_test.svh", "tb_top.sv"],
+    { "cfg_ral_pkg.sv": ral });
+
+  // (b) removing it leaves a config that still generates (without the RAL files)
+  const noRal = ops.removeRegisterModel(ralCfg);
+  const dirNoRal = generate("ral_removed", noRal, ["tb_top.sv"]);
+  assert.ok(
+    !existsSync(join(dirNoRal, "tb", "reg_adapter.svh")),
+    "adaptorul a supravietuit stergerii lui register_model"
+  );
+
+  // (c) regress: presence generates the Makefile
+  let rg = ops.addRegress(t);
+  rg = ops.setRegressField(rg, "seeds", 4);
+  generate("regress_bench", rg, ["Makefile", "tb_top.sv"]);
+
+  // (d) THE SEEDS CASCADE IS LOAD-BEARING. QuickUVM refuses `tests[].seeds` without a
+  // `regress:` block, so removing the block must strip them. Mutation proof: the same
+  // config with the seeds left behind is REFUSED.
+  const seeded = rg.replace(/(\n\s+)- \{ name: (\w+) \}/, "$1- { name: $2, seeds: 4 }");
+  assert.notEqual(seeded, rg, "fixture-ul cu tests[].seeds nu s-a aplicat");
+  generate("regress_seeded", seeded, ["Makefile"]);
+
+  const cleaned = ops.removeRegress(seeded);
+  assert.equal("seeds" in ops.parseQuvm(cleaned).tests[0], false, "seeds a supravietuit cascadei");
+  generate("regress_removed", cleaned, ["tb_top.sv"]);
+
+  const orphan = seeded.replace(/\nregress:[^\n]*\n/, "\n");
+  assert.notEqual(orphan, seeded, "mutatia (regress sters, seeds ramas) nu s-a aplicat");
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-orphan-"));
+  writeFileSync(join(dir, "m.quickuvm.yaml"), orphan);
+  const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze seeds fara regress");
+  assert.match(
+    (bad.stdout ?? "") + (bad.stderr ?? ""),
+    /seeds.*regress/s,
+    "alt motiv de esec decat seeds-fara-regress"
+  );
+  console.log("  ok    setari bench: cascada removeRegress -> seeds e load-bearing (fara ea: REFUZ)");
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

@@ -267,6 +267,27 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.value === "string" ? args.value : ""
           );
           break;
+        case "addRegisterModel":
+          void actions.addRegisterModel();
+          break;
+        case "removeRegisterModel":
+          void actions.removeRegisterModel();
+          break;
+        case "editRegisterModel":
+          void actions.editRegisterModel(
+            typeof args.field === "string" ? args.field : "",
+            typeof args.value === "string" ? args.value : ""
+          );
+          break;
+        case "toggleRegress":
+          void actions.toggleRegress(args.value === "true");
+          break;
+        case "editRegress":
+          void actions.editRegress(
+            typeof args.field === "string" ? args.field : "",
+            typeof args.value === "string" ? args.value : ""
+          );
+          break;
         case "createProbe":
           void actions.createProbe(
             target,

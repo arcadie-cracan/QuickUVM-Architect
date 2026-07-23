@@ -62,6 +62,8 @@ export interface QuvmReset {
 export interface QuvmTest {
   name?: string;
   num_items?: number;
+  /** per-test seed count in the regression matrix; requires a `regress:` block */
+  seeds?: number;
 }
 
 /** declarative analysis C1/A2: scoreboard with a source stream (+ monitor at A2) */
@@ -139,6 +141,39 @@ export interface QuvmConfig {
   probes?: QuvmProbe[];
   subenvs?: QuvmSubenv[];
   connections?: QuvmConnection[];
+  /** RAL mode (docs/07 P2): PRESENCE switches it on — the block adds the adapter,
+   *  the CSR tests and their env wiring. The RAL package itself is user input. */
+  register_model?: QuvmRegisterModel;
+  /** presence generates the regression `Makefile` and is what makes `tests[].seeds`
+   *  legal (QuickUVM rejects seeds without it) */
+  regress?: QuvmRegress;
+  layout?: "flat" | "packaged";
+  kind?: "bench" | "vip" | "selftest";
+  top_name?: string;
+  auto_vseq_mode?: "parallel" | "sequential";
+}
+
+export interface QuvmRegisterModel {
+  package?: string;
+  block?: string;
+  map?: string;
+  /** must name an INITIATOR agent — a responder cannot carry register traffic */
+  bus_agent?: string;
+  adapter?: string;
+  use_predictor?: boolean;
+  reg_test?: boolean;
+  csr_tests?: string[];
+  coverage?: boolean;
+  backdoor_root?: string;
+  reg_test_door?: "frontdoor" | "backdoor";
+  frontdoor?: string;
+}
+
+export interface QuvmRegress {
+  simulator?: string;
+  filelist?: string;
+  seeds?: number;
+  coverage?: boolean;
 }
 
 /** A cross-block scoreboard = an `analysis.scoreboards` entry with endpoints
