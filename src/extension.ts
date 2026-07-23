@@ -31,7 +31,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const generateDiags =
     vscode.languages.createDiagnosticCollection("quickuvm-generate");
   const tree = new HierarchyProvider();
-  const vtree = new VerificationProvider();
+  // the generation state feeds the row actions (Generate / Regenerate / none)
+  const vtree = new VerificationProvider(
+    () => genState.missing,
+    () => genState.stale
+  );
   const backend = new Backend(context, log, slangDiags);
   const config = new ConfigService(log, configDiags);
   const actions = new Actions(() => model, config, log);
@@ -44,9 +48,11 @@ export function activate(context: vscode.ExtensionContext): void {
     () => genState.missing,
     () => genState.stale
   );
-  // the tree star (FileDecoration) AND the diagram badges refresh when the set changes
+  // the tree star (FileDecoration), the row actions (Generate/Regenerate) and the
+  // diagram badges all refresh when the generation state changes
   genState.onDidChange(() => {
     genDeco.refresh();
+    vtree.refresh(); // re-render rows: contextValue carries the state
     DiagramPanel.current?.postStatus();
   });
   context.subscriptions.push(
@@ -547,6 +553,14 @@ export function activate(context: vscode.ExtensionContext): void {
     // docs/07 line 2 — regenerate just one element's files (+ the aggregate set),
     // from the verification-hierarchy context menu. `node` is the VNode the tree
     // yielded; its element id is the node id minus the `v:` prefix.
+    // Regenerate = the same scoped generation, a distinct command purely so the row
+    // can show a different icon/title (⟳ "Regenerate") once the element exists.
+    vscode.commands.registerCommand(
+      "quickuvm.regenerateItem",
+      (node?: { id?: string; label?: string }) =>
+        vscode.commands.executeCommand("quickuvm.generateItem", node)
+    ),
+
     vscode.commands.registerCommand(
       "quickuvm.generateItem",
       async (node?: { id?: string; label?: string }) => {

@@ -8,6 +8,7 @@
   "cmd.fixPortWidth": "Actualizează lățimea portului",
   "cmd.generate": "Generează testbench",
   "cmd.generateItem": "Generează acest element",
+  "cmd.regenerateItem": "Regenerează acest element",
   "cmd.openGeneratedCode": "Deschide codul generat",
   "cmd.ignoreSelection": "Ignoră porturile selectate",
   "cmd.openConfig": "Deschide configurația QuickUVM",

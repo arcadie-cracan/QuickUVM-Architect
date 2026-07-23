@@ -20,6 +20,19 @@ export class VerificationProvider
   private byFocus = new Map<string, VNode>();
   private byIdent = new Map<string, VNode>();
 
+  /** docs/07 line 1+2 — the generation state, so a row's contextValue can carry it
+   *  (`…-missing` / `…-stale` / `…-ok`) and the inline action can be Generate,
+   *  Regenerate, or nothing. Injected so this provider stays free of the service. */
+  constructor(
+    private readonly missing: () => ReadonlySet<string> = () => new Set(),
+    private readonly stale: () => ReadonlySet<string> = () => new Set()
+  ) {}
+
+  /** Re-render the rows (the generation state changed → the actions change). */
+  refresh(): void {
+    this.changeEmitter.fire();
+  }
+
   setConfig(config: QuvmConfig | null, configPath: string | null): void {
     const built = config
       ? buildVTree(config, configPath)
@@ -67,17 +80,27 @@ export class VerificationProvider
     // the file decoration.
     const elementId = node.id.replace(/^v:/, "");
     item.resourceUri = genElementUri(elementId);
-    // docs/07 line 2 — mark the generatable elements so the "Generate this item"
-    // context action can target them (agents, scoreboards, probes, vsqr; NOT the
-    // agent-internal leaves `agent:<name>:u.driver`, which have a second colon).
-    if (/^agent:[^:]+$/.test(elementId)) {
-      item.contextValue = "vgen-agent";
-    } else if (/^sb:/.test(elementId)) {
-      item.contextValue = "vgen-sb";
-    } else if (elementId === "probes") {
-      item.contextValue = "vgen-probes";
-    } else if (elementId === "vsqr") {
-      item.contextValue = "vgen-vsqr";
+    // docs/07 line 2 — mark the generatable elements so the item actions can target
+    // them (agents, scoreboards, probes, vsqr; NOT the agent-internal leaves
+    // `agent:<name>:u.driver`, which have a second colon). The contextValue carries
+    // the generation STATE too, so the inline action matches what is actually to be
+    // done: `-missing` -> Generate (▶), `-stale` -> Regenerate (⟳), `-ok` -> none.
+    const kind = /^agent:[^:]+$/.test(elementId)
+      ? "agent"
+      : /^sb:/.test(elementId)
+        ? "sb"
+        : elementId === "probes"
+          ? "probes"
+          : elementId === "vsqr"
+            ? "vsqr"
+            : null;
+    if (kind) {
+      const state = this.missing().has(elementId)
+        ? "missing"
+        : this.stale().has(elementId)
+          ? "stale"
+          : "ok";
+      item.contextValue = `vgen-${kind}-${state}`;
     }
     item.command = {
       command: "quickuvm.revealTbComponent",

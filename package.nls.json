@@ -8,6 +8,7 @@
   "cmd.fixPortWidth": "Fix Port Width",
   "cmd.generate": "Generate Testbench",
   "cmd.generateItem": "Generate This Item",
+  "cmd.regenerateItem": "Regenerate This Item",
   "cmd.openGeneratedCode": "Open Generated Code",
   "cmd.ignoreSelection": "Ignore Selected Ports",
   "cmd.openConfig": "Open QuickUVM Configuration",
