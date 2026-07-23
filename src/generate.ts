@@ -29,7 +29,9 @@ export class Generator {
     this.statusEmitter.fire(this.status);
   }
 
-  async generate(): Promise<void> {
+  /** @returns true when quick-uvm ran and succeeded (the caller records it as
+   *  "generated from the current config"). */
+  async generate(): Promise<boolean> {
     const uri = this.config.configUri;
     if (!uri) {
       void vscode.window.showWarningMessage(
@@ -37,7 +39,7 @@ export class Generator {
           "QuickUVM Architect: there is no QuickUVM configuration — set the DUT first."
         )
       );
-      return;
+      return false;
     }
 
     // coverage: generation with unmapped ports requires confirmation (docs/03)
@@ -61,14 +63,14 @@ export class Generator {
         vscode.l10n.t("Generate")
       );
       if (!go) {
-        return;
+        return false;
       }
     }
 
     // quick-uvm reads from disk: the dirty document is saved first
     const doc = await vscode.workspace.openTextDocument(uri);
     if (doc.isDirty && !(await doc.save())) {
-      return;
+      return false;
     }
 
     const root = vscode.workspace.workspaceFolders?.[0];
@@ -94,7 +96,7 @@ export class Generator {
             "QuickUVM Architect: cannot run quick-uvm — install it (pip install quick-uvm) or set quickuvm.quickUvm."
           )
         );
-        return;
+        return false;
       }
     }
 
@@ -128,21 +130,22 @@ export class Generator {
       );
       this.log.show(true);
     }
+    return r.code === 0;
   }
 
   /** docs/07 line 2 — regenerate just the given output files (one element's files
    *  + the aggregate co-regen set), via `generate --only`. Reuses the same
    *  diagnostics + status as a full generate (so the gen-state badges refresh),
    *  with a lighter prompt. `label` names the element in the confirmation toast. */
-  async generateItem(label: string, files: string[]): Promise<void> {
+  async generateItem(label: string, files: string[]): Promise<boolean> {
     const uri = this.config.configUri;
     if (!uri || files.length === 0) {
-      return;
+      return false;
     }
     // quick-uvm reads from disk: save the dirty document first
     const doc = await vscode.workspace.openTextDocument(uri);
     if (doc.isDirty && !(await doc.save())) {
-      return;
+      return false;
     }
     const root = vscode.workspace.workspaceFolders?.[0];
     const cfg = vscode.workspace.getConfiguration("quickuvm", root?.uri);
@@ -165,7 +168,7 @@ export class Generator {
           "QuickUVM Architect: cannot run quick-uvm — install it (pip install quick-uvm) or set quickuvm.quickUvm."
         )
       );
-      return;
+      return false;
     }
     if (r.out.trim()) {
       this.log.appendLine(r.out.trimEnd());
@@ -188,6 +191,7 @@ export class Generator {
       );
       this.log.show(true);
     }
+    return r.code === 0;
   }
 
   /** The validation/CLI errors, as a diagnostic on the configuration file;

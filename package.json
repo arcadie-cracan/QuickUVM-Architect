@@ -142,6 +142,12 @@
         "icon": "$(run)"
       },
       {
+        "command": "quickuvm.regenerateItem",
+        "title": "%cmd.regenerateItem%",
+        "category": "QuickUVM Architect",
+        "icon": "$(sync)"
+      },
+      {
         "command": "quickuvm.openGeneratedCode",
         "title": "%cmd.openGeneratedCode%",
         "category": "QuickUVM Architect",
@@ -229,12 +235,22 @@
         },
         {
           "command": "quickuvm.generateItem",
-          "when": "view == quickuvm.verification && viewItem =~ /^vgen-/",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-missing$/",
+          "group": "inline"
+        },
+        {
+          "command": "quickuvm.regenerateItem",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-stale$/",
           "group": "inline"
         },
         {
           "command": "quickuvm.generateItem",
-          "when": "view == quickuvm.verification && viewItem =~ /^vgen-/",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-missing$/",
+          "group": "navigation"
+        },
+        {
+          "command": "quickuvm.regenerateItem",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-(stale|ok)$/",
           "group": "navigation"
         },
         {
@@ -244,6 +260,10 @@
         }
       ],
       "commandPalette": [
+        {
+          "command": "quickuvm.regenerateItem",
+          "when": "false"
+        },
         {
           "command": "quickuvm.generateItem",
           "when": "false"

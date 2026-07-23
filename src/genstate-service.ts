@@ -1,12 +1,15 @@
 // Host service for the "not generated" / "stale" decoration (docs/07 line 1):
 // - runs `quick-uvm manifest -c <yaml>` (QuickUVM >= 1.1.0) for the element → files
 //   map, CACHED and re-run only on config change (the file list only changes then);
-// - stats those files + the config IN-PROCESS on every recompute (cheap, no
-//   subprocess), so both `missing` (absent) and `stale` (older than the config) are
-//   derived by the pure `classify` (genstate.ts);
+// - checks those files' EXISTENCE in-process on every recompute (cheap, no
+//   subprocess) and hashes the config, so both `missing` (absent) and `stale`
+//   (generated from a different config content) are derived by the pure `classify`
+//   (genstate.ts). Staleness needs the hash rather than mtimes because quick-uvm
+//   does not rewrite files whose content is unchanged;
 // - recomputes on config change, generate completion, and output-dir file changes
 //   (a debounced watcher, so manual deletes/regens are picked up too).
 
+import { createHash } from "crypto";
 import * as path from "path";
 import * as vscode from "vscode";
 import { invokeQuickUvm } from "./generate";
@@ -14,9 +17,13 @@ import {
   classify,
   ElementStates,
   Manifest,
+  ownerToNodeId,
   primaryFile,
   scopedFilesFor,
 } from "./genstate";
+
+/** workspaceState key holding, per config uri, the element → config-hash records */
+const STORE_KEY = "quickuvm.genHash";
 
 export class GenStateService implements vscode.Disposable {
   private _states: ElementStates = { missing: new Set(), stale: new Set() };
@@ -28,8 +35,14 @@ export class GenStateService implements vscode.Disposable {
   private outDirAbs: string | undefined;
   private watcher: vscode.FileSystemWatcher | undefined;
   private timer: ReturnType<typeof setTimeout> | undefined;
+  /** element id → the config hash it was last generated FROM (persisted) */
+  private genHash = new Map<string, string>();
+  private configHash = "";
 
-  constructor(private readonly log: vscode.OutputChannel) {}
+  constructor(
+    private readonly log: vscode.OutputChannel,
+    private readonly memento?: vscode.Memento
+  ) {}
 
   get missing(): ReadonlySet<string> {
     return this._states.missing;
@@ -60,6 +73,7 @@ export class GenStateService implements vscode.Disposable {
   /** The config changed (or first load): re-run the manifest, then recompute. */
   async refresh(configUri: vscode.Uri | undefined): Promise<void> {
     this.config = configUri;
+    this.restore(); // the per-config generated-from hashes (survive a reload)
     if (!configUri) {
       this.manifest = undefined;
       this.set({ missing: new Set(), stale: new Set() });
@@ -93,32 +107,83 @@ export class GenStateService implements vscode.Disposable {
     await this.recompute();
   }
 
-  /** Re-stat the generated files + config against the CACHED manifest (no
-   *  subprocess). Called on generate completion and output-dir changes. */
+  /** Re-check the generated files' existence + the config hash against the CACHED
+   *  manifest (no subprocess). Called on generate completion and output-dir changes. */
   async recompute(): Promise<void> {
     if (!this.manifest || !this.config || !this.outDirAbs) {
       return;
     }
-    const configMtime = await this.mtime(this.config);
     const files = new Set(
       this.manifest.elements.flatMap((e) => e.files.map((f) => f.file))
     );
-    const mtimes = new Map<string, number>();
+    const present = new Set<string>();
     for (const f of files) {
-      const m = await this.mtime(vscode.Uri.file(path.join(this.outDirAbs, f)));
-      if (m !== null) {
-        mtimes.set(f, m);
+      if (await this.exists(vscode.Uri.file(path.join(this.outDirAbs, f)))) {
+        present.add(f);
       }
     }
-    this.set(classify(this.manifest, mtimes, configMtime ?? 0));
+    this.configHash = await this.hashOf(this.config);
+    this.set(classify(this.manifest, present, this.genHash, this.configHash));
   }
 
-  private async mtime(uri: vscode.Uri): Promise<number | null> {
-    try {
-      return (await vscode.workspace.fs.stat(uri)).mtime;
-    } catch {
-      return null; // does not exist
+  /**
+   * Record that `nodeIds` ("all" = every decoratable element) were just generated
+   * from the CURRENT config, so they stop being reported stale. Content-hash based:
+   * a regeneration whose output is unchanged still clears the flag (quick-uvm does
+   * not rewrite unchanged files, so mtimes cannot express this).
+   */
+  async markGenerated(nodeIds: readonly string[] | "all"): Promise<void> {
+    const hash = (this.configHash = this.config
+      ? await this.hashOf(this.config)
+      : "");
+    const ids =
+      nodeIds === "all"
+        ? [...new Set(
+            (this.manifest?.elements ?? [])
+              .map((e) => ownerToNodeId(e.owner))
+              .filter((x): x is string => x !== null)
+          )]
+        : nodeIds;
+    for (const id of ids) {
+      this.genHash.set(id, hash);
     }
+    await this.persist();
+    await this.recompute();
+  }
+
+  private async exists(uri: vscode.Uri): Promise<boolean> {
+    try {
+      await vscode.workspace.fs.stat(uri);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** sha1 of the config's bytes — the identity of "what was generated from". */
+  private async hashOf(uri: vscode.Uri): Promise<string> {
+    try {
+      const bytes = await vscode.workspace.fs.readFile(uri);
+      return createHash("sha1").update(bytes).digest("hex");
+    } catch {
+      return "";
+    }
+  }
+
+  /** the recorded hashes survive a reload (else the badge would forget) */
+  private async persist(): Promise<void> {
+    const key = this.config?.toString() ?? "";
+    await this.memento?.update(STORE_KEY, {
+      ...(this.memento.get<Record<string, Record<string, string>>>(STORE_KEY) ?? {}),
+      [key]: Object.fromEntries(this.genHash),
+    });
+  }
+
+  private restore(): void {
+    const key = this.config?.toString() ?? "";
+    const all =
+      this.memento?.get<Record<string, Record<string, string>>>(STORE_KEY) ?? {};
+    this.genHash = new Map(Object.entries(all[key] ?? {}));
   }
 
   private set(next: ElementStates): void {
@@ -146,7 +211,7 @@ export class GenStateService implements vscode.Disposable {
     };
     this.watcher.onDidCreate(bounce);
     this.watcher.onDidDelete(bounce);
-    this.watcher.onDidChange(bounce); // a rewrite changes mtime → may clear `stale`
+    this.watcher.onDidChange(bounce); // a file re-appearing/vanishing under us
   }
 
   dispose(): void {

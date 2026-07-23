@@ -20,3 +20,6 @@ examples*/tb/
 
 # stare locala Claude Code (permisiuni per-masina)
 .claude/settings.local.json
+
+# Python venv for the backend (pyslang); see backend/requirements.txt
+.venv/

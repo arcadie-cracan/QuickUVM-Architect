@@ -113,8 +113,14 @@ debounced pe `<outDir>/**`, model `sidecar.ts:187-217`), și la schimbarea setă
   + `resourceUri` + `setUngenerated`). *Livrabilul principal.*
 - **1.3** — badge-ul stea în diagramă (payload `status/decorations` extins +
   `ungeneratedIdsTb` + `applyGenBadges`).
-- **1.4** (opțional) — starea `stale` (mtime config > mtime fișier) + puntea
-  `fromManifest` (aici `stale` devine fiabil).
+- **1.4** (opțional) — starea `stale` + puntea `fromManifest` (aici `stale` devine
+  fiabil). **Livrat pe hash de conținut, nu pe mtime**: quick-uvm nu rescrie fișierele
+  al căror conținut nu s-a schimbat (asta ține build-urile downstream liniștite), deci
+  după o regenerare mtime-urile rămân vechi și euristica „fișier mai vechi decât
+  config-ul" ar rămâne blocată pe `stale` la infinit. Extensia înregistrează în
+  `workspaceState`, per element, hash-ul config-ului din care a generat; `stale` =
+  hash înregistrat ≠ hash curent. Element fără înregistrare (generat din CLI, în afara
+  extensiei) nu e revendicat `stale` — badge-ul nu minte niciodată.
 
 **Decizii deschise pentru utilizator**:
 - Limbaj vizual: stea (FileDecoration) vs rând estompat vs icon overlay; în diagramă,

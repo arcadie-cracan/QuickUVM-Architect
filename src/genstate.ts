@@ -55,26 +55,32 @@ export function ownerToNodeId(owner: string): string | null {
 export interface ElementStates {
   /** elements with a file that does not exist on disk yet */
   missing: Set<string>;
-  /** elements whose files all exist but at least one is OLDER than the config
-   *  (edited since last generate) — the generated code is behind the config */
+  /** elements generated from an OLDER version of the config — the generated code
+   *  is behind what the config now says */
   stale: Set<string>;
 }
 
 /**
- * Classify each decoratable element as `missing` (some file absent), `stale` (all
- * present but a file's mtime predates the config's) or generated (in neither set).
- * `mtimes` maps a generated filename to its on-disk mtime (ms); a filename absent
- * from the map is missing. `configMtime` is the config YAML's mtime (ms). Missing
- * wins over stale when several owners collapse onto one node (vseq → vsqr).
+ * Classify each decoratable element as `missing` (some owned file absent),
+ * `stale` (all present, but generated from a different config content) or
+ * up-to-date (in neither set). Missing wins when several owners collapse onto one
+ * node (vseq → vsqr).
  *
- * The `stale` heuristic is intentionally conservative: any config edit marks its
- * elements stale until the next generate (mtime is coarser than a real dependency
- * analysis), which is the right prompt — the generated code IS behind the config.
+ * `present` is the set of filenames that exist in the output dir. `generatedHash`
+ * maps an element id to the config HASH it was last generated from (recorded by the
+ * extension when it generates); `configHash` is the config's current hash.
+ *
+ * Staleness is content-based ON PURPOSE. File mtimes cannot express it: quick-uvm
+ * deliberately does NOT rewrite a file whose content is unchanged (that is what keeps
+ * downstream builds from recompiling), so after a regeneration the mtimes of unchanged
+ * files stay old — an mtime heuristic would latch "stale" forever. An element with no
+ * recorded hash is NOT claimed stale (we cannot know), so the badge never lies.
  */
 export function classify(
   manifest: Manifest,
-  mtimes: ReadonlyMap<string, number>,
-  configMtime: number
+  present: ReadonlySet<string>,
+  generatedHash: ReadonlyMap<string, string>,
+  configHash: string
 ): ElementStates {
   const missing = new Set<string>();
   const stale = new Set<string>();
@@ -82,9 +88,12 @@ export function classify(
     const nodeId = ownerToNodeId(el.owner);
     if (nodeId === null) continue;
     const files = el.files.map((f) => f.file);
-    if (files.some((f) => !mtimes.has(f))) {
+    if (files.some((f) => !present.has(f))) {
       missing.add(nodeId);
-    } else if (files.some((f) => (mtimes.get(f) ?? 0) < configMtime)) {
+      continue;
+    }
+    const was = generatedHash.get(nodeId);
+    if (was !== undefined && was !== configHash) {
       stale.add(nodeId);
     }
   }

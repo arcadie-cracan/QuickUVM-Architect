@@ -1,7 +1,7 @@
 // Node tests for the pure generation-state detector (src/genstate.ts): the
-// `quick-uvm manifest` element→files map + on-disk mtimes + the config mtime ->
-// the `missing` (absent) and `stale` (older than the config) element-id sets.
-// No DOM, no vscode.
+// `quick-uvm manifest` element→files map + the files present on disk + the
+// per-element "generated from this config hash" records -> the `missing` (absent)
+// and `stale` (generated from a different config) element-id sets. No DOM, no vscode.
 //   npm run test:genstate
 
 import assert from "node:assert/strict";
@@ -33,7 +33,8 @@ function test(name, fn) {
 }
 
 // a manifest element owning the given files (the `exists` flag is unused by
-// classify — mtimes drive it — but present to match the real manifest shape)
+// classify — the caller's `present` set drives it — but kept to match the real
+// manifest shape)
 const el = (owner, files) => ({
   owner,
   files: files.map((f) => ({ file: f, exists: true })),
@@ -56,44 +57,58 @@ test("ownerToNodeId maps the decoratable owners, null otherwise", () => {
   }
 });
 
-test("classify: a missing file -> `missing`; all present & newer -> generated", () => {
+test("classify: a missing file -> `missing`; all present & same hash -> generated", () => {
   const m = manifest([
     el("agent:cmd", ["a", "b"]),
     el("scoreboard:sbd", ["c"]),
   ]);
-  // config at t=100; agent files newer (present), scoreboard file absent
-  const mtimes = new Map([
-    ["a", 200],
-    ["b", 200],
-  ]);
-  const { missing, stale } = classify(m, mtimes, 100);
-  assert.deepEqual([...missing], ["sb:sbd"]); // c absent
-  assert.equal(stale.size, 0); // agent:cmd present & newer -> generated
+  const present = new Set(["a", "b"]); // c absent
+  const gen = new Map([["agent:cmd", "H1"]]); // generated from the current config
+  const { missing, stale } = classify(m, present, gen, "H1");
+  assert.deepEqual([...missing], ["sb:sbd"]);
+  assert.equal(stale.size, 0); // agent:cmd present & same hash -> generated
 });
 
-test("classify: all present but a file older than config -> `stale`", () => {
+test("classify: all present but generated from another config hash -> `stale`", () => {
   const m = manifest([el("agent:cmd", ["a", "b"])]);
-  const mtimes = new Map([
-    ["a", 200],
-    ["b", 50], // older than config@100
-  ]);
-  const { missing, stale } = classify(m, mtimes, 100);
+  const present = new Set(["a", "b"]);
+  const { missing, stale } = classify(m, present, new Map([["agent:cmd", "OLD"]]), "H1");
   assert.equal(missing.size, 0);
   assert.deepEqual([...stale], ["agent:cmd"]);
 });
 
+test("classify: regenerating clears `stale` even if no file content changed", () => {
+  // the bug this design fixes: quick-uvm does not rewrite unchanged files, so an
+  // mtime-based check latched `stale` forever. Re-recording the hash clears it.
+  const m = manifest([el("agent:cmd", ["a"])]);
+  const present = new Set(["a"]);
+  assert.deepEqual([...classify(m, present, new Map([["agent:cmd", "OLD"]]), "H1").stale], [
+    "agent:cmd",
+  ]);
+  const after = classify(m, present, new Map([["agent:cmd", "H1"]]), "H1"); // markGenerated
+  assert.equal(after.stale.size, 0);
+});
+
+test("classify: no record for an element -> never claimed stale", () => {
+  // generated outside the extension (CLI): we cannot know, so we do not badge it
+  const m = manifest([el("agent:cmd", ["a"])]);
+  const { missing, stale } = classify(m, new Set(["a"]), new Map(), "H1");
+  assert.equal(missing.size, 0);
+  assert.equal(stale.size, 0);
+});
+
 test("classify: aggregate/test owners are ignored even if missing", () => {
   const m = manifest([el("aggregate", ["x"]), el("test:t1", ["y"])]);
-  const { missing, stale } = classify(m, new Map(), 100); // both absent
+  const { missing, stale } = classify(m, new Set(), new Map(), "H1"); // both absent
   assert.equal(missing.size, 0);
   assert.equal(stale.size, 0);
 });
 
 test("classify: vseqs collapse onto vsqr — missing wins over stale", () => {
   const m = manifest([el("vseq:a", ["a"]), el("vseq:b", ["b"])]);
-  // a is stale (older), b is missing -> vsqr should be MISSING, not stale
-  const mtimes = new Map([["a", 50]]); // b absent
-  const { missing, stale } = classify(m, mtimes, 100);
+  // a is stale (old hash), b is missing -> vsqr should be MISSING, not stale
+  const gen = new Map([["vsqr", "OLD"]]);
+  const { missing, stale } = classify(m, new Set(["a"]), gen, "H1");
   assert.deepEqual([...missing], ["vsqr"]);
   assert.equal(stale.size, 0);
 });
