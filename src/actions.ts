@@ -1405,6 +1405,9 @@ export class Actions {
       "match",
       "match_key",
       "max_latency",
+      "window.boundary",
+      "window.length",
+      "reference_model.language",
     ];
     if (!fields.includes(field as ops.ScoreboardField)) {
       return;
@@ -1413,18 +1416,25 @@ export class Actions {
     let value: string | number | undefined;
     if (raw === "") {
       value = undefined;
-    } else if (f === "max_latency") {
-      // latency = number of cycles: integer >= 0 (the input has min=0)
+    } else if (f === "max_latency" || f === "window.length") {
+      // cycles / samples per window: an integer, >= 1 for a window (>= 0 for latency)
       const n = Number(raw);
-      if (!Number.isInteger(n) || n < 0) {
+      if (!Number.isInteger(n) || n < (f === "window.length" ? 1 : 0)) {
         return;
       }
       value = n;
     } else {
       value = raw;
     }
-    if (await cfg.apply((t) => ops.setScoreboardField(t, name, f, value))) {
-      this.log.appendLine(`[actions] editScoreboard ${name}.${field} = ${raw || "(reset)"}`);
+    try {
+      if (await cfg.apply((t) => ops.setScoreboardField(t, name, f, value))) {
+        this.log.appendLine(`[actions] editScoreboard ${name}.${field} = ${raw || "(reset)"}`);
+      }
+    } catch (e) {
+      // e.g. a window on a two-stream scoreboard — refused rather than written
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
     }
   }
 

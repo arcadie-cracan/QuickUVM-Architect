@@ -3333,6 +3333,48 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
   latIn.placeholder = "unbounded";
   latIn.addEventListener("change", () => send("max_latency", latIn.value));
   inspector.append(tbPropRow("Max latency", latIn));
+
+  // docs/07 P3 — the windowed N:1 check. The boundary is a SAMPLED port of the source
+  // agent (the DUT strobe that closes a window), and the whole feature is
+  // single-stream only: a two-stream scoreboard is strictly 1:1 and would desync N
+  // samples against one verdict, which QuickUVM refuses.
+  const src = (state.config?.agents ?? []).find((a) => a.name === sb.source);
+  const sampled = (src?.ports?.outputs ?? [])
+    .map((p: QuvmPort) => p.name)
+    .filter((n): n is string => Boolean(n));
+  const winSel = tbSelect(
+    [["", "— none —"], ...sampled.map((p) => [p, p] as const)],
+    sb.window?.boundary ?? "",
+    (v) => send("window.boundary", v)
+  );
+  winSel.disabled = Boolean(sb.monitor);
+  inspector.append(tbPropRow("Window on", winSel));
+  if (sb.monitor) {
+    inspector.append(
+      h("div", "note", "a window needs a single-stream scoreboard (remove the monitor)")
+    );
+  } else if (sb.window) {
+    const lenIn = h("input", "prop");
+    lenIn.type = "number";
+    lenIn.min = "1";
+    lenIn.value = String(sb.window.length ?? 1);
+    lenIn.addEventListener("change", () => send("window.length", lenIn.value));
+    inspector.append(tbPropRow("Samples", lenIn));
+  }
+
+  inspector.append(
+    tbPropRow(
+      "Predictor",
+      tbSelect(
+        [
+          ["sv", "SystemVerilog"],
+          ["c", "C (DPI bridge)"],
+        ],
+        sb.reference_model?.language ?? "sv",
+        (v) => send("reference_model.language", v)
+      )
+    )
+  );
 }
 
 /**

@@ -759,4 +759,58 @@ endpackage
   console.log("  ok    identitate bench: garda kind/layout corespunde refuzului real");
 }
 
+// --- scenario 8 (docs/07 P3a): scoreboard DEPTH — the windowed N:1 check and the
+// predictor language, both nested mappings the inspector now edits.
+{
+  let t = ops.setDut(ops.newConfigText("win"), {
+    module: "win", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "es",
+    inputs: [{ name: "din", width: 8 }],
+    outputs: [{ name: "sample", width: 8 }, { name: "done", width: 1 }],
+  });
+  t = ops.addScoreboard(t, { name: "sbd", source: "es" });
+
+  // (a) window: boundary + length, single-stream
+  let win = ops.setScoreboardField(t, "sbd", "window.boundary", "done");
+  win = ops.setScoreboardField(win, "sbd", "window.length", 64);
+  generate("sb_window", win, ["win_scoreboard.svh", "tb_top.sv"]);
+
+  // (b) predictor language: `c` also emits the DPI-C bridge + stub
+  const cModel = ops.setScoreboardField(t, "sbd", "reference_model.language", "c");
+  const dirC = generate("sb_ref_c", cModel, ["win_reference_model.c"]);
+  assert.ok(
+    listFiles(join(dirC, "tb")).some((f) => basename(f).endsWith(".c")),
+    "limbajul `c` ar fi trebuit sa emita un stub .c"
+  );
+
+  // (c) THE SINGLE-STREAM COUPLING IS LOAD-BEARING. Adding a monitor drops the window
+  // (the op cascades); the same config with the window left behind is REFUSED.
+  const withObs = ops.createAgent(win, {
+    name: "obs", inputs: [], outputs: [{ name: "dout", width: 8 }],
+  });
+  const twoStream = ops.setScoreboardField(withObs, "sbd", "monitor", "obs");
+  assert.equal("window" in ops.parseQuvm(twoStream).analysis.scoreboards[0], false,
+    "window a supravietuit adaugarii monitorului");
+  generate("sb_two_stream", twoStream, ["win_scoreboard.svh"]);
+
+  const leftover = twoStream.replace(
+    /(\n\s+)- \{ ?name: sbd/,
+    "$1- { window: { boundary: done, length: 64 }, name: sbd"
+  );
+  assert.notEqual(leftover, twoStream, "mutatia (window + monitor) nu s-a aplicat");
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-window-"));
+  writeFileSync(join(dir, "m.quickuvm.yaml"), leftover);
+  const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze window + monitor");
+  assert.match(
+    (bad.stdout ?? "") + (bad.stderr ?? ""),
+    /window requires a SINGLE-stream/s,
+    "alt motiv de esec decat window-pe-doua-fluxuri"
+  );
+  console.log("  ok    scoreboard: cascada window<->monitor e load-bearing (fara ea: REFUZ)");
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

@@ -78,6 +78,12 @@ export interface QuvmScoreboard {
   match?: "in_order" | "out_of_order";
   match_key?: string;
   max_latency?: number;
+  /** windowed N:1 statistic check — SINGLE-stream only (a two-stream scoreboard is
+   *  strictly 1:1 and cannot fold N samples into one verdict). `boundary` is a
+   *  sampled port of the source agent: the DUT strobe that closes a window. */
+  window?: { boundary?: string; length?: number };
+  /** per-scoreboard predict() language; `c` also generates a DPI-C bridge + stub */
+  reference_model?: { language?: "sv" | "c" };
 }
 
 export interface QuvmAnalysis {

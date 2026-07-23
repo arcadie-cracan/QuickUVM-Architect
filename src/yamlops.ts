@@ -975,7 +975,11 @@ export type ScoreboardField =
   | "monitor"
   | "match"
   | "match_key"
-  | "max_latency";
+  | "max_latency"
+  // docs/07 P3 — nested: the windowed N:1 check and the predictor language
+  | "window.boundary"
+  | "window.length"
+  | "reference_model.language";
 
 /** Edits a field of a scoreboard (identified by name); throws if
  *  the scoreboard is missing (`setAgentPortWidth` is the precedent). The default
@@ -997,27 +1001,74 @@ export function setScoreboardField(
   const seq = doc.getIn(["analysis", "scoreboards"]);
   if (isSeq(seq)) {
     for (const item of seq.items) {
-      if (isMap(item) && item.get("name") === name) {
-        const isDefault =
-          value === undefined ||
-          value === "" ||
-          (field === "match" && value === "in_order");
-        if (isDefault) {
-          item.delete(field);
-          // cascade cleanup: without a monitor, a scoreboard is single-stream,
-          // so match/match_key make no sense; at match=in_order, match_key makes no
-          // sense (the QuickUVM schema requires match_key only for out_of_order)
-          if (field === "monitor") {
-            item.delete("match");
-            item.delete("match_key");
-          } else if (field === "match") {
-            item.delete("match_key");
-          }
+      if (!isMap(item) || item.get("name") !== name) {
+        continue;
+      }
+      const empty = value === undefined || value === "";
+      // --- nested fields (docs/07 P3): `window:` and `reference_model:` are
+      // mappings, so an empty value removes the whole child rather than a key
+      if (field === "reference_model.language") {
+        // `sv` is the default: the mapping carries nothing and is dropped
+        if (empty || value === "sv") {
+          item.delete("reference_model");
         } else {
-          item.set(field, value);
+          const node = doc.createNode({ language: value }) as YAMLMap;
+          node.flow = true;
+          item.set("reference_model", node);
         }
         return doc.toString(TO_STRING);
       }
+      if (field === "window.boundary" || field === "window.length") {
+        const win = item.get("window");
+        if (field === "window.boundary" && empty) {
+          item.delete("window"); // no boundary, no window
+          return doc.toString(TO_STRING);
+        }
+        // a window folds N samples into ONE verdict, which only a single-stream
+        // scoreboard can absorb — QuickUVM refuses it with a monitor present
+        if (item.get("monitor")) {
+          throw new Error(
+            `scoreboard-ul „${name}": \`window\` cere un scoreboard cu UN SINGUR flux (fara \`monitor\`)`
+          );
+        }
+        if (field === "window.length" && !isMap(win)) {
+          throw new Error(`scoreboard-ul „${name}" nu are un \`window\` de configurat`);
+        }
+        if (isMap(win)) {
+          if (empty) {
+            return text; // clearing the length alone would leave an invalid window
+          }
+          win.set(field === "window.boundary" ? "boundary" : "length", value);
+        } else {
+          // creating it: BOTH fields are required by QuickUVM, so a new window gets
+          // the minimum legal length until the user sets a real one
+          const node = doc.createNode({ boundary: value, length: 1 }) as YAMLMap;
+          node.flow = true;
+          item.set("window", node);
+        }
+        return doc.toString(TO_STRING);
+      }
+      const isDefault = empty || (field === "match" && value === "in_order");
+      if (isDefault) {
+        item.delete(field);
+        // cascade cleanup: without a monitor, a scoreboard is single-stream,
+        // so match/match_key make no sense; at match=in_order, match_key makes no
+        // sense (the QuickUVM schema requires match_key only for out_of_order)
+        if (field === "monitor") {
+          item.delete("match");
+          item.delete("match_key");
+        } else if (field === "match") {
+          item.delete("match_key");
+        }
+      } else {
+        item.set(field, value);
+        // adding a monitor makes the scoreboard two-stream, which a window cannot
+        // be (1:1 vs N:1) — QuickUVM refuses the pair, so the window goes with it
+        if (field === "monitor") {
+          item.delete("window");
+        }
+      }
+      return doc.toString(TO_STRING);
     }
   }
   throw new Error(`scoreboard-ul „${name}" nu exista in configuratie`);
