@@ -14,6 +14,7 @@ import {
 } from "./compose";
 import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
+import { kindBlockers, layoutBlockers } from "./benchid";
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
@@ -963,6 +964,170 @@ export class Actions {
   }
 
   // ------------------------------ bench-level configuration (docs/07 line 3, P2)
+
+  /** Adds a test to `tests[]` (docs/07 P2); the name is confirmed by the user. */
+  async addTest(cfg: TbEditTarget = this.config): Promise<void> {
+    if (!cfg.configUri) {
+      return this.warnNoConfig();
+    }
+    const taken = new Set((cfg.current.tests ?? []).map((t) => t.name));
+    const name = await vscode.window.showInputBox({
+      title: vscode.l10n.t("New test"),
+      value: `${cfg.current.dut?.name ?? "dut"}_test`,
+      validateInput: (v) =>
+        !SV_IDENT_RE.test(v)
+          ? vscode.l10n.t("SV identifier")
+          : taken.has(v)
+            ? vscode.l10n.t("a test with this name already exists")
+            : undefined,
+    });
+    if (!name) {
+      return;
+    }
+    if (await cfg.apply((t) => ops.addTest(t, name))) {
+      this.log.appendLine(`[actions] addTest ${name}`);
+    }
+  }
+
+  /**
+   * Removes a test. Removing the LAST one drops the whole `tests:` key, and the bench
+   * falls back to QuickUVM's default `test1` — the user is told, because the
+   * alternative (`tests: []`) is accepted and yields a bench with nothing to run.
+   */
+  async removeTest(name: string, cfg: TbEditTarget = this.config): Promise<void> {
+    if (!cfg.configUri || !name) {
+      return;
+    }
+    const last = (cfg.current.tests ?? []).length <= 1;
+    const go = await vscode.window.showWarningMessage(
+      last
+        ? vscode.l10n.t(
+            "Remove the last test ({0})? The bench falls back to QuickUVM's default test1 — it is never left without a test.",
+            name
+          )
+        : vscode.l10n.t("Remove the test {0}?", name),
+      { modal: true },
+      vscode.l10n.t("Remove")
+    );
+    if (!go) {
+      return;
+    }
+    if (await cfg.apply((t) => ops.removeTest(t, name))) {
+      this.log.appendLine(`[actions] removeTest ${name}${last ? " (last)" : ""}`);
+    }
+  }
+
+  /** Edits one field of a test (`num_items`, `seeds`, `vseq`); empty ⇒ default. */
+  async editTest(
+    name: string,
+    field: string,
+    raw: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri || !name) {
+      return;
+    }
+    const fields: ops.TestField[] = ["num_items", "seeds", "vseq"];
+    if (!fields.includes(field as ops.TestField)) {
+      return;
+    }
+    const f = field as ops.TestField;
+    let value: string | number | undefined;
+    if (raw === "") {
+      value = undefined;
+    } else if (f === "num_items" || f === "seeds") {
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < (f === "seeds" ? 1 : 0)) {
+        return;
+      }
+      value = n;
+    } else {
+      value = raw;
+    }
+    try {
+      if (await cfg.apply((t) => ops.setTestField(t, name, f, value))) {
+        this.log.appendLine(`[actions] editTest ${name}.${field} = ${raw || "(reset)"}`);
+      }
+    } catch (e) {
+      // e.g. `seeds` with no `regress:` block — refused rather than written
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
+
+  /**
+   * Edits the bench identity (`layout`, `kind`, `top_name`, `auto_vseq_mode`,
+   * `auto_virtual_sequences`) or a `project:` metadata field.
+   *
+   * `layout` and `kind` are GUARDED: each has hard prerequisites in QuickUVM
+   * (subenvs need packaged, C3 instances need flat, a VIP drops every bench-layer
+   * section), so a blocked switch is reported instead of written — `benchid.ts`
+   * computes the reasons, and the panel already disables the option.
+   */
+  async editBench(
+    field: string,
+    raw: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri) {
+      return;
+    }
+    const projectFields: ops.ProjectField[] = [
+      "name",
+      "author",
+      "year",
+      "uvm_version",
+      "version",
+    ];
+    if (field.startsWith("project.")) {
+      const pf = field.slice("project.".length) as ops.ProjectField;
+      if (!projectFields.includes(pf)) {
+        return;
+      }
+      const value = raw === "" ? undefined : pf === "year" ? Number(raw) : raw;
+      if (pf === "year" && raw !== "" && !Number.isInteger(value)) {
+        return;
+      }
+      try {
+        if (await cfg.apply((t) => ops.setProjectField(t, pf, value))) {
+          this.log.appendLine(`[actions] editBench project.${pf} = ${raw || "(reset)"}`);
+        }
+      } catch (e) {
+        void vscode.window.showWarningMessage(
+          vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+        );
+      }
+      return;
+    }
+    const fields: ops.BenchField[] = [
+      "layout",
+      "kind",
+      "top_name",
+      "auto_vseq_mode",
+      "auto_virtual_sequences",
+    ];
+    if (!fields.includes(field as ops.BenchField)) {
+      return;
+    }
+    const f = field as ops.BenchField;
+    const blockers =
+      f === "layout"
+        ? layoutBlockers(cfg.current, raw as "flat" | "packaged")
+        : f === "kind"
+          ? kindBlockers(cfg.current, raw as "bench" | "vip" | "selftest")
+          : [];
+    if (blockers.length) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", blockers.join(" · "))
+      );
+      return;
+    }
+    const value = f === "auto_virtual_sequences" ? raw === "true" : raw;
+    if (await cfg.apply((t) => ops.setBenchField(t, f, value))) {
+      this.log.appendLine(`[actions] editBench ${field} = ${raw}`);
+    }
+  }
 
   /**
    * Enables RAL mode: creates the `register_model:` block (docs/07 P2). Its three

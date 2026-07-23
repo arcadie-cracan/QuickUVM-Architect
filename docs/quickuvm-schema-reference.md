@@ -64,7 +64,7 @@ Internal (loader-set) fields are in [§1.12](#internal-and-renamed-keys).
 | `clock` | mapping **or list** | `{name: clk, period: 10, unit: ns}` | union; see §1.4 |
 | `reset` | mapping **or list** | `{active_low: true, external: false}` | union; see §1.4 |
 | `agents` | list | `[]` | declared agents or `{name, from_vip}` references; see §1.5 |
-| `tests` | list | **`[{name: test1}]`** | see §1.9. Deleting all tests resurrects the default `test1`. |
+| `tests` | list | **`[{name: test1}]`** | see §1.9. **ABSENCE ≠ empty list**: absent ⇒ the default `test1`; `tests: []` is accepted and yields ZERO tests (only `<dut>_base_test.svh` — nothing runnable). |
 | `analysis` | mapping \| absent | absent | **presence switches modes** — see §3 |
 | `register_model` | mapping \| absent | absent | see §1.7 |
 | `probes` | list | `[]` | absent ≡ `[]` (byte-identical, proven); see §1.8 |
@@ -522,7 +522,7 @@ generated trees on this commit.
 | `probes:` | `[]` ≡ absent | byte-identical | safe to clean up |
 | `connections:` | `[]` ≡ absent | byte-identical | safe to clean up |
 | `subenvs:` | `[]` ≡ absent (bench is flat/leaf) | byte-identical | safe to clean up (composition rules stop applying) |
-| `tests:` | absent ⇒ **default `[{name: test1}]`** | introspection + probe | deleting the *last* test resurrects `test1` — surface this in the UI rather than silently allowing an "empty" tests list |
+| `tests:` | absent ⇒ **default `[{name: test1}]`**; `tests: []` ⇒ **zero tests** (accepted; generates only `<dut>_base_test.svh`, so the bench has nothing to run) | introspection + generate probe | the two are NOT the same mode. Deleting the last test should drop the whole `tests:` key (falling back to the runnable `test1`) and say so — writing `[]` silently yields a bench with no test |
 | `virtual_sequences:` | absent + ≥2 agents + `auto_virtual_sequences: true` ⇒ an **auto** `<dut>_vseq` is generated and wired into tests | file-set diff §1.10 | deleting the last explicit vseq can *resurrect the auto vseq* (delete-something-get-more-back, same trap class as `analysis`). Offer `auto_virtual_sequences: false` alongside the deletion. |
 | `auto_virtual_sequences:` | `true` is the default; `false` removes auto files + unwires test1 | file-set diff (`duo_base_vseq/vseq/virtual_sequencer` + env/tb_pkg/test1 differ) | value-level knob, no presence semantics |
 | `regress:` | presence adds `Makefile` (+ enables `tests[].seeds`) | file-set diff | removing it orphans `tests[].seeds` → now a **validation error** (§1.9); remove the seeds too |

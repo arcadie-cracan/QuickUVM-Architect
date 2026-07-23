@@ -1,6 +1,6 @@
 {
   "name": "quickuvm-architect",
-  "displayName": "QuickUVM Architect — SystemVerilog schematic viewer & UVM testbench designer",
+  "displayName": "QuickUVM Architect \u2014 SystemVerilog schematic viewer & UVM testbench designer",
   "description": "%description%",
   "version": "0.1.0",
   "publisher": "arcadie-cracan",
@@ -396,6 +396,7 @@
     "test:locmap": "node scripts/test-locmap.mjs",
     "test:status": "node scripts/test-status.mjs",
     "test:genstate": "node scripts/test-genstate.mjs",
+    "test:benchid": "node scripts/test-benchid.mjs",
     "test:probe": "node scripts/test-probe.mjs",
     "test:compose": "node scripts/test-compose.mjs",
     "test:sidecar": "node scripts/test-sidecar.mjs",

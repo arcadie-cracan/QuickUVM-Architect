@@ -38,6 +38,15 @@ await esbuild.build({
   },
 });
 const ops = await import(pathToFileURL(join(outDir, "yamlops.mjs")));
+await esbuild.build({
+  entryPoints: ["src/benchid.ts"],
+  outfile: join(outDir, "benchid.mjs"),
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  logLevel: "silent",
+});
+const guards = await import(pathToFileURL(join(outDir, "benchid.mjs")));
 
 function quickUvm(args, cwd) {
   const env = { ...process.env, PYTHONUTF8: "1" };
@@ -657,6 +666,97 @@ endpackage
     "alt motiv de esec decat seeds-fara-regress"
   );
   console.log("  ok    setari bench: cascada removeRegress -> seeds e load-bearing (fara ea: REFUZ)");
+}
+
+// --- scenario 7 (docs/07 P2b): the TESTS editor + BENCH IDENTITY form. The two
+// interesting claims are empirical, so they are checked against the generator:
+// `tests: []` is ACCEPTED but yields a bench with nothing to run, and the guarded
+// layout/kind switches match what quick-uvm actually refuses.
+{
+  let t = ops.setDut(ops.newConfigText("bid"), {
+    module: "bid", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+
+  // (a) add + edit tests
+  let many = ops.addTest(t, "smoke_test");
+  many = ops.setTestField(many, "smoke_test", "num_items", 5);
+  const dirMany = generate("tests_many", many, ["smoke_test.svh", "tb_top.sv"]);
+  assert.ok(existsSync(join(dirMany, "tb", "bid_base_test.svh")));
+
+  // (b) removing the LAST test drops the `tests:` key -> the bench falls back to the
+  // runnable default test1. The alternative (`tests: []`) is ACCEPTED by quick-uvm but
+  // generates only the base test — a bench with nothing to run. Both are generated
+  // here, and the difference is asserted: it is why removeTest deletes the key.
+  let last = many;
+  for (const name of ops.parseQuvm(many).tests.map((x) => x.name)) {
+    last = ops.removeTest(last, name);
+  }
+  assert.equal(ops.parseQuvm(last).tests, undefined, "cheia tests ar fi trebuit stearsa");
+  const dirDefault = generate("tests_key_removed", last, ["bid_base_test.svh"]);
+  const testFiles = (dir) =>
+    listFiles(join(dir, "tb"))
+      .map((f) => basename(f))
+      .filter((f) => f.endsWith(".svh") && /test/.test(f) && !/_base_test\.svh$/.test(f));
+  const defaultTests = testFiles(dirDefault);
+  assert.ok(defaultTests.length > 0, "absenta lui tests: ar fi trebuit sa dea test1");
+
+  const emptyList = last.replace(/\n(dut:)/, "\ntests: []\n$1");
+  assert.notEqual(emptyList, last, "fixture-ul `tests: []` nu s-a aplicat");
+  const dirEmpty = generate("tests_empty_list", emptyList, ["bid_base_test.svh"]);
+  const emptyTests = testFiles(dirEmpty);
+  assert.equal(emptyTests.length, 0,
+    `\`tests: []\` ar trebui sa dea ZERO teste rulabile, are: ${emptyTests}`);
+  console.log("  ok    tests[]: absenta => test1 implicit, `tests: []` => bench fara test rulabil");
+
+  // (c) bench identity: top_name + packaged layout generate cleanly
+  let ident = ops.setBenchField(t, "top_name", "my_top");
+  ident = ops.setBenchField(ident, "auto_virtual_sequences", false);
+  generate("bench_identity", ident, ["my_top.sv"]);
+
+  // (d) THE GUARDS MATCH THE GENERATOR — checked in BOTH directions. `kindBlockers`
+  // is what the panel uses to disable an option; if it disagreed with quick-uvm the
+  // panel would either block a legal switch or wave through a config that fails.
+  const tryGenerate = (yamlText) => {
+    const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-guard-"));
+    writeFileSync(join(dir, "m.quickuvm.yaml"), yamlText);
+    const r = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+    return { ok: r.status === 0, out: (r.stdout ?? "") + (r.stderr ?? "") };
+  };
+
+  // flat + vip: blocked by the guard AND refused by the generator, same reason
+  const flatVip = ops.setBenchField(t, "kind", "vip");
+  const flatWhy = guards.kindBlockers(ops.parseQuvm(flatVip), "vip");
+  assert.ok(flatWhy.length, "kindBlockers ar fi trebuit sa blocheze vip pe layout flat");
+  const flatRun = tryGenerate(flatVip);
+  assert.equal(flatRun.ok, false);
+  assert.match(flatRun.out, /kind: vip.*layout: packaged/s);
+
+  // packaged, but a DECLARED test list: still blocked — a vip drops bench-layer
+  // sections, and the generator names exactly the same one
+  const pkgVip = ops.setBenchField(flatVip, "layout", "packaged");
+  const pkgWhy = guards.kindBlockers(ops.parseQuvm(pkgVip), "vip");
+  assert.ok(pkgWhy.some((w) => w.includes("tests")), `garda nu a numit tests: ${pkgWhy}`);
+  const pkgRun = tryGenerate(pkgVip);
+  assert.equal(pkgRun.ok, false);
+  assert.match(pkgRun.out, /would be silently dropped.*tests/s);
+
+  // drop the declared test and it becomes a legal VIP: the guard clears AND it builds
+  let cleanVip = pkgVip;
+  for (const name of ops.parseQuvm(pkgVip).tests.map((x) => x.name)) {
+    cleanVip = ops.removeTest(cleanVip, name);
+  }
+  assert.deepEqual(guards.kindBlockers(ops.parseQuvm(cleanVip), "vip"), []);
+  generate("bench_vip", cleanVip, ["a_agent.svh"]);
+
+  // the layout guard, same agreement: subenvs pin it to packaged
+  assert.deepEqual(guards.layoutBlockers(ops.parseQuvm(t), "flat"), []);
+  assert.ok(guards.layoutBlockers(ops.parseQuvm(cleanVip), "flat").length,
+    "layoutBlockers ar fi trebuit sa blocheze flat sub kind: vip");
+  console.log("  ok    identitate bench: garda kind/layout corespunde refuzului real");
 }
 
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

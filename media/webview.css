@@ -222,6 +222,12 @@ body {
   opacity: 0.45;
 }
 
+/* the name of a repeated entry above its property rows (a test, docs/07 P2) */
+#inspector .prop-group {
+  margin: 8px 0 2px;
+  font-weight: 600;
+}
+
 /* multiselect on one property row (the RAL CSR suites, docs/07 P2) */
 #inspector .prop-checks {
   flex: 1 1 auto;

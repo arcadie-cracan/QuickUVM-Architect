@@ -271,6 +271,18 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   seeds fără bloc de regresie, deci `removeRegress` cascadează (dovedit prin mutație în
   e2e: aceeași configurație cu seeds rămas = REFUZ). Câmpurile obligatorii ale RAL-ului
   refuză golirea în loc să corupă blocul.
+- **P2b LIVRAT — teste + identitatea bench-ului.** Editor `tests[]` (add/delete,
+  `num_items`, `vseq`, `seeds` inert până există `regress:`) și secțiunea „Bench"
+  (`layout`, `kind`, `top_name`, `auto_virtual_sequences`/`auto_vseq_mode`, metadate
+  `project`). Două lucruri ieșite din construcție: (a) referința documenta greșit
+  `tests` — **absența ≠ lista goală**: absent ⇒ `test1` implicit (rulabil), pe când
+  `tests: []` e ACCEPTAT și dă ZERO teste (doar `<dut>_base_test.svh`, bench fără ce
+  rula); de aceea ștergerea ultimului test scoate CHEIA, nu scrie `[]`. (b) `layout` și
+  `kind` au precondiții dure (subenvs⇒packaged, `instances` C3⇒flat, vip aruncă tot
+  stratul de bench), deci opțiunile blocate sunt DEZACTIVATE cu motivul afișat —
+  `benchid.ts` (pur, testat) le calculează, iar e2e-ul verifică în AMBELE sensuri că
+  verdictul gărzii coincide cu ce refuză/acceptă efectiv quick-uvm.
+  Rămas: `tests[].sequence` (agent+nume+count) și `project.imports`.
 - **P2 — formulare de config la nivel de bench** (pur config, doar formular). Panel
   „Verification settings": `register_model` (RAL — `bus_agent` din agenții
   inițiatori, `csr_tests` multiselect, `coverage` bool), `regress`, `kind`/
