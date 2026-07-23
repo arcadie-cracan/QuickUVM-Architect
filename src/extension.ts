@@ -288,6 +288,25 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.value === "string" ? args.value : ""
           );
           break;
+        case "addTest":
+          void actions.addTest();
+          break;
+        case "removeTest":
+          void actions.removeTest(typeof args.name === "string" ? args.name : "");
+          break;
+        case "editTest":
+          void actions.editTest(
+            typeof args.name === "string" ? args.name : "",
+            typeof args.field === "string" ? args.field : "",
+            typeof args.value === "string" ? args.value : ""
+          );
+          break;
+        case "editBench":
+          void actions.editBench(
+            typeof args.field === "string" ? args.field : "",
+            typeof args.value === "string" ? args.value : ""
+          );
+          break;
         case "createProbe":
           void actions.createProbe(
             target,

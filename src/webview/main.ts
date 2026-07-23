@@ -17,6 +17,7 @@ import type {
 import type { GenerateStatus, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
+import { kindBlockers, layoutBlockers } from "../benchid";
 import type { QuvmAgent, QuvmConfig, QuvmPort, QuvmScoreboard } from "../quickuvm";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
 import { cameraForMinimapPoint, minimapLayout, minimapUseTransform, minimapViewRect, MmLayout } from "./minimap";
@@ -2837,6 +2838,193 @@ function tbBenchSettings(cfg: QuvmConfig): void {
       )
     );
   }
+
+  tbTestsEditor(cfg);
+  tbBenchIdentity(cfg);
+}
+
+/**
+ * The `tests[]` editor (docs/07 P2). Two QuickUVM rules are surfaced rather than
+ * discovered at generate time: `seeds` is only legal with a `regress:` block, and
+ * removing the LAST test drops the whole key so the bench falls back to the runnable
+ * default `test1` (writing `tests: []` instead is accepted and yields a bench with
+ * nothing to run — verified against the generator).
+ */
+function tbTestsEditor(cfg: QuvmConfig): void {
+  const tests = cfg.tests ?? [];
+  inspector.append(h("h3", "", "Tests"));
+  if (!tests.length) {
+    inspector.append(h("div", "dim", "no tests declared — QuickUVM generates the default test1"));
+  }
+  const vseqs = (cfg.virtual_sequences ?? [])
+    .map((v) => v.name)
+    .filter((n): n is string => Boolean(n));
+  for (const t of tests) {
+    const name = t.name;
+    if (!name) {
+      continue;
+    }
+    const send = (field: string, value: string): void =>
+      postAction("editTest", { name, field, value });
+    inspector.append(h("div", "prop-group", name));
+
+    const itemsIn = h("input", "prop");
+    itemsIn.type = "number";
+    itemsIn.min = "0";
+    itemsIn.value = t.num_items != null ? String(t.num_items) : "";
+    itemsIn.placeholder = "100";
+    itemsIn.addEventListener("change", () => send("num_items", itemsIn.value));
+    inspector.append(tbPropRow("Items", itemsIn));
+
+    if (vseqs.length) {
+      inspector.append(
+        tbPropRow(
+          "Vseq",
+          tbSelect(
+            [["", "— none —"], ...vseqs.map((v) => [v, v] as const)],
+            t.vseq ?? "",
+            (v) => send("vseq", v)
+          )
+        )
+      );
+    }
+
+    const seedsIn = h("input", "prop");
+    seedsIn.type = "number";
+    seedsIn.min = "1";
+    seedsIn.value = t.seeds != null ? String(t.seeds) : "";
+    // seeds is the per-test seed count of the regression matrix: QuickUVM rejects it
+    // without a `regress:` block, so the row is inert until one exists
+    seedsIn.disabled = !cfg.regress;
+    seedsIn.placeholder = cfg.regress ? "regress.seeds" : "needs a regression block";
+    seedsIn.addEventListener("change", () => send("seeds", seedsIn.value));
+    inspector.append(tbPropRow("Seeds", seedsIn));
+
+    inspector.append(
+      button(`Delete ${name}`, true, () => postAction("removeTest", { name }), true)
+    );
+  }
+  inspector.append(button("Add test…", true, () => postAction("addTest", {}), true));
+}
+
+/**
+ * Bench identity + project metadata (docs/07 P2). `layout` and `kind` options that
+ * QuickUVM would refuse are DISABLED with the reason shown — `benchid.ts` computes
+ * them (subenvs need packaged, C3 `instances` need flat, a VIP drops every
+ * bench-layer section). The host re-checks before writing, so the two cannot drift.
+ */
+function tbBenchIdentity(cfg: QuvmConfig): void {
+  inspector.append(h("h3", "", "Bench"));
+  const send = (field: string, value: string): void =>
+    postAction("editBench", { field, value });
+
+  /** a select whose blocked options are disabled; the reasons are listed below it */
+  const guarded = (
+    label: string,
+    field: string,
+    options: readonly (readonly [string, string])[],
+    cur: string,
+    blockersFor: (v: string) => string[]
+  ): void => {
+    const sel = h("select", "prop");
+    const reasons: string[] = [];
+    for (const [v, lbl] of options) {
+      const why = v === cur ? [] : blockersFor(v);
+      const o = h("option", "", lbl);
+      o.value = v;
+      o.selected = v === cur;
+      o.disabled = why.length > 0;
+      sel.append(o);
+      reasons.push(...why);
+    }
+    sel.addEventListener("change", () => send(field, sel.value));
+    inspector.append(tbPropRow(label, sel));
+    for (const r of [...new Set(reasons)]) {
+      inspector.append(h("div", "note", r));
+    }
+  };
+
+  guarded(
+    "Layout",
+    "layout",
+    [
+      ["flat", "Flat (one tb package)"],
+      ["packaged", "Packaged (per-agent packages)"],
+    ],
+    cfg.layout ?? "flat",
+    (v) => layoutBlockers(cfg, v as "flat" | "packaged")
+  );
+  guarded(
+    "Kind",
+    "kind",
+    [
+      ["bench", "Bench"],
+      ["vip", "VIP (reusable agent packages)"],
+      ["selftest", "Self-test (DUT-less loopback)"],
+    ],
+    cfg.kind ?? "bench",
+    (v) => kindBlockers(cfg, v as "bench" | "vip" | "selftest")
+  );
+
+  const topIn = h("input", "prop");
+  topIn.value = cfg.top_name ?? "";
+  topIn.placeholder = "tb_top";
+  topIn.addEventListener("change", () => send("top_name", topIn.value));
+  inspector.append(tbPropRow("Top name", topIn));
+
+  inspector.append(
+    tbPropRow(
+      "Auto vseq",
+      tbSelect(
+        [
+          ["true", "On"],
+          ["false", "Off"],
+        ],
+        cfg.auto_virtual_sequences === false ? "false" : "true",
+        (v) => send("auto_virtual_sequences", v)
+      )
+    )
+  );
+  if (cfg.auto_virtual_sequences !== false) {
+    inspector.append(
+      tbPropRow(
+        "Auto mode",
+        tbSelect(
+          [
+            ["parallel", "Parallel"],
+            ["sequential", "Sequential"],
+          ],
+          cfg.auto_vseq_mode ?? "parallel",
+          (v) => send("auto_vseq_mode", v)
+        )
+      )
+    );
+  }
+
+  for (const [label, field, cur, placeholder] of [
+    ["Project", "project.name", cfg.project?.name ?? "", "required"],
+    ["Author", "project.author", cfg.project?.author ?? "", ""],
+    ["Version", "project.version", cfg.project?.version ?? "", "0.1.0"],
+  ] as const) {
+    const inp = h("input", "prop");
+    inp.value = cur;
+    inp.placeholder = placeholder;
+    inp.addEventListener("change", () => send(field, inp.value));
+    inspector.append(tbPropRow(label, inp));
+  }
+  inspector.append(
+    tbPropRow(
+      "UVM",
+      tbSelect(
+        [
+          ["1.2", "1.2"],
+          ["1.1d", "1.1d"],
+        ],
+        cfg.project?.uvm_version ?? "1.2",
+        (v) => send("project.uvm_version", v)
+      )
+    )
+  );
 }
 
 /** A `<select>` bound to one agent field: options `[value, label]`, `cur` preselected. */

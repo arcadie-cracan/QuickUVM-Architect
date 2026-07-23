@@ -461,6 +461,67 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
+test("tests[]: add/remove/edit; stergerea ULTIMULUI test scoate cheia `tests`", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  const dflt = ops.parseQuvm(text).tests[0].name;
+  text = ops.addTest(text, "smoke_test");
+  assert.deepEqual(ops.parseQuvm(text).tests.map((t) => t.name), [dflt, "smoke_test"]);
+  assert.throws(() => ops.addTest(text, "smoke_test"), /deja/);
+  text = ops.setTestField(text, "smoke_test", "num_items", 20);
+  text = ops.setTestField(text, "smoke_test", "vseq", "smoke_vseq");
+  let t = ops.parseQuvm(text).tests[1];
+  assert.equal(t.num_items, 20);
+  assert.equal(t.vseq, "smoke_vseq");
+  text = ops.setTestField(text, "smoke_test", "num_items", 100); // default -> sters
+  assert.equal("num_items" in ops.parseQuvm(text).tests[1], false);
+  assert.throws(() => ops.setTestField(text, "nope", "num_items", 5), /nu exista/);
+
+  // `seeds` fara `regress:` e REFUZAT de QuickUVM -> refuzam la sursa
+  assert.throws(() => ops.setTestField(text, "smoke_test", "seeds", 4), /regress/);
+  const withRegress = ops.setTestField(ops.addRegress(text), "smoke_test", "seeds", 4);
+  assert.equal(ops.parseQuvm(withRegress).tests[1].seeds, 4);
+
+  // stergere: no-op byte-identic pe un test inexistent
+  assert.equal(ops.removeTest(text, "nope"), text);
+  text = ops.removeTest(text, "smoke_test");
+  assert.deepEqual(ops.parseQuvm(text).tests.map((t) => t.name), [dflt]);
+  // ULTIMUL test: se sterge CHEIA, nu se scrie `tests: []` — absenta cade inapoi pe
+  // `test1` (rulabil), pe cand lista goala e acceptata si da ZERO teste
+  text = ops.removeTest(text, dflt);
+  assert.equal(ops.parseQuvm(text).tests, undefined);
+  assert.equal(/tests:/.test(text), false, `cheia tests a ramas:\n${text}`);
+});
+
+test("setBenchField / setProjectField: identitatea bench-ului, default => cheia dispare", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.setBenchField(text, "layout", "packaged");
+  text = ops.setBenchField(text, "kind", "vip");
+  text = ops.setBenchField(text, "top_name", "my_top");
+  text = ops.setBenchField(text, "auto_virtual_sequences", false);
+  let cfg = ops.parseQuvm(text);
+  assert.equal(cfg.layout, "packaged");
+  assert.equal(cfg.kind, "vip");
+  assert.equal(cfg.top_name, "my_top");
+  assert.equal(cfg.auto_virtual_sequences, false);
+  for (const [f, v] of [
+    ["layout", "flat"], ["kind", "bench"], ["top_name", "tb_top"],
+    ["auto_virtual_sequences", true],
+  ]) {
+    text = ops.setBenchField(text, f, v);
+  }
+  cfg = ops.parseQuvm(text);
+  for (const k of ["layout", "kind", "top_name", "auto_virtual_sequences"]) {
+    assert.equal(k in cfg, false, `${k} la default ar fi trebuit stersa`);
+  }
+  text = ops.setProjectField(text, "author", "Ada");
+  text = ops.setProjectField(text, "year", 2026);
+  assert.equal(ops.parseQuvm(text).project.author, "Ada");
+  assert.equal(ops.parseQuvm(text).project.year, 2026);
+  text = ops.setProjectField(text, "author", "");
+  assert.equal("author" in ops.parseQuvm(text).project, false);
+  assert.throws(() => ops.setProjectField(text, "name", ""), /obligatoriu/);
+});
+
 test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {

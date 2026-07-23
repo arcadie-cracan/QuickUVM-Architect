@@ -38,6 +38,8 @@ export interface QuvmAgent {
   /** multi-clock/multi-reset: which declared domain this agent samples/is gated by */
   clock?: string;
   reset?: string;
+  /** C3 per-instance parameter overrides; they pin the bench to `layout: flat` */
+  instances?: { name?: string }[];
 }
 
 export interface QuvmDut {
@@ -64,6 +66,8 @@ export interface QuvmTest {
   num_items?: number;
   /** per-test seed count in the regression matrix; requires a `regress:` block */
   seeds?: number;
+  /** the virtual sequence this test runs (instead of the per-agent default) */
+  vseq?: string;
 }
 
 /** declarative analysis C1/A2: scoreboard with a source stream (+ monitor at A2) */
@@ -125,7 +129,7 @@ export interface QuvmSubenv {
 }
 
 export interface QuvmConfig {
-  project?: { name?: string };
+  project?: QuvmProject;
   dut?: QuvmDut;
   /** an object (today) or a list of domains (M1 multi-clock) */
   clock?: { period?: number; unit?: string } | unknown[];
@@ -151,6 +155,16 @@ export interface QuvmConfig {
   kind?: "bench" | "vip" | "selftest";
   top_name?: string;
   auto_vseq_mode?: "parallel" | "sequential";
+}
+
+export interface QuvmProject {
+  name?: string;
+  author?: string;
+  year?: number;
+  uvm_version?: "1.1d" | "1.2";
+  version?: string;
+  /** extra package imports for the generated tb package */
+  imports?: string[];
 }
 
 export interface QuvmRegisterModel {

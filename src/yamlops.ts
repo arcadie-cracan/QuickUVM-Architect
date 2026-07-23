@@ -829,6 +829,147 @@ export function setRegressField(
   return doc.toString(TO_STRING);
 }
 
+/** docs/07 P2 — bench identity + project metadata (plain top-level scalars). */
+export type BenchField =
+  | "layout"
+  | "kind"
+  | "top_name"
+  | "auto_vseq_mode"
+  | "auto_virtual_sequences";
+
+const BENCH_DEFAULTS: Record<BenchField, string | boolean> = {
+  layout: "flat",
+  kind: "bench",
+  top_name: "tb_top",
+  auto_vseq_mode: "parallel",
+  auto_virtual_sequences: true,
+};
+
+/** Sets a top-level bench field; a default value deletes the key. */
+export function setBenchField(
+  text: string,
+  field: BenchField,
+  value: string | boolean | undefined
+): string {
+  const doc = parse(text);
+  if (value === undefined || value === "" || value === BENCH_DEFAULTS[field]) {
+    doc.deleteIn([field]);
+  } else {
+    doc.setIn([field], value);
+  }
+  return doc.toString(TO_STRING);
+}
+
+export type ProjectField = "name" | "author" | "year" | "uvm_version" | "version";
+
+/** Sets a `project:` metadata field. `name` is required by QuickUVM, so emptying it
+ *  is refused; the others delete on empty. */
+export function setProjectField(
+  text: string,
+  field: ProjectField,
+  value: string | number | undefined
+): string {
+  if (field === "name" && (value === undefined || value === "")) {
+    throw new Error("`project.name` este obligatoriu");
+  }
+  const doc = parse(text);
+  if (value === undefined || value === "") {
+    doc.deleteIn(["project", field]);
+  } else {
+    doc.setIn(["project", field], value);
+  }
+  return doc.toString(TO_STRING);
+}
+
+export type TestField = "num_items" | "seeds" | "vseq";
+
+const TEST_DEFAULTS: Record<TestField, string | number> = {
+  num_items: 100,
+  seeds: 0, // no default: any value is explicit (0 is not legal, so it never matches)
+  vseq: "",
+};
+
+/** Adds a test. Throws if the name is taken — QuickUVM refuses duplicate test names
+ *  (and a declared test colliding with a generated one). */
+export function addTest(text: string, name: string): string {
+  const doc = parse(text);
+  const existing = doc.getIn(["tests"]);
+  if (isSeq(existing)) {
+    for (const item of existing.items) {
+      if (isMap(item) && item.get("name") === name) {
+        throw new Error(`testul „${name}" exista deja in configuratie`);
+      }
+    }
+  }
+  const node = doc.createNode({ name }) as YAMLMap;
+  node.flow = true; // one line: `- { name: smoke_test }`
+  const seq = isSeq(existing) ? existing : (doc.createNode([]) as YAMLSeq);
+  seq.add(node);
+  if (!isSeq(existing)) {
+    doc.setIn(["tests"], seq);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Removes a test. Removing the LAST one deletes the whole `tests:` key rather than
+ * leaving `tests: []`: absence falls back to the runnable default `test1`, while an
+ * empty list is accepted and yields ZERO tests — a bench that generates only
+ * `<dut>_base_test.svh` and has nothing to run (verified against the generator).
+ * The caller surfaces which of the two happened. Idempotent.
+ */
+export function removeTest(text: string, name: string): string {
+  const doc = parse(text);
+  const seq = doc.getIn(["tests"]);
+  if (!isSeq(seq)) {
+    return text;
+  }
+  const idx = seq.items.findIndex((i) => isMap(i) && i.get("name") === name);
+  if (idx < 0) {
+    return text; // byte-identical no-op
+  }
+  seq.delete(idx);
+  if (seq.items.length === 0) {
+    doc.deleteIn(["tests"]); // NOT `tests: []` — that would be a bench with no test
+  }
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Edits one field of a test; a default value deletes the key. `seeds` is only legal
+ * with a `regress:` block (QuickUVM rejects it otherwise), so setting it without one
+ * is refused here rather than written and rejected at generate time.
+ */
+export function setTestField(
+  text: string,
+  name: string,
+  field: TestField,
+  value: string | number | undefined
+): string {
+  const doc = parse(text);
+  if (field === "seeds" && value !== undefined && value !== "") {
+    if (doc.getIn(["regress"]) === undefined) {
+      throw new Error(
+        "`seeds` cere un bloc `regress:` — este numarul de seed-uri per test din matricea de regresie"
+      );
+    }
+  }
+  const seq = doc.getIn(["tests"]);
+  if (isSeq(seq)) {
+    for (const item of seq.items) {
+      if (isMap(item) && item.get("name") === name) {
+        if (value === undefined || value === "" || value === TEST_DEFAULTS[field]) {
+          item.delete(field);
+        } else {
+          item.set(field, value);
+        }
+        return doc.toString(TO_STRING);
+      }
+    }
+  }
+  throw new Error(`testul „${name}" nu exista in configuratie`);
+}
+
 export type ScoreboardField =
   | "source"
   | "monitor"
