@@ -43,7 +43,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const layout = new LayoutStore(log);
   // docs/07 line 1 — the "not generated" star on the verification tree, driven by
   // `quick-uvm manifest` (which elements have no generated code behind them yet).
-  const genState = new GenStateService(log);
+  const genState = new GenStateService(log, context.workspaceState);
   const genDeco = new GenDecorationProvider(
     () => genState.missing,
     () => genState.stale
@@ -546,8 +546,11 @@ export function activate(context: vscode.ExtensionContext): void {
       void actions.ignorePorts(DiagramPanel.current?.selection ?? [], true);
     }),
 
-    vscode.commands.registerCommand("quickuvm.generate", () => {
-      void generator.generate();
+    vscode.commands.registerCommand("quickuvm.generate", async () => {
+      if (await generator.generate()) {
+        // every element is now generated from THIS config — clears every ● stale
+        await genState.markGenerated("all");
+      }
     }),
 
     // docs/07 line 2 — regenerate just one element's files (+ the aggregate set),
@@ -584,7 +587,10 @@ export function activate(context: vscode.ExtensionContext): void {
           log.show(true);
           return;
         }
-        void generator.generateItem(node.label ?? "item", files);
+        if (await generator.generateItem(node.label ?? "item", files)) {
+          // this element is now generated from THIS config — clears its ● stale
+          await genState.markGenerated([nodeId]);
+        }
       }
     ),
 
@@ -625,8 +631,8 @@ export function activate(context: vscode.ExtensionContext): void {
             return;
           }
           const files = genState.scopedFiles(nodeId);
-          if (files) {
-            await generator.generateItem(label, files);
+          if (files && (await generator.generateItem(label, files))) {
+            await genState.markGenerated([nodeId]);
           }
         }
         try {
