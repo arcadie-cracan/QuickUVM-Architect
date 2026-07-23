@@ -222,6 +222,22 @@ body {
   opacity: 0.45;
 }
 
+/* multiselect on one property row (the RAL CSR suites, docs/07 P2) */
+#inspector .prop-checks {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+}
+
+#inspector .prop-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  white-space: nowrap;
+}
+
 #inspector .prop:focus {
   outline: 1px solid var(--vscode-focusBorder);
   outline-offset: -1px;

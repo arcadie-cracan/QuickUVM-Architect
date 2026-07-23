@@ -962,6 +962,205 @@ export class Actions {
     return out;
   }
 
+  // ------------------------------ bench-level configuration (docs/07 line 3, P2)
+
+  /**
+   * Enables RAL mode: creates the `register_model:` block (docs/07 P2). Its three
+   * required fields are asked for up front — QuickUVM refuses a partial block, and
+   * the RAL package itself is user-provided input the extension cannot infer.
+   * `bus_agent` is offered over the INITIATOR agents only (a responder cannot carry
+   * register traffic), which is also QuickUVM's own rule.
+   */
+  async addRegisterModel(cfg: TbEditTarget = this.config): Promise<void> {
+    if (!cfg.configUri) {
+      return this.warnNoConfig();
+    }
+    const initiators = (cfg.current.agents ?? [])
+      .filter((a) => a.mode !== "responder" && a.name)
+      .map((a) => a.name as string);
+    if (!initiators.length) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: a register model needs an initiator agent to carry the bus traffic — create one first."
+        )
+      );
+      return;
+    }
+    const pkg = await vscode.window.showInputBox({
+      title: vscode.l10n.t("Register model: RAL package"),
+      prompt: vscode.l10n.t(
+        "the external RAL package (user-provided input — QuickUVM consumes it, it does not generate it)"
+      ),
+      value: `${cfg.current.project?.name ?? cfg.current.dut?.name ?? "dut"}_ral_pkg`,
+      validateInput: (v) => (SV_IDENT_RE.test(v) ? undefined : vscode.l10n.t("SV identifier")),
+    });
+    if (!pkg) {
+      return;
+    }
+    const block = await vscode.window.showInputBox({
+      title: vscode.l10n.t("Register model: uvm_reg_block class"),
+      prompt: vscode.l10n.t("the register block class inside that package"),
+      value: `${cfg.current.project?.name ?? cfg.current.dut?.name ?? "dut"}_reg_block`,
+      validateInput: (v) => (SV_IDENT_RE.test(v) ? undefined : vscode.l10n.t("SV identifier")),
+    });
+    if (!block) {
+      return;
+    }
+    const busAgent =
+      initiators.length === 1
+        ? initiators[0]
+        : await vscode.window.showQuickPick(initiators, {
+            title: vscode.l10n.t("Register model: bus agent"),
+            placeHolder: vscode.l10n.t("the initiator whose driver the adapter talks through"),
+          });
+    if (!busAgent) {
+      return;
+    }
+    if (
+      await cfg.apply((t) =>
+        ops.addRegisterModel(t, { package: pkg, block, bus_agent: busAgent })
+      )
+    ) {
+      this.log.appendLine(`[actions] addRegisterModel ${pkg}.${block} via ${busAgent}`);
+    }
+  }
+
+  /** Leaves RAL mode: deletes the whole `register_model:` block, after confirming —
+   *  it also drops the generated adapter/reg-test files and their env wiring. */
+  async removeRegisterModel(cfg: TbEditTarget = this.config): Promise<void> {
+    if (!cfg.configUri || !cfg.current.register_model) {
+      return;
+    }
+    const go = await vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        "Remove the register model? The generated adapter, the CSR tests and their env wiring go with it."
+      ),
+      { modal: true },
+      vscode.l10n.t("Remove")
+    );
+    if (!go) {
+      return;
+    }
+    if (await cfg.apply((t) => ops.removeRegisterModel(t))) {
+      this.log.appendLine("[actions] removeRegisterModel");
+    }
+  }
+
+  /** Edits one `register_model:` field from the settings panel; empty ⇒ default.
+   *  `csr_tests` arrives as a comma-separated list (the multiselect's value). */
+  async editRegisterModel(
+    field: string,
+    raw: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri) {
+      return;
+    }
+    const fields: ops.RegisterModelField[] = [
+      "package",
+      "block",
+      "map",
+      "bus_agent",
+      "adapter",
+      "use_predictor",
+      "reg_test",
+      "csr_tests",
+      "coverage",
+      "backdoor_root",
+      "reg_test_door",
+      "frontdoor",
+    ];
+    if (!fields.includes(field as ops.RegisterModelField)) {
+      return;
+    }
+    const f = field as ops.RegisterModelField;
+    let value: string | boolean | string[] | undefined;
+    if (f === "csr_tests") {
+      value = raw ? raw.split(",").filter(Boolean) : [];
+    } else if (f === "use_predictor" || f === "reg_test" || f === "coverage") {
+      value = raw === "true";
+    } else {
+      value = raw === "" ? undefined : raw;
+    }
+    try {
+      if (await cfg.apply((t) => ops.setRegisterModelField(t, f, value))) {
+        this.log.appendLine(`[actions] editRegisterModel ${field} = ${raw || "(reset)"}`);
+      }
+    } catch (e) {
+      // the required fields refuse to be emptied rather than corrupting the block
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
+
+  /** Adds/removes the `regress:` block (its presence generates the `Makefile`).
+   *  Removing it also strips every `tests[].seeds` — QuickUVM rejects seeds without
+   *  a regress block, so the op cascades and the user is told. */
+  async toggleRegress(on: boolean, cfg: TbEditTarget = this.config): Promise<void> {
+    if (!cfg.configUri) {
+      return this.warnNoConfig();
+    }
+    if (on) {
+      if (await cfg.apply((t) => ops.addRegress(t))) {
+        this.log.appendLine("[actions] addRegress");
+      }
+      return;
+    }
+    const seeded = (cfg.current.tests ?? []).filter(
+      (t) => (t as { seeds?: number }).seeds !== undefined
+    ).length;
+    if (seeded > 0) {
+      const go = await vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "Remove the regression block? {0} test(s) set `seeds`, which QuickUVM refuses without it — those seed counts are removed too.",
+          seeded
+        ),
+        { modal: true },
+        vscode.l10n.t("Remove")
+      );
+      if (!go) {
+        return;
+      }
+    }
+    if (await cfg.apply((t) => ops.removeRegress(t))) {
+      this.log.appendLine(`[actions] removeRegress (+${seeded} seeds)`);
+    }
+  }
+
+  /** Edits one `regress:` field from the settings panel; empty ⇒ default. */
+  async editRegress(
+    field: string,
+    raw: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri) {
+      return;
+    }
+    const fields: ops.RegressField[] = ["simulator", "filelist", "seeds", "coverage"];
+    if (!fields.includes(field as ops.RegressField)) {
+      return;
+    }
+    const f = field as ops.RegressField;
+    let value: string | number | boolean | undefined;
+    if (raw === "") {
+      value = undefined;
+    } else if (f === "seeds") {
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1) {
+        return;
+      }
+      value = n;
+    } else if (f === "coverage") {
+      value = raw === "true";
+    } else {
+      value = raw;
+    }
+    if (await cfg.apply((t) => ops.setRegressField(t, f, value))) {
+      this.log.appendLine(`[actions] editRegress ${field} = ${raw || "(reset)"}`);
+    }
+  }
+
   /**
    * Edits a field of an agent (docs/07 line 3, P1) — the inspector's property rows.
    * Empty ⇒ resets to the QuickUVM default (`setAgentField` deletes the key and

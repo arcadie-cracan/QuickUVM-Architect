@@ -2662,6 +2662,183 @@ function tbPropRow(label: string, control: HTMLElement): HTMLElement {
   return row;
 }
 
+/**
+ * The bench-level settings panel (docs/07 line 3, P2): RAL + regression. Both are
+ * PRESENCE-switched blocks — `register_model:` switches the bench into RAL mode
+ * (adapter + CSR tests + env wiring), `regress:` generates the Makefile and is what
+ * makes `tests[].seeds` legal — so each gets an explicit enable/remove, not a field.
+ * Shown regardless of selection: these belong to the bench, not to a component.
+ */
+function tbBenchSettings(cfg: QuvmConfig): void {
+  inspector.append(h("h3", "", "Verification settings"));
+
+  const rm = cfg.register_model;
+  if (!rm) {
+    inspector.append(
+      h("div", "dim", "no register model (RAL)"),
+      button("Add register model…", true, () => postAction("addRegisterModel", {}), true)
+    );
+  } else {
+    const send = (field: string, value: string): void =>
+      postAction("editRegisterModel", { field, value });
+    const textRow = (
+      label: string,
+      field: string,
+      cur: string,
+      placeholder: string
+    ): void => {
+      const inp = h("input", "prop");
+      inp.value = cur;
+      inp.placeholder = placeholder;
+      inp.addEventListener("change", () => send(field, inp.value));
+      inspector.append(tbPropRow(label, inp));
+    };
+    textRow("RAL package", "package", rm.package ?? "", "required");
+    textRow("Reg block", "block", rm.block ?? "", "required");
+    textRow("Map", "map", rm.map ?? "", "default_map");
+    // the bus agent must be an INITIATOR (a responder cannot carry register traffic)
+    const initiators = (cfg.agents ?? [])
+      .filter((a) => a.mode !== "responder" && a.name)
+      .map((a) => a.name as string);
+    inspector.append(
+      tbPropRow(
+        "Bus agent",
+        tbSelect(
+          initiators.map((a) => [a, a] as const),
+          rm.bus_agent ?? "",
+          (v) => send("bus_agent", v)
+        )
+      )
+    );
+    if (rm.bus_agent && !initiators.includes(rm.bus_agent)) {
+      inspector.append(
+        h("div", "note", `bus_agent “${rm.bus_agent}” is not an initiator agent — QuickUVM refuses it`)
+      );
+    }
+    textRow("Adapter", "adapter", rm.adapter ?? "", "reg_adapter");
+    textRow("Backdoor root", "backdoor_root", rm.backdoor_root ?? "", "none (frontdoor only)");
+
+    // csr_tests: a checkbox per suite, sent back as a comma-separated list
+    const suites = ["hw_reset", "bit_bash", "rw", "mem_walk", "shared"] as const;
+    const chosen = new Set(rm.csr_tests ?? []);
+    const box = h("div", "prop-checks");
+    for (const s of suites) {
+      const lbl = h("label", "prop-check");
+      const cb = h("input", "");
+      cb.type = "checkbox";
+      cb.checked = chosen.has(s);
+      cb.addEventListener("change", () => {
+        const next = new Set(chosen);
+        if (cb.checked) {
+          next.add(s);
+        } else {
+          next.delete(s);
+        }
+        send("csr_tests", suites.filter((x) => next.has(x)).join(","));
+      });
+      lbl.append(cb, document.createTextNode(` ${s}`));
+      box.append(lbl);
+    }
+    inspector.append(tbPropRow("CSR tests", box));
+
+    for (const [label, field, cur] of [
+      ["Reg coverage", "coverage", rm.coverage === true],
+      ["Use predictor", "use_predictor", rm.use_predictor !== false],
+      ["Reg test", "reg_test", rm.reg_test !== false],
+    ] as const) {
+      inspector.append(
+        tbPropRow(
+          label,
+          tbSelect(
+            [
+              ["true", "Yes"],
+              ["false", "No"],
+            ],
+            cur ? "true" : "false",
+            (v) => send(field, v)
+          )
+        )
+      );
+    }
+    inspector.append(
+      tbPropRow(
+        "Reg test door",
+        tbSelect(
+          [
+            ["frontdoor", "Frontdoor"],
+            ["backdoor", "Backdoor"],
+          ],
+          rm.reg_test_door ?? "frontdoor",
+          (v) => send("reg_test_door", v)
+        )
+      )
+    );
+    if (rm.reg_test_door === "backdoor" && !rm.backdoor_root) {
+      inspector.append(
+        h("div", "note", "a backdoor reg test needs a backdoor_root (the HDL path to the DUT)")
+      );
+    }
+    inspector.append(
+      button("Remove register model", true, () => postAction("removeRegisterModel", {}), true)
+    );
+  }
+
+  const rg = cfg.regress;
+  const seeded = (cfg.tests ?? []).filter((t) => t.seeds !== undefined).length;
+  if (!rg) {
+    inspector.append(
+      h("div", "dim", "no regression (Makefile)"),
+      button("Add regression", true,
+        () => postAction("toggleRegress", { value: "true" }), true)
+    );
+  } else {
+    const send = (field: string, value: string): void =>
+      postAction("editRegress", { field, value });
+    const simIn = h("input", "prop");
+    simIn.value = rg.simulator ?? "";
+    simIn.placeholder = "xcelium";
+    simIn.addEventListener("change", () => send("simulator", simIn.value));
+    inspector.append(tbPropRow("Simulator", simIn));
+
+    const flIn = h("input", "prop");
+    flIn.value = rg.filelist ?? "";
+    flIn.placeholder = "../sim/xrun.f";
+    flIn.addEventListener("change", () => send("filelist", flIn.value));
+    inspector.append(tbPropRow("Filelist", flIn));
+
+    const sdIn = h("input", "prop");
+    sdIn.type = "number";
+    sdIn.min = "1";
+    sdIn.value = String(rg.seeds ?? 1);
+    sdIn.addEventListener("change", () => send("seeds", sdIn.value));
+    inspector.append(tbPropRow("Seeds", sdIn));
+
+    inspector.append(
+      tbPropRow(
+        "Merge coverage",
+        tbSelect(
+          [
+            ["true", "Yes"],
+            ["false", "No"],
+          ],
+          rg.coverage === false ? "false" : "true",
+          (v) => send("coverage", v)
+        )
+      )
+    );
+    inspector.append(
+      button(
+        seeded
+          ? `Remove regression (${seeded} test seed count(s) go too)`
+          : "Remove regression",
+        true,
+        () => postAction("toggleRegress", { value: "false" }),
+        true
+      )
+    );
+  }
+}
+
 /** A `<select>` bound to one agent field: options `[value, label]`, `cur` preselected. */
 function tbSelect(
   options: readonly (readonly [string, string])[],
@@ -3241,6 +3418,10 @@ function renderInspector(): void {
       button("Virtual sequence", hasActive,
         () => postAction("addVirtualSequence", {}), true)
     );
+    // docs/07 P2 — bench-level settings (RAL + regression): not tied to a selection
+    if (state.config) {
+      tbBenchSettings(state.config);
+    }
     inspector.append(h("h3", "", "Actions"));
     inspector.append(
       button("Generate testbench", Boolean(ov?.dut), () =>

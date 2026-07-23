@@ -647,6 +647,188 @@ export function setAgentField(
   throw new Error(`agentul „${name}" nu exista in configuratie`);
 }
 
+// -------------------------------------- bench-level config (docs/07 line 3, P2)
+
+export interface RegisterModelSpec {
+  /** the external RAL package name (user-provided input, not generated) */
+  package: string;
+  /** the `uvm_reg_block` class inside that package */
+  block: string;
+  /** the agent whose driver the adapter talks through — must be an INITIATOR */
+  bus_agent: string;
+}
+
+/** docs/07 P2 — the `register_model:` fields the settings panel edits. `package`,
+ *  `block` and `bus_agent` are required by QuickUVM, so they are set at creation. */
+export type RegisterModelField =
+  | "package"
+  | "block"
+  | "map"
+  | "bus_agent"
+  | "adapter"
+  | "use_predictor"
+  | "reg_test"
+  | "csr_tests"
+  | "coverage"
+  | "backdoor_root"
+  | "reg_test_door"
+  | "frontdoor";
+
+const REGISTER_MODEL_DEFAULTS: Record<RegisterModelField, unknown> = {
+  package: "",
+  block: "",
+  map: "default_map",
+  bus_agent: "",
+  adapter: "reg_adapter",
+  use_predictor: true,
+  reg_test: true,
+  csr_tests: [],
+  coverage: false,
+  backdoor_root: "",
+  reg_test_door: "frontdoor",
+  frontdoor: "",
+};
+
+/** The three fields QuickUVM requires: emptying one would make the block invalid. */
+const REGISTER_MODEL_REQUIRED: readonly RegisterModelField[] = [
+  "package",
+  "block",
+  "bus_agent",
+];
+
+/**
+ * Creates the `register_model:` block (RAL mode). Its PRESENCE is what switches
+ * the mode — it adds `reg_adapter.svh` + `<dut>_reg_test.svh` and the env/test
+ * wiring — so creation and deletion are separate ops from field editing.
+ * Throws if one already exists (the caller edits it instead).
+ */
+export function addRegisterModel(text: string, spec: RegisterModelSpec): string {
+  const doc = parse(text);
+  if (doc.getIn(["register_model"]) !== undefined) {
+    throw new Error("configuratia are deja un `register_model`");
+  }
+  doc.setIn(["register_model"], doc.createNode({
+    package: spec.package,
+    block: spec.block,
+    bus_agent: spec.bus_agent,
+  }));
+  return doc.toString(TO_STRING);
+}
+
+/** Deletes the whole `register_model:` block (leaves RAL mode). Idempotent. */
+export function removeRegisterModel(text: string): string {
+  const doc = parse(text);
+  if (doc.getIn(["register_model"]) === undefined) {
+    return text; // byte-identical no-op
+  }
+  doc.deleteIn(["register_model"]);
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Edits one field of `register_model:`; a default value deletes the key. Throws if
+ * there is no block, or if a REQUIRED field (package/block/bus_agent) is emptied —
+ * QuickUVM refuses such a block, so we refuse rather than corrupt it
+ * (`setScoreboardField`'s treatment of `source` is the precedent).
+ */
+export function setRegisterModelField(
+  text: string,
+  field: RegisterModelField,
+  value: string | boolean | string[] | undefined
+): string {
+  const empty =
+    value === undefined ||
+    value === "" ||
+    (Array.isArray(value) && value.length === 0);
+  if (REGISTER_MODEL_REQUIRED.includes(field) && empty) {
+    throw new Error(`campul „${field}" al lui register_model este obligatoriu`);
+  }
+  const doc = parse(text);
+  const rm = doc.getIn(["register_model"]);
+  if (!isMap(rm)) {
+    throw new Error("configuratia nu are un `register_model`");
+  }
+  const def = REGISTER_MODEL_DEFAULTS[field];
+  const isDefault =
+    empty ||
+    value === def ||
+    (Array.isArray(value) && Array.isArray(def) && def.length === 0 && value.length === 0);
+  if (isDefault) {
+    rm.delete(field);
+  } else if (Array.isArray(value)) {
+    const node = doc.createNode(value) as YAMLSeq;
+    node.flow = true; // `csr_tests: [hw_reset, rw]`
+    rm.set(field, node);
+  } else {
+    rm.set(field, value);
+  }
+  return doc.toString(TO_STRING);
+}
+
+export type RegressField = "simulator" | "filelist" | "seeds" | "coverage";
+
+const REGRESS_DEFAULTS: Record<RegressField, string | number | boolean> = {
+  simulator: "xcelium",
+  filelist: "../sim/xrun.f",
+  seeds: 1,
+  coverage: true,
+};
+
+/** Creates the `regress:` block (its presence generates the `Makefile`). Idempotent:
+ *  an existing block is left untouched, byte-identical. */
+export function addRegress(text: string): string {
+  const doc = parse(text);
+  if (doc.getIn(["regress"]) !== undefined) {
+    return text;
+  }
+  // written empty: every field has a default, so the block carries no noise
+  doc.setIn(["regress"], doc.createNode({}));
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Deletes the `regress:` block AND every `tests[].seeds` it made legal. QuickUVM
+ * rejects a config whose tests set `seeds` with no `regress:` block ("seeds is the
+ * per-test seed count in the regression matrix and renders nothing without one"),
+ * so leaving them behind would produce a config that no longer generates — the
+ * same cascade rule as the agent's responder keys. Idempotent.
+ */
+export function removeRegress(text: string): string {
+  const doc = parse(text);
+  if (doc.getIn(["regress"]) === undefined) {
+    return text; // byte-identical no-op
+  }
+  doc.deleteIn(["regress"]);
+  const tests = doc.getIn(["tests"]);
+  if (isSeq(tests)) {
+    for (const t of tests.items) {
+      if (isMap(t)) {
+        t.delete("seeds");
+      }
+    }
+  }
+  return doc.toString(TO_STRING);
+}
+
+/** Edits one field of `regress:`; a default value deletes the key. */
+export function setRegressField(
+  text: string,
+  field: RegressField,
+  value: string | number | boolean | undefined
+): string {
+  const doc = parse(text);
+  const rg = doc.getIn(["regress"]);
+  if (!isMap(rg)) {
+    throw new Error("configuratia nu are un `regress`");
+  }
+  if (value === undefined || value === "" || value === REGRESS_DEFAULTS[field]) {
+    rg.delete(field);
+  } else {
+    rg.set(field, value);
+  }
+  return doc.toString(TO_STRING);
+}
+
 export type ScoreboardField =
   | "source"
   | "monitor"

@@ -52,6 +52,12 @@ export type ActionKind =
   | "deleteComponent"
   | "editScoreboard"
   | "editAgent"
+  // P2: bench-level configuration (RAL + regression)
+  | "addRegisterModel"
+  | "removeRegisterModel"
+  | "editRegisterModel"
+  | "toggleRegress"
+  | "editRegress"
   // slice 3: whitebox probe (K2) from a net selected in the schematic view
   | "createProbe"
   // slice 3: derived composition — H1 connections from the view's nets

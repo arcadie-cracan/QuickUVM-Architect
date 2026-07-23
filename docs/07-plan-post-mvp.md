@@ -261,6 +261,16 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   aceeași configurație cu cheia rămasă în urmă e REFUZATĂ de quick-uvm.
   Rămas în afara feliei: `idle` (dict port→valoare, cere un editor imbricat) și
   `instances`/`parameters` (C3).
+- **P2a LIVRAT — RAL + regresie.** Panelul „Verification settings" (inspector, în modul
+  TB, independent de selecție) autorează cele două blocuri *comutate prin prezență*:
+  `register_model:` (add cu cele trei câmpuri obligatorii cerute în față — `bus_agent`
+  doar dintre agenții INIȚIATORI — apoi map/adapter/backdoor_root/`csr_tests` multiselect/
+  `coverage`/`use_predictor`/`reg_test`/`reg_test_door`, plus remove) și `regress:`
+  (simulator/filelist/seeds/coverage, add/remove). Regula descoperită la construcție:
+  **ștergerea lui `regress:` trebuie să ia cu ea `tests[].seeds`** — QuickUVM refuză
+  seeds fără bloc de regresie, deci `removeRegress` cascadează (dovedit prin mutație în
+  e2e: aceeași configurație cu seeds rămas = REFUZ). Câmpurile obligatorii ale RAL-ului
+  refuză golirea în loc să corupă blocul.
 - **P2 — formulare de config la nivel de bench** (pur config, doar formular). Panel
   „Verification settings": `register_model` (RAL — `bus_agent` din agenții
   inițiatori, `csr_tests` multiselect, `coverage` bool), `regress`, `kind`/
