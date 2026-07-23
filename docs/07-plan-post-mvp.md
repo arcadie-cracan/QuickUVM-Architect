@@ -289,6 +289,19 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   `top_name`/`auto_vseq_mode`/`layout`, metadate `project`, editor `tests[]` (cu
   gărzile „seeds cere regress" și „ștergerea ultimului test reînvie test1"). Leverage
   mare (RAL + regresia sunt centrale la benchurile reale).
+- **P3a LIVRAT — adâncimea scoreboard-ului.** Editorul de scoreboard capătă `window`
+  (boundary dintre porturile EȘANTIONATE ale agentului sursă + `length`) și
+  `reference_model.language` (sv / c — doar comutatorul, nu corpul). Ambele sunt
+  mapări imbricate, deci `setScoreboardField` primește câmpuri cu punct
+  (`window.boundary`, `reference_model.language`), iar o valoare implicită șterge
+  MAPAREA, nu doar cheia. Cuplarea descoperită: **un window cere un scoreboard cu un
+  singur flux** — adăugarea unui `monitor` îl șterge în cascadă, iar adăugarea unui
+  window peste două fluxuri e refuzată la sursă (dovedit prin mutație: aceeași
+  configurație cu window-ul rămas = REFUZ).
+  Rămas pentru P3b: autorarea `coverage` bogat (editor imbricat coverpoints/bins/
+  crosses) și scoreboard-urile cross-bloc (selectorul `<subenv>.<agent>` cere ca
+  host-ul să citească configurațiile copiilor — fezabil, vezi `actions.ts` la
+  `openTextDocument(childUri)`).
 - **P3 — adâncimea de analysis** (câmpuri ieftine + un editor imbricat). Extinde
   editorul de scoreboard cu `window`, `reference_model.language` (dropdown sv/c — DOAR
   butonul, nu corpul), `max_latency`-la-add; autorare `coverage` bogat; autorare

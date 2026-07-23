@@ -735,6 +735,50 @@ test("removeAgent: pastreaza un vseq cu body gol scris de mana", () => {
   assert.deepEqual(cfg.agents.map((a) => a.name), ["rsp"]);
 });
 
+test("setScoreboardField: window + reference_model (campuri imbricate, P3)", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "done", width: 1 }],
+  });
+  text = ops.addScoreboard(text, { name: "sbd", source: "cmd" });
+
+  // reference_model: `sv` e default -> maparea nu se scrie deloc
+  text = ops.setScoreboardField(text, "sbd", "reference_model.language", "c");
+  assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0].reference_model, { language: "c" });
+  text = ops.setScoreboardField(text, "sbd", "reference_model.language", "sv");
+  assert.equal("reference_model" in ops.parseQuvm(text).analysis.scoreboards[0], false);
+
+  // window: setarea boundary-ului creeaza maparea cu lungimea minima legala
+  text = ops.setScoreboardField(text, "sbd", "window.boundary", "done");
+  assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0].window, {
+    boundary: "done", length: 1,
+  });
+  text = ops.setScoreboardField(text, "sbd", "window.length", 512);
+  assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0].window, {
+    boundary: "done", length: 512,
+  });
+  // golirea lungimii ar lasa un window invalid -> no-op byte-identic
+  assert.equal(ops.setScoreboardField(text, "sbd", "window.length", ""), text);
+
+  // CUPLARE: un window cere UN SINGUR flux. Adaugarea unui monitor il sterge...
+  const twoStream = ops.setScoreboardField(text, "sbd", "monitor", "cmd2");
+  assert.equal("window" in ops.parseQuvm(twoStream).analysis.scoreboards[0], false,
+    "window a supravietuit adaugarii monitorului");
+  // ... si invers, un window nu se poate adauga pe un scoreboard cu doua fluxuri
+  assert.throws(
+    () => ops.setScoreboardField(twoStream, "sbd", "window.boundary", "done"),
+    /SINGUR flux/
+  );
+  assert.throws(
+    () => ops.setScoreboardField(text, "nope", "window.boundary", "done"),
+    /nu exista/
+  );
+  // boundary gol => window-ul dispare cu totul
+  text = ops.setScoreboardField(text, "sbd", "window.boundary", "");
+  assert.equal("window" in ops.parseQuvm(text).analysis.scoreboards[0], false);
+  assert.throws(() => ops.setScoreboardField(text, "sbd", "window.length", 4), /nu are/);
+});
+
 test("setScoreboardField: cascada — monitor gol / match in_order curata match_key", () => {
   let text = ops.addScoreboard(ops.setDut(ops.newConfigText("s"), DUT), {
     name: "sbd", source: "cmd", monitor: "rsp", match: "out_of_order", matchKey: "id",
