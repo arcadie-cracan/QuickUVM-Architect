@@ -229,6 +229,9 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "editScoreboard":
         void this.actions.editScoreboard(s("name"), s("field"), s("value"), target);
         break;
+      case "editAgent":
+        void this.actions.editAgent(s("name"), s("field"), s("value"), target);
+        break;
       case "openSubenvConfig":
         // drill into subenv from the per-file editor: the config path relative
         // to the DOCUMENT (the H1 nesting descends level by level through files)

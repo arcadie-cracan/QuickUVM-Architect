@@ -260,6 +260,13 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.value === "string" ? args.value : ""
           );
           break;
+        case "editAgent":
+          void actions.editAgent(
+            typeof args.name === "string" ? args.name : "",
+            typeof args.field === "string" ? args.field : "",
+            typeof args.value === "string" ? args.value : ""
+          );
+          break;
         case "createProbe":
           void actions.createProbe(
             target,

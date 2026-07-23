@@ -250,6 +250,17 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   `request_ready`, `reorder_by`, `reorder_policy`, `proactive`, `replicas`,
   `seq_item_style`, `clock`/`reset` per-agent; cablarea `setAgentActive` existent la
   un toggle Active/Passive. Închide tot golul reactiv/hibrid/replica.
+  **LIVRAT.** `tbAgentEditor` (webview) + acțiunea `editAgent` + op-ul pur
+  `setAgentField`, cu toate câmpurile de mai sus. Două lucruri au ieșit din construcție:
+  (a) referința de schemă documenta `request_ready` ca fiind pe *inițiator* — greșit,
+  validatorul îl acceptă DOAR pe responder (`examples/axi_handshake` îl confirmă);
+  rândurile responder din §1.5 sunt corectate. (b) Regulile de cuplare sunt *ziduri de
+  validator*, nu convenții, deci nu ajunge să dezactivezi controalele: `setAgentField`
+  **cascadează ștergerile** (înapoi la `initiator` ⇒ cad toate cheile responder-only;
+  `respond` afară din `pipelined` ⇒ cad `reorder_*`). Dovedit prin mutație în e2e —
+  aceeași configurație cu cheia rămasă în urmă e REFUZATĂ de quick-uvm.
+  Rămas în afara feliei: `idle` (dict port→valoare, cere un editor imbricat) și
+  `instances`/`parameters` (C3).
 - **P2 — formulare de config la nivel de bench** (pur config, doar formular). Panel
   „Verification settings": `register_model` (RAL — `bus_agent` din agenții
   inițiatori, `csr_tests` multiselect, `coverage` bool), `regress`, `kind`/

@@ -548,6 +548,105 @@ export function removeAgent(text: string, name: string): string {
   return doc.toString(TO_STRING);
 }
 
+/** docs/07 line 3 (P1) — the agent fields the inspector edits. `active` is NOT here:
+ *  it keeps its own op (`setAgentActive`), which the connection wiring also uses. */
+export type AgentField =
+  | "seq_item_style"
+  | "mode"
+  | "respond"
+  | "request_valid"
+  | "request_ready"
+  | "reorder_by"
+  | "reorder_policy"
+  | "proactive"
+  | "replicas"
+  | "clock"
+  | "reset";
+
+/** The value that means "the QuickUVM default" for each field: writing it deletes the
+ *  key, so an untouched agent stays byte-identical to what `createAgent` emitted. */
+const AGENT_DEFAULTS: Record<AgentField, string | number | boolean> = {
+  seq_item_style: "manual",
+  mode: "initiator",
+  respond: "on_request",
+  request_valid: "",
+  request_ready: "",
+  reorder_by: "",
+  reorder_policy: "priority",
+  proactive: false,
+  replicas: 1,
+  clock: "",
+  reset: "",
+};
+
+/**
+ * Edits one field of an agent (identified by name); throws if the agent is missing
+ * (`setScoreboardField` is the precedent). A default value DELETES the key, so the
+ * YAML stays canonical.
+ *
+ * It also cascades the deletions that QuickUVM's own validators demand, so the
+ * inspector cannot leave behind a key that the generator would then reject:
+ *   - back to `mode: initiator` → drop every responder-only key (`respond`,
+ *     `request_valid`, `request_ready`, `reorder_by`, `reorder_policy`, `proactive`,
+ *     `idle`) — each of those is an explicit "only valid with `mode: responder`" error;
+ *   - `respond` away from `pipelined` → drop `reorder_by`/`reorder_policy`
+ *     ("only valid with `respond: pipelined`");
+ *   - `respond` away from `on_request`/`pipelined` → drop `request_ready` (only those
+ *     two shapes publish the request); away from `on_request` → drop `proactive`
+ *     (a hybrid's liveness is the on_request request-FIFO drain).
+ */
+export function setAgentField(
+  text: string,
+  name: string,
+  field: AgentField,
+  value: string | number | boolean | undefined
+): string {
+  const doc = parse(text);
+  const agents = doc.getIn(["agents"]);
+  if (isSeq(agents)) {
+    for (const item of agents.items) {
+      if (!isMap(item) || item.get("name") !== name) {
+        continue;
+      }
+      const isDefault =
+        value === undefined || value === "" || value === AGENT_DEFAULTS[field];
+      if (isDefault) {
+        item.delete(field);
+      } else {
+        item.set(field, value);
+      }
+      const now = (f: string): unknown => item.get(f);
+      if (field === "mode" && now("mode") !== "responder") {
+        for (const k of [
+          "respond",
+          "request_valid",
+          "request_ready",
+          "reorder_by",
+          "reorder_policy",
+          "proactive",
+          "idle",
+        ]) {
+          item.delete(k);
+        }
+      } else if (field === "respond") {
+        const respond = now("respond") ?? "on_request";
+        if (respond !== "pipelined") {
+          item.delete("reorder_by");
+          item.delete("reorder_policy");
+        }
+        if (respond !== "on_request" && respond !== "pipelined") {
+          item.delete("request_ready");
+        }
+        if (respond !== "on_request") {
+          item.delete("proactive");
+        }
+      }
+      return doc.toString(TO_STRING);
+    }
+  }
+  throw new Error(`agentul „${name}" nu exista in configuratie`);
+}
+
 export type ScoreboardField =
   | "source"
   | "monitor"

@@ -168,13 +168,13 @@ Two entry shapes in one list — **declared** (full config) or **reference**
 | `reset_port` / `reset_port_active_low` | str/bool \| null | null | agent-side reset output port |
 | `assertions` | bool | `false` | interface SVA scaffold |
 | `mode` | `initiator` \| `responder` | `initiator` | reactive agents |
-| `request_valid` | str \| null | null | responder: the request-qualifier input |
-| `request_ready` | str \| null | null | initiator: DUT backpressure handshake input |
-| `respond` | `on_request` \| `prefetch` \| `combinational` \| `pipelined` | `on_request` | responder timing contract |
-| `reorder_by` | str \| null | null | `pipelined` only: field keying per-ID reorder queues |
-| `reorder_policy` | `priority` \| `round_robin` \| `random` | `priority` | |
-| `proactive` | bool | `false` | hybrid: a responder that also takes proactive stimulus |
-| `idle` | dict[str,int] | `{}` | idle port values driven between items |
+| `request_valid` | str \| null | null | **`mode: responder` only** (validator-enforced); names a SAMPLED (`outputs`) 1-bit port. **Required** by `mode: responder`. |
+| `request_ready` | str \| null | null | **`mode: responder` only** (validator-enforced) + needs `respond: on_request`\|`pipelined` (the shapes whose monitor publishes the request). The READY half of the request handshake — may name a driven OR a sampled port, must differ from `request_valid`. *(was documented here as initiator-side — wrong; `examples/axi_handshake` puts it on a responder.)* |
+| `respond` | `on_request` \| `prefetch` \| `combinational` \| `pipelined` | `on_request` | responder timing contract; **`mode: responder` only** — a non-default value on an initiator is now an error (it used to be accepted and silently ignored). |
+| `reorder_by` | str \| null | null | **`respond: pipelined` only** (and hence responder-only); **required** by `pipelined`. A SAMPLED port, ≤ 31 bits, ≠ `request_valid`. |
+| `reorder_policy` | `priority` \| `round_robin` \| `random` | `priority` | non-default is **`respond: pipelined` only** |
+| `proactive` | bool | `false` | hybrid: a responder that also takes proactive stimulus. **`mode: responder` + `respond: on_request` only**, and incompatible with `idle`. |
+| `idle` | dict[str,int] | `{}` | idle port values driven between items; **`mode: responder` only** (it selects the continuous, non-blocking responder driver) and incompatible with `proactive` |
 | `from_vip` | path | — | *reference entries only*; resolved by `from_yaml` relative to the config file |
 
 Reference entries outside `from_yaml` fail loudly:

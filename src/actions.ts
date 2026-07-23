@@ -963,6 +963,65 @@ export class Actions {
   }
 
   /**
+   * Edits a field of an agent (docs/07 line 3, P1) — the inspector's property rows.
+   * Empty ⇒ resets to the QuickUVM default (`setAgentField` deletes the key and
+   * cascades the deletions the validators demand). `active` deliberately does NOT
+   * pass through here: it keeps `setAgentActive`, shared with the connection wiring.
+   */
+  async editAgent(
+    name: string,
+    field: string,
+    raw: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri || !name) {
+      return;
+    }
+    if (field === "active") {
+      // one path for `active` (the H1 wiring uses it too) — raw is "true"/"false"
+      if (await cfg.apply((t) => ops.setAgentActive(t, name, raw === "true"))) {
+        this.log.appendLine(`[actions] editAgent ${name}.active = ${raw}`);
+      }
+      return;
+    }
+    const fields: ops.AgentField[] = [
+      "seq_item_style",
+      "mode",
+      "respond",
+      "request_valid",
+      "request_ready",
+      "reorder_by",
+      "reorder_policy",
+      "proactive",
+      "replicas",
+      "clock",
+      "reset",
+    ];
+    if (!fields.includes(field as ops.AgentField)) {
+      return;
+    }
+    const f = field as ops.AgentField;
+    let value: string | number | boolean | undefined;
+    if (raw === "") {
+      value = undefined;
+    } else if (f === "replicas") {
+      // replica count: integer >= 1 (the input has min=1)
+      const n = Number(raw);
+      if (!Number.isInteger(n) || n < 1) {
+        return;
+      }
+      value = n;
+    } else if (f === "proactive") {
+      value = raw === "true";
+    } else {
+      value = raw;
+    }
+    if (await cfg.apply((t) => ops.setAgentField(t, name, f, value))) {
+      this.log.appendLine(`[actions] editAgent ${name}.${field} = ${raw || "(reset)"}`);
+    }
+  }
+
+  /**
    * Edits a field of a scoreboard (slice 2). The value comes from the inspector
    * (inline editing), empty => resets to default (match=in_order, field deleted
    * — see `setScoreboardField`). `max_latency` is converted to a number.

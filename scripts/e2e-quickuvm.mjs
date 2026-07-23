@@ -517,4 +517,70 @@ agents:
   console.log("  ok    compunere: removeConnection -> firul dispare din tb_top");
 }
 
+// --- scenario 5 (docs/07 P1): the AGENT INSPECTOR writes a config quick-uvm ACCEPTS.
+// The inspector's enable/disable matrix and `setAgentField`'s cascades encode
+// QuickUVM's responder coupling rules; unit tests prove the YAML shape, only the
+// generator proves the rules were read right. Each step here is one inspector gesture.
+{
+  const base = () => {
+    let t = ops.setDut(ops.newConfigText("rsp_dut"), {
+      module: "rsp_dut", clock: "clk", reset: "rst_n",
+      resetActiveLow: true, externalReset: false, combinational: false,
+    });
+    return ops.createAgent(t, {
+      name: "rd",
+      // inputs = what the agent DRIVES (the response), outputs = what it SAMPLES
+      inputs: [{ name: "rvalid", width: 1 }, { name: "rdata", width: 32 }],
+      outputs: [
+        { name: "arvalid", width: 1 },
+        { name: "arready", width: 1 },
+        { name: "arid", width: 4 },
+      ],
+    });
+  };
+
+  // (a) initiator -> responder + request_valid + request_ready: accepted
+  let t = base();
+  t = ops.setAgentField(t, "rd", "mode", "responder");
+  t = ops.setAgentField(t, "rd", "request_valid", "arvalid");
+  t = ops.setAgentField(t, "rd", "request_ready", "arready");
+  generate("rsp_on_request", t, ["rd_driver.svh", "tb_top.sv"]);
+
+  // (b) ... -> pipelined + reorder_by + reorder_policy: accepted
+  let pipe = ops.setAgentField(t, "rd", "respond", "pipelined");
+  pipe = ops.setAgentField(pipe, "rd", "reorder_by", "arid");
+  pipe = ops.setAgentField(pipe, "rd", "reorder_policy", "round_robin");
+  generate("rsp_pipelined", pipe, ["rd_driver.svh"]);
+
+  // (c) proactive hybrid on on_request: accepted
+  const hybrid = ops.setAgentField(t, "rd", "proactive", true);
+  generate("rsp_hybrid", hybrid, ["rd_driver.svh"]);
+
+  // (d) THE CASCADE IS LOAD-BEARING. Going back to `mode: initiator` must drop every
+  // responder-only key. Mutation proof: the SAME config with the keys left behind is
+  // REFUSED by quick-uvm — so the cascade is what keeps the inspector honest.
+  const backToInit = ops.setAgentField(pipe, "rd", "mode", "initiator");
+  const cfgInit = ops.parseQuvm(backToInit).agents[0];
+  for (const k of ["respond", "request_valid", "request_ready", "reorder_by", "reorder_policy"]) {
+    assert.equal(k in cfgInit, false, `${k} a supravietuit cascadei`);
+  }
+  generate("rsp_back_to_initiator", backToInit, ["rd_driver.svh"]);
+
+  const leftover = backToInit.replace(
+    /(\n(\s+))interface: rd_if/,
+    "$1interface: rd_if$1request_valid: arvalid"
+  );
+  assert.notEqual(leftover, backToInit, "mutatia nu s-a aplicat");
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-leftover-"));
+  writeFileSync(join(dir, "m.quickuvm.yaml"), leftover);
+  const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze request_valid pe un initiator");
+  assert.match(
+    (bad.stdout ?? "") + (bad.stderr ?? ""),
+    /request_valid.*only valid with/s,
+    "alt motiv de esec decat cuplarea responder"
+  );
+  console.log("  ok    inspector agent: cascada mode->initiator e load-bearing (fara ea: REFUZ)");
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");
