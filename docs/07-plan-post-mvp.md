@@ -302,6 +302,20 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   crosses) și scoreboard-urile cross-bloc (selectorul `<subenv>.<agent>` cere ca
   host-ul să citească configurațiile copiilor — fezabil, vezi `actions.ts` la
   `openTextDocument(childUri)`).
+- **P3b LIVRAT — autorarea `coverage` bogat.** Un nod de coverage selectat deschide
+  editorul imbricat: upgrade `coverage: [cmd]` (simplă rutare) → model bogat, apoi
+  coverpoints (câmpuri din porturile agentului, unul per câmp), bin-uri cu o
+  mini-sintaxă pe un rând (`5` / `0..7` / `1, 2, 3` → value/range/values), crossuri
+  peste coverpoints DECLARATE, `goal`, și downgrade înapoi la rutare. Găsit la
+  construcție: **șapte locuri citeau `analysis.coverage` ca listă de șiruri** — nodul
+  din diagramă ar fi ajuns `[object Object]` de îndată ce feature-ul creează prima
+  intrare bogată; toate trec acum prin `coveredAgent`. Cascada: ștergerea unui
+  coverpoint ia cu ea crossurile care îl refereau (dovedit prin mutație). Editările
+  modifică intrarea PE LOC, deci `illegal_bins`/`transitions`/bin-urile de cross
+  scrise de mână nu se pierd (test dedicat).
+  Rămas pentru P3c: scoreboard-uri cross-bloc (selectorul `<subenv>.<agent>` cere
+  citirea configurațiilor copil) și coada adâncă (`at_least`, `auto_bin_max`,
+  `illegal_bins`/`ignore_bins`/`transitions`, selecția `binsof` a crossurilor).
 - **P3 — adâncimea de analysis** (câmpuri ieftine + un editor imbricat). Extinde
   editorul de scoreboard cu `window`, `reference_model.language` (dropdown sv/c — DOAR
   butonul, nu corpul), `max_latency`-la-add; autorare `coverage` bogat; autorare

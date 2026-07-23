@@ -356,14 +356,24 @@ export function addScoreboard(text: string, spec: ScoreboardSpec): string {
   return doc.toString(TO_STRING);
 }
 
+/** Does an `analysis.coverage` entry cover `agent`? Entries come in TWO forms — a
+ *  bare scalar name (pure env routing) or a rich `{agent, coverpoints…}` mapping
+ *  (docs/07 P3b) — and every consumer must accept both. */
+function coversAgent(item: unknown, agent: string): boolean {
+  if (isMap(item)) {
+    return item.get("agent") === agent;
+  }
+  return (item as { value?: unknown })?.value === agent;
+}
+
 /** Adds a coverage collector for an agent (`analysis.coverage`); idempotent. */
 export function addCoverage(text: string, agent: string): string {
   const doc = parse(text);
   const existing = doc.getIn(["analysis", "coverage"]);
   if (isSeq(existing)) {
     for (const item of existing.items) {
-      if ((item as { value?: unknown }).value === agent) {
-        return doc.toString(TO_STRING); // already present
+      if (coversAgent(item, agent)) {
+        return doc.toString(TO_STRING); // already present, in either form
       }
     }
     existing.add(agent);
@@ -433,8 +443,8 @@ export function removeScoreboard(text: string, name: string): string {
   return doc.toString(TO_STRING);
 }
 
-/** Deletes an agent's coverage collector from `analysis.coverage`
- *  (the list of scalar names); cleans up the empty block. Idempotent (no-op = original
+/** Deletes an agent's coverage collector from `analysis.coverage`, in either form
+ *  (bare name or rich model); cleans up the empty block. Idempotent (no-op = original
  *  byte-identical text). */
 export function removeCoverage(text: string, agent: string): string {
   const doc = parse(text);
@@ -442,7 +452,7 @@ export function removeCoverage(text: string, agent: string): string {
   let removed = false;
   if (isSeq(seq)) {
     for (let i = seq.items.length - 1; i >= 0; i--) {
-      if ((seq.items[i] as { value?: unknown }).value === agent) {
+      if (coversAgent(seq.items[i], agent)) {
         seq.delete(i);
         removed = true;
       }
@@ -482,12 +492,12 @@ export function removeAgent(text: string, name: string): string {
     return text; // the agent does not exist -> nothing to do (no cascade)
   }
   pruneEmptySeq(doc, ["agents"]);
-  // coverage: scalar names
+  // coverage: bare names AND rich models
   const cov = doc.getIn(["analysis", "coverage"]);
   let covChanged = false;
   if (isSeq(cov)) {
     for (let i = cov.items.length - 1; i >= 0; i--) {
-      if ((cov.items[i] as { value?: unknown }).value === name) {
+      if (coversAgent(cov.items[i], name)) {
         cov.delete(i);
         covChanged = true;
       }
@@ -968,6 +978,274 @@ export function setTestField(
     }
   }
   throw new Error(`testul „${name}" nu exista in configuratie`);
+}
+
+// ----------------------------- rich functional coverage (docs/07 line 3, P3b)
+
+/**
+ * Locate an `analysis.coverage` entry for `agent`, in either form (a bare string or
+ * a rich mapping). Returns the sequence and the index, or null.
+ */
+function findCoverageEntry(
+  doc: Document,
+  agent: string
+): { seq: YAMLSeq; idx: number } | null {
+  const seq = doc.getIn(["analysis", "coverage"]);
+  if (!isSeq(seq)) {
+    return null;
+  }
+  const idx = seq.items.findIndex((i) =>
+    isMap(i) ? i.get("agent") === agent : String(i) === agent
+  );
+  return idx < 0 ? null : { seq, idx };
+}
+
+/** The rich mapping for `agent`, or throw — every op below edits in place, so the
+ *  hand-written keys it does not manage (illegal_bins, transitions, cross bins…)
+ *  are never rewritten away. */
+function richCoverage(doc: Document, agent: string): YAMLMap {
+  const found = findCoverageEntry(doc, agent);
+  const entry = found && found.seq.get(found.idx);
+  if (!isMap(entry)) {
+    throw new Error(`agentul „${agent}" nu are un model de coverage bogat`);
+  }
+  return entry;
+}
+
+/**
+ * Turns a BARE coverage entry (`coverage: [cmd]`, pure env routing) into a RICH one
+ * (`{agent: cmd, coverpoints: [{field, bins: []}]}`, which also generates covergroup
+ * content). QuickUVM requires at least one coverpoint in a rich model, so the first
+ * one is created with the entry — an empty rich model would not validate.
+ */
+export function upgradeCoverage(text: string, agent: string, field: string): string {
+  const doc = parse(text);
+  const found = findCoverageEntry(doc, agent);
+  if (!found) {
+    throw new Error(`agentul „${agent}" nu are o intrare de coverage`);
+  }
+  if (isMap(found.seq.get(found.idx))) {
+    throw new Error(`agentul „${agent}" are deja un model de coverage bogat`);
+  }
+  const node = doc.createNode({
+    agent,
+    coverpoints: [{ field, bins: [] }],
+  }) as YAMLMap;
+  found.seq.set(found.idx, node);
+  return doc.toString(TO_STRING);
+}
+
+/** Turns a rich model back into a bare agent name (keeps the routing, drops the
+ *  covergroup content). Idempotent on an already-bare entry. */
+export function downgradeCoverage(text: string, agent: string): string {
+  const doc = parse(text);
+  const found = findCoverageEntry(doc, agent);
+  if (!found || !isMap(found.seq.get(found.idx))) {
+    return text; // byte-identical no-op
+  }
+  found.seq.set(found.idx, doc.createNode(agent));
+  return doc.toString(TO_STRING);
+}
+
+/** Adds a coverpoint on `field`. Throws on a duplicate — QuickUVM gives each field
+ *  exactly one coverpoint. */
+export function addCoverpoint(text: string, agent: string, field: string): string {
+  const doc = parse(text);
+  const entry = richCoverage(doc, agent);
+  const cps = entry.get("coverpoints");
+  const seq = isSeq(cps) ? cps : (doc.createNode([]) as YAMLSeq);
+  for (const cp of seq.items) {
+    if (isMap(cp) && cp.get("field") === field) {
+      throw new Error(`campul „${field}" are deja un coverpoint`);
+    }
+  }
+  seq.add(doc.createNode({ field, bins: [] }));
+  if (!isSeq(cps)) {
+    entry.set("coverpoints", seq);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Removes a coverpoint AND every cross that referenced it — QuickUVM refuses a cross
+ * naming a field that is not a declared coverpoint, so leaving them would produce a
+ * config that no longer generates. Removing the LAST coverpoint is refused: a rich
+ * model needs at least one (downgrade to a bare entry instead).
+ */
+export function removeCoverpoint(text: string, agent: string, field: string): string {
+  const doc = parse(text);
+  const entry = richCoverage(doc, agent);
+  const cps = entry.get("coverpoints");
+  if (!isSeq(cps)) {
+    return text;
+  }
+  const idx = cps.items.findIndex((c) => isMap(c) && c.get("field") === field);
+  if (idx < 0) {
+    return text; // byte-identical no-op
+  }
+  if (cps.items.length === 1) {
+    throw new Error(
+      `„${field}" este singurul coverpoint — un model bogat cere cel putin unul (treci intrarea la forma simpla)`
+    );
+  }
+  cps.delete(idx);
+  const crosses = entry.get("crosses");
+  if (isSeq(crosses)) {
+    for (let i = crosses.items.length - 1; i >= 0; i--) {
+      const c = crosses.items[i];
+      const fields = isSeq(c)
+        ? c.items.map((x) => String(x))
+        : isMap(c) && isSeq(c.get("fields"))
+          ? (c.get("fields") as YAMLSeq).items.map((x) => String(x))
+          : [];
+      if (fields.includes(field)) {
+        crosses.delete(i);
+      }
+    }
+    if (crosses.items.length === 0) {
+      entry.delete("crosses");
+    }
+  }
+  return doc.toString(TO_STRING);
+}
+
+/** Adds/replaces a named bin on a coverpoint. `spec` is one of the three legal
+ *  value forms; the other two are deleted so exactly one survives. */
+export function setCoverageBin(
+  text: string,
+  agent: string,
+  field: string,
+  binName: string,
+  spec: { value?: number; range?: [number, number]; values?: number[] }
+): string {
+  const doc = parse(text);
+  const entry = richCoverage(doc, agent);
+  const cps = entry.get("coverpoints");
+  if (!isSeq(cps)) {
+    throw new Error(`agentul „${agent}" nu are coverpoints`);
+  }
+  const cp = cps.items.find((c) => isMap(c) && c.get("field") === field);
+  if (!isMap(cp)) {
+    throw new Error(`campul „${field}" nu are un coverpoint`);
+  }
+  const bins = cp.get("bins");
+  const seq = isSeq(bins) ? bins : (doc.createNode([]) as YAMLSeq);
+  const payload: Record<string, unknown> = { name: binName };
+  if (spec.value !== undefined) {
+    payload.value = spec.value;
+  } else if (spec.range) {
+    payload.range = spec.range;
+  } else {
+    payload.values = spec.values ?? [];
+  }
+  const node = doc.createNode(payload) as YAMLMap;
+  node.flow = true; // one line: `- { name: low, range: [0, 7] }`
+  const idx = seq.items.findIndex((b) => isMap(b) && b.get("name") === binName);
+  if (idx >= 0) {
+    seq.set(idx, node);
+  } else {
+    seq.add(node);
+  }
+  if (!isSeq(bins)) {
+    cp.set("bins", seq);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/** Removes a named bin from a coverpoint. Idempotent. */
+export function removeCoverageBin(
+  text: string,
+  agent: string,
+  field: string,
+  binName: string
+): string {
+  const doc = parse(text);
+  const entry = richCoverage(doc, agent);
+  const cps = entry.get("coverpoints");
+  if (!isSeq(cps)) {
+    return text;
+  }
+  const cp = cps.items.find((c) => isMap(c) && c.get("field") === field);
+  if (!isMap(cp)) {
+    return text;
+  }
+  const bins = cp.get("bins");
+  if (!isSeq(bins)) {
+    return text;
+  }
+  const idx = bins.items.findIndex((b) => isMap(b) && b.get("name") === binName);
+  if (idx < 0) {
+    return text; // byte-identical no-op
+  }
+  bins.delete(idx);
+  return doc.toString(TO_STRING);
+}
+
+/** Adds a cross over >= 2 declared coverpoints (the plain field-list form). */
+export function addCross(text: string, agent: string, fields: string[]): string {
+  const doc = parse(text);
+  const entry = richCoverage(doc, agent);
+  const crosses = entry.get("crosses");
+  const seq = isSeq(crosses) ? crosses : (doc.createNode([]) as YAMLSeq);
+  const node = doc.createNode(fields) as YAMLSeq;
+  node.flow = true; // one line: `- [wr, din]`
+  seq.add(node);
+  if (!isSeq(crosses)) {
+    entry.set("crosses", seq);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/** Removes a cross by its covergroup name (`<f1>_x_<f2>` or an explicit `name`). */
+export function removeCross(text: string, agent: string, name: string): string {
+  const doc = parse(text);
+  const entry = richCoverage(doc, agent);
+  const crosses = entry.get("crosses");
+  if (!isSeq(crosses)) {
+    return text;
+  }
+  const idx = crosses.items.findIndex((c) => {
+    if (isSeq(c)) {
+      return c.items.map((x) => String(x)).join("_x_") === name;
+    }
+    if (isMap(c)) {
+      const explicit = c.get("name");
+      if (explicit) {
+        return String(explicit) === name;
+      }
+      const f = c.get("fields");
+      return isSeq(f) && f.items.map((x) => String(x)).join("_x_") === name;
+    }
+    return false;
+  });
+  if (idx < 0) {
+    return text; // byte-identical no-op
+  }
+  crosses.delete(idx);
+  if (crosses.items.length === 0) {
+    entry.delete("crosses");
+  }
+  return doc.toString(TO_STRING);
+}
+
+/** Sets the covergroup closure target (`option.goal`, a percent 1..100); empty
+ *  deletes it. */
+export function setCoverageGoal(
+  text: string,
+  agent: string,
+  goal: number | undefined
+): string {
+  const doc = parse(text);
+  const entry = richCoverage(doc, agent);
+  if (goal === undefined) {
+    entry.delete("goal");
+  } else {
+    if (!Number.isInteger(goal) || goal < 1 || goal > 100) {
+      throw new Error("`goal` este un procent intre 1 si 100");
+    }
+    entry.set("goal", goal);
+  }
+  return doc.toString(TO_STRING);
 }
 
 export type ScoreboardField =

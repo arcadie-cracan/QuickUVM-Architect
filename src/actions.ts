@@ -15,6 +15,7 @@ import {
 import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
 import { kindBlockers, layoutBlockers } from "./benchid";
+import { coveredAgent, parseBinSpec } from "./coverage";
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
@@ -696,7 +697,10 @@ export class Actions {
     if (!agents.length) {
       return this.warnNoAgents();
     }
-    const covered = new Set(cfg.current.analysis?.coverage ?? []);
+    // entries come in both forms (bare name / rich model) — docs/07 P3b
+    const covered = new Set(
+      (cfg.current.analysis?.coverage ?? []).map((c) => coveredAgent(c))
+    );
     const choices = agents.filter((a) => !covered.has(a));
     if (!choices.length) {
       void vscode.window.showInformationMessage(
@@ -940,7 +944,7 @@ export class Actions {
   private agentCascade(name: string, target: TbEditTarget): string[] {
     const cfg = target.current;
     const out: string[] = [];
-    if ((cfg.analysis?.coverage ?? []).includes(name)) {
+    if ((cfg.analysis?.coverage ?? []).some((c) => coveredAgent(c) === name)) {
       out.push(vscode.l10n.t("its coverage collector"));
     }
     for (const s of cfg.analysis?.scoreboards ?? []) {
@@ -964,6 +968,97 @@ export class Actions {
   }
 
   // ------------------------------ bench-level configuration (docs/07 line 3, P2)
+
+  /**
+   * Rich functional-coverage authoring (docs/07 P3b). One entry point for every
+   * gesture of the nested editor, so the webview needs a single message: `op` selects
+   * the mutation, the rest are its arguments. Each op maps to a yamlops function that
+   * edits the entry IN PLACE — hand-written keys the editor does not author
+   * (illegal_bins, transitions, cross bins) are never rewritten away.
+   */
+  async editCoverage(
+    op: string,
+    args: { agent?: string; field?: string; bin?: string; spec?: string; fields?: string[]; value?: string },
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    const agent = args.agent ?? "";
+    if (!cfg.configUri || !agent) {
+      return;
+    }
+    const field = args.field ?? "";
+    try {
+      let done = false;
+      switch (op) {
+        case "upgrade":
+          done = await cfg.apply((t) => ops.upgradeCoverage(t, agent, field));
+          break;
+        case "downgrade": {
+          const go = await vscode.window.showWarningMessage(
+            vscode.l10n.t(
+              "Drop the covergroup content for {0}? The agent keeps its coverage collector, but the coverpoints, bins and crosses go.",
+              agent
+            ),
+            { modal: true },
+            vscode.l10n.t("Drop")
+          );
+          if (!go) {
+            return;
+          }
+          done = await cfg.apply((t) => ops.downgradeCoverage(t, agent));
+          break;
+        }
+        case "addCoverpoint":
+          done = await cfg.apply((t) => ops.addCoverpoint(t, agent, field));
+          break;
+        case "removeCoverpoint":
+          done = await cfg.apply((t) => ops.removeCoverpoint(t, agent, field));
+          break;
+        case "setBin": {
+          const spec = parseBinSpec(args.spec ?? "");
+          if (!spec || !args.bin) {
+            void vscode.window.showWarningMessage(
+              vscode.l10n.t(
+                "QuickUVM Architect: a bin is one value (5), an inclusive range (0..7) or a list (1, 2, 3)."
+              )
+            );
+            return;
+          }
+          done = await cfg.apply((t) =>
+            ops.setCoverageBin(t, agent, field, args.bin as string, spec)
+          );
+          break;
+        }
+        case "removeBin":
+          done = await cfg.apply((t) =>
+            ops.removeCoverageBin(t, agent, field, args.bin ?? "")
+          );
+          break;
+        case "addCross":
+          done = await cfg.apply((t) => ops.addCross(t, agent, args.fields ?? []));
+          break;
+        case "removeCross":
+          done = await cfg.apply((t) => ops.removeCross(t, agent, args.value ?? ""));
+          break;
+        case "goal": {
+          const raw = args.value ?? "";
+          const goal = raw === "" ? undefined : Number(raw);
+          done = await cfg.apply((t) => ops.setCoverageGoal(t, agent, goal));
+          break;
+        }
+        default:
+          return;
+      }
+      if (done) {
+        this.log.appendLine(`[actions] editCoverage ${op} ${agent}${field ? "." + field : ""}`);
+      }
+    } catch (e) {
+      // the couplings QuickUVM enforces (one coverpoint per field, >= 1 coverpoint,
+      // goal is a percent) are reported rather than written and rejected later
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
 
   /** Adds a test to `tests[]` (docs/07 P2); the name is confirmed by the user. */
   async addTest(cfg: TbEditTarget = this.config): Promise<void> {

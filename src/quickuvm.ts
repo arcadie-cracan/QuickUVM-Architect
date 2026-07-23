@@ -5,6 +5,8 @@
 // the YAML is also written by hand; the authoritative validation stays in QuickUVM
 // (Pydantic), the extension only prevents model<->YAML divergences (docs/03).
 
+import type { CoverageModel } from "./coverage";
+
 export interface QuvmPort {
   name?: string;
   /** defaults to 1 in QuickUVM; the extension omits width on 1-bit ports */
@@ -87,8 +89,10 @@ export interface QuvmScoreboard {
 }
 
 export interface QuvmAnalysis {
-  /** the names of the agents that get a coverage collector */
-  coverage?: string[];
+  /** Coverage entries in EITHER form: a bare agent name (pure env routing) or a
+   *  rich `{agent, coverpoints[], crosses[], goal}` model that also generates the
+   *  covergroup content (docs/07 P3b). Read them through `coveredAgent`. */
+  coverage?: (string | CoverageModel)[];
   scoreboards?: QuvmScoreboard[];
 }
 

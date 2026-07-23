@@ -6,7 +6,17 @@
 // level), plus identity ids `<focus>|<blocId>` for reverse reveal
 // from the diagram.
 
+import { coveredAgent } from "./coverage";
 import type { QuvmConfig } from "./quickuvm";
+
+/** The agents with a coverage collector, from entries in EITHER form (a bare name or
+ *  a rich `{agent, coverpoints…}` mapping — docs/07 P3b). */
+function coveredAgentNames(config: QuvmConfig): string[] {
+  const names = (config.analysis?.coverage ?? [])
+    .map((c) => coveredAgent(c))
+    .filter((n): n is string => Boolean(n));
+  return [...new Set(names)];
+}
 
 export interface VNode {
   id: string;
@@ -87,7 +97,7 @@ export function buildVTree(config: QuvmConfig, configPath: string | null): VTree
   // Env (the "env" level)
   const analysisCount =
     (config.analysis?.scoreboards?.length ?? 0) +
-    (new Set(config.analysis?.coverage ?? []).size);
+    coveredAgentNames(config).length;
   const hasEnv = agents.length > 0 || subenvs.length > 0 || analysisCount > 0;
   if (hasEnv) {
     const env = mk("v:env", "Env", "symbol-namespace", "env", null, tb, {
@@ -150,7 +160,7 @@ export function buildVTree(config: QuvmConfig, configPath: string | null): VTree
         })
       );
     }
-    for (const agent of new Set(config.analysis?.coverage ?? [])) {
+    for (const agent of coveredAgentNames(config)) {
       env.children.push(
         mk(`v:cov:${agent}`, `${agent}_cov`, "graph", "env", `cov:${agent}`, env, {
           description: "coverage",
