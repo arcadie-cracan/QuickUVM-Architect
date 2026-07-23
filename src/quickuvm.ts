@@ -19,6 +19,25 @@ export interface QuvmAgent {
   seq_item_style?: "manual" | "field_macros";
   active?: boolean;
   ports?: { inputs?: QuvmPort[]; outputs?: QuvmPort[] };
+  /** reactive agents (docs/07 P1). The responder-only keys below are enforced as
+   *  such by QuickUVM's validators — see §1.5 of the schema reference. */
+  mode?: "initiator" | "responder";
+  /** responder: the sampled 1-bit port meaning "the DUT issued a request" (required
+   *  by `mode: responder`) */
+  request_valid?: string;
+  /** responder + `respond: on_request|pipelined`: the READY half of the handshake */
+  request_ready?: string;
+  respond?: "on_request" | "prefetch" | "combinational" | "pipelined";
+  /** `respond: pipelined` only (and required by it): the sampled ID field */
+  reorder_by?: string;
+  reorder_policy?: "priority" | "round_robin" | "random";
+  /** hybrid: a responder that ALSO takes proactive stimulus (`respond: on_request`) */
+  proactive?: boolean;
+  /** replicate the agent N× onto one vectored DUT; needs `reset: {external: true}` */
+  replicas?: number;
+  /** multi-clock/multi-reset: which declared domain this agent samples/is gated by */
+  clock?: string;
+  reset?: string;
 }
 
 export interface QuvmDut {

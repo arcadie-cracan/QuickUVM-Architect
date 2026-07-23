@@ -51,6 +51,7 @@ export type ActionKind =
   // slice 2: deletion (with confirmation/cascade) and editing of properties
   | "deleteComponent"
   | "editScoreboard"
+  | "editAgent"
   // slice 3: whitebox probe (K2) from a net selected in the schematic view
   | "createProbe"
   // slice 3: derived composition — H1 connections from the view's nets

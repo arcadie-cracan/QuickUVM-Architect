@@ -17,7 +17,7 @@ import type {
 import type { GenerateStatus, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
-import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
+import type { QuvmAgent, QuvmConfig, QuvmPort, QuvmScoreboard } from "../quickuvm";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
 import { cameraForMinimapPoint, minimapLayout, minimapUseTransform, minimapViewRect, MmLayout } from "./minimap";
 import { buildSchematicScene, coneOf, hasSchematic, portLabel, SchematicScene } from "./scene";
@@ -2662,6 +2662,233 @@ function tbPropRow(label: string, control: HTMLElement): HTMLElement {
   return row;
 }
 
+/** A `<select>` bound to one agent field: options `[value, label]`, `cur` preselected. */
+function tbSelect(
+  options: readonly (readonly [string, string])[],
+  cur: string,
+  onChange: (v: string) => void
+): HTMLSelectElement {
+  const sel = h("select", "prop");
+  for (const [v, lbl] of options) {
+    const o = h("option", "", lbl);
+    o.value = v;
+    o.selected = v === cur;
+    sel.append(o);
+  }
+  sel.addEventListener("change", () => onChange(sel.value));
+  return sel;
+}
+
+/**
+ * The property editor of an agent (docs/07 line 3, P1). Until now an agent could be
+ * CREATED but never EDITED — every reactive/hybrid/replica knob meant hand-editing
+ * the YAML.
+ *
+ * The rows mirror QuickUVM's own coupling rules (schema reference §1.5), which are
+ * hard validator walls, not conventions: the responder-only keys are DISABLED on an
+ * initiator, `reorder_*` only under `respond: pipelined`, `proactive` only under
+ * `on_request`. Editing a field that would orphan another also cascades the deletion
+ * host-side (`setAgentField`), so the inspector cannot write a config that
+ * quick-uvm then refuses.
+ */
+function tbAgentEditor(agent: QuvmAgent): void {
+  const name = agent.name;
+  if (!name) {
+    return; // without a name we cannot identify it for editing
+  }
+  const send = (field: string, value: string): void =>
+    postAction("editAgent", { name, field, value });
+
+  const sampled = agent.ports?.outputs ?? []; // DUT-driven: what the agent samples
+  const driven = agent.ports?.inputs ?? []; //   what the agent drives
+  const responder = agent.mode === "responder";
+  const respond = agent.respond ?? "on_request";
+  const pipelined = responder && respond === "pipelined";
+
+  inspector.append(h("h3", "", "Agent properties"));
+
+  const activeSel = tbSelect(
+    [
+      ["true", "Active (drives + monitors)"],
+      ["false", "Passive (monitors only)"],
+    ],
+    agent.active === false ? "false" : "true",
+    (v) => send("active", v)
+  );
+  inspector.append(tbPropRow("Role", activeSel));
+
+  inspector.append(
+    tbPropRow(
+      "Seq item style",
+      tbSelect(
+        [
+          ["manual", "Manual"],
+          ["field_macros", "Field macros"],
+        ],
+        agent.seq_item_style ?? "manual",
+        (v) => send("seq_item_style", v)
+      )
+    )
+  );
+
+  // mode: switching to responder needs a request_valid (QuickUVM refuses a responder
+  // without one) — pre-pick it when the choice is unambiguous, hint otherwise
+  const oneBitSampled = sampled.filter((p: QuvmPort) => (p.width ?? 1) === 1 && p.name);
+  inspector.append(
+    tbPropRow(
+      "Mode",
+      tbSelect(
+        [
+          ["initiator", "Initiator (drives stimulus)"],
+          ["responder", "Responder (answers the DUT)"],
+        ],
+        agent.mode ?? "initiator",
+        (v) => {
+          send("mode", v);
+          if (v === "responder" && !agent.request_valid && oneBitSampled.length === 1) {
+            send("request_valid", oneBitSampled[0].name as string);
+          }
+        }
+      )
+    )
+  );
+
+  const respondSel = tbSelect(
+    [
+      ["on_request", "On request (blocking)"],
+      ["prefetch", "Prefetch"],
+      ["combinational", "Combinational"],
+      ["pipelined", "Pipelined (out-of-order)"],
+    ],
+    respond,
+    (v) => send("respond", v)
+  );
+  respondSel.disabled = !responder;
+  inspector.append(tbPropRow("Respond", respondSel));
+
+  // request_valid: a SAMPLED 1-bit port (the qualifier the DUT asserts)
+  const rvSel = tbSelect(
+    [
+      ["", "— none —"],
+      ...oneBitSampled.map((p: QuvmPort) => [p.name as string, p.name as string] as const),
+    ],
+    agent.request_valid ?? "",
+    (v) => send("request_valid", v)
+  );
+  rvSel.disabled = !responder;
+  inspector.append(tbPropRow("Request valid", rvSel));
+  if (responder && !agent.request_valid) {
+    inspector.append(
+      h(
+        "div",
+        "note",
+        oneBitSampled.length
+          ? "required: a responder needs the sampled 1-bit port that means “the DUT issued a request”"
+          : "this agent has no 1-bit sampled (output) port — a responder cannot be built without one"
+      )
+    );
+  }
+
+  // request_ready: the READY half — may be driven (slave's arready) or sampled
+  const rrSel = tbSelect(
+    [
+      ["", "— none —"],
+      ...[...sampled, ...driven]
+        .filter((p: QuvmPort) => p.name && p.name !== agent.request_valid)
+        .map((p: QuvmPort) => [p.name as string, p.name as string] as const),
+    ],
+    agent.request_ready ?? "",
+    (v) => send("request_ready", v)
+  );
+  // only the shapes whose monitor publishes the request carry it
+  rrSel.disabled = !responder || (respond !== "on_request" && respond !== "pipelined");
+  inspector.append(tbPropRow("Request ready", rrSel));
+
+  const rbSel = tbSelect(
+    [
+      ["", "— none —"],
+      ...sampled
+        .filter(
+          (p: QuvmPort) =>
+            p.name && p.name !== agent.request_valid && (p.width ?? 1) <= 31
+        )
+        .map((p: QuvmPort) => [p.name as string, p.name as string] as const),
+    ],
+    agent.reorder_by ?? "",
+    (v) => send("reorder_by", v)
+  );
+  rbSel.disabled = !pipelined;
+  inspector.append(tbPropRow("Reorder by", rbSel));
+  if (pipelined && !agent.reorder_by) {
+    inspector.append(
+      h("div", "note", "required: pipelined needs the sampled ID field keying the per-ID queues")
+    );
+  }
+
+  const rpSel = tbSelect(
+    [
+      ["priority", "Priority"],
+      ["round_robin", "Round robin"],
+      ["random", "Random"],
+    ],
+    agent.reorder_policy ?? "priority",
+    (v) => send("reorder_policy", v)
+  );
+  rpSel.disabled = !pipelined;
+  inspector.append(tbPropRow("Reorder policy", rpSel));
+
+  const proSel = tbSelect(
+    [
+      ["false", "No"],
+      ["true", "Yes (hybrid)"],
+    ],
+    agent.proactive ? "true" : "false",
+    (v) => send("proactive", v)
+  );
+  // a hybrid's un-maskable liveness is the on_request request-FIFO drain
+  proSel.disabled = !responder || respond !== "on_request";
+  inspector.append(tbPropRow("Proactive", proSel));
+
+  const repIn = h("input", "prop");
+  repIn.type = "number";
+  repIn.min = "1";
+  repIn.value = String(agent.replicas ?? 1);
+  repIn.addEventListener("change", () => send("replicas", repIn.value));
+  inspector.append(tbPropRow("Replicas", repIn));
+  if ((agent.replicas ?? 1) > 1) {
+    inspector.append(
+      h("div", "note", "replicas needs reset: {external: true} — a shared vectored DUT binds the top reset")
+    );
+  }
+
+  // clock/reset domains: only meaningful when they were DECLARED AS LISTS (M1) —
+  // a 1-element list is still multi-domain, so the gate is "is it a list?"
+  const domains = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? v
+          .map((d) => (d as { name?: string })?.name)
+          .filter((n): n is string => Boolean(n))
+      : [];
+  for (const [label, field, list, cur] of [
+    ["Clock domain", "clock", domains(state.config?.clock), agent.clock ?? ""],
+    ["Reset domain", "reset", domains(state.config?.reset), agent.reset ?? ""],
+  ] as const) {
+    if (!list.length) {
+      continue; // single-domain bench: the per-agent selector would be noise
+    }
+    inspector.append(
+      tbPropRow(
+        label,
+        tbSelect(
+          [["", "— default —"], ...list.map((d) => [d, d] as const)],
+          cur,
+          (v) => send(field, v)
+        )
+      )
+    );
+  }
+}
+
 /**
  * The property editor of a scoreboard (slice 2): source/monitor/match/
  * match_key/max_latency, inline editing in the inspector -> the editScoreboard action
@@ -2935,6 +3162,12 @@ function renderInspector(): void {
         );
         if (sb?.name) {
           tbScoreboardEditor(sb);
+        }
+      } else if (selNode.kind === "tbagent") {
+        // docs/07 line 3 (P1) — an agent can now be EDITED, not only created
+        const ag = state.config?.agents?.find((a) => a.name === selNode.label);
+        if (ag?.name) {
+          tbAgentEditor(ag);
         }
       }
       // Delete button — the SAME id->name resolution as the Delete key on the diagram

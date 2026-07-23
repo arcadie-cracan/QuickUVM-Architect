@@ -461,6 +461,90 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
+test("setAgentField: seteaza/reseteaza campuri, arunca la agent inexistent", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "cmd",
+    inputs: [{ name: "din", width: 8 }],
+    outputs: [{ name: "req", width: 1 }],
+  });
+  text = ops.setAgentField(text, "cmd", "mode", "responder");
+  text = ops.setAgentField(text, "cmd", "request_valid", "req");
+  text = ops.setAgentField(text, "cmd", "respond", "pipelined");
+  text = ops.setAgentField(text, "cmd", "reorder_by", "rid");
+  text = ops.setAgentField(text, "cmd", "reorder_policy", "round_robin");
+  let a = ops.parseQuvm(text).agents[0];
+  assert.equal(a.mode, "responder");
+  assert.equal(a.request_valid, "req");
+  assert.equal(a.respond, "pipelined");
+  assert.equal(a.reorder_by, "rid");
+  assert.equal(a.reorder_policy, "round_robin");
+  // numeric + boolean fields
+  text = ops.setAgentField(text, "cmd", "replicas", 4);
+  assert.equal(ops.parseQuvm(text).agents[0].replicas, 4);
+  // resetting to the QuickUVM default DELETES the key (canonical YAML)
+  text = ops.setAgentField(text, "cmd", "replicas", 1);
+  text = ops.setAgentField(text, "cmd", "reorder_policy", "priority");
+  a = ops.parseQuvm(text).agents[0];
+  assert.equal("replicas" in a, false, "replicas: 1 ar fi trebuit stersa");
+  assert.equal("reorder_policy" in a, false, "reorder_policy: priority ar fi trebuit stersa");
+  assert.throws(() => ops.setAgentField(text, "nope", "mode", "responder"), /nu exista/);
+});
+
+test("setAgentField: cascada mode -> initiator sterge cheile responder-only", () => {
+  // QuickUVM REFUZA fiecare din aceste chei pe un initiator ("only valid with
+  // `mode: responder`"), deci inspectorul nu are voie sa le lase in urma
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "req", width: 1 }],
+  });
+  for (const [f, v] of [
+    ["mode", "responder"], ["request_valid", "req"], ["request_ready", "rdy"],
+    ["respond", "pipelined"], ["reorder_by", "rid"], ["reorder_policy", "random"],
+  ]) {
+    text = ops.setAgentField(text, "cmd", f, v);
+  }
+  text = ops.setAgentField(text, "cmd", "mode", "initiator");
+  const a = ops.parseQuvm(text).agents[0];
+  for (const k of [
+    "mode", "respond", "request_valid", "request_ready", "reorder_by",
+    "reorder_policy", "proactive", "idle",
+  ]) {
+    assert.equal(k in a, false, `${k} a supravietuit trecerii la initiator`);
+  }
+  assert.equal(a.name, "cmd"); // agentul in rest e intact
+});
+
+test("setAgentField: cascada respond curata reorder_*/request_ready/proactive", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "req", width: 1 }],
+  });
+  text = ops.setAgentField(text, "cmd", "mode", "responder");
+  text = ops.setAgentField(text, "cmd", "request_valid", "req");
+  text = ops.setAgentField(text, "cmd", "request_ready", "rdy");
+  text = ops.setAgentField(text, "cmd", "respond", "pipelined");
+  text = ops.setAgentField(text, "cmd", "reorder_by", "rid");
+  // pipelined -> on_request: reorder_* pica ("only valid with respond: pipelined"),
+  // request_ready RAMANE (on_request publica cererea)
+  let t = ops.setAgentField(text, "cmd", "respond", "on_request");
+  let a = ops.parseQuvm(t).agents[0];
+  assert.equal("reorder_by" in a, false);
+  assert.equal("respond" in a, false, "on_request e default -> cheia se sterge");
+  assert.equal(a.request_ready, "rdy");
+  // ... -> combinational: cade si request_ready (driverul citeste cererea, nu o publica)
+  t = ops.setAgentField(text, "cmd", "respond", "combinational");
+  a = ops.parseQuvm(t).agents[0];
+  assert.equal(a.respond, "combinational");
+  assert.equal("request_ready" in a, false);
+  assert.equal("reorder_by" in a, false);
+  // proactive cere on_request: mutarea pe prefetch il sterge
+  t = ops.setAgentField(text, "cmd", "proactive", true);
+  assert.equal(ops.parseQuvm(t).agents[0].proactive, true);
+  t = ops.setAgentField(t, "cmd", "respond", "prefetch");
+  assert.equal("proactive" in ops.parseQuvm(t).agents[0], false);
+});
+
 test("setScoreboardField: seteaza/reseteaza campuri, arunca la scoreboard inexistent", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addScoreboard(text, { name: "sbd", source: "cmd" });
