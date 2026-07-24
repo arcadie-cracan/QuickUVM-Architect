@@ -268,6 +268,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           target
         );
         break;
+      case "editAgentPort":
+        void this.actions.editAgentPort(
+          args as Parameters<typeof this.actions.editAgentPort>[0],
+          target
+        );
+        break;
       case "addTest":
         void this.actions.addTest(target);
         break;

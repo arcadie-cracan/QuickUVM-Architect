@@ -3422,6 +3422,123 @@ function tbSelect(
 }
 
 /**
+ * Per-port depth on the agent inspector (docs/07 line 3, P4c): width, randomize, a
+ * constraint expression, a symbolic `enum`, and — on INOUTS — the open-drain pair.
+ *
+ * Two QuickUVM couplings shape the rows: an open-drain line is 1 bit and needs
+ * `pullup: true` (with none it floats to X the moment every driver releases, which
+ * the validator calls out as "not a style preference"), and enum/type/packed_dims/
+ * struct are exclusive type specifiers. The host op enforces both, so the disabled
+ * controls and the op cannot drift apart.
+ */
+function tbAgentPorts(agent: QuvmAgent): void {
+  const name = agent.name;
+  if (!name) {
+    return;
+  }
+  const groups: [string, QuvmPort[]][] = [
+    ["in", agent.ports?.inputs ?? []],
+    ["out", agent.ports?.outputs ?? []],
+    ["inout", (agent.ports as { inouts?: QuvmPort[] })?.inouts ?? []],
+  ];
+  if (!groups.some(([, ps]) => ps.length)) {
+    return;
+  }
+  inspector.append(h("h3", "", "Ports"));
+  for (const [kind, ports] of groups) {
+    for (const p of ports) {
+      const port = p.name;
+      if (!port) {
+        continue;
+      }
+      const send = (field: string, value: string): void =>
+        postAction("editAgentPort", { agent: name, port, field, value });
+      inspector.append(h("div", "prop-group", `${port} (${kind})`));
+
+      const wIn = h("input", "prop");
+      wIn.type = "number";
+      wIn.min = "1";
+      wIn.value = String(p.width ?? 1);
+      wIn.addEventListener("change", () => send("width", wIn.value));
+      inspector.append(tbPropRow("Width", wIn));
+
+      inspector.append(
+        tbPropRow(
+          "Randomize",
+          tbSelect(
+            [
+              ["true", "Yes"],
+              ["false", "No"],
+            ],
+            p.randomize === false ? "false" : "true",
+            (v) => send("randomize", v)
+          )
+        )
+      );
+
+      const cIn = h("input", "prop");
+      cIn.value = (p as { constraint?: string }).constraint ?? "";
+      cIn.placeholder = "e.g. op inside {[0:2]}";
+      cIn.addEventListener("change", () => send("constraint", cIn.value));
+      inspector.append(tbPropRow("Constraint", cIn));
+
+      // enum: `NAME=value, NAME=value` on one line. Black box by design — QuickUVM
+      // generates the TESTBENCH's own enum, not a reference to a DUT type.
+      const rich = p as { enum?: Record<string, number>; type?: string; packed_dims?: number[]; struct?: unknown };
+      const eIn = h("input", "prop");
+      eIn.value = Object.entries(rich.enum ?? {})
+        .map(([k, v]) => `${k}=${v}`)
+        .join(", ");
+      eIn.placeholder = "IDLE=0, BUSY=1";
+      // exclusive with the hand-written specifiers the editor does not author
+      eIn.disabled = Boolean(rich.packed_dims || rich.struct);
+      eIn.addEventListener("change", () => send("enum", eIn.value));
+      inspector.append(tbPropRow("Enum", eIn));
+      if (eIn.disabled) {
+        inspector.append(
+          h("div", "note", "this port declares packed_dims/struct — the type specifiers are exclusive")
+        );
+      }
+
+      if (kind === "inout") {
+        const odSel = tbSelect(
+          [
+            ["false", "Tri-state (drives both levels)"],
+            ["true", "Open drain"],
+          ],
+          (p as { open_drain?: boolean }).open_drain ? "true" : "false",
+          (v) => send("open_drain", v)
+        );
+        odSel.disabled = (p.width ?? 1) !== 1; // open-drain is per-line, 1 bit
+        inspector.append(tbPropRow("Drive", odSel));
+        if (odSel.disabled) {
+          inspector.append(
+            h("div", "note", "open drain is 1 bit — declare one port per line")
+          );
+        }
+        const pu = (p as { pullup?: boolean }).pullup;
+        const puSel = tbSelect(
+          [
+            ["false", "No"],
+            ["true", "Yes"],
+          ],
+          pu ? "true" : "false",
+          (v) => send("pullup", v)
+        );
+        // mandatory on open drain: without it the line floats to X on release
+        puSel.disabled = Boolean((p as { open_drain?: boolean }).open_drain);
+        inspector.append(tbPropRow("Pullup", puSel));
+        if (puSel.disabled) {
+          inspector.append(
+            h("div", "note", "an open-drain line needs the pullup — it never drives high")
+          );
+        }
+      }
+    }
+  }
+}
+
+/**
  * The property editor of an agent (docs/07 line 3, P1). Until now an agent could be
  * CREATED but never EDITED — every reactive/hybrid/replica knob meant hand-editing
  * the YAML.
@@ -3602,6 +3719,8 @@ function tbAgentEditor(agent: QuvmAgent): void {
       h("div", "note", "replicas needs reset: {external: true} — a shared vectored DUT binds the top reset")
     );
   }
+
+  tbAgentPorts(agent);
 
   // clock/reset domains: only meaningful when they were DECLARED AS LISTS (M1) —
   // a 1-element list is still multi-domain, so the gate is "is it a list?"
