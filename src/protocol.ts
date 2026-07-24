@@ -203,6 +203,10 @@ export type HostMessage =
       type: "config/full";
       configPath: string | null;
       config: QuvmConfig;
+      /** docs/07 P3c — the agents of each composed child, keyed by subenv name. A
+       *  cross-block scoreboard's endpoints are `<subenv>.<agent>`, and the child's
+       *  agents live in another file, so they cannot come from `config`. */
+      childAgents?: Record<string, string[]>;
     }
   | ({ v: 1; type: "overlay/config" } & OverlayConfig)
   | { v: 1; type: "view/show"; viewId: string; mode?: ViewMode }

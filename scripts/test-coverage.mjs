@@ -84,6 +84,18 @@ test("crossName / crossFields: both the list and the object form", () => {
   assert.deepEqual(cov.crossFields({ fields: ["a", "b"] }), ["a", "b"]);
 });
 
+test("scoreboardEndpoints: own agents, plus `<subenv>.<agent>` on a composition", () => {
+  assert.deepEqual(cov.scoreboardEndpoints(["cmd", "rsp"], {}), ["cmd", "rsp"]);
+  // a composition: the children's agents are qualified, and the order is stable
+  assert.deepEqual(
+    cov.scoreboardEndpoints(["top_cmd"], { u_b: ["din"], u_a: ["cmd", "rsp"] }),
+    ["top_cmd", "u_a.cmd", "u_a.rsp", "u_b.din"]
+  );
+  // a child that did not parse contributes nothing rather than a broken endpoint
+  assert.deepEqual(cov.scoreboardEndpoints(["cmd"], { u_a: [] }), ["cmd"]);
+  assert.deepEqual(cov.scoreboardEndpoints([undefined, "cmd"], {}), ["cmd"]);
+});
+
 test("crossBlockers: >= 2 fields, all DECLARED coverpoints, unique name", () => {
   const model = { coverpoints: [{ field: "a" }, { field: "b" }], crosses: [["a", "b"]] };
   assert.match(cov.crossBlockers(model, ["a"])[0], /at least 2/);

@@ -26,6 +26,7 @@ import {
   crossName,
   formatBinSpec,
   isRich,
+  scoreboardEndpoints,
 } from "../coverage";
 import type { QuvmAgent, QuvmConfig, QuvmPort, QuvmScoreboard } from "../quickuvm";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
@@ -60,6 +61,9 @@ interface State {
   /** the parsed configuration + its path, for the verification (TB) view (docs/05) */
   config: QuvmConfig | null;
   configPath: string | null;
+  /** docs/07 P3c — agents of each composed child, by subenv name (cross-block
+   *  scoreboard endpoints are `<subenv>.<agent>`, declared in another file) */
+  childAgents: Record<string, string[]>;
   /** the current level of the verification (TB) view (D24): "", "env", "agent:X" */
   tbFocus: string;
   // the pan/zoom transform of the view
@@ -76,6 +80,7 @@ const state: State = {
   overlay: null,
   config: null,
   configPath: null,
+  childAgents: {},
   tbFocus: "",
   tx: 0,
   ty: 0,
@@ -339,6 +344,7 @@ window.addEventListener("message", (e: MessageEvent) => {
     case "config/full":
       state.config = m.config;
       state.configPath = m.configPath;
+      state.childAgents = m.childAgents ?? {};
       if (state.mode === "tb") {
         // another active config => another view key: the positions are not written
         // under the old config's key
@@ -3761,9 +3767,20 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
   if (!name) {
     return; // without a name we cannot identify it for editing
   }
-  const agents = (state.config?.agents ?? [])
-    .map((a) => a.name)
-    .filter((n): n is string => Boolean(n));
+  // docs/07 P3c — on a COMPOSITION the endpoints also include the composed children's
+  // agents, qualified `<subenv>.<agent>`; naming one is what makes this a cross-block
+  // scoreboard. The child agents come from the host (they live in other files).
+  const agents = scoreboardEndpoints(
+    (state.config?.agents ?? []).map((a) => a.name),
+    state.childAgents
+  );
+  // a hand-written endpoint we do not know about must still be selectable, or opening
+  // the inspector would silently rewrite it to the first option
+  for (const cur of [sb.source, sb.monitor]) {
+    if (cur && !agents.includes(cur)) {
+      agents.push(cur);
+    }
+  }
   const send = (field: string, value: string): void =>
     postAction("editScoreboard", { name, field, value });
 

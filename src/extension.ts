@@ -178,6 +178,7 @@ export function activate(context: vscode.ExtensionContext): void {
         ? vscode.workspace.asRelativePath(config.configUri)
         : null,
       config: config.current,
+      childAgents: config.childAgents,
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
     getStatus: () => ({

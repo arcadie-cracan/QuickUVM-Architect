@@ -316,6 +316,18 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   Rămas pentru P3c: scoreboard-uri cross-bloc (selectorul `<subenv>.<agent>` cere
   citirea configurațiilor copil) și coada adâncă (`at_least`, `auto_bin_max`,
   `illegal_bins`/`ignore_bins`/`transitions`, selecția `binsof` a crossurilor).
+- **P3c LIVRAT — scoreboard-uri cross-bloc. P3 COMPLET.** Selectoarele de capăt
+  (source/monitor, la adăugare și în inspector) oferă acum, pe o COMPOZIȚIE, și
+  agenții blocurilor copil, calificați `<subenv>.<agent>` — exact ce face un
+  scoreboard să fie cross-bloc. Cum copiii trăiesc în ALTE fișiere, `ConfigService`
+  citește fiecare `subenvs[].config` la refresh și publică `childAgents` spre webview;
+  un copil lipsă sau neparsabil nu contribuie nimic (compoziția se editează
+  incremental, deci e o stare intermediară normală, nu o eroare). Un capăt scris de
+  mână pe care nu-l cunoaștem rămâne selectabil, altfel deschiderea inspectorului
+  l-ar rescrie tăcut la prima opțiune. Regula prinsă de e2e: **blocurile compuse
+  împart UN namespace**, deci numele de agenți trebuie unice ÎNTRE copii.
+  Rămas (coada adâncă, hand-edit): `at_least`, `auto_bin_max`,
+  `illegal_bins`/`ignore_bins`, `transitions`, selecția `binsof` a crossurilor.
 - **P3 — adâncimea de analysis** (câmpuri ieftine + un editor imbricat). Extinde
   editorul de scoreboard cu `window`, `reference_model.language` (dropdown sv/c — DOAR
   butonul, nu corpul), `max_latency`-la-add; autorare `coverage` bogat; autorare

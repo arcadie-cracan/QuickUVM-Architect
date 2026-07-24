@@ -130,6 +130,29 @@ export function crossFields(
 }
 
 /**
+ * Every endpoint a scoreboard may name (docs/07 P3c). On a LEAF bench those are the
+ * bench's own agents; on a COMPOSITION they are joined by the composed children's
+ * agents, qualified `<subenv>.<agent>` — which is what makes an
+ * `analysis.scoreboards` entry a cross-block one. Boundary agents at a subsystem top
+ * are the bench's own agents, so they are already covered by the first group.
+ *
+ * `childAgents` comes from the host (the children live in other files); a subenv
+ * whose config is missing or does not parse simply contributes nothing.
+ */
+export function scoreboardEndpoints(
+  ownAgents: readonly (string | undefined)[],
+  childAgents: Readonly<Record<string, readonly string[]>>
+): string[] {
+  const out = ownAgents.filter((n): n is string => Boolean(n));
+  for (const sub of Object.keys(childAgents).sort()) {
+    for (const agent of childAgents[sub]) {
+      out.push(`${sub}.${agent}`);
+    }
+  }
+  return out;
+}
+
+/**
  * Why a cross over `fields` cannot be added (empty = it can). Mirrors QuickUVM's
  * own rules: >= 2 fields, each one a DECLARED coverpoint, and a cross name that is
  * not already used (two crosses over the same fields need an explicit `name`,

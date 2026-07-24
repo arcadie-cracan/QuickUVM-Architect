@@ -1049,4 +1049,59 @@ endpackage
   console.log("  ok    port depth: perechea open_drain/pullup e load-bearing (fara ea: REFUZ)");
 }
 
+// --- scenario 13 (docs/07 P3c): CROSS-BLOCK scoreboards. A scoreboard whose
+// endpoints are `<subenv>.<agent>` compares two COMPOSED children — the endpoint list
+// cannot come from the top config alone, so the host reads the children.
+{
+  // composed blocks share ONE namespace, so the agent names must be unique ACROSS
+  // the children (quick-uvm: "agent name 'io' collides with another block")
+  const child = (name, agent) => {
+    let c = ops.setDut(ops.newConfigText(name), {
+      module: name, clock: "clk", reset: "rst_n",
+      resetActiveLow: true, externalReset: false, combinational: false,
+    });
+    return ops.createAgent(c, {
+      name: agent,
+      inputs: [{ name: "din", width: 8 }],
+      outputs: [{ name: "dout", width: 8 }],
+    });
+  };
+  const producer = child("producer", "prod_io");
+  // the consumer's agent must be PASSIVE: its input is driven by the wire, not by
+  // its own driver (the H1 rule the compose flow also enforces)
+  const consumer = ops.setAgentActive(child("consumer", "cons_io"), "cons_io", false);
+
+  let top = ops.setDut(ops.newConfigText("sys"), {
+    module: "sys", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: true,
+  });
+  top = ops.createSubenvs(top, [
+    { name: "p1", config: "producer.quickuvm.yaml", params: {} },
+    { name: "c1", config: "consumer.quickuvm.yaml", params: {} },
+  ]);
+  top = ops.addConnections(top, [{ from: "p1.dout", to: "c1.din" }]);
+
+  // the CROSS-BLOCK scoreboard: both endpoints are qualified `<subenv>.<agent>`
+  const xsb = ops.addScoreboard(top, { name: "xsb", source: "p1.prod_io", monitor: "c1.cons_io" });
+  const entry = ops.parseQuvm(xsb).analysis.scoreboards[0];
+  assert.equal(entry.source, "p1.prod_io");
+  assert.equal(entry.monitor, "c1.cons_io");
+  generate("cross_block_sb", xsb, ["tb_top.sv"], {
+    "producer.quickuvm.yaml": producer,
+    "consumer.quickuvm.yaml": consumer,
+  });
+  console.log("  ok    scoreboard cross-bloc: capete `<subenv>.<agent>` genereaza curat");
+
+  // the endpoint list the picker offers must match what the generator accepts: an
+  // endpoint naming an agent the child does NOT declare is REFUSED
+  const bogus = ops.addScoreboard(top, { name: "bad", source: "p1.nope", monitor: "c1.cons_io" });
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-xsb-"));
+  writeFileSync(join(dir, "sys.quickuvm.yaml"), bogus);
+  writeFileSync(join(dir, "producer.quickuvm.yaml"), producer);
+  writeFileSync(join(dir, "consumer.quickuvm.yaml"), consumer);
+  const bad = quickUvm(["generate", "-c", join(dir, "sys.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze un capat inexistent");
+  console.log("  ok    scoreboard cross-bloc: un capat nedeclarat e REFUZAT (lista e ancorata)");
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");
