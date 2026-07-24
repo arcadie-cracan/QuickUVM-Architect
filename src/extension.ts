@@ -306,6 +306,11 @@ export function activate(context: vscode.ExtensionContext): void {
             args as Parameters<typeof actions.editReset>[1]
           );
           break;
+        case "editAgentPort":
+          void actions.editAgentPort(
+            args as Parameters<typeof actions.editAgentPort>[0]
+          );
+          break;
         case "addTest":
           void actions.addTest();
           break;

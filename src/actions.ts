@@ -1046,6 +1046,82 @@ export class Actions {
   }
 
   /**
+   * Per-port depth on an agent (docs/07 P4c). `width` routes to the existing
+   * `setAgentPortWidth` (the diagram's pin gesture uses it too, so there is one
+   * width path); everything else goes through `setAgentPortField`, which enforces
+   * the open-drain/pullup pair and the exclusive type specifiers.
+   */
+  async editAgentPort(
+    args: { agent?: string; port?: string; field?: string; value?: string },
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    const agent = args.agent ?? "";
+    const port = args.port ?? "";
+    if (!cfg.configUri || !agent || !port) {
+      return;
+    }
+    const raw = args.value ?? "";
+    try {
+      if (args.field === "width") {
+        const n = Number(raw);
+        if (!Number.isInteger(n) || n < 1) {
+          return;
+        }
+        if (await cfg.apply((t) => ops.setAgentPortWidth(t, agent, port, n))) {
+          this.log.appendLine(`[actions] editAgentPort ${agent}.${port}.width = ${n}`);
+        }
+        return;
+      }
+      const fields: ops.PortField[] = [
+        "randomize",
+        "constraint",
+        "open_drain",
+        "pullup",
+        "enum",
+        "type",
+      ];
+      if (!fields.includes(args.field as ops.PortField)) {
+        return;
+      }
+      const f = args.field as ops.PortField;
+      let value: string | boolean | Record<string, number> | undefined;
+      if (f === "randomize" || f === "open_drain" || f === "pullup") {
+        value = raw === "true";
+      } else if (f === "enum") {
+        // `NAME=value, NAME=value` — the editor's one-line form for a symbolic field
+        const map: Record<string, number> = {};
+        for (const pair of raw.split(",")) {
+          const [k, v] = pair.split("=");
+          if (!k?.trim()) {
+            continue;
+          }
+          const n = Number(v?.trim());
+          if (!SV_IDENT_RE.test(k.trim()) || !Number.isInteger(n)) {
+            void vscode.window.showWarningMessage(
+              vscode.l10n.t(
+                "QuickUVM Architect: an enum is `NAME=value` pairs, e.g. IDLE=0, BUSY=1."
+              )
+            );
+            return;
+          }
+          map[k.trim()] = n;
+        }
+        value = map;
+      } else {
+        value = raw === "" ? undefined : raw;
+      }
+      if (await cfg.apply((t) => ops.setAgentPortField(t, agent, port, f, value))) {
+        this.log.appendLine(`[actions] editAgentPort ${agent}.${port}.${f} = ${raw || "(reset)"}`);
+      }
+    } catch (e) {
+      // the open-drain/pullup pair and the exclusive specifiers are reported, not written
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
+
+  /**
    * Reset-domain authoring (docs/07 P4b). Mirrors `editClock`, with the two extra
    * invariants resets carry: under a LIST `dut.reset` names a declared DOMAIN, and
    * the single mapping's `external` flag has no list equivalent — the ops refuse the

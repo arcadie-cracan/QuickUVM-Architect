@@ -61,6 +61,7 @@ export type ActionKind =
   | "editCoverage"
   | "editClock"
   | "editReset"
+  | "editAgentPort"
   | "addTest"
   | "removeTest"
   | "editTest"

@@ -980,6 +980,137 @@ export function setTestField(
   throw new Error(`testul „${name}" nu exista in configuratie`);
 }
 
+// ---------------------------------------- agent port depth (docs/07 line 3, P4c)
+
+/** The port fields the inspector edits. `width` keeps its own op
+ *  (`setAgentPortWidth`), which the diagram's pin gesture also uses. */
+export type PortField =
+  | "randomize"
+  | "constraint"
+  | "open_drain"
+  | "pullup"
+  | "enum"
+  | "type";
+
+/** Locate a port on an agent, in whichever list it lives. */
+function findPort(
+  doc: Document,
+  agent: string,
+  port: string
+): { map: YAMLMap; kind: "inputs" | "outputs" | "inouts" } | null {
+  const agents = doc.getIn(["agents"]);
+  if (!isSeq(agents)) {
+    return null;
+  }
+  for (const a of agents.items) {
+    if (!isMap(a) || a.get("name") !== agent) {
+      continue;
+    }
+    for (const kind of ["inputs", "outputs", "inouts"] as const) {
+      const list = doc.getIn(["agents", agents.items.indexOf(a), "ports", kind]);
+      if (!isSeq(list)) {
+        continue;
+      }
+      for (const p of list.items) {
+        if (isMap(p) && p.get("name") === port) {
+          return { map: p, kind };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Edits one field of an agent port; a default value deletes the key.
+ *
+ * Two QuickUVM couplings are enforced here rather than at generate time:
+ *   - an OPEN-DRAIN line needs `pullup: true`. With no pullup it floats to X the
+ *     moment every driver releases, and every downstream sample is poisoned — the
+ *     validator calls this out as "not a style preference". So enabling open_drain
+ *     turns the pullup on with it, and taking the pullup off an open-drain port is
+ *     refused.
+ *   - `enum` / `type` / `packed_dims` / `struct` are EXCLUSIVE type specifiers, so
+ *     setting one clears the others the editor authors (enum/type). packed_dims and
+ *     struct are hand-written and are refused rather than silently dropped.
+ */
+export function setAgentPortField(
+  text: string,
+  agent: string,
+  port: string,
+  field: PortField,
+  value: string | boolean | Record<string, number> | undefined
+): string {
+  const doc = parse(text);
+  const found = findPort(doc, agent, port);
+  if (!found) {
+    throw new Error(`portul „${port}" nu exista pe agentul „${agent}"`);
+  }
+  const p = found.map;
+  const empty =
+    value === undefined ||
+    value === "" ||
+    (typeof value === "object" && Object.keys(value).length === 0);
+
+  if (field === "open_drain") {
+    if (value === true) {
+      if ((p.get("width") ?? 1) !== 1) {
+        throw new Error(
+          `portul „${port}" e open-drain doar pe 1 bit — per-bit pe un vector cere un generate loop, declara cate un port pe linie`
+        );
+      }
+      p.set("open_drain", true);
+      p.set("pullup", true); // an open-drain line with no pullup floats to X
+    } else {
+      p.delete("open_drain");
+      p.delete("pullup");
+    }
+    return doc.toString(TO_STRING);
+  }
+  if (field === "pullup") {
+    if (value !== true && p.get("open_drain") === true) {
+      throw new Error(
+        `portul „${port}" e open-drain: fara pullup linia pluteste in X cand toti elibereaza — pullup-ul nu e optional aici`
+      );
+    }
+    if (value === true) {
+      p.set("pullup", true);
+    } else {
+      p.delete("pullup");
+    }
+    return doc.toString(TO_STRING);
+  }
+  if (field === "enum" || field === "type") {
+    for (const hand of ["packed_dims", "struct"] as const) {
+      if (p.get(hand) !== undefined && !empty) {
+        throw new Error(
+          `portul „${port}" are deja \`${hand}\` — enum/type/packed_dims/struct sunt exclusive; scoate-l intai din YAML`
+        );
+      }
+    }
+    if (empty) {
+      p.delete(field);
+    } else {
+      p.delete(field === "enum" ? "type" : "enum"); // exclusive specifiers
+      if (field === "enum") {
+        const node = doc.createNode(value) as YAMLMap;
+        node.flow = true; // `enum: { IDLE: 0, BUSY: 1 }`
+        p.set("enum", node);
+      } else {
+        p.set("type", value);
+      }
+    }
+    return doc.toString(TO_STRING);
+  }
+  // randomize defaults to true; constraint has no default
+  if (empty || (field === "randomize" && value === true)) {
+    p.delete(field);
+  } else {
+    p.set(field, value);
+  }
+  return doc.toString(TO_STRING);
+}
+
 // -------------------------------------- multi-clock domains (docs/07 line 3, P4)
 
 /**

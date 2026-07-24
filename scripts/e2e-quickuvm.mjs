@@ -995,4 +995,58 @@ endpackage
   generate("reset_collapsed", one, ["tb_top.sv"]);
 }
 
+// --- scenario 12 (docs/07 P4c): PORT DEPTH — the open-drain pair and the symbolic
+// enum. An I2C-style bidirectional line is the real case: QuickUVM refuses open drain
+// without a pullup, because the line floats to X the moment every driver releases.
+{
+  let t = ops.setDut(ops.newConfigText("i2c"), {
+    module: "i2c", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "bus",
+    inputs: [{ name: "op", width: 2 }],
+    outputs: [],
+    inouts: [{ name: "sda", width: 1 }],
+  });
+
+  // open drain pulls the pullup along, and a symbolic enum on a driven field
+  let od = ops.setAgentPortField(t, "bus", "sda", "open_drain", true);
+  od = ops.setAgentPortField(od, "bus", "op", "enum", { READ: 0, WRITE: 1, STOP: 2 });
+  od = ops.setAgentPortField(od, "bus", "op", "constraint", "op != 3");
+  const cfgOd = ops.parseQuvm(od).agents[0].ports;
+  assert.equal(cfgOd.inouts[0].open_drain, true);
+  assert.equal(cfgOd.inouts[0].pullup, true);
+  const dirOd = generate("port_depth", od, ["bus_if.sv", "bus_seq_item.svh"]);
+
+  // the open-drain resolution and the TB's OWN enum really reach the generated code
+  const iface = readFileSync(
+    listFiles(join(dirOd, "tb")).find((f) => basename(f) === "bus_if.sv"), "utf8"
+  );
+  assert.match(iface, /1'bz/, `interfata nu are rezolutia open-drain:\n${iface}`);
+  const item = readFileSync(
+    listFiles(join(dirOd, "tb")).find((f) => basename(f) === "bus_seq_item.svh"), "utf8"
+  );
+  for (const needle of ["READ", "WRITE", "STOP"]) {
+    assert.ok(item.includes(needle), `enum-ul nu a ajuns in seq_item: ${needle}`);
+  }
+  console.log("  ok    port depth: open-drain (1'bz) + enum simbolic ajung in cod");
+
+  // THE PULLUP PAIRING IS LOAD-BEARING. Mutation: the same config with the pullup
+  // stripped is REFUSED — the op refuses it at the source for the same reason.
+  assert.throws(() => ops.setAgentPortField(od, "bus", "sda", "pullup", false), /pluteste/);
+  const noPullup = od.replace(/, pullup: true/, "");
+  assert.notEqual(noPullup, od, "mutatia (pullup scos) nu s-a aplicat");
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-od-"));
+  writeFileSync(join(dir, "m.quickuvm.yaml"), noPullup);
+  const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze open-drain fara pullup");
+  assert.match(
+    (bad.stdout ?? "") + (bad.stderr ?? ""),
+    /needs `pullup: true`|floats to X/s,
+    "alt motiv de esec decat open-drain-fara-pullup"
+  );
+  console.log("  ok    port depth: perechea open_drain/pullup e load-bearing (fara ea: REFUZ)");
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

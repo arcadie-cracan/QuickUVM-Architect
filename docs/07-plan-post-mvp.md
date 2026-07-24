@@ -348,6 +348,17 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   `active_low: false`, adică abaterea cerută.
   Rămas pentru P4c: `open_drain`/`pullup` pe inouts și tipuri de port bogate
   (enum/struct/packed_dims).
+- **P4c LIVRAT — adâncimea de porturi. P4 COMPLET.** Inspectorul de agent capătă un
+  bloc „Ports" per port: `width` (rutat prin `setAgentPortWidth`, aceeași cale cu
+  gestul de pin din diagramă), `randomize`, `constraint`, `enum` simbolic
+  (mini-sintaxă `NAME=valoare, …`) și, pe INOUTS, perechea open-drain. Cuplările
+  impuse la sursă, nu la generare: (a) `open_drain: true` **aprinde și `pullup: true`**
+  și nu-l lasă scos — o linie open-drain nu conduce niciodată 1, deci fără pullup
+  plutește în X din clipa în care toți eliberează („not a style preference" zice chiar
+  validatorul); (b) open-drain doar pe 1 bit; (c) `enum`/`type`/`packed_dims`/`struct`
+  sunt EXCLUSIVE — setarea uneia o scoate pe cealaltă autorată, iar peste
+  `packed_dims`/`struct` scrise de mână se REFUZĂ în loc să se piardă tăcut.
+  e2e-ul citește codul generat: `1'bz` în interfață și numele simbolice în seq_item.
 - **P4 — adâncimea de porturi & ceasuri** (mediu-scump; atinge gestul de pini +
   geometrie). Deblocare inouts (`actions.ts:218`) cu `open_drain`/`pullup`; tipuri de
   port bogate; inspector clock/reset independent de setDut; autorare liste

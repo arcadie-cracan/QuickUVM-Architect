@@ -461,6 +461,62 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
+test("setAgentPortField: open_drain trage pullup-ul dupa el si nu-l lasa scos", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "i2c", inputs: [], outputs: [], inouts: [{ name: "sda", width: 1 }, { name: "bus", width: 4 }],
+  });
+  // open_drain: true aprinde SI pullup-ul — o linie open-drain fara pullup pluteste
+  // in X cand toti elibereaza (validatorul QuickUVM: „not a style preference")
+  text = ops.setAgentPortField(text, "i2c", "sda", "open_drain", true);
+  let p = ops.parseQuvm(text).agents[0].ports.inouts[0];
+  assert.equal(p.open_drain, true);
+  assert.equal(p.pullup, true, "pullup-ul trebuie sa vina cu open_drain");
+  // scoaterea pullup-ului de pe un port open-drain e REFUZATA
+  assert.throws(() => ops.setAgentPortField(text, "i2c", "sda", "pullup", false), /pluteste/);
+  // open_drain doar pe 1 bit
+  assert.throws(
+    () => ops.setAgentPortField(text, "i2c", "bus", "open_drain", true),
+    /1 bit/
+  );
+  // stingerea lui open_drain ia si pullup-ul
+  text = ops.setAgentPortField(text, "i2c", "sda", "open_drain", false);
+  p = ops.parseQuvm(text).agents[0].ports.inouts[0];
+  assert.equal("open_drain" in p, false);
+  assert.equal("pullup" in p, false);
+  assert.throws(() => ops.setAgentPortField(text, "i2c", "nope", "pullup", true), /nu exista/);
+});
+
+test("setAgentPortField: enum/type sunt EXCLUSIVE; randomize/constraint", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "cmd", inputs: [{ name: "op", width: 2 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  text = ops.setAgentPortField(text, "cmd", "op", "enum", { IDLE: 0, BUSY: 1 });
+  assert.deepEqual(ops.parseQuvm(text).agents[0].ports.inputs[0].enum, { IDLE: 0, BUSY: 1 });
+  assert.ok(/enum: \{ IDLE: 0, BUSY: 1 \}/.test(text), `enum nu e flow:\n${text}`);
+  // setarea lui `type` scoate `enum` (specificatoare exclusive)
+  text = ops.setAgentPortField(text, "cmd", "op", "type", "pkg::op_e");
+  let p = ops.parseQuvm(text).agents[0].ports.inputs[0];
+  assert.equal(p.type, "pkg::op_e");
+  assert.equal("enum" in p, false, "enum ar fi trebuit scos de type");
+  text = ops.setAgentPortField(text, "cmd", "op", "type", "");
+  assert.equal("type" in ops.parseQuvm(text).agents[0].ports.inputs[0], false);
+
+  // `packed_dims` scris de mana nu se pierde tacit: setarea lui enum e REFUZATA
+  const hand = text.replace(/\{ name: op, width: 2 \}/, "{ name: op, width: 2, packed_dims: [2, 4] }");
+  assert.notEqual(hand, text, "fixture-ul packed_dims nu s-a aplicat");
+  assert.throws(() => ops.setAgentPortField(hand, "cmd", "op", "enum", { A: 0 }), /exclusive/);
+
+  // randomize: true e default -> cheia dispare; constraint se scrie verbatim
+  text = ops.setAgentPortField(text, "cmd", "op", "randomize", false);
+  assert.equal(ops.parseQuvm(text).agents[0].ports.inputs[0].randomize, false);
+  text = ops.setAgentPortField(text, "cmd", "op", "randomize", true);
+  assert.equal("randomize" in ops.parseQuvm(text).agents[0].ports.inputs[0], false);
+  text = ops.setAgentPortField(text, "cmd", "op", "constraint", "op inside {[0:2]}");
+  assert.equal(ops.parseQuvm(text).agents[0].ports.inputs[0].constraint, "op inside {[0:2]}");
+});
+
 test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   // newConfigText scrie clock: {period, unit} (o MAPARE)
