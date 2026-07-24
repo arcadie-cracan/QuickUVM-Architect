@@ -300,6 +300,12 @@ export function activate(context: vscode.ExtensionContext): void {
             args as Parameters<typeof actions.editClock>[1]
           );
           break;
+        case "editReset":
+          void actions.editReset(
+            typeof args.op === "string" ? args.op : "",
+            args as Parameters<typeof actions.editReset>[1]
+          );
+          break;
         case "addTest":
           void actions.addTest();
           break;

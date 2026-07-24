@@ -508,6 +508,69 @@ test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () =
   assert.throws(() => ops.collapseClocks(twoAgain), /exact un domeniu/);
 });
 
+test("reset domains: conversie, invariantul dut.reset, redenumire in cascada", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, { name: "a", inputs: [{ name: "din", width: 8 }], outputs: [] });
+
+  // primul add converteste in lista; primul domeniu poarta NUMELE portului dut.reset,
+  // ca `dut.reset` (care sub lista numeste un DOMENIU) sa ramana valid
+  text = ops.addResetDomain(text, "srst_n");
+  let cfg = ops.parseQuvm(text);
+  assert.deepEqual(cfg.reset.map((d) => d.name), ["rst_n", "srst_n"]);
+  assert.equal(cfg.dut.reset, "rst_n");
+  assert.throws(() => ops.addResetDomain(text, "srst_n"), /exista deja/);
+
+  // REDENUMIRE in cascada: dut.reset si agentii legati de domeniu il urmeaza
+  const bound = ops.setAgentField(text, "a", "reset", "srst_n");
+  const renamed = ops.setResetDomainField(bound, "srst_n", "name", "sync_rst_n");
+  cfg = ops.parseQuvm(renamed);
+  assert.deepEqual(cfg.reset.map((d) => d.name), ["rst_n", "sync_rst_n"]);
+  assert.equal(cfg.agents[0].reset, "sync_rst_n", "agentul nu a urmat redenumirea");
+  const renamedDut = ops.setResetDomainField(bound, "rst_n", "name", "por_n");
+  assert.equal(ops.parseQuvm(renamedDut).dut.reset, "por_n", "dut.reset nu a urmat redenumirea");
+
+  // DEFAULTUL E PER CAMP: active_low e implicit TRUE, external implicit FALSE. Un
+  // singur test „valoare falsy => default" ar sterge exact `active_low: false`,
+  // adica abaterea ceruta de utilizator.
+  text = ops.setResetDomainField(text, "srst_n", "active_low", false);
+  assert.equal(ops.parseQuvm(text).reset[1].active_low, false,
+    "active_low: false e o ABATERE, nu un default — trebuie scrisa");
+  text = ops.setResetDomainField(text, "srst_n", "active_low", true);
+  assert.equal("active_low" in ops.parseQuvm(text).reset[1], false);
+  // pe maparea simpla, external: false e defaultul si dispare
+  let single = ops.setDut(ops.newConfigText("s"), DUT);
+  single = ops.setResetDomainField(single, "rst_n", "external", true);
+  assert.equal(ops.parseQuvm(single).reset.external, true);
+  single = ops.setResetDomainField(single, "rst_n", "external", false);
+  assert.equal(ops.parseQuvm(single).reset, undefined, "maparea golita ar fi trebuit stearsa");
+
+  // stergere: blocata de dut.reset, de un agent, si pe ultimul domeniu
+  assert.throws(() => ops.removeResetDomain(text, "rst_n"), /dut\.reset/);
+  assert.throws(() => ops.removeResetDomain(bound, "srst_n"), /folosit de/);
+  text = ops.removeResetDomain(text, "srst_n");
+  assert.deepEqual(ops.parseQuvm(text).reset.map((d) => d.name), ["rst_n"]);
+  assert.throws(() => ops.removeResetDomain(text, "rst_n"), /singurul domeniu/);
+
+  // colapsare: numele redevine PORTUL dut.reset, iar `reset:` de pe agenti dispare
+  const collapsed = ops.collapseResets(ops.setAgentField(text, "a", "reset", "rst_n"));
+  assert.equal(Array.isArray(ops.parseQuvm(collapsed).reset), false);
+  assert.equal(ops.parseQuvm(collapsed).dut.reset, "rst_n");
+  assert.equal("reset" in ops.parseQuvm(collapsed).agents[0], false,
+    "`reset:` de pe agent nu are sens fara lista de domenii");
+});
+
+test("reset domains: `external: true` REFUZA conversia (lista nu are cheia)", () => {
+  // schema listei de reset e {name, active_low, clock} — fara `external`. O conversie
+  // tacuta ar pierde faptul ca TB-ul NU conduce resetul.
+  let text = ops.setDut(ops.newConfigText("s"), { ...DUT, externalReset: true });
+  assert.equal(ops.parseQuvm(text).reset.external, true);
+  assert.throws(() => ops.addResetDomain(text, "srst_n"), /external/);
+  // scoasa externalitatea, conversia trece
+  text = ops.setDut(text, { ...DUT, externalReset: false });
+  assert.deepEqual(ops.parseQuvm(ops.addResetDomain(text, "srst_n")).reset.map((d) => d.name),
+    ["rst_n", "srst_n"]);
+});
+
 test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {

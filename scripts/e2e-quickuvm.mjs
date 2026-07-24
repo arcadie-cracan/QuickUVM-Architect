@@ -937,4 +937,62 @@ endpackage
   generate("clock_collapsed", one, ["clkgen.sv"]);
 }
 
+// --- scenario 11 (docs/07 P4b): MULTI-RESET domains. Resets carry two invariants
+// clocks do not — under a LIST `dut.reset` names a declared DOMAIN, and a domain's
+// `clock:` gate must name a declared clock — so the generator is the judge again.
+{
+  let t = ops.setDut(ops.newConfigText("mr"), {
+    module: "mr", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "core", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  t = ops.createAgent(t, {
+    name: "wr", inputs: [{ name: "wdat", width: 8 }], outputs: [] });
+
+  // two reset domains, the second gating the `wr` agent and clocked by a second clock
+  let mr = ops.addClockDomain(t, "wclk");
+  mr = ops.addResetDomain(mr, "wrst_n");
+  mr = ops.setResetDomainField(mr, "wrst_n", "clock", "wclk");
+  mr = ops.setAgentField(mr, "wr", "clock", "wclk");
+  mr = ops.setAgentField(mr, "wr", "reset", "wrst_n");
+  const cfgMr = ops.parseQuvm(mr);
+  assert.deepEqual(cfgMr.reset.map((d) => d.name), ["rst_n", "wrst_n"]);
+  assert.equal(cfgMr.dut.reset, "rst_n", "dut.reset trebuie sa numeasca un domeniu declarat");
+  generate("multireset", mr, ["tb_top.sv", "clkgen.sv"]);
+  console.log("  ok    multi-reset: doua domenii + poarta de ceas genereaza curat");
+
+  // THE RENAME CASCADE IS LOAD-BEARING. `dut.reset` and every agent gated by a domain
+  // must name a DECLARED domain, so a rename has to carry them along.
+  const renamed = ops.setResetDomainField(mr, "wrst_n", "name", "wr_rst_n");
+  assert.equal(ops.parseQuvm(renamed).agents[1].reset, "wr_rst_n");
+  generate("multireset_renamed", renamed, ["tb_top.sv"]);
+
+  // mutation: rename the domain WITHOUT carrying the agent binding -> REFUSED
+  const orphan = mr.replace(/\{ name: wrst_n([^}]*)\}/, "{ name: wr_rst_n$1}");
+  assert.notEqual(orphan, mr, "mutatia (redenumire fara cascada) nu s-a aplicat");
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-mr-"));
+  writeFileSync(join(dir, "m.quickuvm.yaml"), orphan);
+  const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze resetul necunoscut");
+  assert.match(
+    (bad.stdout ?? "") + (bad.stderr ?? ""),
+    /not a declared reset|dut\.reset/s,
+    "alt motiv de esec decat domeniul de reset nedeclarat"
+  );
+  console.log("  ok    multi-reset: cascada de redenumire e load-bearing (fara ea: REFUZ)");
+
+  // collapse back: dut.reset becomes a PORT name again and agent `reset:` disappears.
+  // The domain is in use, so it must be unbound first — the op refuses otherwise,
+  // which is the guard doing its job.
+  assert.throws(() => ops.removeResetDomain(renamed, "wr_rst_n"), /folosit de/);
+  let one = ops.setAgentField(renamed, "wr", "reset", "");
+  one = ops.removeResetDomain(one, "wr_rst_n");
+  one = ops.collapseResets(one);
+  assert.equal(Array.isArray(ops.parseQuvm(one).reset), false);
+  assert.equal(ops.parseQuvm(one).dut.reset, "rst_n");
+  generate("reset_collapsed", one, ["tb_top.sv"]);
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");
