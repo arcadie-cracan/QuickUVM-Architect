@@ -3428,6 +3428,48 @@ function tbSelect(
 }
 
 /**
+ * The subenv property editor (docs/07 line 3, P5): per-instance class NAMESPACING.
+ *
+ * The default (`namespace` absent) is AUTO, and it is the interesting one: QuickUVM
+ * prefixes an instance's class names only when the SAME `config` path is composed
+ * twice or more, so a block used once stays byte-identical. Forcing it on/off is for
+ * the cases auto cannot see — and `false` means a genuine collision fails closed
+ * rather than being silently renamed.
+ */
+function tbSubenvEditor(name: string): void {
+  const sub = (state.config?.subenvs ?? []).find((s) => s.name === name);
+  if (!sub) {
+    return;
+  }
+  const shared =
+    (state.config?.subenvs ?? []).filter((s) => s.config === sub.config).length > 1;
+  const ns = sub.namespace;
+  const cur =
+    ns === undefined ? "auto" : ns === true ? "on" : ns === false ? "off" : "custom";
+  inspector.append(h("h3", "", "Subenv properties"));
+  inspector.append(
+    tbPropRow(
+      "Namespace",
+      tbSelect(
+        [
+          ["auto", `Auto (${shared ? "prefixed: config reused" : "no prefix: used once"})`],
+          ["on", "Force (prefix = subenv name)"],
+          ["custom", typeof ns === "string" ? `Custom: ${ns}` : "Custom prefix…"],
+          ["off", "Off (a collision then fails)"],
+        ],
+        cur,
+        (v) => postAction("editSubenvNamespace", { subenv: name, mode: v })
+      )
+    )
+  );
+  if (ns === false) {
+    inspector.append(
+      h("div", "note", "namespacing is off — a genuine class-name collision will fail the generate")
+    );
+  }
+}
+
+/**
  * Per-port depth on the agent inspector (docs/07 line 3, P4c): width, randomize, a
  * constraint expression, a symbolic `enum`, and — on INOUTS — the open-drain pair.
  *
@@ -4083,6 +4125,9 @@ function renderInspector(): void {
         if (sb?.name) {
           tbScoreboardEditor(sb);
         }
+      } else if (selNode.kind === "tbsubenv") {
+        // docs/07 P5 — per-instance class namespacing (H1 reuse)
+        tbSubenvEditor(selNode.label);
       } else if (selNode.kind === "tbcov") {
         // docs/07 P3b — the rich coverage model behind this collector
         const covAgent = selNode.id.startsWith("cov:")
@@ -4165,7 +4210,11 @@ function renderInspector(): void {
         true
       ),
       button("Virtual sequence", hasActive,
-        () => postAction("addVirtualSequence", {}), true)
+        () => postAction("addVirtualSequence", {}), true),
+      // docs/07 P5 — consume an agent BY REFERENCE from a generated VIP (F2'):
+      // its source is never regenerated, the VIP's filelist is chained instead
+      button("VIP agent (by reference)…", true,
+        () => postAction("addVipAgent", {}), true)
     );
     // docs/07 P2 — bench-level settings (RAL + regression): not tied to a selection
     if (state.config) {

@@ -4,7 +4,7 @@
 // Requires quick-uvm installed (or importable via python): npm run test:e2e
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
@@ -1102,6 +1102,67 @@ endpackage
   const bad = quickUvm(["generate", "-c", join(dir, "sys.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
   assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze un capat inexistent");
   console.log("  ok    scoreboard cross-bloc: un capat nedeclarat e REFUZAT (lista e ancorata)");
+}
+
+// --- scenario 14 (docs/07 P5): COMPOSITION & VIP. A VIP is generated first, then a
+// bench consumes one of its agents BY REFERENCE — the agent's source is never
+// regenerated, the VIP's package filelist is chained instead.
+{
+  // 1. the VIP: packaged layout, kind: vip, no bench-layer sections
+  let vip = ops.setDut(ops.newConfigText("iovip"), {
+    module: "iovip", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  vip = ops.createAgent(vip, {
+    name: "io", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  vip = ops.setBenchField(vip, "layout", "packaged");
+  vip = ops.setBenchField(vip, "kind", "vip");
+  for (const tname of ops.parseQuvm(vip).tests.map((x) => x.name)) {
+    vip = ops.removeTest(vip, tname); // a declared test list is fenced on a vip
+  }
+  const vipDir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-vip-"));
+  writeFileSync(join(vipDir, "iovip.quickuvm.yaml"), vip);
+  const rv = quickUvm(["generate", "-c", join(vipDir, "iovip.quickuvm.yaml"), "-o", join(vipDir, "gen")], vipDir);
+  assert.equal(rv.status, 0, `generarea VIP-ului a esuat:\n${(rv.stdout ?? "") + (rv.stderr ?? "")}`);
+  const manifest = listFiles(join(vipDir, "gen")).find((f) => f.endsWith(".qvip"));
+  assert.ok(manifest, "VIP-ul nu a emis un manifest .qvip");
+  console.log("  ok    VIP: kind: vip emite manifestul .qvip");
+
+  // 2. the consuming bench: `{name, from_vip}` with the path RELATIVE to the config
+  let bench = ops.setDut(ops.newConfigText("user"), {
+    module: "user", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  // addVipAgent also switches the bench to `layout: packaged` — consuming by
+  // reference requires it, and quick-uvm refuses otherwise
+  bench = ops.addVipAgent(bench, "io", "vip/gen/" + basename(manifest));
+  assert.equal(ops.parseQuvm(bench).layout, "packaged");
+  const benchDir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-vipuser-"));
+  cpSync(vipDir, join(benchDir, "vip"), { recursive: true });
+  writeFileSync(join(benchDir, "user.quickuvm.yaml"), bench);
+  const rb = quickUvm(["generate", "-c", join(benchDir, "user.quickuvm.yaml"), "-o", join(benchDir, "tb")], benchDir);
+  assert.equal(rb.status, 0, `bench-ul consumator a esuat:\n${(rb.stdout ?? "") + (rb.stderr ?? "")}`);
+
+  // the referenced agent's SOURCE is not regenerated — only the wiring is
+  const emitted = listFiles(join(benchDir, "tb")).map((f) => basename(f));
+  assert.ok(!emitted.includes("io_driver.svh"),
+    `sursa agentului referit ar fi trebuit SARITA, dar s-a generat: ${emitted}`);
+  assert.ok(emitted.includes("tb_top.sv"), "bench-ul consumator nu a generat un top");
+  console.log("  ok    VIP: consum prin referinta (sursa agentului NU se regenereaza)");
+
+  // a reference entry carries ONLY name + from_vip — anything else is refused
+  const bloated = bench.replace(/\{ name: io, from_vip: ([^}]*)\}/, "{ name: io, from_vip: $1, active: false }");
+  assert.notEqual(bloated, bench, "mutatia (cheie in plus pe referinta) nu s-a aplicat");
+  writeFileSync(join(benchDir, "bad.quickuvm.yaml"), bloated);
+  const bad = quickUvm(["generate", "-c", join(benchDir, "bad.quickuvm.yaml"), "-o", join(benchDir, "tb2")], benchDir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze o referinta cu chei in plus");
+  assert.match(
+    (bad.stdout ?? "") + (bad.stderr ?? ""),
+    /reference entry carries only/s,
+    "alt motiv de esec decat referinta imbogatita"
+  );
+  console.log("  ok    VIP: referinta poarta DOAR name + from_vip (restul: REFUZ)");
 }
 
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

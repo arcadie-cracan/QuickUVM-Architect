@@ -312,6 +312,15 @@ export function activate(context: vscode.ExtensionContext): void {
             args as Parameters<typeof actions.editAgentPort>[0]
           );
           break;
+        case "addVipAgent":
+          void actions.addVipAgent();
+          break;
+        case "editSubenvNamespace":
+          void actions.editSubenvNamespace(
+            typeof args.subenv === "string" ? args.subenv : "",
+            typeof args.mode === "string" ? args.mode : ""
+          );
+          break;
         case "addTest":
           void actions.addTest();
           break;

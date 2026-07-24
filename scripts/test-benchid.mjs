@@ -65,6 +65,20 @@ test("layoutBlockers: agent `instances` (C3) pin the layout to flat", () => {
   assert.match(layoutBlockers(c3, "packaged")[0], /ch/); // names the offending agent
 });
 
+test("layoutBlockers: a `from_vip` agent pins the layout to packaged", () => {
+  // consuming an agent by reference means the VIP is an external PACKAGE; flat folds
+  // everything into one tb_pkg and has nothing to chain
+  const consumer = bench({
+    layout: "packaged",
+    agents: [{ name: "io", from_vip: "../vip/gen/io.qvip" }],
+  });
+  assert.deepEqual(layoutBlockers(consumer, "packaged"), []);
+  const why = layoutBlockers(consumer, "flat");
+  assert.equal(why.length, 1);
+  assert.match(why[0], /from_vip.*packaged/s);
+  assert.match(why[0], /io/); // names the offending agent
+});
+
 test("kindBlockers: `bench` is always available; vip/selftest need packaged", () => {
   assert.deepEqual(kindBlockers(bench({ kind: "vip" }), "bench"), []);
   assert.match(kindBlockers(bench(), "vip")[0], /layout: packaged/);

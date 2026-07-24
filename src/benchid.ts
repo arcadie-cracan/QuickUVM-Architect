@@ -28,6 +28,15 @@ export function layoutBlockers(
     if (kind !== "bench") {
       out.push(`\`kind: ${kind}\` requires the packaged layout (flat has no package to reuse)`);
     }
+    // an agent CONSUMED BY REFERENCE is an external package: flat has nothing to chain
+    const refs = (cfg.agents ?? [])
+      .filter((a) => a.from_vip && a.name)
+      .map((a) => a.name as string);
+    if (refs.length) {
+      out.push(
+        `\`from_vip\` agents require the packaged layout (${refs.join(", ")}) — the referenced VIP is an external package`
+      );
+    }
   } else {
     const withInstances = (cfg.agents ?? [])
       .filter((a) => a.instances?.length && a.name)

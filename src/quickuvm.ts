@@ -42,6 +42,9 @@ export interface QuvmAgent {
   reset?: string;
   /** C3 per-instance parameter overrides; they pin the bench to `layout: flat` */
   instances?: { name?: string }[];
+  /** F2' — this agent is CONSUMED BY REFERENCE from a generated VIP: the entry
+   *  carries only `name` + `from_vip`, and the bench must be `layout: packaged` */
+  from_vip?: string;
 }
 
 export interface QuvmDut {

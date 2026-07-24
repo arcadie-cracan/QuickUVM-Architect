@@ -980,6 +980,75 @@ export function setTestField(
   throw new Error(`testul „${name}" nu exista in configuratie`);
 }
 
+// ------------------------------------- composition & VIP (docs/07 line 3, P5)
+
+/**
+ * Adds an agent CONSUMED BY REFERENCE from a separately generated VIP (F2'):
+ * `{name, from_vip: <path to the .qvip manifest>}`. QuickUVM resolves the manifest
+ * relative to the consuming config, reconstructs the agent, and chains the VIP's
+ * package filelist with `-F` instead of regenerating its source.
+ *
+ * A reference entry carries ONLY those two keys — the agent's configuration comes
+ * from the manifest, so anything else is rejected. Consuming one also requires
+ * `layout: packaged`, which this sets. Throws on a duplicate agent name.
+ */
+export function addVipAgent(text: string, name: string, manifest: string): string {
+  const doc = parse(text);
+  // Consuming by reference needs the packaged layout — the referenced VIP IS an
+  // external package, and flat folds everything into one tb_pkg with nothing to
+  // chain. `createSubenvs` sets it the same way rather than failing at generate.
+  if (doc.getIn(["layout"]) !== "packaged") {
+    doc.setIn(["layout"], "packaged");
+  }
+  const existing = doc.getIn(["agents"]);
+  if (isSeq(existing)) {
+    for (const item of existing.items) {
+      if (isMap(item) && item.get("name") === name) {
+        throw new Error(`agentul „${name}" exista deja in configuratie`);
+      }
+    }
+  }
+  const node = doc.createNode({ name, from_vip: manifest }) as YAMLMap;
+  node.flow = true; // one line: `- { name: io, from_vip: ../vip/io.qvip }`
+  const seq = isSeq(existing) ? existing : (doc.createNode([]) as YAMLSeq);
+  seq.add(node);
+  if (!isSeq(existing)) {
+    doc.setIn(["agents"], seq);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Sets a subenv's `namespace` (H1 per-instance class prefixing).
+ *
+ * The default (the key ABSENT) is auto: QuickUVM prefixes an instance's classes only
+ * when the same `config` path is composed twice or more, so a block used once stays
+ * byte-identical. `true` forces the subenv name as prefix, a string forces a custom
+ * one, and `false` disables it — after which a genuine collision fails closed. Passing
+ * `undefined` restores the auto default by deleting the key.
+ */
+export function setSubenvNamespace(
+  text: string,
+  subenv: string,
+  value: boolean | string | undefined
+): string {
+  const doc = parse(text);
+  const seq = doc.getIn(["subenvs"]);
+  if (isSeq(seq)) {
+    for (const item of seq.items) {
+      if (isMap(item) && item.get("name") === subenv) {
+        if (value === undefined || value === "") {
+          item.delete("namespace");
+        } else {
+          item.set("namespace", value);
+        }
+        return doc.toString(TO_STRING);
+      }
+    }
+  }
+  throw new Error(`subenv-ul „${subenv}" nu exista in configuratie`);
+}
+
 // ---------------------------------------- agent port depth (docs/07 line 3, P4c)
 
 /** The port fields the inspector edits. `width` keeps its own op

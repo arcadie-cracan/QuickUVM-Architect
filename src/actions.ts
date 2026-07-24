@@ -1052,6 +1052,121 @@ export class Actions {
   }
 
   /**
+   * Consume an agent BY REFERENCE from a separately generated VIP (docs/07 P5, F2').
+   * The user picks a `.qvip` manifest; we read the agents it ships and add a
+   * `{name, from_vip}` entry with the path RELATIVE to the consuming config, which is
+   * how QuickUVM resolves it. The agent's own source is never regenerated — the VIP's
+   * package filelist is chained instead.
+   */
+  async addVipAgent(cfg: TbEditTarget = this.config): Promise<void> {
+    if (!cfg.configUri) {
+      return this.warnNoConfig();
+    }
+    const picked = await vscode.window.showOpenDialog({
+      title: vscode.l10n.t("Consume a VIP agent"),
+      openLabel: vscode.l10n.t("Use VIP"),
+      canSelectMany: false,
+      filters: { "QuickUVM VIP manifest": ["qvip"] },
+    });
+    const manifest = picked?.[0];
+    if (!manifest) {
+      return;
+    }
+    let agents: string[] = [];
+    try {
+      const doc = await vscode.workspace.openTextDocument(manifest);
+      const parsed = ops.parseQuvm(doc.getText()) as unknown as {
+        agents?: Record<string, unknown>;
+      };
+      agents = Object.keys(parsed.agents ?? {});
+    } catch {
+      agents = [];
+    }
+    if (!agents.length) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: {0} ships no agents — generate the VIP first (kind: vip).",
+          path.basename(manifest.fsPath)
+        )
+      );
+      return;
+    }
+    const taken = new Set(this.agentNames(cfg));
+    const free = agents.filter((a) => !taken.has(a));
+    if (!free.length) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: this bench already has an agent named {0}.",
+          agents.join(", ")
+        )
+      );
+      return;
+    }
+    const name =
+      free.length === 1
+        ? free[0]
+        : await vscode.window.showQuickPick(free, {
+            title: vscode.l10n.t("VIP agent to consume"),
+          });
+    if (!name) {
+      return;
+    }
+    // relative to the CONSUMING config — QuickUVM resolves `from_vip` from there
+    const rel = path
+      .relative(path.dirname(cfg.configUri.fsPath), manifest.fsPath)
+      .split(path.sep)
+      .join("/");
+    if (await cfg.apply((t) => ops.addVipAgent(t, name, rel))) {
+      this.log.appendLine(`[actions] addVipAgent ${name} from ${rel}`);
+    }
+  }
+
+  /**
+   * Sets a subenv's `namespace` (docs/07 P5). Absent is AUTO: QuickUVM prefixes an
+   * instance's classes only when the same config is composed twice or more, so a
+   * block used once stays byte-identical. `custom` asks for the prefix.
+   */
+  async editSubenvNamespace(
+    subenv: string,
+    mode: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri || !subenv) {
+      return;
+    }
+    let value: boolean | string | undefined;
+    if (mode === "auto") {
+      value = undefined;
+    } else if (mode === "on") {
+      value = true;
+    } else if (mode === "off") {
+      value = false;
+    } else if (mode === "custom") {
+      const prefix = await vscode.window.showInputBox({
+        title: vscode.l10n.t("Class-name prefix for {0}", subenv),
+        value: subenv,
+        validateInput: (v) =>
+          SV_IDENT_RE.test(v) ? undefined : vscode.l10n.t("SV identifier"),
+      });
+      if (!prefix) {
+        return;
+      }
+      value = prefix;
+    } else {
+      return;
+    }
+    try {
+      if (await cfg.apply((t) => ops.setSubenvNamespace(t, subenv, value))) {
+        this.log.appendLine(`[actions] editSubenvNamespace ${subenv} = ${mode}`);
+      }
+    } catch (e) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
+
+  /**
    * Per-port depth on an agent (docs/07 P4c). `width` routes to the existing
    * `setAgentPortWidth` (the diagram's pin gesture uses it too, so there is one
    * width path); everything else goes through `setAgentPortField`, which enforces
