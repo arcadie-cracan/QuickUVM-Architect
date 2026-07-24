@@ -1123,11 +1123,14 @@ text.split-sign {
   stroke: var(--vscode-editor-background, #1e1e1e);
   stroke-width: 1.5;
 }
-.gen-badge.gen-missing circle {
+.gen-badge.gen-unsaved circle {
   fill: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
 }
+.gen-badge.gen-missing circle {
+  fill: var(--vscode-list-warningForeground, #cca700);
+}
 .gen-badge.gen-stale circle {
-  fill: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+  fill: var(--vscode-charts-blue, #3794ff);
 }
 .gen-badge text {
   fill: var(--vscode-editor-background, #1e1e1e);

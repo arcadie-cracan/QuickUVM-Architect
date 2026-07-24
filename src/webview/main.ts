@@ -352,6 +352,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       // the quick-uvm status decorations (docs/05): badges + generate chip
       statusDecos = m.decos;
       genStatus = m.generate;
+      genUnsaved = new Set(m.genUnsaved);
       genMissing = new Set(m.genMissing);
       genStale = new Set(m.genStale);
       applyStatusBadges();
@@ -1402,8 +1403,9 @@ function exportSvg(): void {
 // badges on elements + the result of the last generate as a chip in the header;
 // the mapping onto the current view's ids is pure (statusIdsRtl/Tb, src/status.ts)
 let statusDecos: StatusDeco[] = [];
-// docs/07 line 1 — TB element ids with no generated code (`genMissing`) / behind the
-// config (`genStale`); drawn as a star / dot badge on the diagram node
+// docs/07 line 1 — the generation state of the TB elements, badged on the diagram
+// node with the SAME vocabulary as the tree: ● unsaved, U not generated, M stale
+let genUnsaved = new Set<string>();
 let genMissing = new Set<string>();
 let genStale = new Set<string>();
 let genStatus: GenerateStatus | null = null;
@@ -1466,19 +1468,29 @@ function applyStatusBadges(): void {
   });
 }
 
-/** docs/07 line 1 — the generation-state badge on a TB node: a star for an element
- *  with no generated code (`genMissing`), a dot for one behind the config
- *  (`genStale`). Top-LEFT corner, so it never collides with the status badge
- *  (top-right). TB mode only; idempotent; run with applyStatusBadges. */
+/** docs/07 line 1 — the generation-state badge on a TB node, in the same vocabulary
+ *  as the tree: ● unsaved (green), U not generated (amber), M stale (blue).
+ *  Top-LEFT corner, so it never collides with the status badge (top-right).
+ *  TB mode only; idempotent; run with applyStatusBadges. */
 function applyGenBadges(): void {
   canvas.querySelectorAll(".gen-badge").forEach((b) => b.remove());
-  if (state.mode !== "tb" || (!genMissing.size && !genStale.size)) {
+  if (
+    state.mode !== "tb" ||
+    (!genUnsaved.size && !genMissing.size && !genStale.size)
+  ) {
     return;
   }
   canvas.querySelectorAll<SVGGraphicsElement>("[data-id]").forEach((g) => {
     const id = g.dataset.id ?? "";
-    const missing = genMissing.has(id);
-    if (!missing && !genStale.has(id)) {
+    // most urgent first, matching the tree's precedence
+    const kind = genUnsaved.has(id)
+      ? "unsaved"
+      : genMissing.has(id)
+        ? "missing"
+        : genStale.has(id)
+          ? "stale"
+          : null;
+    if (!kind) {
       return;
     }
     let bb: DOMRect;
@@ -1487,20 +1499,22 @@ function applyGenBadges(): void {
     } catch {
       return;
     }
-    const badge = el("g", { class: `gen-badge ${missing ? "gen-missing" : "gen-stale"}` });
+    const badge = el("g", { class: `gen-badge gen-${kind}` });
     badge.append(
       el("circle", { cx: String(bb.x), cy: String(bb.y), r: "7" }),
       el(
         "text",
         { x: String(bb.x), y: String(bb.y + 3.5), "text-anchor": "middle" },
-        missing ? "★" : "●"
+        kind === "unsaved" ? "●" : kind === "missing" ? "U" : "M"
       ),
       el(
         "title",
         {},
-        missing
-          ? "Not generated — run Generate Testbench"
-          : "Stale — the config changed since Generate Testbench"
+        kind === "unsaved"
+          ? "New — not saved to the configuration yet"
+          : kind === "missing"
+            ? "Not generated — run Generate Testbench"
+            : "Modified — the config changed since Generate Testbench"
       )
     );
     g.append(badge);

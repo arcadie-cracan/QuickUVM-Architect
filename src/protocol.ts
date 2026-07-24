@@ -227,7 +227,9 @@ export type HostMessage =
       decos: StatusDeco[];
       generate: GenerateStatus | null;
       // docs/07 line 1 — TB element ids (agent:<name>, sb:<name>, probes, vsqr) with
-      // no generated code behind them (`genMissing`) or behind the config (`genStale`)
+      // declared but not yet saved (`genUnsaved`), no generated code behind them
+      // (`genMissing`), or generated from an older config (`genStale`)
+      genUnsaved: string[];
       genMissing: string[];
       genStale: string[];
     }

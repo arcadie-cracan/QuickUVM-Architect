@@ -40,6 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const tree = new HierarchyProvider();
   // the generation state feeds the row actions (Generate / Regenerate / none)
   const vtree = new VerificationProvider(
+    () => genState.unsaved,
     () => genState.missing,
     () => genState.stale
   );
@@ -52,6 +53,7 @@ export function activate(context: vscode.ExtensionContext): void {
   // `quick-uvm manifest` (which elements have no generated code behind them yet).
   const genState = new GenStateService(log, context.workspaceState);
   const genDeco = new GenDecorationProvider(
+    () => genState.unsaved,
     () => genState.missing,
     () => genState.stale
   );
@@ -400,6 +402,7 @@ export function activate(context: vscode.ExtensionContext): void {
     getStatus: () => ({
       decos: config.decorations,
       generate: generator.status,
+      genUnsaved: [...genState.unsaved],
       genMissing: [...genState.missing],
       genStale: [...genState.stale],
     }),

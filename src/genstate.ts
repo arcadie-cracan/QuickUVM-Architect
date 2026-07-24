@@ -55,10 +55,14 @@ export function ownerToNodeId(owner: string): string | null {
  * are ignored; several vseq owners collapse onto the single `vsqr` node.
  */
 export interface ElementStates {
-  /** elements with a file that does not exist on disk yet */
+  /** declared in the EDITOR but not yet in the config on disk — a crash loses it.
+   *  Badge ●, the mark VS Code itself uses for an unsaved document. */
+  unsaved: Set<string>;
+  /** on disk, but with no generated file behind it. Badge U — git's "untracked":
+   *  it exists, and the tool has no record of it. */
   missing: Set<string>;
-  /** elements generated from an OLDER version of the config — the generated code
-   *  is behind what the config now says */
+  /** generated from an OLDER version of the config — the code is behind what the
+   *  config now says. Badge M, git's "modified". */
   stale: Set<string>;
 }
 
@@ -68,6 +72,7 @@ export interface ElementStates {
  * up-to-date (in neither set). Missing wins when several owners collapse onto one
  * node (vseq → vsqr).
  *
+ * `declared` lists the OWNERS the in-memory config declares (see `declaredElements`).
  * `present` is the set of filenames that exist in the output dir. `generatedHash`
  * maps an element id to the config HASH it was last generated from (recorded by the
  * extension when it generates); `configHash` is the config's current hash.
@@ -85,13 +90,17 @@ export function classify(
   configHash: string,
   declared: readonly string[] = []
 ): ElementStates {
+  const unsaved = new Set<string>();
   const missing = new Set<string>();
   const stale = new Set<string>();
-  const known = new Set<string>();
+  // tracked at OWNER level, not node level: several vseq owners collapse onto the one
+  // `vsqr` node, so asking "does the node exist?" would miss a SECOND vseq added to a
+  // bench that already has one — the node is known, the new owner is not.
+  const knownOwners = new Set<string>();
   for (const el of manifest.elements) {
     const nodeId = ownerToNodeId(el.owner);
     if (nodeId === null) continue;
-    known.add(nodeId);
+    knownOwners.add(el.owner);
     const files = el.files.map((f) => f.file);
     if (files.some((f) => !present.has(f))) {
       missing.add(nodeId);
@@ -102,27 +111,38 @@ export function classify(
       stale.add(nodeId);
     }
   }
-  // An element the CONFIG declares but the manifest has never heard of cannot have
-  // generated files — so it is missing, by definition. This is what makes the badge
-  // appear the moment a component is added, instead of waiting for a save: the tree
-  // is built from the in-memory document, while `quick-uvm manifest` reads the file
-  // from DISK, so between an edit and its save the manifest is one step behind.
-  for (const nodeId of declared) {
-    if (!known.has(nodeId)) {
-      missing.add(nodeId);
+  // An element the CONFIG declares but the manifest has never heard of is UNSAVED:
+  // the tree is built from the in-memory document, while `quick-uvm manifest` reads
+  // the file from DISK, so between an edit and its save the manifest cannot know it
+  // exists. That is a state of its own — the code is not merely ungenerated, the
+  // declaration itself would be lost in a crash.
+  for (const owner of declared) {
+    const nodeId = ownerToNodeId(owner);
+    if (nodeId !== null && !knownOwners.has(owner)) {
+      unsaved.add(nodeId);
     }
   }
-  for (const id of missing) {
-    stale.delete(id); // missing wins (e.g. one vseq missing, another stale → vsqr missing)
+  // precedence, most urgent first: unsaved > missing > stale. They collapse onto one
+  // node (all vseqs share `vsqr`), so a node in two sets shows the more urgent one.
+  for (const id of unsaved) {
+    missing.delete(id);
+    stale.delete(id);
   }
-  return { missing, stale };
+  for (const id of missing) {
+    stale.delete(id);
+  }
+  return { unsaved, missing, stale };
 }
 
 /**
- * The decoratable element ids the CONFIG declares, derived from the in-memory
- * document rather than from the manifest. The conditions mirror `tbtree-build`
- * exactly, so a node the tree draws and this list disagree about nothing — a
- * mismatch would either badge a row that does not exist or leave a new one bare.
+ * The manifest OWNERS the in-memory config declares — the same vocabulary the
+ * manifest speaks (`agent:x`, `scoreboard:x`, `vseq:x`, `probes`), NOT node ids, so
+ * `classify` can spot an owner the manifest has never seen even when its node
+ * already exists (a second vseq on a bench that already has one).
+ *
+ * The conditions mirror `tbtree-build` exactly, so a node the tree draws and this
+ * list disagree about nothing — a mismatch would either badge a row that does not
+ * exist or leave a new one bare.
  */
 export function declaredElements(cfg: QuvmConfig): string[] {
   const out: string[] = [];
@@ -133,7 +153,7 @@ export function declaredElements(cfg: QuvmConfig): string[] {
   }
   for (const s of cfg.analysis?.scoreboards ?? []) {
     // an unnamed scoreboard is the default `sbd` (the same fallback the tree uses)
-    out.push(`sb:${s.name ?? "sbd"}`);
+    out.push(`scoreboard:${s.name ?? "sbd"}`);
   }
   if (cfg.probes?.length) {
     out.push("probes");
@@ -151,7 +171,14 @@ export function declaredElements(cfg: QuvmConfig): string[] {
     : cfg.auto_virtual_sequences !== false &&
       named.filter((a) => a.active !== false).length >= 2;
   if (coordinated) {
-    out.push("vsqr");
+    // every declared vseq is its own owner; an auto vseq has none to name, so the
+    // node itself stands in (it is unknown to the manifest until generated)
+    for (const v of vseqs) {
+      out.push(`vseq:${v.name}`);
+    }
+    if (!vseqs.length) {
+      out.push("vseq:auto");
+    }
   }
   return out;
 }

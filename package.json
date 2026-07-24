@@ -243,7 +243,7 @@
         },
         {
           "command": "quickuvm.generateItem",
-          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-missing$/",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-(missing|new)$/",
           "group": "inline"
         },
         {
@@ -253,7 +253,7 @@
         },
         {
           "command": "quickuvm.generateItem",
-          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-missing$/",
+          "when": "view == quickuvm.verification && viewItem =~ /^vgen-.*-(missing|new)$/",
           "group": "navigation"
         },
         {

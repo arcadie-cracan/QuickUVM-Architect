@@ -28,7 +28,7 @@ import type { QuvmConfig } from "./quickuvm";
 const STORE_KEY = "quickuvm.genHash";
 
 export class GenStateService implements vscode.Disposable {
-  private _states: ElementStates = { missing: new Set(), stale: new Set() };
+  private _states: ElementStates = { unsaved: new Set(), missing: new Set(), stale: new Set() };
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.emitter.event;
 
@@ -50,6 +50,9 @@ export class GenStateService implements vscode.Disposable {
     private readonly memento?: vscode.Memento
   ) {}
 
+  get unsaved(): ReadonlySet<string> {
+    return this._states.unsaved;
+  }
   get missing(): ReadonlySet<string> {
     return this._states.missing;
   }
@@ -86,7 +89,7 @@ export class GenStateService implements vscode.Disposable {
     this.restore(); // the per-config generated-from hashes (survive a reload)
     if (!configUri) {
       this.manifest = undefined;
-      this.set({ missing: new Set(), stale: new Set() });
+      this.set({ unsaved: new Set(), missing: new Set(), stale: new Set() });
       return;
     }
     const root = vscode.workspace.workspaceFolders?.[0];
@@ -103,7 +106,7 @@ export class GenStateService implements vscode.Disposable {
         this.log.appendLine(`[genstate] ${r.err.trim()}`);
       }
       this.manifest = undefined;
-      this.set({ missing: new Set(), stale: new Set() });
+      this.set({ unsaved: new Set(), missing: new Set(), stale: new Set() });
       return;
     }
     try {
@@ -111,7 +114,7 @@ export class GenStateService implements vscode.Disposable {
     } catch (e) {
       this.log.appendLine(`[genstate] could not parse manifest JSON: ${String(e)}`);
       this.manifest = undefined;
-      this.set({ missing: new Set(), stale: new Set() });
+      this.set({ unsaved: new Set(), missing: new Set(), stale: new Set() });
       return;
     }
     await this.recompute();
@@ -205,7 +208,11 @@ export class GenStateService implements vscode.Disposable {
   }
 
   private set(next: ElementStates): void {
-    if (eqSet(next.missing, this._states.missing) && eqSet(next.stale, this._states.stale)) {
+    if (
+      eqSet(next.unsaved, this._states.unsaved) &&
+      eqSet(next.missing, this._states.missing) &&
+      eqSet(next.stale, this._states.stale)
+    ) {
       return; // no change — avoid a redundant tree/diagram redraw
     }
     this._states = next;

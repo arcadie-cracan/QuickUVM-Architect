@@ -121,46 +121,68 @@ test("classify: vseqs collapse onto vsqr — missing wins over stale", () => {
 
 test("declaredElements: mirrors the tree's nodes, from the IN-MEMORY config", () => {
   assert.deepEqual(declaredElements({}), []);
+  // OWNER ids, the vocabulary the manifest speaks
   assert.deepEqual(
     declaredElements({
       agents: [{ name: "cmd" }, { name: "rsp" }, {}],
       analysis: { scoreboards: [{ name: "sbd", source: "cmd" }, { source: "rsp" }] },
       probes: [{ name: "p" }],
     }).sort(),
-    ["agent:cmd", "agent:rsp", "sb:sbd", "sb:sbd", "probes", "vsqr"].sort()
+    ["agent:cmd", "agent:rsp", "scoreboard:sbd", "scoreboard:sbd", "probes", "vseq:auto"].sort()
   );
   // vsqr: an explicit vseq naming a real agent, else the auto vseq at >= 2 active
-  assert.ok(declaredElements({
-    agents: [{ name: "cmd" }],
-    virtual_sequences: [{ name: "v", body: [{ agent: "cmd", sequence: "s" }] }],
-  }).includes("vsqr"));
-  assert.ok(!declaredElements({
+  const hasVseq = (cfg) => declaredElements(cfg).some((o) => o.startsWith("vseq:"));
+  assert.deepEqual(
+    declaredElements({
+      agents: [{ name: "cmd" }],
+      virtual_sequences: [{ name: "v", body: [{ agent: "cmd", sequence: "s" }] }],
+    }),
+    ["agent:cmd", "vseq:v"]
+  );
+  assert.ok(!hasVseq({
     agents: [{ name: "cmd" }],
     virtual_sequences: [{ name: "v", body: [{ agent: "nope", sequence: "s" }] }],
-  }).includes("vsqr"), "un vseq care nu numeste niciun agent real nu coordoneaza nimic");
-  assert.ok(!declaredElements({ agents: [{ name: "a" }, { name: "b" }], auto_virtual_sequences: false })
-    .includes("vsqr"));
-  assert.ok(declaredElements({ agents: [{ name: "a" }, { name: "b" }] }).includes("vsqr"));
-  assert.ok(!declaredElements({ agents: [{ name: "a" }, { name: "b", active: false }] })
-    .includes("vsqr"), "auto vseq cere >= 2 agenti ACTIVI");
+  }), "un vseq care nu numeste niciun agent real nu coordoneaza nimic");
+  assert.ok(!hasVseq({ agents: [{ name: "a" }, { name: "b" }], auto_virtual_sequences: false }));
+  assert.ok(hasVseq({ agents: [{ name: "a" }, { name: "b" }] }));
+  assert.ok(!hasVseq({ agents: [{ name: "a" }, { name: "b", active: false }] }),
+    "auto vseq cere >= 2 agenti ACTIVI");
 });
 
-test("classify: a JUST-ADDED element is missing before the YAML is even saved", () => {
-  // the reported bug: the tree is built from the in-memory document, the manifest is
-  // produced from the file on DISK. A component added but not yet saved is absent
-  // from the manifest, so nothing decorated it until a save.
+test("classify: a JUST-ADDED element is UNSAVED, its own state (● green)", () => {
+  // the tree is built from the in-memory document, the manifest from the file on
+  // DISK. A component added but not saved is absent from the manifest — and that is
+  // not merely "ungenerated": the DECLARATION itself would be lost in a crash, so it
+  // gets its own badge rather than borrowing the "not generated" one.
   const m = manifest([el("agent:cmd", ["a"])]);
   const present = new Set(["a"]);
   const gen = new Map([["agent:cmd", "H1"]]);
   const saved = classify(m, present, gen, "H1");
+  assert.equal(saved.unsaved.size, 0);
   assert.equal(saved.missing.size, 0, "starea salvata e curata");
 
-  // now the user adds a virtual sequence: `vsqr` is declared but unknown to the
-  // manifest -> it cannot have files -> missing, immediately
-  const dirty = classify(m, present, gen, "H1", ["agent:cmd", "vsqr"]);
-  assert.deepEqual([...dirty.missing], ["vsqr"]);
-  // ... and the untouched agent is not disturbed by it
+  const dirty = classify(m, present, gen, "H1", ["agent:cmd", "vseq:v"]);
+  assert.deepEqual([...dirty.unsaved], ["vsqr"]);
+  assert.equal(dirty.missing.size, 0, "un element nesalvat NU e si `missing`");
   assert.equal(dirty.stale.size, 0);
+});
+
+test("classify: precedence is unsaved > missing > stale on a shared node", () => {
+  // every vseq collapses onto the single `vsqr` node, so one node can qualify for
+  // several states at once; the most urgent must win, or the badge understates it.
+  const m = manifest([el("vseq:a", ["a"]), el("vseq:b", ["b"])]);
+  // `a` is stale (old hash), `b` is missing (absent file), and a THIRD vseq is
+  // declared but unsaved -> vsqr is UNSAVED. The node was already known, so this
+  // only works because declarations are matched at OWNER level.
+  const gen = new Map([["vsqr", "OLD"]]);
+  const all = classify(m, new Set(["a"]), gen, "H1", ["vseq:a", "vseq:b", "vseq:c"]);
+  assert.deepEqual([...all.unsaved], ["vsqr"]);
+  assert.equal(all.missing.size, 0);
+  assert.equal(all.stale.size, 0);
+  // without the declaration it falls back to missing, still ahead of stale
+  const noDecl = classify(m, new Set(["a"]), gen, "H1");
+  assert.deepEqual([...noDecl.missing], ["vsqr"]);
+  assert.equal(noDecl.stale.size, 0);
 });
 
 test("scopedFilesFor: element's own files + the aggregate co-regen set", () => {

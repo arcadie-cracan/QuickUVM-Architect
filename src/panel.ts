@@ -52,6 +52,7 @@ export interface PanelDeps {
   getStatus?: () => {
     decos: StatusDeco[];
     generate: GenerateStatus | null;
+    genUnsaved: string[];
     genMissing: string[];
     genStale: string[];
   };
@@ -271,6 +272,7 @@ export class DiagramPanel {
         type: "status/decorations",
         decos: s.decos,
         generate: s.generate,
+        genUnsaved: s.genUnsaved,
         genMissing: s.genMissing,
         genStale: s.genStale,
       });

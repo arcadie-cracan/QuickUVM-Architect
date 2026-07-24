@@ -50,6 +50,33 @@ Efect măsurat pe un bench realist (RAL + regresie + 2 domenii de ceas + 1 reset
 
 ---
 
+### Vocabularul stărilor de generare
+
+Trei stări, colorate și insignate cu vocabularul PROPRIU al VS Code, ca să nu fie
+nimic de învățat:
+
+| stare | insignă | culoare (token) | ce înseamnă |
+|---|---|---|---|
+| nesalvat | `●` | verde `gitDecoration.untrackedResourceForeground` | declarat în editor, încă nu în fișier — un crash îl pierde |
+| negenerat | `U` | chihlimbar `list.warningForeground` | pe disc, dar fără cod în spate (git: *untracked*) |
+| învechit | `M` | albastru `charts.blue` | cod există, configurația a mers mai departe (git: *modified*) |
+
+`●` e exact marcajul pe care VS Code îl pune pe un tab nesalvat; `U`/`M` sunt
+literele git cu înțelesul lor git. Prioritate: nesalvat > negenerat > învechit.
+
+Culoarea duce greul la o privire, insigna e plasa de siguranță: în temele High
+Contrast VS Code aplatizează culorile decorațiilor, iar culoarea singură e ilizibilă
+pentru utilizatorii cu daltonism — deci **niciun canal nu are voie să fie singurul
+purtător**. De aceea nu s-a renunțat la glif.
+
+Chihlimbarul (`list.warningForeground`) și auriul (`gitDecoration.modified…`) sunt la
+un pas de nuanță distanță, deci nu se folosesc pe două stări vecine; albastrul separă
+curat a treia stare.
+
+Declarațiile se compară la nivel de **owner**, nu de nod: mai mulți `vseq:*`
+colapsează pe unicul nod `vsqr`, deci întrebarea „există nodul?" ar rata un AL DOILEA
+vseq adăugat pe un bench care are deja unul.
+
 ### Unde trăiește un control (felia 2 de UX)
 
 Inspectorul e randat de DOUĂ suprafețe, din același modul
