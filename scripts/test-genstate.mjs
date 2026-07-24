@@ -21,7 +21,13 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { ownerToNodeId, classify, scopedFilesFor, primaryFile } = await import(
+const {
+  ownerToNodeId,
+  classify,
+  declaredElements,
+  scopedFilesFor,
+  primaryFile,
+} = await import(
   pathToFileURL(outFile)
 );
 
@@ -111,6 +117,50 @@ test("classify: vseqs collapse onto vsqr — missing wins over stale", () => {
   const { missing, stale } = classify(m, new Set(["a"]), gen, "H1");
   assert.deepEqual([...missing], ["vsqr"]);
   assert.equal(stale.size, 0);
+});
+
+test("declaredElements: mirrors the tree's nodes, from the IN-MEMORY config", () => {
+  assert.deepEqual(declaredElements({}), []);
+  assert.deepEqual(
+    declaredElements({
+      agents: [{ name: "cmd" }, { name: "rsp" }, {}],
+      analysis: { scoreboards: [{ name: "sbd", source: "cmd" }, { source: "rsp" }] },
+      probes: [{ name: "p" }],
+    }).sort(),
+    ["agent:cmd", "agent:rsp", "sb:sbd", "sb:sbd", "probes", "vsqr"].sort()
+  );
+  // vsqr: an explicit vseq naming a real agent, else the auto vseq at >= 2 active
+  assert.ok(declaredElements({
+    agents: [{ name: "cmd" }],
+    virtual_sequences: [{ name: "v", body: [{ agent: "cmd", sequence: "s" }] }],
+  }).includes("vsqr"));
+  assert.ok(!declaredElements({
+    agents: [{ name: "cmd" }],
+    virtual_sequences: [{ name: "v", body: [{ agent: "nope", sequence: "s" }] }],
+  }).includes("vsqr"), "un vseq care nu numeste niciun agent real nu coordoneaza nimic");
+  assert.ok(!declaredElements({ agents: [{ name: "a" }, { name: "b" }], auto_virtual_sequences: false })
+    .includes("vsqr"));
+  assert.ok(declaredElements({ agents: [{ name: "a" }, { name: "b" }] }).includes("vsqr"));
+  assert.ok(!declaredElements({ agents: [{ name: "a" }, { name: "b", active: false }] })
+    .includes("vsqr"), "auto vseq cere >= 2 agenti ACTIVI");
+});
+
+test("classify: a JUST-ADDED element is missing before the YAML is even saved", () => {
+  // the reported bug: the tree is built from the in-memory document, the manifest is
+  // produced from the file on DISK. A component added but not yet saved is absent
+  // from the manifest, so nothing decorated it until a save.
+  const m = manifest([el("agent:cmd", ["a"])]);
+  const present = new Set(["a"]);
+  const gen = new Map([["agent:cmd", "H1"]]);
+  const saved = classify(m, present, gen, "H1");
+  assert.equal(saved.missing.size, 0, "starea salvata e curata");
+
+  // now the user adds a virtual sequence: `vsqr` is declared but unknown to the
+  // manifest -> it cannot have files -> missing, immediately
+  const dirty = classify(m, present, gen, "H1", ["agent:cmd", "vsqr"]);
+  assert.deepEqual([...dirty.missing], ["vsqr"]);
+  // ... and the untouched agent is not disturbed by it
+  assert.equal(dirty.stale.size, 0);
 });
 
 test("scopedFilesFor: element's own files + the aggregate co-regen set", () => {

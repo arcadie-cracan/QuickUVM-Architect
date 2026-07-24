@@ -474,7 +474,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     generator.onStatus(() => {
       DiagramPanel.current?.postStatus();
-      void genState.refresh(config.configUri);
+      void genState.refresh(config.configUri, config.current);
     })
   );
   backend.onStale((errors) => {
@@ -517,12 +517,12 @@ export function activate(context: vscode.ExtensionContext): void {
       config.configUri ? vscode.workspace.asRelativePath(config.configUri) : null
     );
     // recompute the "not generated" decoration from the (possibly changed) config
-    void genState.refresh(config.configUri);
+    void genState.refresh(config.configUri, config.current);
   });
   // initial manifest load: onOverlay only fires on a CHANGE, so a config already
   // discovered at activation would otherwise leave the gen-state (badges + the
   // per-item generate) empty until the first edit.
-  void genState.refresh(config.configUri);
+  void genState.refresh(config.configUri, config.current);
 
   // cursor tracking (docs/05): debounced, non-invasive — only the .xprobe
   // halo of the current view; a file unknown to the model = turn off
@@ -724,7 +724,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // on demand and retry before giving up.
         let files = genState.scopedFiles(nodeId);
         if (!files) {
-          await genState.refresh(config.configUri);
+          await genState.refresh(config.configUri, config.current);
           files = genState.scopedFiles(nodeId);
         }
         if (!files) {
@@ -755,7 +755,7 @@ export function activate(context: vscode.ExtensionContext): void {
         const label = node.label ?? "item";
         // load the manifest on demand if it is not cached yet (as generateItem)
         if (!genState.primaryFilePath(nodeId)) {
-          await genState.refresh(config.configUri);
+          await genState.refresh(config.configUri, config.current);
         }
         const primary = genState.primaryFilePath(nodeId);
         if (!primary) {

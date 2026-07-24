@@ -15,12 +15,14 @@ import * as vscode from "vscode";
 import { invokeQuickUvm } from "./generate";
 import {
   classify,
+  declaredElements,
   ElementStates,
   Manifest,
   ownerToNodeId,
   primaryFile,
   scopedFilesFor,
 } from "./genstate";
+import type { QuvmConfig } from "./quickuvm";
 
 /** workspaceState key holding, per config uri, the element → config-hash records */
 const STORE_KEY = "quickuvm.genHash";
@@ -38,6 +40,10 @@ export class GenStateService implements vscode.Disposable {
   /** element id → the config hash it was last generated FROM (persisted) */
   private genHash = new Map<string, string>();
   private configHash = "";
+  /** the elements the IN-MEMORY config declares. The manifest is produced from the
+   *  file on DISK, so between an edit and its save it does not know about a
+   *  just-added component; this is what lets its badge appear immediately. */
+  private declared: string[] = [];
 
   constructor(
     private readonly log: vscode.OutputChannel,
@@ -71,8 +77,12 @@ export class GenStateService implements vscode.Disposable {
   }
 
   /** The config changed (or first load): re-run the manifest, then recompute. */
-  async refresh(configUri: vscode.Uri | undefined): Promise<void> {
+  async refresh(
+    configUri: vscode.Uri | undefined,
+    config?: QuvmConfig
+  ): Promise<void> {
     this.config = configUri;
+    this.declared = config ? declaredElements(config) : [];
     this.restore(); // the per-config generated-from hashes (survive a reload)
     if (!configUri) {
       this.manifest = undefined;
@@ -123,7 +133,15 @@ export class GenStateService implements vscode.Disposable {
       }
     }
     this.configHash = await this.hashOf(this.config);
-    this.set(classify(this.manifest, present, this.genHash, this.configHash));
+    this.set(
+      classify(
+        this.manifest,
+        present,
+        this.genHash,
+        this.configHash,
+        this.declared
+      )
+    );
   }
 
   /**

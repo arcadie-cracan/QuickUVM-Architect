@@ -9,6 +9,8 @@
 // where the filename drops the element's name (a flat scoreboard `sbd` ->
 // `<dut>_scoreboard.svh`). We never re-derive the element->file map from filenames.
 
+import type { QuvmConfig } from "./quickuvm";
+
 export interface ManifestFile {
   file: string;
   exists: boolean;
@@ -80,13 +82,16 @@ export function classify(
   manifest: Manifest,
   present: ReadonlySet<string>,
   generatedHash: ReadonlyMap<string, string>,
-  configHash: string
+  configHash: string,
+  declared: readonly string[] = []
 ): ElementStates {
   const missing = new Set<string>();
   const stale = new Set<string>();
+  const known = new Set<string>();
   for (const el of manifest.elements) {
     const nodeId = ownerToNodeId(el.owner);
     if (nodeId === null) continue;
+    known.add(nodeId);
     const files = el.files.map((f) => f.file);
     if (files.some((f) => !present.has(f))) {
       missing.add(nodeId);
@@ -97,10 +102,58 @@ export function classify(
       stale.add(nodeId);
     }
   }
+  // An element the CONFIG declares but the manifest has never heard of cannot have
+  // generated files — so it is missing, by definition. This is what makes the badge
+  // appear the moment a component is added, instead of waiting for a save: the tree
+  // is built from the in-memory document, while `quick-uvm manifest` reads the file
+  // from DISK, so between an edit and its save the manifest is one step behind.
+  for (const nodeId of declared) {
+    if (!known.has(nodeId)) {
+      missing.add(nodeId);
+    }
+  }
   for (const id of missing) {
     stale.delete(id); // missing wins (e.g. one vseq missing, another stale → vsqr missing)
   }
   return { missing, stale };
+}
+
+/**
+ * The decoratable element ids the CONFIG declares, derived from the in-memory
+ * document rather than from the manifest. The conditions mirror `tbtree-build`
+ * exactly, so a node the tree draws and this list disagree about nothing — a
+ * mismatch would either badge a row that does not exist or leave a new one bare.
+ */
+export function declaredElements(cfg: QuvmConfig): string[] {
+  const out: string[] = [];
+  for (const a of cfg.agents ?? []) {
+    if (a.name) {
+      out.push(`agent:${a.name}`);
+    }
+  }
+  for (const s of cfg.analysis?.scoreboards ?? []) {
+    // an unnamed scoreboard is the default `sbd` (the same fallback the tree uses)
+    out.push(`sb:${s.name ?? "sbd"}`);
+  }
+  if (cfg.probes?.length) {
+    out.push("probes");
+  }
+  // the vsqr node exists when any agent is COORDINATED: either an explicit virtual
+  // sequence names it, or the auto vseq kicks in at >= 2 active agents
+  const named = (cfg.agents ?? []).filter((a) => a.name);
+  const vseqs = (cfg.virtual_sequences ?? []).filter((v) => v.name);
+  const coordinated = vseqs.length
+    ? vseqs.some((v) =>
+        (v.body ?? []).some(
+          (s) => s.agent && named.some((a) => a.name === s.agent)
+        )
+      )
+    : cfg.auto_virtual_sequences !== false &&
+      named.filter((a) => a.active !== false).length >= 2;
+  if (coordinated) {
+    out.push("vsqr");
+  }
+  return out;
 }
 
 /**
