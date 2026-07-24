@@ -104,6 +104,15 @@ body {
 
 /* --------------------------------------------------------- inspector */
 
+/* In the SIDEBAR the inspector is the whole view: no fixed width, no left border
+   (docs/07 UX slice 2). In the diagram's aside it stays a fixed-width column. */
+body.sidebar #inspector {
+  width: auto;
+  border-left: none;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
 #inspector {
   width: 250px;
   flex: none;

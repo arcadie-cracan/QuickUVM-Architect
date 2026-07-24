@@ -227,6 +227,7 @@ function renderInspectorHere(): void {
     return;
   }
   renderInspectorInto({
+    canvas: true, // the diagram's aside owns the canvas tools
     root: inspector,
     state,
     tbScene: currentTbScene ?? undefined,
@@ -248,6 +249,10 @@ function renderInspectorHere(): void {
     hasSchematic,
     navigateTo,
   });
+  // With the config editors on the sidebar, the aside is often empty (a TB view with
+  // nothing selected). An empty 250px column is exactly the space the diagram wanted
+  // back, so it collapses rather than sitting there blank.
+  inspector.hidden = inspector.childElementCount === 0;
 }
 
 function persistState(): void {

@@ -50,6 +50,27 @@ Efect măsurat pe un bench realist (RAL + regresie + 2 domenii de ceas + 1 reset
 
 ---
 
+### Unde trăiește un control (felia 2 de UX)
+
+Inspectorul e randat de DOUĂ suprafețe, din același modul
+(`src/webview/inspector-view.ts`), diferențiate de un singur steag `canvas`:
+
+| suprafață | `canvas` | ce arată |
+|---|---|---|
+| bara laterală „Properties" (sub arbori) | `false` | tot ce **editează CONFIGURAȚIA**: proprietăți de agent/scoreboard/coverage/subenv, porturi, setările de bench, paleta de adăugare, Generate |
+| aside-ul diagramei | `true` | tot ce **acționează asupra DESENULUI**: flip, fold, render de net, con, selecție de pini, citirea schematică a vederii curente |
+
+Criteriul e *pe ce acționează controlul*, nu unde arată mai bine. Niciuna nu randează
+controalele celeilalte, deci nimic nu e duplicat și nu se afișează niciun buton care
+n-ar putea face nimic de acolo. Aside-ul se ASCUNDE când rămâne gol (o vedere TB fără
+selecție), și exact acei 250px se întorc la pânză.
+
+Bara laterală e un bundle SEPARAT (`dist/properties.js`, **33 KB** față de 3.6 MB al
+diagramei): e mereu deschisă, deci nu are voie să care ELK-ul după ea. Ăsta a fost
+motivul extragerii inspectorului înainte de mutare.
+
+---
+
 ## Track A — manifestul de generare QuickUVM (fundația comună)
 
 **Repo: QuickUVM.** Un singur slice, prin fluxul de PR QuickUVM. Trei adăugiri mici,

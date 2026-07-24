@@ -14,7 +14,14 @@ import { resolveLocPath } from "./filelistops";
 import { buildLocIndex, LocEntry, resolveLoc } from "./locmap";
 import { ProjectModel } from "./model";
 import { DiagramPanel, openLoc, PanelDeps, runActiveExport } from "./panel";
-import { ActionKind, ViewMode, XprobeTarget } from "./protocol";
+import {
+  ActionKind,
+  HostMessage,
+  ViewMode,
+  WebviewMessage,
+  XprobeTarget,
+} from "./protocol";
+import { PropertiesViewProvider } from "./propertiesview";
 import { LayoutStore } from "./sidecar";
 import { VerificationProvider } from "./tbtree";
 import { GenStateService } from "./genstate-service";
@@ -170,45 +177,13 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   };
 
-  const panelDeps: PanelDeps = {
-    getModel: () => model,
-    getOverlay: () => config.lastOverlay,
-    getConfig: () => ({
-      configPath: config.configUri
-        ? vscode.workspace.asRelativePath(config.configUri)
-        : null,
-      config: config.current,
-      childAgents: config.childAgents,
-    }),
-    // the quick-uvm status decorations (docs/05): validations + the last generate
-    getStatus: () => ({
-      decos: config.decorations,
-      generate: generator.status,
-      genMissing: [...genState.missing],
-      genStale: [...genState.stale],
-    }),
-    layout: {
-      get: () => layout.sidecar,
-      positionsSnapshotted: (v, nodes) => layout.positionsSnapshotted(v, nodes),
-      foldToggled: (v, f, c) => layout.foldToggled(v, f, c),
-      nodeFlipped: (v, n, fh, fv) => layout.nodeFlipped(v, n, fh, fv),
-      relayout: (v) => layout.relayout(v),
-      netRender: (v, n, r) => layout.netRender(v, n, r),
-    },
-    onTbFocus: (focus, select) => {
-      // the webview navigated across levels (drill/breadcrumb): the host keeps
-      // the current level + highlights in the verification tree (D24)
-      tbFocus = focus;
-      revealTbNode(select ? [select] : []);
-    },
-    onSelection: (ids, viewId, mode) => {
-      if (viewId?.startsWith("tb:")) {
-        revealTbNode(ids); // the verification (TB) view -> the verification tree
-      } else {
-        revealInstance(ids, viewId, mode); // the RTL views -> the design hierarchy
-      }
-    },
-    onAction: (action: ActionKind, args, viewId) => {
+  /** Every editing gesture from a webview — the diagram panel, the per-file
+   *  editor and the sidebar Properties view all speak this one protocol. */
+  const onWebviewAction = (
+    action: ActionKind,
+    args: Record<string, unknown>,
+    viewId?: string
+  ): void => {
       const pins = Array.isArray(args.pins) ? (args.pins as string[]) : [];
       // the gestures on the pins of a child block send the block's viewId in
       // args (docs/05): the agents are created for that module's config
@@ -371,7 +346,88 @@ export function activate(context: vscode.ExtensionContext): void {
           log.appendLine(`[panel] unhandled action: ${missing as string}`);
         }
       }
+    };
+
+  // docs/07 UX slice 2 — the sidebar "Properties" view: the same inspector as the
+  // diagram's aside, minus the canvas tools. It can mount long after the config was
+  // loaded, so it asks for a state snapshot at `ready` rather than waiting for the
+  // next change.
+  const propsView = new PropertiesViewProvider(
+    context.extensionUri,
+    () => {
+      const c = config.configUri
+        ? {
+            configPath: vscode.workspace.asRelativePath(config.configUri),
+            config: config.current,
+            childAgents: config.childAgents,
+          }
+        : null;
+      const overlay = config.lastOverlay;
+      const out: HostMessage[] = [];
+      if (c) {
+        out.push({ v: 1, type: "config/full", ...c });
+      }
+      if (overlay) {
+        out.push({ v: 1, type: "overlay/config", ...overlay });
+      }
+      return out;
     },
+    (m: WebviewMessage) => {
+      // an editing gesture from the sidebar: the same protocol the panel speaks
+      if (m.type === "action/request") {
+        onWebviewAction(m.action, m.args);
+      }
+    }
+  );
+  context.subscriptions.push(
+    vscode.window.registerWebviewViewProvider(
+      PropertiesViewProvider.viewType,
+      propsView
+    )
+  );
+
+  const panelDeps: PanelDeps = {
+    getModel: () => model,
+    getOverlay: () => config.lastOverlay,
+    getConfig: () => ({
+      configPath: config.configUri
+        ? vscode.workspace.asRelativePath(config.configUri)
+        : null,
+      config: config.current,
+      childAgents: config.childAgents,
+    }),
+    // the quick-uvm status decorations (docs/05): validations + the last generate
+    getStatus: () => ({
+      decos: config.decorations,
+      generate: generator.status,
+      genMissing: [...genState.missing],
+      genStale: [...genState.stale],
+    }),
+    layout: {
+      get: () => layout.sidecar,
+      positionsSnapshotted: (v, nodes) => layout.positionsSnapshotted(v, nodes),
+      foldToggled: (v, f, c) => layout.foldToggled(v, f, c),
+      nodeFlipped: (v, n, fh, fv) => layout.nodeFlipped(v, n, fh, fv),
+      relayout: (v) => layout.relayout(v),
+      netRender: (v, n, r) => layout.netRender(v, n, r),
+    },
+    onTbFocus: (focus, select) => {
+      // the webview navigated across levels (drill/breadcrumb): the host keeps
+      // the current level + highlights in the verification tree (D24)
+      tbFocus = focus;
+      revealTbNode(select ? [select] : []);
+      propsView.post({ v: 1, type: "tb/navigate", focus, select: select ?? null });
+    },
+    onSelection: (ids, viewId, mode) => {
+      if (viewId?.startsWith("tb:")) {
+        revealTbNode(ids); // the verification (TB) view -> the verification tree
+      } else {
+        revealInstance(ids, viewId, mode); // the RTL views -> the design hierarchy
+      }
+      // ... and to the sidebar inspector, so both surfaces agree on what is selected
+      propsView.post({ v: 1, type: "select/reveal", ids });
+    },
+    onAction: onWebviewAction,
   };
 
   // ---- editor->diagram cross-probing (docs/05): the model's loc->target
@@ -441,6 +497,19 @@ export function activate(context: vscode.ExtensionContext): void {
   config.onOverlay((overlay) => {
     DiagramPanel.current?.postOverlay(overlay);
     DiagramPanel.current?.postConfig(); // the verification (TB) view (docs/05)
+    // the sidebar inspector renders from the same messages
+    if (overlay) {
+      propsView.post({ v: 1, type: "overlay/config", ...overlay });
+    }
+    if (config.configUri) {
+      propsView.post({
+        v: 1,
+        type: "config/full",
+        configPath: vscode.workspace.asRelativePath(config.configUri),
+        config: config.current,
+        childAgents: config.childAgents,
+      });
+    }
     DiagramPanel.current?.postStatus(); // the status decorations (docs/05)
     // the verification hierarchy: the tree derived from the current configuration
     vtree.setConfig(
@@ -762,6 +831,19 @@ export function activate(context: vscode.ExtensionContext): void {
         tbFocus = typeof focus === "string" ? focus : "";
         DiagramPanel.show(context, panelDeps, viewId, "tb");
         DiagramPanel.current?.navigateTb(tbFocus, selectId ?? null);
+        // the sidebar inspector follows the TREE directly, so selecting the root
+        // node reaches bench scope even with no diagram open (docs/07 UX slice 2)
+        propsView.post({
+          v: 1,
+          type: "tb/navigate",
+          focus: tbFocus,
+          select: selectId ?? null,
+        });
+        propsView.post({
+          v: 1,
+          type: "select/reveal",
+          ids: selectId ? [selectId] : [],
+        });
       }
     ),
 

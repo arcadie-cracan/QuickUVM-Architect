@@ -33,6 +33,16 @@ import type { State } from "./state";
 
 /** Everything the inspector used to reach through module globals. */
 export interface InspectorCtx {
+  /**
+   * Does this inspector sit next to a CANVAS? The split is by what a control acts
+   * on, not by where it looks nicer:
+   *   true  — the diagram's aside: canvas tools (flip, fold, net render, pin
+   *           selection, cone) plus the schematic reading of the current view.
+   *   false — the sidebar "Properties" view: everything that edits the CONFIG.
+   * Neither surface renders the other's controls, so nothing is duplicated and no
+   * button is shown that could not do anything from where it stands.
+   */
+  canvas: boolean;
   /** the element the rows are appended to (`#inspector` in either webview) */
   root: HTMLElement;
   state: State;
@@ -874,7 +884,22 @@ function tbBenchIdentity(cfg: QuvmConfig): void {
  * Keyed by a stable section id, NOT by the selected component: the preference is
  * "I want agent advanced fields", not "…for this one agent".
  */
-const openSections = new Set<string>(ctx.vscode.getState()?.openSections ?? []);
+// NOTHING at module scope may touch `ctx` — it is only assigned once `renderInspector`
+// runs, so reading it here throws at IMPORT time and takes the whole webview with it
+// (the `let ctx!` assertion hides that from the compiler). The persisted disclosures
+// are therefore loaded lazily, on the first render.
+const openSections = new Set<string>();
+let sectionsLoaded = false;
+
+function loadSections(): void {
+  if (sectionsLoaded) {
+    return;
+  }
+  sectionsLoaded = true;
+  for (const id of ctx.vscode.getState()?.openSections ?? []) {
+    openSections.add(id);
+  }
+}
 
 function persistSections(): void {
   ctx.vscode.setState({
@@ -1576,6 +1601,7 @@ export function tbDeleteTarget(
  *  Without own state: everything is derived from the model + overlay (invariant 2). */
 export function renderInspector(c: InspectorCtx): void {
   ctx = c;
+  loadSections();
   if (!ctx.root) {
     return;
   }
@@ -1592,7 +1618,7 @@ export function renderInspector(c: InspectorCtx): void {
   const byName = new Map<string, { name: string; iface: boolean }>(
     ctx.pins.map((p) => [p.name, p])
   );
-  if (ctx.state.mode === "schematic" && ctx.scene) {
+  if (ctx.canvas && ctx.state.mode === "schematic" && ctx.scene) {
     for (const b of ctx.scene.boundary) {
       byName.set(b.name, b);
     }
@@ -1711,14 +1737,20 @@ export function renderInspector(c: InspectorCtx): void {
         );
       }
       // flip (docs/04): H = the west<->east sides of the ports, V = the order
-      ctx.root.append(
-        button("Flip horizontal (H)", true, () => ctx.onFlip(selNode.id, "h"), true),
-        button("Flip vertical (V)", true, () => ctx.onFlip(selNode.id, "v"), true)
-      );
+      if (ctx.canvas) {
+        // flipping is a drawing gesture: it belongs to the canvas, not to the config
+        ctx.root.append(
+          button("Flip horizontal (H)", true, () => ctx.onFlip(selNode.id, "h"), true),
+          button("Flip vertical (V)", true, () => ctx.onFlip(selNode.id, "v"), true)
+        );
+      }
       // editing + deletion per component type (slice 2). Scoreboard/coverage/
       // vseq are leaves; the agent falls in cascade (host: modal confirmation).
+      // These edit the CONFIG, so they live on the sidebar surface — the diagram's
+      // aside keeps only what acts on the drawing (docs/07 UX slice 2).
       const del = (kind: string, dname: string): void =>
         ctx.postAction("deleteComponent", { kind, name: dname });
+      if (!ctx.canvas) {
       // the property editor (only the scoreboards from `analysis`, id `sb:`;
       // NOT the cross-block ones `xsb:` = analysis.scoreboards with qualified endpoints)
       if (selNode.kind === "tbsb" && selNode.id.startsWith("sb:")) {
@@ -1772,13 +1804,14 @@ export function renderInspector(c: InspectorCtx): void {
         }
       }
     }
+    }
     // selected boundary flag: LOCAL horizontal flip (mirrors the
     // shape + moves the anchor to the opposite side of the flag, without changing its
     // ELK position/side). On an inout flag (hexagon) it moves only the anchored tip.
     const selB = !selNode
       ? ctx.tbScene?.boundary.find((b) => ctx.state.selection.has(b.id))
       : undefined;
-    if (selB) {
+    if (selB && ctx.canvas) {
       ctx.root.append(
         h("h3", "", "Boundary"),
         h("div", "", selB.label),
@@ -1794,6 +1827,9 @@ export function renderInspector(c: InspectorCtx): void {
     // the add palette (slice 2, docs/05): the connections are not free
     // edges in QuickUVM — source/monitor are fields, so "add" creates the
     // component ALREADY connected (the selected agent preloads the source)
+    if (ctx.canvas) {
+      return; // the aside stops here: everything below edits the config
+    }
     const hasAgents = Boolean(ctx.state.config?.agents?.length);
     const hasActive = Boolean(
       ctx.state.config?.agents?.some((a) => a.active !== false)
@@ -1835,7 +1871,7 @@ export function renderInspector(c: InspectorCtx): void {
     return;
   }
 
-  if (ctx.state.mode === "schematic" && ctx.state.model && ctx.state.viewId) {
+  if (ctx.canvas && ctx.state.mode === "schematic" && ctx.state.model && ctx.state.viewId) {
     const nets = ctx.state.model.views[ctx.state.viewId]?.nets ?? [];
     // the net is selected through the wire/label (data-id = the net's name), BUT also
     // from a pin/flag: on a selection of ONE pin we derive its net, so that
@@ -1881,7 +1917,7 @@ export function renderInspector(c: InspectorCtx): void {
     }
   }
 
-  if (ctx.state.mode === "schematic" && ctx.scene) {
+  if (ctx.canvas && ctx.state.mode === "schematic" && ctx.scene) {
     const selNode = ctx.scene.nodes.find((n) => ctx.state.selection.has(n.id));
     if (selNode) {
       ctx.root.append(
