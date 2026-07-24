@@ -398,6 +398,7 @@
     "test:genstate": "node scripts/test-genstate.mjs",
     "test:benchid": "node scripts/test-benchid.mjs",
     "test:coverage": "node scripts/test-coverage.mjs",
+    "test:inspector": "node scripts/test-inspector.mjs",
     "test:probe": "node scripts/test-probe.mjs",
     "test:compose": "node scripts/test-compose.mjs",
     "test:sidecar": "node scripts/test-sidecar.mjs",

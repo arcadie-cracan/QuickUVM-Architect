@@ -20,6 +20,36 @@ Ordinea globală: **Track A (manifestul QuickUVM) → Linia 1 → Linia 2**; **L
 
 ---
 
+## Principiu UX — „simple by default, powerful when needed"
+
+Aceeași filozofie ca a generatorului ([[quickuvm-design-philosophy]]), aplicată
+inspectorului. Encodată PUR și testat în `src/inspector.ts` (`npm run test:inspector`),
+ca regulile să nu trăiască împrăștiate prin condiții inline în DOM.
+
+Trei reguli, deliberat distincte:
+
+1. **SCOP.** Inspectorul arată proprietățile a CE E SELECTAT, nimic altceva.
+   Secțiunile la nivel de bench (RAL, regresie, ceasuri, reseturi, teste, identitate)
+   apar doar în *bench scope* — nicio componentă selectată, exact ce produce selectarea
+   nodului rădăcină din arborele de verificare (`selectId` null). Înainte se randau sub
+   ORICE selecție: ~55 de rânduri irelevante sub fiecare clic.
+2. **RELEVANȚĂ ⇒ ascunde.** Un câmp al cărui comutator stă chiar lângă el se ascunde
+   până devine util (`mode: responder` dezvăluie rândurile de responder). Nu se pierde
+   nimic: comutatorul E punctul de descoperire. Fiecare rând ascuns corespunde unui zid
+   de validator QuickUVM — l-ar fi refuzat oricum.
+3. **RARITATE ⇒ „Advanced".** Un câmp mereu valid dar rar atins stă sub o dezvăluire,
+   niciodată dezactivat și niciodată eliminat — nu există alt control care să-l scoată
+   la iveală. Starea deschis/închis se ține minte (`vscode.setState`).
+
+Corolar: **un control dezactivat e zgomot permanent.** Se folosește doar când blocajul
+vine din ALTĂ secțiune (ex. „In use by spi" pe un domeniu de ceas), unde utilizatorul
+nu poate deduce de aici cum să-l deblocheze.
+
+Efect măsurat pe un bench realist (RAL + regresie + 2 domenii de ceas + 1 reset +
+2 teste, agent cu 4 porturi selectat): **~100 de controale → sub 30**.
+
+---
+
 ## Track A — manifestul de generare QuickUVM (fundația comună)
 
 **Repo: QuickUVM.** Un singur slice, prin fluxul de PR QuickUVM. Trei adăugiri mici,

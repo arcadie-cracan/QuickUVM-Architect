@@ -222,6 +222,31 @@ body {
   opacity: 0.45;
 }
 
+/* a collapsible inspector section ("simple by default, powerful when needed"):
+   everything advanced starts closed, and a closed section costs exactly one row */
+#inspector .sec-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin: 8px 0 2px;
+  cursor: pointer;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  opacity: 0.75;
+  user-select: none;
+}
+
+#inspector .sec-head:hover {
+  opacity: 1;
+}
+
+#inspector .sec-twisty {
+  flex: none;
+  width: 10px;
+  opacity: 0.8;
+}
+
 /* the small inline buttons of the nested editors (remove a bin/cross, add a cross) */
 #inspector .prop-del,
 #inspector .prop-add {
