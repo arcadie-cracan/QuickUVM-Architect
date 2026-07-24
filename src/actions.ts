@@ -970,6 +970,82 @@ export class Actions {
   // ------------------------------ bench-level configuration (docs/07 line 3, P2)
 
   /**
+   * Clock-domain authoring (docs/07 P4). `add` needs a domain name (prompted, since
+   * a fresh domain has no port to name it after); the rest carry theirs. A list is a
+   * different generation mode from a mapping, so the add/collapse conversions are
+   * deliberate, and a removal blocked by an agent using the domain is reported.
+   */
+  async editClock(
+    op: string,
+    args: { name?: string; field?: string; value?: string },
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri) {
+      return;
+    }
+    try {
+      let done = false;
+      switch (op) {
+        case "add": {
+          const taken = new Set(
+            (Array.isArray(cfg.current.clock) ? cfg.current.clock : [])
+              .map((d) => (d as { name?: string }).name)
+              .filter(Boolean)
+          );
+          taken.add(cfg.current.dut?.clock || "clk");
+          const name = await vscode.window.showInputBox({
+            title: vscode.l10n.t("New clock domain"),
+            value: "sck",
+            validateInput: (v) =>
+              !SV_IDENT_RE.test(v)
+                ? vscode.l10n.t("SV identifier")
+                : taken.has(v)
+                  ? vscode.l10n.t("a clock domain with this name already exists")
+                  : undefined,
+          });
+          if (!name) {
+            return;
+          }
+          done = await cfg.apply((t) => ops.addClockDomain(t, name));
+          break;
+        }
+        case "remove":
+          done = await cfg.apply((t) => ops.removeClockDomain(t, args.name ?? ""));
+          break;
+        case "collapse":
+          done = await cfg.apply((t) => ops.collapseClocks(t));
+          break;
+        case "set": {
+          const f = args.field as ops.ClockField;
+          let value: string | number | undefined = args.value ?? "";
+          if (value === "") {
+            value = undefined;
+          } else if (f === "period" || f === "drive_offset_pct") {
+            const n = Number(value);
+            if (!Number.isInteger(n) || n < 1) {
+              return;
+            }
+            value = n;
+          }
+          done = await cfg.apply((t) =>
+            ops.setClockDomainField(t, args.name ?? "", f, value)
+          );
+          break;
+        }
+        default:
+          return;
+      }
+      if (done) {
+        this.log.appendLine(`[actions] editClock ${op} ${args.name ?? ""}`);
+      }
+    } catch (e) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
+
+  /**
    * Rich functional-coverage authoring (docs/07 P3b). One entry point for every
    * gesture of the nested editor, so the webview needs a single message: `op` selects
    * the mutation, the rest are its arguments. Each op maps to a yamlops function that

@@ -461,6 +461,53 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
+test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  // newConfigText scrie clock: {period, unit} (o MAPARE)
+  assert.equal(Array.isArray(ops.parseQuvm(text).clock), false);
+
+  // primul add converteste maparea intr-o LISTA, purtand ceasul curent ca prim domeniu
+  text = ops.addClockDomain(text, "sck");
+  let clk = ops.parseQuvm(text).clock;
+  assert.ok(Array.isArray(clk), "clock ar fi trebuit sa devina lista");
+  assert.deepEqual(clk.map((d) => d.name), ["clk", "sck"]);
+  assert.equal(clk[0].period, 10); // campurile maparii au fost pastrate
+  assert.equal(clk[0].unit, "ns");
+  assert.throws(() => ops.addClockDomain(text, "sck"), /exista deja/);
+
+  text = ops.setClockDomainField(text, "sck", "period", 20);
+  text = ops.setClockDomainField(text, "sck", "source", "dut");
+  clk = ops.parseQuvm(text).clock;
+  assert.equal(clk[1].period, 20);
+  assert.equal(clk[1].source, "dut");
+  text = ops.setClockDomainField(text, "sck", "source", "tb"); // default -> sters
+  assert.equal("source" in ops.parseQuvm(text).clock[1], false);
+  // redenumire: unica, obligatorie
+  assert.throws(() => ops.setClockDomainField(text, "sck", "name", "clk"), /exista deja/);
+  assert.throws(() => ops.setClockDomainField(text, "sck", "name", ""), /obligatoriu/);
+
+  // un agent care foloseste domeniul blocheaza stergerea (QuickUVM refuza clock necunoscut)
+  let used = text.replace(/(\n\s+)interface: cmd_if/, "$1clock: sck$1interface: cmd_if");
+  // DUT nu are agent „cmd" aici; construim unul cu clock: sck prin editare directa
+  used = ops.createAgent(text, { name: "spi", inputs: [{ name: "din", width: 8 }], outputs: [] });
+  used = ops.setAgentField(used, "spi", "clock", "sck");
+  assert.throws(() => ops.removeClockDomain(used, "sck"), /folosit de/);
+
+  // remove ok cand nu-l foloseste nimeni
+  text = ops.removeClockDomain(text, "sck");
+  assert.deepEqual(ops.parseQuvm(text).clock.map((d) => d.name), ["clk"]);
+  // ultimul domeniu: nu se sterge, se colapseaza
+  assert.throws(() => ops.removeClockDomain(text, "clk"), /singurul domeniu/);
+  assert.equal(ops.removeClockDomain(text, "nope"), text); // no-op byte-identic
+
+  // colapsare: lista de 1 -> mapare, numele redundant dispare
+  text = ops.collapseClocks(text);
+  assert.equal(Array.isArray(ops.parseQuvm(text).clock), false);
+  assert.equal("name" in ops.parseQuvm(text).clock, false);
+  const twoAgain = ops.addClockDomain(text, "sck");
+  assert.throws(() => ops.collapseClocks(twoAgain), /exact un domeniu/);
+});
+
 test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {

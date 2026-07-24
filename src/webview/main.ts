@@ -3015,8 +3015,96 @@ function tbBenchSettings(cfg: QuvmConfig): void {
     );
   }
 
+  tbClockDomains(cfg);
   tbTestsEditor(cfg);
   tbBenchIdentity(cfg);
+}
+
+/**
+ * The clock-domains editor (docs/07 line 3, P4). `clock:` is either a single MAPPING
+ * or a LIST of domains — different modes (a list engages per-domain clkgen/nets), so
+ * a 1-element list is NOT a mapping. Adding the first domain converts mapping → list;
+ * collapsing a 1-element list goes back. Per-agent domain assignment lives in the
+ * agent inspector (P1); this authors the domains it chooses from.
+ */
+function tbClockDomains(cfg: QuvmConfig): void {
+  inspector.append(h("h3", "", "Clocks"));
+  const clock = cfg.clock;
+  const isList = Array.isArray(clock);
+  const domains: { name?: string; period?: number; unit?: string; source?: string }[] =
+    isList
+      ? (clock as { name?: string }[])
+      : [
+          {
+            name: cfg.dut?.clock || "clk",
+            period: (clock as { period?: number })?.period,
+            unit: (clock as { unit?: string })?.unit,
+          },
+        ];
+
+  for (const d of domains) {
+    const name = d.name || "clk";
+    inspector.append(h("div", "prop-group", name));
+    const send = (field: string, value: string): void =>
+      // a single mapping is addressed by any name; a list domain by its own
+      postAction("editClock", { op: "set", name, field, value });
+
+    const perIn = h("input", "prop");
+    perIn.type = "number";
+    perIn.min = "1";
+    perIn.value = d.period != null ? String(d.period) : "";
+    perIn.placeholder = "10";
+    perIn.addEventListener("change", () => send("period", perIn.value));
+    inspector.append(tbPropRow("Period", perIn));
+
+    inspector.append(
+      tbPropRow(
+        "Unit",
+        tbSelect(
+          ["fs", "ps", "ns", "us", "ms", "s"].map((u) => [u, u] as const),
+          d.unit ?? "ns",
+          (v) => send("unit", v)
+        )
+      )
+    );
+    inspector.append(
+      tbPropRow(
+        "Source",
+        tbSelect(
+          [
+            ["tb", "TB drives it"],
+            ["dut", "DUT outputs it"],
+          ],
+          d.source ?? "tb",
+          (v) => send("source", v)
+        )
+      )
+    );
+    if (isList) {
+      const nameIn = h("input", "prop");
+      nameIn.value = name;
+      nameIn.addEventListener("change", () => send("name", nameIn.value));
+      inspector.append(tbPropRow("Name", nameIn));
+      // a domain in use by an agent cannot be removed (the agent inspector reassigns)
+      const users = (cfg.agents ?? []).filter((a) => a.clock === name).map((a) => a.name);
+      const del = button(
+        users.length ? `In use by ${users.join(", ")}` : `Remove ${name}`,
+        domains.length > 1 && users.length === 0,
+        () => postAction("editClock", { op: "remove", name }),
+        true
+      );
+      inspector.append(del);
+    }
+  }
+
+  inspector.append(
+    button("Add clock domain…", true, () => postAction("editClock", { op: "add" }), true)
+  );
+  if (isList && domains.length === 1) {
+    inspector.append(
+      button("Back to a single clock", true, () => postAction("editClock", { op: "collapse" }), true)
+    );
+  }
 }
 
 /**

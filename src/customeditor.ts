@@ -254,6 +254,13 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           target
         );
         break;
+      case "editClock":
+        void this.actions.editClock(
+          s("op"),
+          args as Parameters<typeof this.actions.editClock>[1],
+          target
+        );
+        break;
       case "addTest":
         void this.actions.addTest(target);
         break;

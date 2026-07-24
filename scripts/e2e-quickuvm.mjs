@@ -880,4 +880,61 @@ endpackage
   generate("cov_downgraded", bare, ["cmd_cov.svh"]);
 }
 
+// --- scenario 10 (docs/07 P4): MULTI-CLOCK domains. The editor converts the single
+// `clock:` mapping into a domain list and assigns an agent to a second domain; the
+// generator is the judge of whether the list mode really wired up.
+{
+  let t = ops.setDut(ops.newConfigText("mc"), {
+    module: "mc", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "core", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  t = ops.createAgent(t, {
+    name: "spi", inputs: [{ name: "mosi", width: 1 }], outputs: [{ name: "miso", width: 1 }],
+  });
+
+  // add a second domain (mapping -> list) sourced by the DUT (SPI sck), assign the
+  // spi agent to it
+  let mc = ops.addClockDomain(t, "sck");
+  mc = ops.setClockDomainField(mc, "sck", "period", 40);
+  mc = ops.setClockDomainField(mc, "sck", "source", "dut");
+  mc = ops.setAgentField(mc, "spi", "clock", "sck");
+  assert.ok(Array.isArray(ops.parseQuvm(mc).clock), "clock ar fi trebuit sa fie o lista");
+  const dirMc = generate("multiclock", mc, ["clkgen.sv", "tb_top.sv"]);
+  // the second domain reached the top: a DUT-sourced clock is a sampled net there
+  // (source: dut => the TB does not generate it, so it is NOT in clkgen)
+  const top = readFileSync(
+    listFiles(join(dirMc, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8"
+  );
+  assert.ok(/\bsck\b/.test(top), `tb_top.sv nu contine domeniul sck:\n${top}`);
+  assert.match(top, /OBSERVED: the DUT drives this clock/,
+    "domeniul source: dut ar fi trebuit sa fie un ceas observat");
+  console.log("  ok    multi-clock: al doilea domeniu (source: dut) ajunge in tb_top");
+
+  // THE DOMAIN-USE CASCADE IS LOAD-BEARING. An agent samples `sck`; QuickUVM refuses
+  // an agent clock naming an undeclared domain, so removing `sck` is blocked. Mutation
+  // proof: the config with `sck` deleted but the agent still on it is REFUSED.
+  assert.throws(() => ops.removeClockDomain(mc, "sck"), /folosit de/);
+  // build the illegal config by hand (drop the domain, keep the agent binding)
+  const orphan = ops.parseQuvm(mc);
+  orphan.clock = orphan.clock.filter((d) => d.name !== "sck");
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-mc-"));
+  // re-serialize via a targeted text edit: remove the `{ name: sck, ... }` entry
+  const orphanText = mc.replace(/\n\s+- \{ name: sck[^}]*\}/, "");
+  assert.notEqual(orphanText, mc, "mutatia (domeniu sck sters) nu s-a aplicat");
+  writeFileSync(join(dir, "m.quickuvm.yaml"), orphanText);
+  const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze agentul pe un domeniu inexistent");
+  console.log("  ok    multi-clock: cascada domeniu-folosit e load-bearing (fara ea: REFUZ)");
+
+  // collapse a 1-element list back to a single mapping — still generates
+  let one = ops.addClockDomain(t, "aux"); // core stays on the implicit first
+  one = ops.removeClockDomain(one, "aux");
+  one = ops.collapseClocks(one);
+  assert.equal(Array.isArray(ops.parseQuvm(one).clock), false);
+  generate("clock_collapsed", one, ["clkgen.sv"]);
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");
