@@ -62,6 +62,8 @@ export type ActionKind =
   | "editClock"
   | "editReset"
   | "editAgentPort"
+  | "addVipAgent"
+  | "editSubenvNamespace"
   | "addTest"
   | "removeTest"
   | "editTest"

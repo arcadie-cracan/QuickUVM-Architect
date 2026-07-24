@@ -461,6 +461,40 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
+test("addVipAgent / setSubenvNamespace: consum prin referinta + prefixare H1", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.addVipAgent(text, "io", "../vip/gen/f2_iovip.qvip");
+  // o intrare prin REFERINTA poarta DOAR name + from_vip (restul vine din manifest)
+  assert.deepEqual(ops.parseQuvm(text).agents[0], {
+    name: "io", from_vip: "../vip/gen/f2_iovip.qvip",
+  });
+  assert.ok(/\{ name: io, from_vip: /.test(text), `intrarea nu e flow:\n${text}`);
+  // consumul prin referinta cere `layout: packaged` (VIP-ul E un pachet extern) —
+  // op-ul il pune, ca `createSubenvs`, in loc sa esueze abia la generare
+  assert.equal(ops.parseQuvm(text).layout, "packaged");
+  assert.throws(() => ops.addVipAgent(text, "io", "x.qvip"), /exista deja/);
+  // convietuieste cu agentii declarati normal
+  text = ops.createAgent(text, { name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [] });
+  assert.deepEqual(ops.parseQuvm(text).agents.map((a) => a.name), ["io", "cmd"]);
+
+  // namespace: absent = auto (prefixeaza doar cand acelasi config e compus de >=2 ori)
+  let top = ops.setDut(ops.newConfigText("sys"), { ...DUT, combinational: true });
+  top = ops.createSubenvs(top, [
+    { name: "u_a", config: "blk.quickuvm.yaml", params: {} },
+    { name: "u_b", config: "blk.quickuvm.yaml", params: {} },
+  ]);
+  assert.equal("namespace" in ops.parseQuvm(top).subenvs[0], false, "auto = cheia absenta");
+  top = ops.setSubenvNamespace(top, "u_a", true);
+  assert.equal(ops.parseQuvm(top).subenvs[0].namespace, true);
+  top = ops.setSubenvNamespace(top, "u_a", "blkA");
+  assert.equal(ops.parseQuvm(top).subenvs[0].namespace, "blkA");
+  top = ops.setSubenvNamespace(top, "u_a", false);
+  assert.equal(ops.parseQuvm(top).subenvs[0].namespace, false);
+  top = ops.setSubenvNamespace(top, "u_a", undefined); // inapoi la auto
+  assert.equal("namespace" in ops.parseQuvm(top).subenvs[0], false);
+  assert.throws(() => ops.setSubenvNamespace(top, "nope", true), /nu exista/);
+});
+
 test("setAgentPortField: open_drain trage pullup-ul dupa el si nu-l lasa scos", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {

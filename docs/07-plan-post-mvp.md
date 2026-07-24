@@ -376,6 +376,19 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   port bogate; inspector clock/reset independent de setDut; autorare liste
   multi-clock/multi-reset cu atribuire de domeniu per-agent (respectând distincția
   listă-vs-mapare).
+- **P5 LIVRAT — compoziție & VIP. LINIA 3 COMPLETĂ.** (a) *Consumul unui VIP prin
+  referință*: „VIP agent (by reference)…" din paleta de adăugare deschide un selector
+  de `.qvip`, citește agenții pe care îi livrează manifestul și scrie
+  `{name, from_vip}` cu calea RELATIVĂ la configurația consumatoare. Regula descoperită
+  rulând: **`from_vip` cere `layout: packaged`** (VIP-ul E un pachet extern) — op-ul îl
+  pune, ca `createSubenvs`, iar `layoutBlockers` blochează întoarcerea la flat.
+  (b) *`subenvs.namespace`*: selector pe nodul de subenv, cu AUTO explicat în etichetă
+  (prefixează doar când același `config` e compus de ≥2 ori — un bloc folosit o dată
+  rămâne byte-identic). (c) Garda hibridă era deja ridicată dintr-o felie anterioară.
+  Verificat pe cod generat: sursa agentului referit NU se regenerează.
+  **Finding pentru QuickUVM**: antetul `templates/vip_manifest.qvip.j2:3` documentează
+  sintaxa VECHE (`agent_refs: {name, manifest}`), redenumită în 1.0 în
+  `agents: {name, from_vip}` — manifestele generate poartă instrucțiuni greșite.
 - **P5 — paritate de compoziție & VIP** (scump; geometrie nouă + cross-fișier). Garda
   hibridă stale (`actions.ts:599-612`) devine flux suportat (agenți de graniță la top,
   capete connection/xsb); autorare `kind: vip` (emite manifestul `.qvip`) + consum

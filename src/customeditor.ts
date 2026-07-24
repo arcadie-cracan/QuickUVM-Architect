@@ -274,6 +274,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           target
         );
         break;
+      case "addVipAgent":
+        void this.actions.addVipAgent(target);
+        break;
+      case "editSubenvNamespace":
+        void this.actions.editSubenvNamespace(s("subenv"), s("mode"), target);
+        break;
       case "addTest":
         void this.actions.addTest(target);
         break;
