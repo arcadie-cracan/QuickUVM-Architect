@@ -414,6 +414,7 @@
     "test:benchid": "node scripts/test-benchid.mjs",
     "test:coverage": "node scripts/test-coverage.mjs",
     "test:inspector": "node scripts/test-inspector.mjs",
+    "test:webview-load": "node scripts/test-webview-load.mjs",
     "test:probe": "node scripts/test-probe.mjs",
     "test:compose": "node scripts/test-compose.mjs",
     "test:sidecar": "node scripts/test-sidecar.mjs",

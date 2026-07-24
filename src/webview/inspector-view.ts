@@ -884,7 +884,22 @@ function tbBenchIdentity(cfg: QuvmConfig): void {
  * Keyed by a stable section id, NOT by the selected component: the preference is
  * "I want agent advanced fields", not "…for this one agent".
  */
-const openSections = new Set<string>(ctx.vscode.getState()?.openSections ?? []);
+// NOTHING at module scope may touch `ctx` — it is only assigned once `renderInspector`
+// runs, so reading it here throws at IMPORT time and takes the whole webview with it
+// (the `let ctx!` assertion hides that from the compiler). The persisted disclosures
+// are therefore loaded lazily, on the first render.
+const openSections = new Set<string>();
+let sectionsLoaded = false;
+
+function loadSections(): void {
+  if (sectionsLoaded) {
+    return;
+  }
+  sectionsLoaded = true;
+  for (const id of ctx.vscode.getState()?.openSections ?? []) {
+    openSections.add(id);
+  }
+}
 
 function persistSections(): void {
   ctx.vscode.setState({
@@ -1586,6 +1601,7 @@ export function tbDeleteTarget(
  *  Without own state: everything is derived from the model + overlay (invariant 2). */
 export function renderInspector(c: InspectorCtx): void {
   ctx = c;
+  loadSections();
   if (!ctx.root) {
     return;
   }
