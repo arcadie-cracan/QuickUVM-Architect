@@ -288,6 +288,12 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.value === "string" ? args.value : ""
           );
           break;
+        case "editCoverage":
+          void actions.editCoverage(
+            typeof args.op === "string" ? args.op : "",
+            args as Parameters<typeof actions.editCoverage>[1]
+          );
+          break;
         case "addTest":
           void actions.addTest();
           break;

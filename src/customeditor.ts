@@ -247,6 +247,13 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "editRegress":
         void this.actions.editRegress(s("field"), s("value"), target);
         break;
+      case "editCoverage":
+        void this.actions.editCoverage(
+          s("op"),
+          args as Parameters<typeof this.actions.editCoverage>[1],
+          target
+        );
+        break;
       case "addTest":
         void this.actions.addTest(target);
         break;

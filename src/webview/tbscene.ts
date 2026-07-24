@@ -16,6 +16,7 @@
 // Fail-soft construction: the YAML entries that reference nonexistent agents are
 // drawn as much as possible; the authoritative validation stays in ConfigService.
 
+import { coveredAgent } from "../coverage";
 import { isCrossBlockSb } from "../quickuvm";
 import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
 
@@ -23,6 +24,16 @@ import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
 // `subenv_scoreboards` — they are `analysis.scoreboards` entries with
 // qualified endpoints `<subenv>.<agent>`. The local/cross separation decides what is drawn
 // as `sb:` (in Env) and what as `xsb:` (at the testbench level).
+/** The agents with a coverage collector. An `analysis.coverage` entry is either a
+ *  BARE agent name or a RICH `{agent, coverpoints…}` mapping (docs/07 P3b) — reading
+ *  the list as strings would label the node `[object Object]`. */
+function coveredAgents(config: QuvmConfig): string[] {
+  const names = (config.analysis?.coverage ?? [])
+    .map((c) => coveredAgent(c))
+    .filter((n): n is string => Boolean(n));
+  return [...new Set(names)];
+}
+
 function subenvNameSet(config: QuvmConfig): Set<string> {
   return new Set(
     (config.subenvs ?? [])
@@ -268,7 +279,7 @@ function levelTop(
   // Env: UML box with the listed components + drill
   const analysisItems = [
     ...localSbs(config).map((s) => `${s.name ?? "sbd"} (scoreboard)`),
-    ...[...new Set(config.analysis?.coverage ?? [])].map((a) => `${a} (coverage)`),
+    ...coveredAgents(config).map((a) => `${a} (coverage)`),
   ];
   const envComp: TbCompartment[] = [];
   if (agents.length) {
@@ -471,7 +482,7 @@ function levelEnv(
   }
 
   // coverage
-  for (const agent of new Set(config.analysis?.coverage ?? [])) {
+  for (const agent of coveredAgents(config)) {
     const id = `cov:${agent}`;
     nodes.push({
       id,

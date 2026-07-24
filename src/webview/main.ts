@@ -18,6 +18,15 @@ import type { GenerateStatus, SidecarData, SidecarNode, StatusDeco, UiConfig, Xp
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { kindBlockers, layoutBlockers } from "../benchid";
+import {
+  coveredAgent,
+  coverpointCandidates,
+  crossBlockers,
+  crossFields,
+  crossName,
+  formatBinSpec,
+  isRich,
+} from "../coverage";
 import type { QuvmAgent, QuvmConfig, QuvmPort, QuvmScoreboard } from "../quickuvm";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
 import { cameraForMinimapPoint, minimapLayout, minimapUseTransform, minimapViewRect, MmLayout } from "./minimap";
@@ -2664,6 +2673,173 @@ function tbPropRow(label: string, control: HTMLElement): HTMLElement {
 }
 
 /**
+ * The rich functional-coverage editor (docs/07 line 3, P3b). An `analysis.coverage`
+ * entry is either a BARE agent name — pure env routing, connect that agent's
+ * `<agent>_cov` — or a RICH model that also generates the covergroup content. This is
+ * the gesture that upgrades one to the other and then authors it.
+ *
+ * QuickUVM's own rules are surfaced, not discovered at generate time: a rich model
+ * needs at least one coverpoint (so the upgrade creates the first), each field gets
+ * exactly one coverpoint, a cross needs >= 2 DECLARED coverpoints and a unique name,
+ * and `goal` is a percent. Everything the editor does not author (illegal_bins,
+ * ignore_bins, transitions, cross bin selections) is edited around, never rewritten.
+ */
+function tbCoverageEditor(agentName: string): void {
+  const entries = state.config?.analysis?.coverage ?? [];
+  const entry = entries.find((c) => coveredAgent(c) === agentName);
+  if (entry === undefined) {
+    return;
+  }
+  const agent = (state.config?.agents ?? []).find((a) => a.name === agentName);
+  const send = (op: string, args: Record<string, unknown> = {}): void =>
+    postAction("editCoverage", { op, agent: agentName, ...args });
+
+  inspector.append(h("h3", "", "Coverage model"));
+
+  if (!isRich(entry)) {
+    // bare entry: routing only. The upgrade needs a first coverpoint, so it is
+    // offered per candidate field rather than as a bare "make it rich" button.
+    const candidates = coverpointCandidates(agent, {});
+    inspector.append(
+      h("div", "dim", "routing only — no covergroup content is generated"),
+      h("div", "note", "add a first coverpoint to author bins and crosses")
+    );
+    if (candidates.length) {
+      const sel = tbSelect(
+        [["", "— add a coverpoint —"], ...candidates.map((c) => [c, c] as const)],
+        "",
+        (v) => {
+          if (v) {
+            send("upgrade", { field: v });
+          }
+        }
+      );
+      inspector.append(tbPropRow("Coverpoint", sel));
+    } else {
+      inspector.append(h("div", "note", "this agent has no ports to cover"));
+    }
+    return;
+  }
+
+  const model = entry;
+  for (const cp of model.coverpoints ?? []) {
+    const field = cp.field;
+    if (!field) {
+      continue;
+    }
+    inspector.append(h("div", "prop-group", field));
+    for (const bin of cp.bins ?? []) {
+      const binName = bin.name;
+      if (!binName) {
+        continue;
+      }
+      const inp = h("input", "prop");
+      inp.value = formatBinSpec(bin);
+      inp.title = "one value (5), an inclusive range (0..7) or a list (1, 2, 3)";
+      inp.addEventListener("change", () =>
+        send("setBin", { field, bin: binName, spec: inp.value })
+      );
+      const row = tbPropRow(binName, inp);
+      const del = h("button", "prop-del", "×");
+      del.title = `remove bin ${binName}`;
+      del.addEventListener("click", () => send("removeBin", { field, bin: binName }));
+      row.append(del);
+      inspector.append(row);
+    }
+    const addBin = h("input", "prop");
+    addBin.placeholder = "new bin: name = 0..7";
+    addBin.addEventListener("change", () => {
+      // `name = spec` on one line, so adding a bin is a single gesture
+      const [rawName, ...rest] = addBin.value.split("=");
+      const spec = rest.join("=");
+      if (rawName.trim() && spec.trim()) {
+        send("setBin", { field, bin: rawName.trim(), spec });
+        addBin.value = "";
+      }
+    });
+    inspector.append(tbPropRow("Add bin", addBin));
+    inspector.append(
+      button(`Remove coverpoint ${field}`, true, () => send("removeCoverpoint", { field }), true)
+    );
+  }
+
+  const candidates = coverpointCandidates(agent, model);
+  if (candidates.length) {
+    inspector.append(
+      tbPropRow(
+        "Coverpoint",
+        tbSelect(
+          [["", "— add —"], ...candidates.map((c) => [c, c] as const)],
+          "",
+          (v) => {
+            if (v) {
+              send("addCoverpoint", { field: v });
+            }
+          }
+        )
+      )
+    );
+  }
+
+  // crosses: a checkbox per declared coverpoint, added when >= 2 are ticked
+  const declared = (model.coverpoints ?? [])
+    .map((c) => c.field)
+    .filter((f): f is string => Boolean(f));
+  for (const cross of model.crosses ?? []) {
+    const name = crossName(cross);
+    const row = tbPropRow(name, h("div", "dim", crossFields(cross).join(" × ")));
+    const del = h("button", "prop-del", "×");
+    del.title = `remove cross ${name}`;
+    del.addEventListener("click", () => send("removeCross", { value: name }));
+    row.append(del);
+    inspector.append(row);
+  }
+  if (declared.length >= 2) {
+    const picked = new Set<string>();
+    const box = h("div", "prop-checks");
+    const add = h("button", "prop-add", "cross");
+    add.disabled = true;
+    for (const f of declared) {
+      const lbl = h("label", "prop-check");
+      const cb = h("input", "");
+      cb.type = "checkbox";
+      cb.addEventListener("change", () => {
+        if (cb.checked) {
+          picked.add(f);
+        } else {
+          picked.delete(f);
+        }
+        const why = crossBlockers(model, [...picked]);
+        add.disabled = why.length > 0;
+        add.title = why.join(" · ");
+      });
+      lbl.append(cb, document.createTextNode(` ${f}`));
+      box.append(lbl);
+    }
+    add.addEventListener("click", () => {
+      if (picked.size >= 2) {
+        send("addCross", { fields: declared.filter((f) => picked.has(f)) });
+      }
+    });
+    box.append(add);
+    inspector.append(tbPropRow("New cross", box));
+  }
+
+  const goalIn = h("input", "prop");
+  goalIn.type = "number";
+  goalIn.min = "1";
+  goalIn.max = "100";
+  goalIn.value = model.goal != null ? String(model.goal) : "";
+  goalIn.placeholder = "closure %";
+  goalIn.addEventListener("change", () => send("goal", { value: goalIn.value }));
+  inspector.append(tbPropRow("Goal", goalIn));
+
+  inspector.append(
+    button("Back to routing only", true, () => send("downgrade"), true)
+  );
+}
+
+/**
  * The bench-level settings panel (docs/07 line 3, P2): RAL + regression. Both are
  * PRESENCE-switched blocks — `register_model:` switches the bench into RAL mode
  * (adapter + CSR tests + env wiring), `regress:` generates the Makefile and is what
@@ -3570,6 +3746,12 @@ function renderInspector(): void {
         if (sb?.name) {
           tbScoreboardEditor(sb);
         }
+      } else if (selNode.kind === "tbcov") {
+        // docs/07 P3b — the rich coverage model behind this collector
+        const covAgent = selNode.id.startsWith("cov:")
+          ? selNode.id.slice(4)
+          : selNode.label.replace(/_cov$/, "");
+        tbCoverageEditor(covAgent);
       } else if (selNode.kind === "tbagent") {
         // docs/07 line 3 (P1) — an agent can now be EDITED, not only created
         const ag = state.config?.agents?.find((a) => a.name === selNode.label);

@@ -813,4 +813,71 @@ endpackage
   console.log("  ok    scoreboard: cascada window<->monitor e load-bearing (fara ea: REFUZ)");
 }
 
+// --- scenario 9 (docs/07 P3b): RICH functional coverage. The editor upgrades a bare
+// `coverage: [cmd]` routing entry into a covergroup model; every gesture below is
+// one of its actions, and the generated covergroup is inspected (not just exit 0).
+{
+  let t = ops.setDut(ops.newConfigText("cov"), {
+    module: "cov", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "cmd",
+    inputs: [{ name: "din", width: 8 }, { name: "wr", width: 1 }],
+    outputs: [{ name: "dout", width: 8 }],
+  });
+  t = ops.addCoverage(t, "cmd");
+
+  // bare entry: routing only, no covergroup content
+  const dirBare = generate("cov_bare", t, ["cmd_cov.svh"]);
+  const bareCov = readFileSync(
+    listFiles(join(dirBare, "tb")).find((f) => basename(f) === "cmd_cov.svh"), "utf8"
+  );
+  assert.ok(!/low\b/.test(bareCov), "intrarea simpla nu ar trebui sa aiba bin-uri denumite");
+
+  // upgrade + author: coverpoints, bins in all three forms, a cross, a goal
+  let rich = ops.upgradeCoverage(t, "cmd", "din");
+  rich = ops.addCoverpoint(rich, "cmd", "wr");
+  rich = ops.setCoverageBin(rich, "cmd", "din", "low", { range: [0, 7] });
+  rich = ops.setCoverageBin(rich, "cmd", "din", "max", { value: 255 });
+  rich = ops.setCoverageBin(rich, "cmd", "wr", "both", { values: [0, 1] });
+  rich = ops.addCross(rich, "cmd", ["din", "wr"]);
+  rich = ops.setCoverageGoal(rich, "cmd", 90);
+  const dirRich = generate("cov_rich", rich, ["cmd_cov.svh"]);
+  const richCov = readFileSync(
+    listFiles(join(dirRich, "tb")).find((f) => basename(f) === "cmd_cov.svh"), "utf8"
+  );
+  // the authored content really reaches the covergroup
+  for (const needle of ["low", "max", "both", "[0:7]", "255", "cross", "goal"]) {
+    assert.ok(richCov.includes(needle), `covergroup-ul nu contine „${needle}":\n${richCov}`);
+  }
+  console.log("  ok    coverage bogat: bins/cross/goal ajung in covergroup-ul generat");
+
+  // THE PRUNING CASCADE IS LOAD-BEARING. Removing a coverpoint must remove the
+  // crosses over it — QuickUVM refuses a cross naming an undeclared coverpoint.
+  const pruned = ops.removeCoverpoint(rich, "cmd", "wr");
+  assert.equal("crosses" in ops.parseQuvm(pruned).analysis.coverage[0], false);
+  generate("cov_pruned", pruned, ["cmd_cov.svh"]);
+
+  // the mutation uses the real op, which does NOT validate: a cross over `wr`, which
+  // is no longer a declared coverpoint — precisely what the cascade prevents
+  const orphanCross = ops.addCross(pruned, "cmd", ["din", "wr"]);
+  assert.notEqual(orphanCross, pruned, "mutatia (cross orfan) nu s-a aplicat");
+  const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-cross-"));
+  writeFileSync(join(dir, "m.quickuvm.yaml"), orphanCross);
+  const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
+  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze un cross catre un camp nedeclarat");
+  assert.match(
+    (bad.stdout ?? "") + (bad.stderr ?? ""),
+    /cross references.*not a declared coverpoint/s,
+    "alt motiv de esec decat cross-ul orfan"
+  );
+  console.log("  ok    coverage bogat: cascada coverpoint->cross e load-bearing (fara ea: REFUZ)");
+
+  // downgrade: back to routing only, and the bench still generates
+  const bare = ops.downgradeCoverage(rich, "cmd");
+  assert.deepEqual(ops.parseQuvm(bare).analysis.coverage, ["cmd"]);
+  generate("cov_downgraded", bare, ["cmd_cov.svh"]);
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

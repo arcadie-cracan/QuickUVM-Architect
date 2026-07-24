@@ -58,6 +58,7 @@ export type ActionKind =
   | "editRegisterModel"
   | "toggleRegress"
   | "editRegress"
+  | "editCoverage"
   | "addTest"
   | "removeTest"
   | "editTest"

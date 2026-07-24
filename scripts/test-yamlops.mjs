@@ -461,6 +461,94 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
+test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, {
+    name: "cmd",
+    inputs: [{ name: "din", width: 8 }, { name: "wr", width: 1 }],
+    outputs: [{ name: "dout", width: 8 }],
+  });
+  text = ops.addCoverage(text, "cmd");
+  assert.deepEqual(ops.parseQuvm(text).analysis.coverage, ["cmd"]); // forma simpla
+
+  // upgrade: modelul bogat CERE cel putin un coverpoint, deci primul vine cu el
+  text = ops.upgradeCoverage(text, "cmd", "din");
+  assert.deepEqual(ops.parseQuvm(text).analysis.coverage[0], {
+    agent: "cmd", coverpoints: [{ field: "din", bins: [] }],
+  });
+  assert.throws(() => ops.upgradeCoverage(text, "cmd", "wr"), /deja/);
+
+  text = ops.addCoverpoint(text, "cmd", "wr");
+  assert.throws(() => ops.addCoverpoint(text, "cmd", "wr"), /deja un coverpoint/);
+  // bin-uri: exact una din cele trei forme supravietuieste
+  text = ops.setCoverageBin(text, "cmd", "din", "low", { range: [0, 7] });
+  text = ops.setCoverageBin(text, "cmd", "din", "hi", { value: 255 });
+  text = ops.setCoverageBin(text, "cmd", "wr", "both", { values: [0, 1] });
+  let cp = ops.parseQuvm(text).analysis.coverage[0].coverpoints[0];
+  assert.deepEqual(cp.bins, [
+    { name: "low", range: [0, 7] },
+    { name: "hi", value: 255 },
+  ]);
+  // re-setarea aceluiasi nume INLOCUIESTE (nu duplica) si schimba forma
+  text = ops.setCoverageBin(text, "cmd", "din", "low", { values: [1, 2] });
+  cp = ops.parseQuvm(text).analysis.coverage[0].coverpoints[0];
+  assert.equal(cp.bins.length, 2);
+  assert.deepEqual(cp.bins[0], { name: "low", values: [1, 2] });
+  text = ops.removeCoverageBin(text, "cmd", "din", "low");
+  assert.deepEqual(
+    ops.parseQuvm(text).analysis.coverage[0].coverpoints[0].bins,
+    [{ name: "hi", value: 255 }]
+  );
+
+  text = ops.addCross(text, "cmd", ["din", "wr"]);
+  assert.deepEqual(ops.parseQuvm(text).analysis.coverage[0].crosses, [["din", "wr"]]);
+  text = ops.setCoverageGoal(text, "cmd", 90);
+  assert.equal(ops.parseQuvm(text).analysis.coverage[0].goal, 90);
+  assert.throws(() => ops.setCoverageGoal(text, "cmd", 0), /procent/);
+  assert.throws(() => ops.setCoverageGoal(text, "cmd", 101), /procent/);
+
+  // stergerea unui coverpoint ia cu ea crossurile care il refereau (QuickUVM refuza
+  // un cross catre un camp nedeclarat)
+  const pruned = ops.removeCoverpoint(text, "cmd", "wr");
+  assert.equal("crosses" in ops.parseQuvm(pruned).analysis.coverage[0], false,
+    "cross-ul a supravietuit stergerii coverpoint-ului");
+  // ultimul coverpoint nu se poate sterge: modelul bogat cere >= 1
+  assert.throws(() => ops.removeCoverpoint(pruned, "cmd", "din"), /singurul coverpoint/);
+
+  text = ops.downgradeCoverage(text, "cmd");
+  assert.deepEqual(ops.parseQuvm(text).analysis.coverage, ["cmd"]);
+  assert.equal(ops.downgradeCoverage(text, "cmd"), text, "downgrade repetat nu e byte-identic");
+  assert.throws(() => ops.addCoverpoint(text, "cmd", "din"), /nu are un model/);
+});
+
+test("coverage bogat: editarile NU rescriu cheile scrise de mana", () => {
+  // illegal_bins / transitions / cross-bins nu sunt autorate de extensie; o editare
+  // le-ar pierde daca ar rescrie intrarea in loc sa o modifice pe loc
+  const hand = [
+    "project: { name: s }",
+    "analysis:",
+    "  coverage:",
+    "    - agent: cmd",
+    "      coverpoints:",
+    "        - field: din",
+    "          bins: []",
+    "          illegal_bins: [{ name: bad, value: 9 }]",
+    "          transitions: [{ name: t, seq: 0 => 1 }]",
+    "      crosses:",
+    "        - fields: [din, wr]",
+    "          bins: [{ name: sel, select: binsof(din) }]",
+    "",
+  ].join("\n");
+  const out = ops.setCoverageBin(hand, "cmd", "din", "low", { range: [0, 7] });
+  const cp = ops.parseQuvm(out).analysis.coverage[0].coverpoints[0];
+  assert.deepEqual(cp.bins, [{ name: "low", range: [0, 7] }]);
+  assert.deepEqual(cp.illegal_bins, [{ name: "bad", value: 9 }]);
+  assert.equal(cp.transitions.length, 1);
+  const cross = ops.parseQuvm(out).analysis.coverage[0].crosses[0];
+  assert.deepEqual(cross.fields, ["din", "wr"]);
+  assert.equal(cross.bins.length, 1, "bin-urile cross-ului scrise de mana s-au pierdut");
+});
+
 test("tests[]: add/remove/edit; stergerea ULTIMULUI test scoate cheia `tests`", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   const dflt = ops.parseQuvm(text).tests[0].name;
