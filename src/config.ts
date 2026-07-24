@@ -12,6 +12,7 @@ import { ProjectModel } from "./model";
 import { AGENT_PALETTE, OverlayConfig, PortRole, StatusDeco } from "./protocol";
 import { decosFromFindings } from "./status";
 import { agentPorts, QuvmConfig } from "./quickuvm";
+import { parseQuvm } from "./yamlops";
 import { newConfigText, topConfigPaths } from "./yamlops";
 
 // re-export: the width quick-fix code lives in the pure core
@@ -48,6 +49,11 @@ export class ConfigService implements vscode.Disposable {
   decorations: StatusDeco[] = [];
   /** the last parsed configuration (for commands and validations) */
   current: QuvmConfig = {};
+  /** docs/07 P3c — the agents of each composed child block, keyed by subenv name.
+   *  A cross-block scoreboard's endpoints are `<subenv>.<agent>`, and the child's
+   *  agents live in ANOTHER file, so the endpoint picker cannot be derived from
+   *  `current` alone. Empty for a leaf bench. */
+  childAgents: Record<string, string[]> = {};
 
   constructor(
     private readonly log: vscode.OutputChannel,
@@ -283,6 +289,7 @@ export class ConfigService implements vscode.Disposable {
     }
 
     this.current = (ydoc.toJS() as QuvmConfig) ?? {};
+    await this.loadChildAgents();
     // the validation core is PURE (configcheck.ts, tested); here we only map
     // findings -> vscode.Diagnostic with the localized messages (D19)
     const res = checkConfig(ydoc, this.current, this.model);
@@ -346,6 +353,40 @@ export class ConfigService implements vscode.Disposable {
       coverage: { total, mapped: total - unmapped.length, unmapped },
       orphans,
     };
+  }
+
+  /**
+   * Reads each `subenvs[].config` child and records its agent names (docs/07 P3c).
+   * The paths are relative to THIS config's directory, which is how QuickUVM
+   * resolves them. An unreadable or invalid child contributes nothing rather than
+   * failing the refresh — composition is edited incrementally, so a child that does
+   * not parse yet is a normal intermediate state.
+   */
+  private async loadChildAgents(): Promise<void> {
+    const subenvs = this.current.subenvs ?? [];
+    const next: Record<string, string[]> = {};
+    if (subenvs.length && this.uri) {
+      const dir = vscode.Uri.joinPath(this.uri, "..");
+      for (const sub of subenvs) {
+        if (!sub.name || !sub.config) {
+          continue;
+        }
+        try {
+          const child = await vscode.workspace.openTextDocument(
+            vscode.Uri.joinPath(dir, sub.config)
+          );
+          const names = (parseQuvm(child.getText()).agents ?? [])
+            .map((a) => a.name)
+            .filter((n): n is string => Boolean(n));
+          if (names.length) {
+            next[sub.name] = names;
+          }
+        } catch {
+          // missing/unparseable child: no endpoints from it (see the doc comment)
+        }
+      }
+    }
+    this.childAgents = next;
   }
 
   private publish(

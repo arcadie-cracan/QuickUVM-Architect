@@ -42,7 +42,11 @@ export interface PanelDeps {
   getModel: () => ProjectModel | undefined;
   getOverlay: () => OverlayConfig | null;
   /** the parsed configuration + its path, for the verification (TB) view */
-  getConfig?: () => { configPath: string | null; config: QuvmConfig };
+  getConfig?: () => {
+    configPath: string | null;
+    config: QuvmConfig;
+    childAgents?: Record<string, string[]>;
+  };
   /** the quick-uvm status decorations (docs/05): validations + the last generate;
    *  plus the generation-state element ids (docs/07 line 1) */
   getStatus?: () => {

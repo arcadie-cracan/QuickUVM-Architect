@@ -15,7 +15,7 @@ import {
 import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
 import { kindBlockers, layoutBlockers } from "./benchid";
-import { coveredAgent, parseBinSpec } from "./coverage";
+import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
@@ -728,7 +728,13 @@ export class Actions {
     if (!cfg.configUri) {
       return this.warnNoConfig();
     }
-    const agents = this.agentNames(cfg);
+    // docs/07 P3c — on a composition the endpoints also include the children's agents
+    // (`<subenv>.<agent>`), which is what makes a scoreboard cross-block. `childAgents`
+    // is only tracked on the active config; a per-file editor target keeps its own.
+    const agents = scoreboardEndpoints(
+      this.agentNames(cfg),
+      cfg === this.config ? this.config.childAgents : {}
+    );
     if (!agents.length) {
       return this.warnNoAgents();
     }
