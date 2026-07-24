@@ -3016,8 +3016,121 @@ function tbBenchSettings(cfg: QuvmConfig): void {
   }
 
   tbClockDomains(cfg);
+  tbResetDomains(cfg);
   tbTestsEditor(cfg);
   tbBenchIdentity(cfg);
+}
+
+/**
+ * The reset-domains editor (docs/07 line 3, P4b). Same union shape as the clocks, plus
+ * two invariants clocks do not have: under a LIST `dut.reset` names a declared DOMAIN
+ * (not a port), and a domain's `clock:` gate must name a declared clock domain. The
+ * single mapping also has an `external` flag the list form does not — so converting an
+ * external reset is refused host-side rather than silently dropping it.
+ */
+function tbResetDomains(cfg: QuvmConfig): void {
+  inspector.append(h("h3", "", "Resets"));
+  const reset = cfg.reset;
+  const isList = Array.isArray(reset);
+  const single = (isList ? undefined : reset) as
+    | { active_low?: boolean; external?: boolean }
+    | undefined;
+  const domains: { name?: string; active_low?: boolean; clock?: string }[] = isList
+    ? (reset as { name?: string }[])
+    : [{ name: cfg.dut?.reset || "rst_n", active_low: single?.active_low }];
+  const clocks = Array.isArray(cfg.clock)
+    ? (cfg.clock as { name?: string }[])
+        .map((c) => c.name)
+        .filter((n): n is string => Boolean(n))
+    : [];
+
+  if (!cfg.dut?.reset) {
+    inspector.append(h("div", "dim", "no reset port on the DUT"));
+    return;
+  }
+
+  for (const d of domains) {
+    const name = d.name || "rst_n";
+    inspector.append(h("div", "prop-group", name));
+    const send = (field: string, value: string): void =>
+      postAction("editReset", { op: "set", name, field, value });
+
+    inspector.append(
+      tbPropRow(
+        "Polarity",
+        tbSelect(
+          [
+            ["true", "Active low"],
+            ["false", "Active high"],
+          ],
+          d.active_low === false ? "false" : "true",
+          (v) => send("active_low", v)
+        )
+      )
+    );
+    if (isList) {
+      const nameIn = h("input", "prop");
+      nameIn.value = name;
+      nameIn.title = "renaming follows through to dut.reset and any agent gated by it";
+      nameIn.addEventListener("change", () => send("name", nameIn.value));
+      inspector.append(tbPropRow("Name", nameIn));
+      if (clocks.length) {
+        // the gate must name a DECLARED clock domain, so only those are offered
+        inspector.append(
+          tbPropRow(
+            "Clock gate",
+            tbSelect(
+              [["", "— none —"], ...clocks.map((c) => [c, c] as const)],
+              d.clock ?? "",
+              (v) => send("clock", v)
+            )
+          )
+        );
+      }
+      const users = (cfg.agents ?? []).filter((a) => a.reset === name).map((a) => a.name);
+      const boundToDut = cfg.dut?.reset === name;
+      inspector.append(
+        button(
+          boundToDut
+            ? `Bound to dut.reset`
+            : users.length
+              ? `In use by ${users.join(", ")}`
+              : `Remove ${name}`,
+          domains.length > 1 && !boundToDut && users.length === 0,
+          () => postAction("editReset", { op: "remove", name }),
+          true
+        )
+      );
+    } else {
+      inspector.append(
+        tbPropRow(
+          "Driven by",
+          tbSelect(
+            [
+              ["false", "The testbench"],
+              ["true", "The environment/DUT (external)"],
+            ],
+            single?.external ? "true" : "false",
+            (v) => send("external", v)
+          )
+        )
+      );
+    }
+  }
+
+  inspector.append(
+    button("Add reset domain…", true, () => postAction("editReset", { op: "add" }), true)
+  );
+  if (single?.external) {
+    inspector.append(
+      h("div", "note", "an external reset cannot become a domain list (list entries have no `external`)")
+    );
+  }
+  if (isList && domains.length === 1) {
+    inspector.append(
+      button("Back to a single reset", true, () => postAction("editReset", { op: "collapse" }), true)
+    );
+  }
 }
 
 /**

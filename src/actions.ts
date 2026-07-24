@@ -1046,6 +1046,77 @@ export class Actions {
   }
 
   /**
+   * Reset-domain authoring (docs/07 P4b). Mirrors `editClock`, with the two extra
+   * invariants resets carry: under a LIST `dut.reset` names a declared DOMAIN, and
+   * the single mapping's `external` flag has no list equivalent — the ops refuse the
+   * lossy conversions and the reasons are shown.
+   */
+  async editReset(
+    op: string,
+    args: { name?: string; field?: string; value?: string },
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri) {
+      return;
+    }
+    try {
+      let done = false;
+      switch (op) {
+        case "add": {
+          const taken = new Set(
+            (Array.isArray(cfg.current.reset) ? cfg.current.reset : [])
+              .map((d) => (d as { name?: string }).name)
+              .filter(Boolean)
+          );
+          taken.add(cfg.current.dut?.reset || "rst_n");
+          const name = await vscode.window.showInputBox({
+            title: vscode.l10n.t("New reset domain"),
+            value: "srst_n",
+            validateInput: (v) =>
+              !SV_IDENT_RE.test(v)
+                ? vscode.l10n.t("SV identifier")
+                : taken.has(v)
+                  ? vscode.l10n.t("a reset domain with this name already exists")
+                  : undefined,
+          });
+          if (!name) {
+            return;
+          }
+          done = await cfg.apply((t) => ops.addResetDomain(t, name));
+          break;
+        }
+        case "remove":
+          done = await cfg.apply((t) => ops.removeResetDomain(t, args.name ?? ""));
+          break;
+        case "collapse":
+          done = await cfg.apply((t) => ops.collapseResets(t));
+          break;
+        case "set": {
+          const f = args.field as ops.ResetField;
+          const raw = args.value ?? "";
+          const value: string | boolean | undefined =
+            f === "active_low" || f === "external"
+              ? raw === "true"
+              : raw === ""
+                ? undefined
+                : raw;
+          done = await cfg.apply((t) => ops.setResetDomainField(t, args.name ?? "", f, value));
+          break;
+        }
+        default:
+          return;
+      }
+      if (done) {
+        this.log.appendLine(`[actions] editReset ${op} ${args.name ?? ""}`);
+      }
+    } catch (e) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
+
+  /**
    * Rich functional-coverage authoring (docs/07 P3b). One entry point for every
    * gesture of the nested editor, so the webview needs a single message: `op` selects
    * the mutation, the rest are its arguments. Each op maps to a yamlops function that

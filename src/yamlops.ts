@@ -1154,6 +1154,221 @@ export function collapseClocks(text: string): string {
   return doc.toString(TO_STRING);
 }
 
+// -------------------------------------- multi-reset domains (docs/07 line 3, P4b)
+
+export type ResetField = "name" | "active_low" | "clock" | "external";
+
+/**
+ * Adds a reset DOMAIN. Like the clock union, the first add converts the `reset:`
+ * mapping into a LIST — but resets carry an extra invariant clocks do not: under a
+ * list `dut.reset` names a declared DOMAIN (not a port), so the first domain is named
+ * after the current `dut.reset` to keep that binding valid.
+ *
+ * Refused when the single reset is `external: true`: the LIST entry schema has no
+ * `external` key (QuickUVM rejects it), so the conversion would silently drop the
+ * fact that the TB does not drive the reset. That is a semantic loss, not a
+ * formatting one — the user takes externality off first, deliberately.
+ */
+export function addResetDomain(text: string, name: string): string {
+  const doc = parse(text);
+  const reset = doc.getIn(["reset"]);
+  if (isSeq(reset)) {
+    for (const d of reset.items) {
+      if (isMap(d) && d.get("name") === name) {
+        throw new Error(`domeniul de reset „${name}" exista deja`);
+      }
+    }
+    const node = doc.createNode({ name }) as YAMLMap;
+    node.flow = true;
+    reset.add(node);
+    return doc.toString(TO_STRING);
+  }
+  if (isMap(reset) && reset.get("external") === true) {
+    throw new Error(
+      "resetul curent e `external: true`, iar intrarile din lista de domenii nu accepta `external` — scoate intai externalitatea"
+    );
+  }
+  const dutReset = doc.getIn(["dut", "reset"]);
+  const firstName =
+    typeof dutReset === "string" && dutReset ? dutReset : "rst_n";
+  if (firstName === name) {
+    throw new Error(`domeniul de reset „${name}" exista deja`);
+  }
+  const first: Record<string, unknown> = { name: firstName };
+  if (isMap(reset) && reset.get("active_low") !== undefined) {
+    first.active_low = reset.get("active_low");
+  }
+  const seq = doc.createNode([first, { name }]) as YAMLSeq;
+  for (const item of seq.items) {
+    (item as YAMLMap).flow = true;
+  }
+  doc.setIn(["reset"], seq);
+  // `dut.reset` now selects a DOMAIN; it already reads `firstName`, so the binding
+  // survives the mode switch unchanged
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Removes a reset domain. Refused when an agent is gated by it, when it is the one
+ * `dut.reset` binds (that would leave the DUT's reset port pointing at nothing), or
+ * when it is the last one — QuickUVM rejects each of those.
+ */
+export function removeResetDomain(text: string, name: string): string {
+  const doc = parse(text);
+  const reset = doc.getIn(["reset"]);
+  if (!isSeq(reset)) {
+    return text;
+  }
+  const idx = reset.items.findIndex((d) => isMap(d) && d.get("name") === name);
+  if (idx < 0) {
+    return text;
+  }
+  if (reset.items.length <= 1) {
+    throw new Error(
+      `„${name}" este singurul domeniu de reset — colapseaza la un reset simplu in loc sa-l stergi`
+    );
+  }
+  if (doc.getIn(["dut", "reset"]) === name) {
+    throw new Error(
+      `„${name}" e domeniul legat de portul de reset al DUT-ului (dut.reset) — leaga intai altul`
+    );
+  }
+  const users = (doc.getIn(["agents"]) as YAMLSeq | undefined)?.items?.filter(
+    (a) => isMap(a) && a.get("reset") === name
+  );
+  if (users && users.length) {
+    const who = users.map((a) => (a as YAMLMap).get("name")).join(", ");
+    throw new Error(
+      `domeniul de reset „${name}" e folosit de agentul/agenții ${who} — reasignează-i întâi`
+    );
+  }
+  reset.delete(idx);
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Edits a reset domain's field (list domain by name, or the single mapping). A
+ * RENAME cascades: `dut.reset` and every agent gated by the domain follow it, because
+ * both must name a declared domain. A domain's `clock:` must name a declared clock
+ * domain — the caller offers only those.
+ */
+export function setResetDomainField(
+  text: string,
+  name: string,
+  field: ResetField,
+  value: string | boolean | undefined
+): string {
+  const doc = parse(text);
+  let reset: unknown = doc.getIn(["reset"]);
+  const isList = isSeq(reset);
+  const domains = isList ? (reset as YAMLSeq) : undefined;
+  if (!isList && !isMap(reset)) {
+    // An ALL-DEFAULT single reset writes no `reset:` block at all (setDut deletes it),
+    // so the mapping has to be created before the first deviation can be recorded —
+    // otherwise the panel's polarity/external rows would throw on a fresh bench.
+    doc.setIn(["reset"], doc.createNode({}));
+    reset = doc.getIn(["reset"]);
+  }
+  const target = domains
+    ? domains.items.find((d) => isMap(d) && d.get("name") === name)
+    : isMap(reset)
+      ? reset
+      : undefined;
+  if (!isMap(target)) {
+    throw new Error(`domeniul de reset „${name}" nu exista`);
+  }
+  if (field === "name") {
+    if (typeof value !== "string" || !value) {
+      throw new Error("numele domeniului de reset este obligatoriu");
+    }
+    if (domains) {
+      for (const d of domains.items) {
+        if (d !== target && isMap(d) && d.get("name") === value) {
+          throw new Error(`domeniul de reset „${value}" exista deja`);
+        }
+      }
+    }
+    target.set("name", value);
+    // the two references that MUST name a declared domain follow the rename
+    if (doc.getIn(["dut", "reset"]) === name) {
+      doc.setIn(["dut", "reset"], value);
+    }
+    const agents = doc.getIn(["agents"]);
+    if (isSeq(agents)) {
+      for (const a of agents.items) {
+        if (isMap(a) && a.get("reset") === name) {
+          a.set("reset", value);
+        }
+      }
+    }
+    return doc.toString(TO_STRING);
+  }
+  if (field === "external" && isList) {
+    // the LIST entry schema is {name, active_low, clock} — QuickUVM rejects `external`
+    throw new Error(
+      "`external` exista doar pe resetul SIMPLU (maparea); intrarile din lista de domenii nu au cheia"
+    );
+  }
+  // the default is PER FIELD: active_low defaults to TRUE, external to FALSE — one
+  // shared "falsy means default" test would delete `active_low: false`, the very
+  // deviation the user asked for
+  const isDefault =
+    value === undefined ||
+    value === "" ||
+    (field === "active_low" ? value === true : value === false);
+  if (isDefault) {
+    target.delete(field);
+  } else {
+    target.set(field, value);
+  }
+  // an emptied single mapping is dead decoration
+  if (!isList && isMap(reset) && reset.items.length === 0) {
+    doc.deleteIn(["reset"]);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/** Collapses a ONE-element reset list back into the single mapping. The domain's
+ *  name becomes `dut.reset` (a port name again), and a `clock:` gate is dropped —
+ *  the single mapping has no such key. */
+export function collapseResets(text: string): string {
+  const doc = parse(text);
+  const reset = doc.getIn(["reset"]);
+  if (!isSeq(reset)) {
+    return text;
+  }
+  if (reset.items.length !== 1) {
+    throw new Error("colapsarea cere exact un domeniu de reset");
+  }
+  const only = reset.items[0];
+  if (!isMap(only)) {
+    return text;
+  }
+  const name = only.get("name");
+  const map: Record<string, unknown> = {};
+  if (only.get("active_low") !== undefined) {
+    map.active_low = only.get("active_low");
+  }
+  if (typeof name === "string" && name) {
+    doc.setIn(["dut", "reset"], name); // back to a PORT name
+  }
+  // an agent's `reset:` selects a domain — meaningless without a list
+  const agents = doc.getIn(["agents"]);
+  if (isSeq(agents)) {
+    for (const a of agents.items) {
+      if (isMap(a)) {
+        a.delete("reset");
+      }
+    }
+  }
+  if (Object.keys(map).length) {
+    doc.setIn(["reset"], doc.createNode(map));
+  } else {
+    doc.deleteIn(["reset"]);
+  }
+  return doc.toString(TO_STRING);
+}
+
 // ----------------------------- rich functional coverage (docs/07 line 3, P3b)
 
 /**

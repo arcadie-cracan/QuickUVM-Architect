@@ -60,6 +60,7 @@ export type ActionKind =
   | "editRegress"
   | "editCoverage"
   | "editClock"
+  | "editReset"
   | "addTest"
   | "removeTest"
   | "editTest"
