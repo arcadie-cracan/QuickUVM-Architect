@@ -70,6 +70,13 @@
           "name": "%view.verification.name%",
           "icon": "media/icon.svg",
           "contextualTitle": "%view.verification.contextualTitle%"
+        },
+        {
+          "id": "quickuvm.properties",
+          "name": "%view.properties.name%",
+          "type": "webview",
+          "icon": "media/icon.svg",
+          "contextualTitle": "%view.properties.contextualTitle%"
         }
       ]
     },
@@ -133,7 +140,8 @@
       {
         "command": "quickuvm.generate",
         "title": "%cmd.generate%",
-        "category": "QuickUVM Architect"
+        "category": "QuickUVM Architect",
+        "icon": "$(play)"
       },
       {
         "command": "quickuvm.generateItem",
@@ -283,6 +291,13 @@
         {
           "command": "quickuvm.fixPortWidth",
           "when": "false"
+        }
+      ],
+      "view/title": [
+        {
+          "command": "quickuvm.generate",
+          "when": "view == quickuvm.properties",
+          "group": "navigation"
         }
       ]
     },
