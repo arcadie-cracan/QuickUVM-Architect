@@ -19,6 +19,12 @@ import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { kindBlockers, layoutBlockers } from "../benchid";
 import {
+  agentRows,
+  isBenchScope,
+  portRows,
+  scoreboardRows,
+} from "../inspector";
+import {
   coveredAgent,
   coverpointCandidates,
   crossBlockers,
@@ -39,8 +45,14 @@ import { el, measurer, SVG_NS } from "./svg";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
-  getState(): { viewId?: string; mode?: ViewMode } | undefined;
-  setState(state: { viewId?: string; mode?: ViewMode }): void;
+  getState():
+    | { viewId?: string; mode?: ViewMode; openSections?: string[] }
+    | undefined;
+  setState(state: {
+    viewId?: string;
+    mode?: ViewMode;
+    openSections?: string[];
+  }): void;
 };
 
 const vscode = acquireVsCodeApi();
@@ -232,7 +244,11 @@ const sessionCameras = new Map<
 let renderGen = 0;
 
 function persistState(): void {
-  vscode.setState({ viewId: state.viewId, mode: state.mode });
+  vscode.setState({
+    viewId: state.viewId,
+    mode: state.mode,
+    openSections: [...openSections],
+  });
 }
 
 const canvas = document.getElementById("canvas") as unknown as SVGSVGElement;
@@ -2853,7 +2869,17 @@ function tbCoverageEditor(agentName: string): void {
  * Shown regardless of selection: these belong to the bench, not to a component.
  */
 function tbBenchSettings(cfg: QuvmConfig): void {
-  inspector.append(h("h3", "", "Verification settings"));
+  inspector.append(h("h3", "", `Bench: ${cfg.project?.name ?? "unnamed"}`));
+  tbSection("bench.ral", "Register model", () => tbRegisterModel(cfg), true);
+  tbSection("bench.regress", "Regression", () => tbRegress(cfg), true);
+  tbSection("bench.clocks", "Clocks", () => tbClockDomains(cfg));
+  tbSection("bench.resets", "Resets", () => tbResetDomains(cfg));
+  tbSection("bench.tests", "Tests", () => tbTestsEditor(cfg));
+  tbSection("bench.identity", "Identity", () => tbBenchIdentity(cfg));
+}
+
+/** The `register_model:` block (docs/07 P2a). */
+function tbRegisterModel(cfg: QuvmConfig): void {
 
   const rm = cfg.register_model;
   if (!rm) {
@@ -2878,7 +2904,6 @@ function tbBenchSettings(cfg: QuvmConfig): void {
     };
     textRow("RAL package", "package", rm.package ?? "", "required");
     textRow("Reg block", "block", rm.block ?? "", "required");
-    textRow("Map", "map", rm.map ?? "", "default_map");
     // the bus agent must be an INITIATOR (a responder cannot carry register traffic)
     const initiators = (cfg.agents ?? [])
       .filter((a) => a.mode !== "responder" && a.name)
@@ -2898,7 +2923,6 @@ function tbBenchSettings(cfg: QuvmConfig): void {
         h("div", "note", `bus_agent “${rm.bus_agent}” is not an initiator agent — QuickUVM refuses it`)
       );
     }
-    textRow("Adapter", "adapter", rm.adapter ?? "", "reg_adapter");
     textRow("Backdoor root", "backdoor_root", rm.backdoor_root ?? "", "none (frontdoor only)");
 
     // csr_tests: a checkbox per suite, sent back as a comma-separated list
@@ -2926,8 +2950,6 @@ function tbBenchSettings(cfg: QuvmConfig): void {
 
     for (const [label, field, cur] of [
       ["Reg coverage", "coverage", rm.coverage === true],
-      ["Use predictor", "use_predictor", rm.use_predictor !== false],
-      ["Reg test", "reg_test", rm.reg_test !== false],
     ] as const) {
       inspector.append(
         tbPropRow(
@@ -2961,11 +2983,37 @@ function tbBenchSettings(cfg: QuvmConfig): void {
         h("div", "note", "a backdoor reg test needs a backdoor_root (the HDL path to the DUT)")
       );
     }
+    tbSection("bench.ral.advanced", "Advanced", () => {
+      textRow("Adapter", "adapter", rm.adapter ?? "", "reg_adapter");
+      textRow("Map", "map", rm.map ?? "", "default_map");
+      for (const [label, field, cur] of [
+        ["Use predictor", "use_predictor", rm.use_predictor !== false],
+        ["Reg test", "reg_test", rm.reg_test !== false],
+      ] as const) {
+        inspector.append(
+          tbPropRow(
+            label,
+            tbSelect(
+              [
+                ["true", "Yes"],
+                ["false", "No"],
+              ],
+              cur ? "true" : "false",
+              (v) => send(field, v)
+            )
+          )
+        );
+      }
+    });
     inspector.append(
       button("Remove register model", true, () => postAction("removeRegisterModel", {}), true)
     );
   }
 
+}
+
+/** The `regress:` block (docs/07 P2a). */
+function tbRegress(cfg: QuvmConfig): void {
   const rg = cfg.regress;
   const seeded = (cfg.tests ?? []).filter((t) => t.seeds !== undefined).length;
   if (!rg) {
@@ -3021,10 +3069,6 @@ function tbBenchSettings(cfg: QuvmConfig): void {
     );
   }
 
-  tbClockDomains(cfg);
-  tbResetDomains(cfg);
-  tbTestsEditor(cfg);
-  tbBenchIdentity(cfg);
 }
 
 /**
@@ -3035,7 +3079,6 @@ function tbBenchSettings(cfg: QuvmConfig): void {
  * external reset is refused host-side rather than silently dropping it.
  */
 function tbResetDomains(cfg: QuvmConfig): void {
-  inspector.append(h("h3", "", "Resets"));
   const reset = cfg.reset;
   const isList = Array.isArray(reset);
   const single = (isList ? undefined : reset) as
@@ -3147,7 +3190,6 @@ function tbResetDomains(cfg: QuvmConfig): void {
  * agent inspector (P1); this authors the domains it chooses from.
  */
 function tbClockDomains(cfg: QuvmConfig): void {
-  inspector.append(h("h3", "", "Clocks"));
   const clock = cfg.clock;
   const isList = Array.isArray(clock);
   const domains: { name?: string; period?: number; unit?: string; source?: string }[] =
@@ -3235,7 +3277,6 @@ function tbClockDomains(cfg: QuvmConfig): void {
  */
 function tbTestsEditor(cfg: QuvmConfig): void {
   const tests = cfg.tests ?? [];
-  inspector.append(h("h3", "", "Tests"));
   if (!tests.length) {
     inspector.append(h("div", "dim", "no tests declared — QuickUVM generates the default test1"));
   }
@@ -3297,7 +3338,6 @@ function tbTestsEditor(cfg: QuvmConfig): void {
  * bench-layer section). The host re-checks before writing, so the two cannot drift.
  */
 function tbBenchIdentity(cfg: QuvmConfig): void {
-  inspector.append(h("h3", "", "Bench"));
   const send = (field: string, value: string): void =>
     postAction("editBench", { field, value });
 
@@ -3410,6 +3450,55 @@ function tbBenchIdentity(cfg: QuvmConfig): void {
   );
 }
 
+/**
+ * The open/closed state of the inspector's disclosures, remembered across renders and
+ * reloads (an "Advanced" the user opened must stay open while they work in it).
+ * Keyed by a stable section id, NOT by the selected component: the preference is
+ * "I want agent advanced fields", not "…for this one agent".
+ */
+const openSections = new Set<string>(vscode.getState()?.openSections ?? []);
+
+function persistSections(): void {
+  vscode.setState({
+    viewId: state.viewId,
+    mode: state.mode,
+    openSections: [...openSections],
+  });
+}
+
+/**
+ * A collapsible inspector section. `id` is the persistence key; `defaultOpen` decides
+ * the first-run state — the "simple by default" half of the UX rule, so everything
+ * advanced starts closed. The body is rendered lazily on open, so a closed section
+ * costs one row.
+ */
+function tbSection(
+  id: string,
+  title: string,
+  render: () => void,
+  defaultOpen = false
+): void {
+  const open = openSections.has(id) || (defaultOpen && !openSections.has(`!${id}`));
+  const head = h("div", "sec-head");
+  head.append(h("span", "sec-twisty", open ? "▾" : "▸"), h("span", "", title));
+  head.addEventListener("click", () => {
+    // both states are recorded, so a closed default-open section stays closed
+    if (open) {
+      openSections.delete(id);
+      openSections.add(`!${id}`);
+    } else {
+      openSections.add(id);
+      openSections.delete(`!${id}`);
+    }
+    persistSections();
+    renderInspector();
+  });
+  inspector.append(head);
+  if (open) {
+    render();
+  }
+}
+
 /** A `<select>` bound to one agent field: options `[value, label]`, `cur` preselected. */
 function tbSelect(
   options: readonly (readonly [string, string])[],
@@ -3484,7 +3573,7 @@ function tbAgentPorts(agent: QuvmAgent): void {
   if (!name) {
     return;
   }
-  const groups: [string, QuvmPort[]][] = [
+  const groups: ["in" | "out" | "inout", QuvmPort[]][] = [
     ["in", agent.ports?.inputs ?? []],
     ["out", agent.ports?.outputs ?? []],
     ["inout", (agent.ports as { inouts?: QuvmPort[] })?.inouts ?? []],
@@ -3492,98 +3581,116 @@ function tbAgentPorts(agent: QuvmAgent): void {
   if (!groups.some(([, ps]) => ps.length)) {
     return;
   }
-  inspector.append(h("h3", "", "Ports"));
-  for (const [kind, ports] of groups) {
-    for (const p of ports) {
-      const port = p.name;
-      if (!port) {
-        continue;
-      }
-      const send = (field: string, value: string): void =>
-        postAction("editAgentPort", { agent: name, port, field, value });
-      inspector.append(h("div", "prop-group", `${port} (${kind})`));
+  const count = groups.reduce((n, [, ps]) => n + ps.length, 0);
 
-      const wIn = h("input", "prop");
-      wIn.type = "number";
-      wIn.min = "1";
-      wIn.value = String(p.width ?? 1);
-      wIn.addEventListener("change", () => send("width", wIn.value));
-      inspector.append(tbPropRow("Width", wIn));
-
-      inspector.append(
-        tbPropRow(
-          "Randomize",
-          tbSelect(
-            [
-              ["true", "Yes"],
-              ["false", "No"],
-            ],
-            p.randomize === false ? "false" : "true",
-            (v) => send("randomize", v)
-          )
-        )
-      );
-
-      const cIn = h("input", "prop");
-      cIn.value = (p as { constraint?: string }).constraint ?? "";
-      cIn.placeholder = "e.g. op inside {[0:2]}";
-      cIn.addEventListener("change", () => send("constraint", cIn.value));
-      inspector.append(tbPropRow("Constraint", cIn));
-
-      // enum: `NAME=value, NAME=value` on one line. Black box by design — QuickUVM
-      // generates the TESTBENCH's own enum, not a reference to a DUT type.
-      const rich = p as { enum?: Record<string, number>; type?: string; packed_dims?: number[]; struct?: unknown };
-      const eIn = h("input", "prop");
-      eIn.value = Object.entries(rich.enum ?? {})
-        .map(([k, v]) => `${k}=${v}`)
-        .join(", ");
-      eIn.placeholder = "IDLE=0, BUSY=1";
-      // exclusive with the hand-written specifiers the editor does not author
-      eIn.disabled = Boolean(rich.packed_dims || rich.struct);
-      eIn.addEventListener("change", () => send("enum", eIn.value));
-      inspector.append(tbPropRow("Enum", eIn));
-      if (eIn.disabled) {
-        inspector.append(
-          h("div", "note", "this port declares packed_dims/struct — the type specifiers are exclusive")
-        );
-      }
-
-      if (kind === "inout") {
-        const odSel = tbSelect(
-          [
-            ["false", "Tri-state (drives both levels)"],
-            ["true", "Open drain"],
-          ],
-          (p as { open_drain?: boolean }).open_drain ? "true" : "false",
-          (v) => send("open_drain", v)
-        );
-        odSel.disabled = (p.width ?? 1) !== 1; // open-drain is per-line, 1 bit
-        inspector.append(tbPropRow("Drive", odSel));
-        if (odSel.disabled) {
-          inspector.append(
-            h("div", "note", "open drain is 1 bit — declare one port per line")
-          );
+  /** one port's rows, by id — `advancedOnly` renders the second half */
+  const renderPort = (p: QuvmPort, ids: string[]): void => {
+    const port = p.name as string;
+    const send = (field: string, value: string): void =>
+      postAction("editAgentPort", { agent: name, port, field, value });
+    const rich = p as {
+      constraint?: string;
+      enum?: Record<string, number>;
+      open_drain?: boolean;
+      pullup?: boolean;
+    };
+    for (const id of ids) {
+      switch (id) {
+        case "width": {
+          const wIn = h("input", "prop");
+          wIn.type = "number";
+          wIn.min = "1";
+          wIn.value = String(p.width ?? 1);
+          wIn.addEventListener("change", () => send("width", wIn.value));
+          inspector.append(tbPropRow("Width", wIn));
+          break;
         }
-        const pu = (p as { pullup?: boolean }).pullup;
-        const puSel = tbSelect(
-          [
-            ["false", "No"],
-            ["true", "Yes"],
-          ],
-          pu ? "true" : "false",
-          (v) => send("pullup", v)
-        );
-        // mandatory on open drain: without it the line floats to X on release
-        puSel.disabled = Boolean((p as { open_drain?: boolean }).open_drain);
-        inspector.append(tbPropRow("Pullup", puSel));
-        if (puSel.disabled) {
+        case "randomize":
           inspector.append(
-            h("div", "note", "an open-drain line needs the pullup — it never drives high")
+            tbPropRow(
+              "Randomize",
+              tbSelect(
+                [
+                  ["true", "Yes"],
+                  ["false", "No"],
+                ],
+                p.randomize === false ? "false" : "true",
+                (v) => send("randomize", v)
+              )
+            )
           );
+          break;
+        case "constraint": {
+          const cIn = h("input", "prop");
+          cIn.value = rich.constraint ?? "";
+          cIn.placeholder = "e.g. op inside {[0:2]}";
+          cIn.addEventListener("change", () => send("constraint", cIn.value));
+          inspector.append(tbPropRow("Constraint", cIn));
+          break;
         }
+        case "enum": {
+          // black box by design: QuickUVM generates the TESTBENCH's own enum
+          const eIn = h("input", "prop");
+          eIn.value = Object.entries(rich.enum ?? {})
+            .map(([k, v]) => `${k}=${v}`)
+            .join(", ");
+          eIn.placeholder = "IDLE=0, BUSY=1";
+          eIn.addEventListener("change", () => send("enum", eIn.value));
+          inspector.append(tbPropRow("Enum", eIn));
+          break;
+        }
+        case "type_specifier_hint":
+          inspector.append(
+            h("div", "note", "declares packed_dims/struct — the type specifiers are exclusive")
+          );
+          break;
+        case "open_drain":
+          inspector.append(
+            tbPropRow(
+              "Drive",
+              tbSelect(
+                [
+                  ["false", "Tri-state (drives both levels)"],
+                  ["true", "Open drain"],
+                ],
+                rich.open_drain ? "true" : "false",
+                (v) => send("open_drain", v)
+              )
+            )
+          );
+          break;
+        case "pullup":
+          // mandatory once open drain is on: it is a statement, not a choice
+          inspector.append(
+            tbPropRow("Pullup", h("div", "dim", "on (an open-drain line never drives high)"))
+          );
+          break;
+        default:
+          break;
       }
     }
-  }
+  };
+
+  tbSection(
+    "agent.ports",
+    `Ports (${count})`,
+    () => {
+      for (const [kind, ports] of groups) {
+        for (const p of ports) {
+          if (!p.name) {
+            continue;
+          }
+          const rows = portRows(kind, p);
+          inspector.append(h("div", "prop-group", `${p.name} (${kind})`));
+          renderPort(p, rows.basic);
+          tbSection(`port.advanced.${name}.${p.name}`, "More", () =>
+            renderPort(p, rows.advanced)
+          );
+        }
+      }
+    },
+    true
+  );
 }
 
 /**
@@ -3608,167 +3715,212 @@ function tbAgentEditor(agent: QuvmAgent): void {
 
   const sampled = agent.ports?.outputs ?? []; // DUT-driven: what the agent samples
   const driven = agent.ports?.inputs ?? []; //   what the agent drives
-  const responder = agent.mode === "responder";
-  const respond = agent.respond ?? "on_request";
-  const pipelined = responder && respond === "pipelined";
+  const oneBitSampled = sampled.filter((p: QuvmPort) => (p.width ?? 1) === 1 && p.name);
+  // which rows are worth showing at all — the tested rule, not an inline condition
+  const rows = agentRows(agent);
+
+  /** render one property row by id; unknown ids are simply not rendered */
+  const row = (id: string): void => {
+    switch (id) {
+      case "active":
+        inspector.append(
+          tbPropRow(
+            "Role",
+            tbSelect(
+              [
+                ["true", "Active (drives + monitors)"],
+                ["false", "Passive (monitors only)"],
+              ],
+              agent.active === false ? "false" : "true",
+              (v) => send("active", v)
+            )
+          )
+        );
+        break;
+      case "mode":
+        // the discovery point for every responder knob below
+        inspector.append(
+          tbPropRow(
+            "Mode",
+            tbSelect(
+              [
+                ["initiator", "Initiator (drives stimulus)"],
+                ["responder", "Responder (answers the DUT)"],
+              ],
+              agent.mode ?? "initiator",
+              (v) => {
+                send("mode", v);
+                if (
+                  v === "responder" &&
+                  !agent.request_valid &&
+                  oneBitSampled.length === 1
+                ) {
+                  send("request_valid", oneBitSampled[0].name as string);
+                }
+              }
+            )
+          )
+        );
+        break;
+      case "seq_item_style":
+        inspector.append(
+          tbPropRow(
+            "Seq item style",
+            tbSelect(
+              [
+                ["manual", "Manual"],
+                ["field_macros", "Field macros"],
+              ],
+              agent.seq_item_style ?? "manual",
+              (v) => send("seq_item_style", v)
+            )
+          )
+        );
+        break;
+      case "respond":
+        inspector.append(
+          tbPropRow(
+            "Respond",
+            tbSelect(
+              [
+                ["on_request", "On request (blocking)"],
+                ["prefetch", "Prefetch"],
+                ["combinational", "Combinational"],
+                ["pipelined", "Pipelined (out-of-order)"],
+              ],
+              agent.respond ?? "on_request",
+              (v) => send("respond", v)
+            )
+          )
+        );
+        break;
+      case "request_valid": {
+        // a SAMPLED 1-bit port: the qualifier the DUT asserts
+        inspector.append(
+          tbPropRow(
+            "Request valid",
+            tbSelect(
+              [
+                ["", "— none —"],
+                ...oneBitSampled.map(
+                  (p: QuvmPort) => [p.name as string, p.name as string] as const
+                ),
+              ],
+              agent.request_valid ?? "",
+              (v) => send("request_valid", v)
+            )
+          )
+        );
+        if (!agent.request_valid) {
+          inspector.append(
+            h(
+              "div",
+              "note",
+              oneBitSampled.length
+                ? "required: the sampled 1-bit port meaning “the DUT issued a request”"
+                : "this agent has no 1-bit sampled (output) port — a responder needs one"
+            )
+          );
+        }
+        break;
+      }
+      case "request_ready":
+        // the READY half may be driven (a slave's arready) or sampled
+        inspector.append(
+          tbPropRow(
+            "Request ready",
+            tbSelect(
+              [
+                ["", "— none —"],
+                ...[...sampled, ...driven]
+                  .filter((p: QuvmPort) => p.name && p.name !== agent.request_valid)
+                  .map((p: QuvmPort) => [p.name as string, p.name as string] as const),
+              ],
+              agent.request_ready ?? "",
+              (v) => send("request_ready", v)
+            )
+          )
+        );
+        break;
+      case "reorder_by":
+        inspector.append(
+          tbPropRow(
+            "Reorder by",
+            tbSelect(
+              [
+                ["", "— none —"],
+                ...sampled
+                  .filter(
+                    (p: QuvmPort) =>
+                      p.name && p.name !== agent.request_valid && (p.width ?? 1) <= 31
+                  )
+                  .map((p: QuvmPort) => [p.name as string, p.name as string] as const),
+              ],
+              agent.reorder_by ?? "",
+              (v) => send("reorder_by", v)
+            )
+          )
+        );
+        if (!agent.reorder_by) {
+          inspector.append(
+            h("div", "note", "required: the sampled ID field keying the per-ID queues")
+          );
+        }
+        break;
+      case "reorder_policy":
+        inspector.append(
+          tbPropRow(
+            "Reorder policy",
+            tbSelect(
+              [
+                ["priority", "Priority"],
+                ["round_robin", "Round robin"],
+                ["random", "Random"],
+              ],
+              agent.reorder_policy ?? "priority",
+              (v) => send("reorder_policy", v)
+            )
+          )
+        );
+        break;
+      case "proactive":
+        inspector.append(
+          tbPropRow(
+            "Proactive",
+            tbSelect(
+              [
+                ["false", "No"],
+                ["true", "Yes (hybrid)"],
+              ],
+              agent.proactive ? "true" : "false",
+              (v) => send("proactive", v)
+            )
+          )
+        );
+        break;
+      case "replicas": {
+        const repIn = h("input", "prop");
+        repIn.type = "number";
+        repIn.min = "1";
+        repIn.value = String(agent.replicas ?? 1);
+        repIn.addEventListener("change", () => send("replicas", repIn.value));
+        inspector.append(tbPropRow("Replicas", repIn));
+        if ((agent.replicas ?? 1) > 1) {
+          inspector.append(
+            h("div", "note", "replicas needs reset: {external: true} — a shared vectored DUT binds the top reset")
+          );
+        }
+        break;
+      }
+      default:
+        break;
+    }
+  };
 
   inspector.append(h("h3", "", "Agent properties"));
-
-  const activeSel = tbSelect(
-    [
-      ["true", "Active (drives + monitors)"],
-      ["false", "Passive (monitors only)"],
-    ],
-    agent.active === false ? "false" : "true",
-    (v) => send("active", v)
-  );
-  inspector.append(tbPropRow("Role", activeSel));
-
-  inspector.append(
-    tbPropRow(
-      "Seq item style",
-      tbSelect(
-        [
-          ["manual", "Manual"],
-          ["field_macros", "Field macros"],
-        ],
-        agent.seq_item_style ?? "manual",
-        (v) => send("seq_item_style", v)
-      )
-    )
-  );
-
-  // mode: switching to responder needs a request_valid (QuickUVM refuses a responder
-  // without one) — pre-pick it when the choice is unambiguous, hint otherwise
-  const oneBitSampled = sampled.filter((p: QuvmPort) => (p.width ?? 1) === 1 && p.name);
-  inspector.append(
-    tbPropRow(
-      "Mode",
-      tbSelect(
-        [
-          ["initiator", "Initiator (drives stimulus)"],
-          ["responder", "Responder (answers the DUT)"],
-        ],
-        agent.mode ?? "initiator",
-        (v) => {
-          send("mode", v);
-          if (v === "responder" && !agent.request_valid && oneBitSampled.length === 1) {
-            send("request_valid", oneBitSampled[0].name as string);
-          }
-        }
-      )
-    )
-  );
-
-  const respondSel = tbSelect(
-    [
-      ["on_request", "On request (blocking)"],
-      ["prefetch", "Prefetch"],
-      ["combinational", "Combinational"],
-      ["pipelined", "Pipelined (out-of-order)"],
-    ],
-    respond,
-    (v) => send("respond", v)
-  );
-  respondSel.disabled = !responder;
-  inspector.append(tbPropRow("Respond", respondSel));
-
-  // request_valid: a SAMPLED 1-bit port (the qualifier the DUT asserts)
-  const rvSel = tbSelect(
-    [
-      ["", "— none —"],
-      ...oneBitSampled.map((p: QuvmPort) => [p.name as string, p.name as string] as const),
-    ],
-    agent.request_valid ?? "",
-    (v) => send("request_valid", v)
-  );
-  rvSel.disabled = !responder;
-  inspector.append(tbPropRow("Request valid", rvSel));
-  if (responder && !agent.request_valid) {
-    inspector.append(
-      h(
-        "div",
-        "note",
-        oneBitSampled.length
-          ? "required: a responder needs the sampled 1-bit port that means “the DUT issued a request”"
-          : "this agent has no 1-bit sampled (output) port — a responder cannot be built without one"
-      )
-    );
+  for (const id of rows.basic) {
+    row(id);
   }
-
-  // request_ready: the READY half — may be driven (slave's arready) or sampled
-  const rrSel = tbSelect(
-    [
-      ["", "— none —"],
-      ...[...sampled, ...driven]
-        .filter((p: QuvmPort) => p.name && p.name !== agent.request_valid)
-        .map((p: QuvmPort) => [p.name as string, p.name as string] as const),
-    ],
-    agent.request_ready ?? "",
-    (v) => send("request_ready", v)
-  );
-  // only the shapes whose monitor publishes the request carry it
-  rrSel.disabled = !responder || (respond !== "on_request" && respond !== "pipelined");
-  inspector.append(tbPropRow("Request ready", rrSel));
-
-  const rbSel = tbSelect(
-    [
-      ["", "— none —"],
-      ...sampled
-        .filter(
-          (p: QuvmPort) =>
-            p.name && p.name !== agent.request_valid && (p.width ?? 1) <= 31
-        )
-        .map((p: QuvmPort) => [p.name as string, p.name as string] as const),
-    ],
-    agent.reorder_by ?? "",
-    (v) => send("reorder_by", v)
-  );
-  rbSel.disabled = !pipelined;
-  inspector.append(tbPropRow("Reorder by", rbSel));
-  if (pipelined && !agent.reorder_by) {
-    inspector.append(
-      h("div", "note", "required: pipelined needs the sampled ID field keying the per-ID queues")
-    );
-  }
-
-  const rpSel = tbSelect(
-    [
-      ["priority", "Priority"],
-      ["round_robin", "Round robin"],
-      ["random", "Random"],
-    ],
-    agent.reorder_policy ?? "priority",
-    (v) => send("reorder_policy", v)
-  );
-  rpSel.disabled = !pipelined;
-  inspector.append(tbPropRow("Reorder policy", rpSel));
-
-  const proSel = tbSelect(
-    [
-      ["false", "No"],
-      ["true", "Yes (hybrid)"],
-    ],
-    agent.proactive ? "true" : "false",
-    (v) => send("proactive", v)
-  );
-  // a hybrid's un-maskable liveness is the on_request request-FIFO drain
-  proSel.disabled = !responder || respond !== "on_request";
-  inspector.append(tbPropRow("Proactive", proSel));
-
-  const repIn = h("input", "prop");
-  repIn.type = "number";
-  repIn.min = "1";
-  repIn.value = String(agent.replicas ?? 1);
-  repIn.addEventListener("change", () => send("replicas", repIn.value));
-  inspector.append(tbPropRow("Replicas", repIn));
-  if ((agent.replicas ?? 1) > 1) {
-    inspector.append(
-      h("div", "note", "replicas needs reset: {external: true} — a shared vectored DUT binds the top reset")
-    );
-  }
-
-  tbAgentPorts(agent);
 
   // clock/reset domains: only meaningful when they were DECLARED AS LISTS (M1) —
   // a 1-element list is still multi-domain, so the gate is "is it a list?"
@@ -3778,24 +3930,36 @@ function tbAgentEditor(agent: QuvmAgent): void {
           .map((d) => (d as { name?: string })?.name)
           .filter((n): n is string => Boolean(n))
       : [];
-  for (const [label, field, list, cur] of [
-    ["Clock domain", "clock", domains(state.config?.clock), agent.clock ?? ""],
-    ["Reset domain", "reset", domains(state.config?.reset), agent.reset ?? ""],
-  ] as const) {
-    if (!list.length) {
-      continue; // single-domain bench: the per-agent selector would be noise
-    }
-    inspector.append(
-      tbPropRow(
-        label,
-        tbSelect(
-          [["", "— default —"], ...list.map((d) => [d, d] as const)],
-          cur,
-          (v) => send(field, v)
-        )
-      )
-    );
+  const clockDomains = domains(state.config?.clock);
+  const resetDomains = domains(state.config?.reset);
+
+  if (rows.advanced.length || clockDomains.length || resetDomains.length) {
+    tbSection("agent.advanced", "Advanced", () => {
+      for (const id of rows.advanced) {
+        row(id);
+      }
+      for (const [label, field, list, cur] of [
+        ["Clock domain", "clock", clockDomains, agent.clock ?? ""],
+        ["Reset domain", "reset", resetDomains, agent.reset ?? ""],
+      ] as const) {
+        if (!list.length) {
+          continue; // single-domain bench: the per-agent selector would be noise
+        }
+        inspector.append(
+          tbPropRow(
+            label,
+            tbSelect(
+              [["", "— default —"], ...list.map((d) => [d, d] as const)],
+              cur,
+              (v) => send(field, v)
+            )
+          )
+        );
+      }
+    });
   }
+
+  tbAgentPorts(agent);
 }
 
 /**
@@ -3825,111 +3989,138 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
   }
   const send = (field: string, value: string): void =>
     postAction("editScoreboard", { name, field, value });
-
-  inspector.append(h("h3", "", "Scoreboard properties"));
-
-  const srcSel = h("select", "prop");
-  for (const a of agents) {
-    // the source differs from the monitor (A2), as at add — but keep the current source
-    // visible even if a hand-written config has source==monitor
-    if (a === sb.monitor && a !== sb.source) {
-      continue;
-    }
-    const o = h("option", "", a);
-    o.value = a;
-    o.selected = a === sb.source;
-    srcSel.append(o);
-  }
-  srcSel.addEventListener("change", () => send("source", srcSel.value));
-  inspector.append(tbPropRow("Source", srcSel));
-
-  const monSel = h("select", "prop");
-  const none = h("option", "", "None (single-stream)");
-  none.value = "";
-  none.selected = !sb.monitor;
-  monSel.append(none);
-  for (const a of agents) {
-    if (a === sb.source) {
-      continue; // the monitor differs from the source (A2 two-stream)
-    }
-    const o = h("option", "", a);
-    o.value = a;
-    o.selected = a === sb.monitor;
-    monSel.append(o);
-  }
-  monSel.addEventListener("change", () => send("monitor", monSel.value));
-  inspector.append(tbPropRow("Monitor", monSel));
-
-  const matchSel = h("select", "prop");
-  for (const [v, lbl] of [
-    ["in_order", "In order"],
-    ["out_of_order", "Out of order"],
-  ] as const) {
-    const o = h("option", "", lbl);
-    o.value = v;
-    o.selected = (sb.match ?? "in_order") === v;
-    matchSel.append(o);
-  }
-  matchSel.disabled = !sb.monitor; // match makes sense only two-stream
-  matchSel.addEventListener("change", () => send("match", matchSel.value));
-  inspector.append(tbPropRow("Match", matchSel));
-
-  const keyIn = h("input", "prop");
-  keyIn.value = sb.match_key ?? "";
-  keyIn.placeholder = "key field";
-  keyIn.disabled = sb.match !== "out_of_order"; // required only out-of-order
-  keyIn.addEventListener("change", () => send("match_key", keyIn.value));
-  inspector.append(tbPropRow("Match key", keyIn));
-
-  const latIn = h("input", "prop");
-  latIn.type = "number";
-  latIn.min = "0";
-  latIn.value = sb.max_latency != null ? String(sb.max_latency) : "";
-  latIn.placeholder = "unbounded";
-  latIn.addEventListener("change", () => send("max_latency", latIn.value));
-  inspector.append(tbPropRow("Max latency", latIn));
-
-  // docs/07 P3 — the windowed N:1 check. The boundary is a SAMPLED port of the source
-  // agent (the DUT strobe that closes a window), and the whole feature is
-  // single-stream only: a two-stream scoreboard is strictly 1:1 and would desync N
-  // samples against one verdict, which QuickUVM refuses.
   const src = (state.config?.agents ?? []).find((a) => a.name === sb.source);
   const sampled = (src?.ports?.outputs ?? [])
     .map((p: QuvmPort) => p.name)
     .filter((n): n is string => Boolean(n));
-  const winSel = tbSelect(
-    [["", "— none —"], ...sampled.map((p) => [p, p] as const)],
-    sb.window?.boundary ?? "",
-    (v) => send("window.boundary", v)
-  );
-  winSel.disabled = Boolean(sb.monitor);
-  inspector.append(tbPropRow("Window on", winSel));
-  if (sb.monitor) {
-    inspector.append(
-      h("div", "note", "a window needs a single-stream scoreboard (remove the monitor)")
-    );
-  } else if (sb.window) {
-    const lenIn = h("input", "prop");
-    lenIn.type = "number";
-    lenIn.min = "1";
-    lenIn.value = String(sb.window.length ?? 1);
-    lenIn.addEventListener("change", () => send("window.length", lenIn.value));
-    inspector.append(tbPropRow("Samples", lenIn));
-  }
+  const rows = scoreboardRows(sb);
 
-  inspector.append(
-    tbPropRow(
-      "Predictor",
-      tbSelect(
-        [
-          ["sv", "SystemVerilog"],
-          ["c", "C (DPI bridge)"],
-        ],
-        sb.reference_model?.language ?? "sv",
-        (v) => send("reference_model.language", v)
-      )
-    )
-  );
+  const row = (id: string): void => {
+    switch (id) {
+      case "source": {
+        const srcSel = h("select", "prop");
+        for (const a of agents) {
+          // the source differs from the monitor (A2) — but keep the current source
+          // visible even if a hand-written config has source == monitor
+          if (a === sb.monitor && a !== sb.source) {
+            continue;
+          }
+          const o = h("option", "", a);
+          o.value = a;
+          o.selected = a === sb.source;
+          srcSel.append(o);
+        }
+        srcSel.addEventListener("change", () => send("source", srcSel.value));
+        inspector.append(tbPropRow("Source", srcSel));
+        break;
+      }
+      case "monitor": {
+        // the stream count: the discovery point for match/match_key and for window
+        const monSel = h("select", "prop");
+        const none = h("option", "", "None (single-stream)");
+        none.value = "";
+        none.selected = !sb.monitor;
+        monSel.append(none);
+        for (const a of agents) {
+          if (a === sb.source) {
+            continue; // the monitor differs from the source (A2 two-stream)
+          }
+          const o = h("option", "", a);
+          o.value = a;
+          o.selected = a === sb.monitor;
+          monSel.append(o);
+        }
+        monSel.addEventListener("change", () => send("monitor", monSel.value));
+        inspector.append(tbPropRow("Monitor", monSel));
+        break;
+      }
+      case "match":
+        inspector.append(
+          tbPropRow(
+            "Match",
+            tbSelect(
+              [
+                ["in_order", "In order"],
+                ["out_of_order", "Out of order"],
+              ],
+              sb.match ?? "in_order",
+              (v) => send("match", v)
+            )
+          )
+        );
+        break;
+      case "match_key": {
+        const keyIn = h("input", "prop");
+        keyIn.value = sb.match_key ?? "";
+        keyIn.placeholder = "key field";
+        keyIn.addEventListener("change", () => send("match_key", keyIn.value));
+        inspector.append(tbPropRow("Match key", keyIn));
+        break;
+      }
+      case "max_latency": {
+        const latIn = h("input", "prop");
+        latIn.type = "number";
+        latIn.min = "0";
+        latIn.value = sb.max_latency != null ? String(sb.max_latency) : "";
+        latIn.placeholder = "unbounded";
+        latIn.addEventListener("change", () => send("max_latency", latIn.value));
+        inspector.append(tbPropRow("Max latency", latIn));
+        break;
+      }
+      case "window.boundary":
+        // the boundary is a SAMPLED port of the source agent: the DUT strobe that
+        // closes a window (single-stream only — a two-stream sb is strictly 1:1)
+        inspector.append(
+          tbPropRow(
+            "Window on",
+            tbSelect(
+              [["", "— none —"], ...sampled.map((p) => [p, p] as const)],
+              sb.window?.boundary ?? "",
+              (v) => send("window.boundary", v)
+            )
+          )
+        );
+        break;
+      case "window.length": {
+        const lenIn = h("input", "prop");
+        lenIn.type = "number";
+        lenIn.min = "1";
+        lenIn.value = String(sb.window?.length ?? 1);
+        lenIn.addEventListener("change", () => send("window.length", lenIn.value));
+        inspector.append(tbPropRow("Samples", lenIn));
+        break;
+      }
+      case "reference_model.language":
+        inspector.append(
+          tbPropRow(
+            "Predictor",
+            tbSelect(
+              [
+                ["sv", "SystemVerilog"],
+                ["c", "C (DPI bridge)"],
+              ],
+              sb.reference_model?.language ?? "sv",
+              (v) => send("reference_model.language", v)
+            )
+          )
+        );
+        break;
+      default:
+        break;
+    }
+  };
+
+  inspector.append(h("h3", "", "Scoreboard properties"));
+  for (const id of rows.basic) {
+    row(id);
+  }
+  if (rows.advanced.length) {
+    tbSection("sb.advanced", "Advanced", () => {
+      for (const id of rows.advanced) {
+        row(id);
+      }
+    });
+  }
 }
 
 /**
@@ -4216,8 +4407,11 @@ function renderInspector(): void {
       button("VIP agent (by reference)…", true,
         () => postAction("addVipAgent", {}), true)
     );
-    // docs/07 P2 — bench-level settings (RAL + regression): not tied to a selection
-    if (state.config) {
+    // The bench-level sections belong to the BENCH, not to a component, so they show
+    // only in bench scope — no component selected, which is exactly what selecting the
+    // verification tree's root node produces (its selectId is null). Previously they
+    // rendered under every selection, which is what made the inspector a wall.
+    if (state.config && isBenchScope(selNode?.kind)) {
       tbBenchSettings(state.config);
     }
     inspector.append(h("h3", "", "Actions"));
