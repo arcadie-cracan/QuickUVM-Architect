@@ -320,6 +320,19 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   editorul de scoreboard cu `window`, `reference_model.language` (dropdown sv/c — DOAR
   butonul, nu corpul), `max_latency`-la-add; autorare `coverage` bogat; autorare
   scoreboard cross-bloc (selector de capete `<subenv>.<agent>`).
+- **P4a LIVRAT — domenii de ceas (M1).** Secțiunea „Clocks" autorează uniunea
+  `clock:` mapare ↔ LISTĂ de domenii: adăugarea primului domeniu convertește maparea
+  în listă (purtând câmpurile ei în primul domeniu, numit după ceasul curent),
+  editare per-domeniu (period/unit/source/name), ștergere, și colapsare înapoi la un
+  singur ceas dintr-o listă cu un element. Asta face utilizabil selectorul de domeniu
+  per-agent livrat în P1 — până acum nimic nu crea listele din care alegea.
+  Cascada: un domeniu **folosit de un agent nu se poate șterge** (QuickUVM refuză un
+  `clock:` de agent către un domeniu nedeclarat) — dovedit prin mutație. Verificat că
+  `source: dut` chiar produce un ceas OBSERVAT în `tb_top` (nu în `clkgen`, unde nu
+  are ce căuta: TB-ul nu-l generează).
+  Rămas pentru P4b: domenii de RESET (invariantul suplimentar `dut.reset` = numele
+  unui domeniu declarat sub listă), `open_drain`/`pullup` pe inouts, tipuri de port
+  bogate (enum/struct/packed_dims).
 - **P4 — adâncimea de porturi & ceasuri** (mediu-scump; atinge gestul de pini +
   geometrie). Deblocare inouts (`actions.ts:218`) cu `open_drain`/`pullup`; tipuri de
   port bogate; inspector clock/reset independent de setDut; autorare liste

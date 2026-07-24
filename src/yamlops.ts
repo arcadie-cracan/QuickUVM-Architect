@@ -980,6 +980,180 @@ export function setTestField(
   throw new Error(`testul „${name}" nu exista in configuratie`);
 }
 
+// -------------------------------------- multi-clock domains (docs/07 line 3, P4)
+
+/**
+ * The clock's declared-domain name when `clock:` is a MAPPING: its explicit `name`,
+ * else the DUT's clock port, else the QuickUVM default `clk`. A single mapping and a
+ * one-element LIST are different modes (the list engages the multi-domain machinery),
+ * so this is only used to name the domain a mapping becomes when it is converted.
+ */
+function singleClockName(doc: Document): string {
+  const clock = doc.getIn(["clock"]);
+  if (isMap(clock) && typeof clock.get("name") === "string") {
+    return String(clock.get("name"));
+  }
+  const dutClock = doc.getIn(["dut", "clock"]);
+  return typeof dutClock === "string" && dutClock ? dutClock : "clk";
+}
+
+export type ClockField = "name" | "period" | "unit" | "source" | "drive_offset_pct";
+
+/**
+ * Adds a clock DOMAIN (docs/07 P4). The first add converts the `clock:` mapping into
+ * a LIST — a deliberate mode switch (a list engages per-domain nets/clkgen, and a
+ * 1-element list is NOT a mapping) — carrying the mapping's fields into the first
+ * domain named after the current single clock. A later add appends. Throws on a
+ * duplicate domain name (QuickUVM keys domains by name).
+ */
+export function addClockDomain(text: string, name: string): string {
+  const doc = parse(text);
+  const clock = doc.getIn(["clock"]);
+  if (isSeq(clock)) {
+    for (const d of clock.items) {
+      if (isMap(d) && d.get("name") === name) {
+        throw new Error(`domeniul de ceas „${name}" exista deja`);
+      }
+    }
+    const node = doc.createNode({ name }) as YAMLMap;
+    node.flow = true;
+    clock.add(node);
+    return doc.toString(TO_STRING);
+  }
+  // mapping (or absent) -> a two-domain list: the existing single clock + the new one
+  const first: Record<string, unknown> = { name: singleClockName(doc) };
+  if (isMap(clock)) {
+    for (const key of ["period", "unit", "source", "drive_offset_pct"]) {
+      const v = clock.get(key);
+      if (v !== undefined) {
+        first[key] = v;
+      }
+    }
+  }
+  if (first.name === name) {
+    throw new Error(`domeniul de ceas „${name}" exista deja`);
+  }
+  const seq = doc.createNode([first, { name }]) as YAMLSeq;
+  for (const item of seq.items) {
+    (item as YAMLMap).flow = true;
+  }
+  doc.setIn(["clock"], seq);
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Removes a clock domain from the list. Removing the domain an agent SAMPLES is
+ * refused — QuickUVM rejects an agent `clock:` naming an undeclared domain, so the
+ * op would produce a config that no longer generates (the same cascade rule as the
+ * responder/coverage slices). Removing the last domain is refused too: collapse to a
+ * single clock instead. No-op (byte-identical) on an unknown domain or a mapping.
+ */
+export function removeClockDomain(text: string, name: string): string {
+  const doc = parse(text);
+  const clock = doc.getIn(["clock"]);
+  if (!isSeq(clock)) {
+    return text;
+  }
+  const idx = clock.items.findIndex((d) => isMap(d) && d.get("name") === name);
+  if (idx < 0) {
+    return text;
+  }
+  if (clock.items.length <= 1) {
+    throw new Error(
+      `„${name}" este singurul domeniu de ceas — colapseaza la un ceas simplu in loc sa-l stergi`
+    );
+  }
+  const users = (doc.getIn(["agents"]) as YAMLSeq | undefined)?.items?.filter(
+    (a) => isMap(a) && a.get("clock") === name
+  );
+  if (users && users.length) {
+    const who = users.map((a) => (a as YAMLMap).get("name")).join(", ");
+    throw new Error(
+      `domeniul de ceas „${name}" e folosit de agentul/agenții ${who} — reasignează-i întâi`
+    );
+  }
+  clock.delete(idx);
+  return doc.toString(TO_STRING);
+}
+
+/** Edits a clock domain's field. Works on a LIST domain (by name) or the single
+ *  MAPPING (any name matches it). A default value deletes the key. */
+export function setClockDomainField(
+  text: string,
+  name: string,
+  field: ClockField,
+  value: string | number | undefined
+): string {
+  const doc = parse(text);
+  const clock = doc.getIn(["clock"]);
+  const target = isSeq(clock)
+    ? clock.items.find((d) => isMap(d) && d.get("name") === name)
+    : isMap(clock)
+      ? clock
+      : undefined;
+  if (!isMap(target)) {
+    throw new Error(`domeniul de ceas „${name}" nu exista`);
+  }
+  // `name` is required on a list domain (QuickUVM keys by it); refuse emptying it
+  if (field === "name") {
+    if (value === undefined || value === "") {
+      throw new Error("numele domeniului de ceas este obligatoriu");
+    }
+    if (isSeq(clock)) {
+      for (const d of clock.items) {
+        if (d !== target && isMap(d) && d.get("name") === value) {
+          throw new Error(`domeniul de ceas „${value}" exista deja`);
+        }
+      }
+    }
+  }
+  const defaults: Record<ClockField, string | number> = {
+    name: "",
+    period: 10,
+    unit: "ns",
+    source: "tb",
+    drive_offset_pct: 20,
+  };
+  if (field !== "name" && (value === undefined || value === "" || value === defaults[field])) {
+    target.delete(field);
+  } else {
+    target.set(field, value);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Collapses a ONE-element clock list back into a mapping (the single-clock mode).
+ * Refused with >1 domain — that would drop domains — and a byte-identical no-op on a
+ * mapping. The `name` is dropped (a single mapping needs none) unless it differs from
+ * the DUT's clock port, in which case it is kept so the binding is not lost.
+ */
+export function collapseClocks(text: string): string {
+  const doc = parse(text);
+  const clock = doc.getIn(["clock"]);
+  if (!isSeq(clock)) {
+    return text;
+  }
+  if (clock.items.length !== 1) {
+    throw new Error("colapsarea cere exact un domeniu de ceas");
+  }
+  const only = clock.items[0];
+  if (!isMap(only)) {
+    return text;
+  }
+  const map: Record<string, unknown> = {};
+  const dutClock = doc.getIn(["dut", "clock"]);
+  for (const item of only.items) {
+    const key = String(item.key);
+    if (key === "name" && (String(item.value) === dutClock || item.value === "clk")) {
+      continue; // a plain single clock carries no redundant name
+    }
+    map[key] = item.value;
+  }
+  doc.setIn(["clock"], doc.createNode(map));
+  return doc.toString(TO_STRING);
+}
+
 // ----------------------------- rich functional coverage (docs/07 line 3, P3b)
 
 /**

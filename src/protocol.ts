@@ -59,6 +59,7 @@ export type ActionKind =
   | "toggleRegress"
   | "editRegress"
   | "editCoverage"
+  | "editClock"
   | "addTest"
   | "removeTest"
   | "editTest"
