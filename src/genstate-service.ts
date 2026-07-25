@@ -15,18 +15,20 @@ import * as vscode from "vscode";
 import { invokeQuickUvm } from "./generate";
 import {
   classify,
+  declaredElements,
   ElementStates,
   Manifest,
   ownerToNodeId,
   primaryFile,
   scopedFilesFor,
 } from "./genstate";
+import type { QuvmConfig } from "./quickuvm";
 
 /** workspaceState key holding, per config uri, the element → config-hash records */
 const STORE_KEY = "quickuvm.genHash";
 
 export class GenStateService implements vscode.Disposable {
-  private _states: ElementStates = { missing: new Set(), stale: new Set() };
+  private _states: ElementStates = { unsaved: new Set(), missing: new Set(), stale: new Set() };
   private readonly emitter = new vscode.EventEmitter<void>();
   readonly onDidChange = this.emitter.event;
 
@@ -38,12 +40,19 @@ export class GenStateService implements vscode.Disposable {
   /** element id → the config hash it was last generated FROM (persisted) */
   private genHash = new Map<string, string>();
   private configHash = "";
+  /** the elements the IN-MEMORY config declares. The manifest is produced from the
+   *  file on DISK, so between an edit and its save it does not know about a
+   *  just-added component; this is what lets its badge appear immediately. */
+  private declared: string[] = [];
 
   constructor(
     private readonly log: vscode.OutputChannel,
     private readonly memento?: vscode.Memento
   ) {}
 
+  get unsaved(): ReadonlySet<string> {
+    return this._states.unsaved;
+  }
   get missing(): ReadonlySet<string> {
     return this._states.missing;
   }
@@ -71,12 +80,16 @@ export class GenStateService implements vscode.Disposable {
   }
 
   /** The config changed (or first load): re-run the manifest, then recompute. */
-  async refresh(configUri: vscode.Uri | undefined): Promise<void> {
+  async refresh(
+    configUri: vscode.Uri | undefined,
+    config?: QuvmConfig
+  ): Promise<void> {
     this.config = configUri;
+    this.declared = config ? declaredElements(config) : [];
     this.restore(); // the per-config generated-from hashes (survive a reload)
     if (!configUri) {
       this.manifest = undefined;
-      this.set({ missing: new Set(), stale: new Set() });
+      this.set({ unsaved: new Set(), missing: new Set(), stale: new Set() });
       return;
     }
     const root = vscode.workspace.workspaceFolders?.[0];
@@ -93,7 +106,7 @@ export class GenStateService implements vscode.Disposable {
         this.log.appendLine(`[genstate] ${r.err.trim()}`);
       }
       this.manifest = undefined;
-      this.set({ missing: new Set(), stale: new Set() });
+      this.set({ unsaved: new Set(), missing: new Set(), stale: new Set() });
       return;
     }
     try {
@@ -101,7 +114,7 @@ export class GenStateService implements vscode.Disposable {
     } catch (e) {
       this.log.appendLine(`[genstate] could not parse manifest JSON: ${String(e)}`);
       this.manifest = undefined;
-      this.set({ missing: new Set(), stale: new Set() });
+      this.set({ unsaved: new Set(), missing: new Set(), stale: new Set() });
       return;
     }
     await this.recompute();
@@ -123,7 +136,15 @@ export class GenStateService implements vscode.Disposable {
       }
     }
     this.configHash = await this.hashOf(this.config);
-    this.set(classify(this.manifest, present, this.genHash, this.configHash));
+    this.set(
+      classify(
+        this.manifest,
+        present,
+        this.genHash,
+        this.configHash,
+        this.declared
+      )
+    );
   }
 
   /**
@@ -187,7 +208,11 @@ export class GenStateService implements vscode.Disposable {
   }
 
   private set(next: ElementStates): void {
-    if (eqSet(next.missing, this._states.missing) && eqSet(next.stale, this._states.stale)) {
+    if (
+      eqSet(next.unsaved, this._states.unsaved) &&
+      eqSet(next.missing, this._states.missing) &&
+      eqSet(next.stale, this._states.stale)
+    ) {
       return; // no change — avoid a redundant tree/diagram redraw
     }
     this._states = next;

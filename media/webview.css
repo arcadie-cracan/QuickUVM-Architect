@@ -104,6 +104,15 @@ body {
 
 /* --------------------------------------------------------- inspector */
 
+/* In the SIDEBAR the inspector is the whole view: no fixed width, no left border
+   (docs/07 UX slice 2). In the diagram's aside it stays a fixed-width column. */
+body.sidebar #inspector {
+  width: auto;
+  border-left: none;
+  height: 100vh;
+  box-sizing: border-box;
+}
+
 #inspector {
   width: 250px;
   flex: none;
@@ -1114,11 +1123,14 @@ text.split-sign {
   stroke: var(--vscode-editor-background, #1e1e1e);
   stroke-width: 1.5;
 }
-.gen-badge.gen-missing circle {
+.gen-badge.gen-unsaved circle {
   fill: var(--vscode-gitDecoration-untrackedResourceForeground, #73c991);
 }
+.gen-badge.gen-missing circle {
+  fill: var(--vscode-list-warningForeground, #cca700);
+}
 .gen-badge.gen-stale circle {
-  fill: var(--vscode-gitDecoration-modifiedResourceForeground, #e2c08d);
+  fill: var(--vscode-charts-blue, #3794ff);
 }
 .gen-badge text {
   fill: var(--vscode-editor-background, #1e1e1e);

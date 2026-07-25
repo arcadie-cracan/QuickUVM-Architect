@@ -24,6 +24,7 @@ export class VerificationProvider
    *  (`…-missing` / `…-stale` / `…-ok`) and the inline action can be Generate,
    *  Regenerate, or nothing. Injected so this provider stays free of the service. */
   constructor(
+    private readonly unsaved: () => ReadonlySet<string> = () => new Set(),
     private readonly missing: () => ReadonlySet<string> = () => new Set(),
     private readonly stale: () => ReadonlySet<string> = () => new Set()
   ) {}
@@ -95,11 +96,16 @@ export class VerificationProvider
             ? "vsqr"
             : null;
     if (kind) {
-      const state = this.missing().has(elementId)
-        ? "missing"
-        : this.stale().has(elementId)
-          ? "stale"
-          : "ok";
+      // `new` and `missing` share the Generate action (generateItem saves the
+      // document first, so an unsaved element generates fine); they are kept apart
+      // so the row can say WHICH it is.
+      const state = this.unsaved().has(elementId)
+        ? "new"
+        : this.missing().has(elementId)
+          ? "missing"
+          : this.stale().has(elementId)
+            ? "stale"
+            : "ok";
       item.contextValue = `vgen-${kind}-${state}`;
     }
     item.command = {
