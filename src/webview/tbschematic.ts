@@ -410,24 +410,30 @@ function drawBox(p: TbPlaced): SVGGElement {
         y1: String(py),
         x2: String(west ? -STUB : p.w + STUB),
         y2: String(py),
-      }),
-      el(
-        "text",
-        {
-          class: "tb-pin",
-          x: String(west ? -STUB - 2 : p.w + STUB + 2),
-          // the label always ABOVE the port (not on the wire's row: the wire exits
-          // horizontally at py, so it does not cross the name), on BOTH sides — the vertical
-          // alignment is CONSTANT under flipping (H changes the west<->east side,
-          // but not top/bottom; the user's request). The anchor (end at west,
-          // start at east) keeps the label on the block's outer side, so
-          // the ports that face each other stay horizontally separated
-          y: String(py - 5),
-          "text-anchor": west ? "end" : "start",
-        },
-        port.note ? `${port.label} ${port.note}` : port.label
-      )
+      })
     );
+    // an empty label = the name was de-duplicated onto the opposite port
+    // (dedupeEdgeLabels): draw only the stub, no empty <text>.
+    if (port.label) {
+      g.append(
+        el(
+          "text",
+          {
+            class: "tb-pin",
+            x: String(west ? -STUB - 2 : p.w + STUB + 2),
+            // the label always ABOVE the port (not on the wire's row: the wire exits
+            // horizontally at py, so it does not cross the name), on BOTH sides — the vertical
+            // alignment is CONSTANT under flipping (H changes the west<->east side,
+            // but not top/bottom; the user's request). The anchor (end at west,
+            // start at east) keeps the label on the block's outer side, so
+            // the ports that face each other stay horizontally separated
+            y: String(py - 5),
+            "text-anchor": west ? "end" : "start",
+          },
+          port.note ? `${port.label} ${port.note}` : port.label
+        )
+      );
+    }
   }
   return g;
 }

@@ -146,6 +146,34 @@ function boundary(
   return { id, label, side, iface, note };
 }
 
+/**
+ * De-duplicates a name shown at BOTH ends of an edge. An interface (`pkt_if`) or
+ * a TLM item (`seq_item`) is ONE thing, but the two facing ports each carry its
+ * name; when the blocks sit close the two labels reach into the gap and collide
+ * ("pkt_ifpkt_if"). We keep the name on the SOURCE port (the data's origin) and
+ * blank the target's — the edge's arrow still shows the direction. Boundary
+ * flags are untouched (they are not node ports and already name it once,
+ * centered), so the Env level's `<if>` hexagon is unaffected.
+ */
+function dedupeEdgeLabels(nodes: TbNode[], edges: TbEdge[]): void {
+  const byId = new Map<string, TbPort>();
+  for (const n of nodes) {
+    for (const p of n.ports) {
+      byId.set(p.id, p);
+    }
+  }
+  for (const e of edges) {
+    if (!e.sourcePort || !e.targetPort) {
+      continue;
+    }
+    const s = byId.get(e.sourcePort);
+    const t = byId.get(e.targetPort);
+    if (s && t && s.label && s.label === t.label) {
+      t.label = "";
+    }
+  }
+}
+
 function sbSub(sb: QuvmScoreboard): string {
   const parts: string[] = [sb.match ?? "in_order"];
   if (sb.match_key) {
@@ -260,6 +288,8 @@ export function buildTbScene(
     b.dir =
       isSource && isTarget ? "inout" : isTarget ? "out" : "in";
   }
+
+  dedupeEdgeLabels(level.nodes, level.edges);
 
   return { viewId, focus, breadcrumb: crumb, ...level };
 }
