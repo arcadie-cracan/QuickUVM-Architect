@@ -3,7 +3,7 @@
 Live captures of the QuickUVM Architect webview, driven by the YAPP-router
 example (its `.quickuvm.yaml` config for the verification views, and a hand-built
 project-model of the `yapp_router` module for the RTL views). They back the
-"Build a UVM testbench for the YAPP router" walkthrough.
+[**Build a UVM testbench for the YAPP router**](../yapp-router-walkthrough.html) walkthrough.
 
 These are **real renders of the shipped webview bundles** (`dist/properties.js`,
 `dist/webview.js`), not mockups — produced headlessly from the model/config plus

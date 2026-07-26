@@ -1,0 +1,616 @@
+<title>Build a UVM testbench for the YAPP router — QuickUVM Architect</title>
+<style>
+  :root {
+    --bg: #f5f7f9; --surface: #ffffff; --surface-2: #edf1f4; --ink: #191f29;
+    --muted: #5a6472; --line: #dce2e9; --accent: #0b8a97; --accent-ink: #076370;
+    --accent-soft: #e2f2f4; --good: #2f9e63; --warn: #b58600; --info: #2f78d6;
+    /* the tool-UI mockups keep their own fixed VSCode-dark world in either theme */
+    --vs-bg: #1e222a; --vs-panel: #252b34; --vs-line: #333b47; --vs-fg: #c9d1d9;
+    --vs-dim: #7d8795; --vs-sel: #0c3a52; --vs-active: #2d3542;
+    --vs-green: #73c991; --vs-amber: #cca700; --vs-blue: #3794ff; --vs-teal: #29c2d1;
+    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --maxw: 74ch;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #10131a; --surface: #171c25; --surface-2: #1f2530; --ink: #e7ebf1;
+      --muted: #98a2b0; --line: #29313e; --accent: #29c2d1; --accent-ink: #63d6e2;
+      --accent-soft: #10333a; --good: #57c98a; --warn: #d6a520; --info: #5c9df0;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #10131a; --surface: #171c25; --surface-2: #1f2530; --ink: #e7ebf1;
+    --muted: #98a2b0; --line: #29313e; --accent: #29c2d1; --accent-ink: #63d6e2;
+    --accent-soft: #10333a; --good: #57c98a; --warn: #d6a520; --info: #5c9df0;
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f7f9; --surface: #ffffff; --surface-2: #edf1f4; --ink: #191f29;
+    --muted: #5a6472; --line: #dce2e9; --accent: #0b8a97; --accent-ink: #076370;
+    --accent-soft: #e2f2f4; --good: #2f9e63; --warn: #b58600; --info: #2f78d6;
+  }
+
+  * { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: var(--sans); font-size: 16px; line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 0 24px 120px; }
+
+  a { color: var(--accent-ink); text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent); text-underline-offset: 2px; }
+  code, kbd { font-family: var(--mono); font-size: 0.86em; }
+  p code, li code { background: var(--surface-2); padding: 0.08em 0.36em; border-radius: 4px; border: 1px solid var(--line); }
+  kbd { background: var(--surface-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 0.05em 0.42em; font-size: 0.8em; }
+  h1, h2, h3 { text-wrap: balance; line-height: 1.18; letter-spacing: -0.012em; }
+  .eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; }
+
+  /* ---------- hero ---------- */
+  .hero { padding: 72px 0 34px; border-bottom: 1px solid var(--line); }
+  .hero h1 { font-size: clamp(30px, 5vw, 46px); font-weight: 800; margin: 14px 0 10px; }
+  .hero .lede { font-size: clamp(17px, 2.3vw, 20px); color: var(--muted); max-width: 60ch; margin: 0; }
+  .hero .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .tag { font-family: var(--mono); font-size: 12px; padding: 4px 9px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--muted); }
+  .tag.ok { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, var(--line)); background: color-mix(in srgb, var(--good) 9%, var(--surface)); }
+
+  /* pipeline strip */
+  .pipe { display: flex; flex-wrap: wrap; align-items: stretch; gap: 0; margin: 30px 0 4px; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--surface); }
+  .pipe .cell { flex: 1 1 120px; padding: 14px 16px; border-right: 1px solid var(--line); min-width: 0; }
+  .pipe .cell:last-child { border-right: 0; }
+  .pipe .k { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+  .pipe .v { font-weight: 700; margin-top: 3px; font-size: 15px; }
+  .pipe .cell.res { background: color-mix(in srgb, var(--good) 10%, var(--surface)); }
+  .pipe .cell.res .v { color: var(--good); font-family: var(--mono); }
+
+  /* ---------- generic blocks ---------- */
+  section.step { padding: 52px 0 8px; scroll-margin-top: 20px; }
+  .lead { display: grid; grid-template-columns: 3.4rem 1fr; gap: 4px 20px; align-items: start; }
+  .num { grid-row: span 2; font-family: var(--mono); font-weight: 700; font-size: 15px; color: var(--accent-ink);
+         width: 3.4rem; height: 3.4rem; border: 1.5px solid var(--accent); border-radius: 11px;
+         display: flex; align-items: center; justify-content: center; background: var(--accent-soft); }
+  .lead h2 { font-size: clamp(21px, 3vw, 27px); font-weight: 750; margin: 4px 0 0; }
+  .lead .sub { color: var(--muted); font-size: 14.5px; font-family: var(--mono); margin-top: 3px; }
+  .body { margin-top: 20px; display: flex; flex-direction: column; gap: 18px; }
+  .body > p { margin: 0; }
+  .body ul, .body ol { margin: 0; padding-left: 1.2em; display: flex; flex-direction: column; gap: 7px; }
+
+  /* action line: what you click */
+  .do { display: flex; gap: 12px; align-items: flex-start; padding: 13px 16px; border: 1px solid var(--line);
+        border-left: 3px solid var(--accent); border-radius: 9px; background: var(--surface); }
+  .do .arrow { color: var(--accent-ink); font-weight: 800; }
+  .do .txt { margin: 0; }
+  .do b { font-weight: 700; }
+  .menu { font-family: var(--mono); font-size: 0.86em; background: var(--surface-2); border: 1px solid var(--line); border-radius: 5px; padding: 0.08em 0.4em; white-space: nowrap; }
+
+  /* why-note callout */
+  .note { border: 1px solid var(--line); border-radius: 10px; background: var(--surface-2); padding: 15px 17px; }
+  .note .h { font-family: var(--mono); font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--accent-ink); font-weight: 600; margin-bottom: 5px; }
+  .note p { margin: 0; font-size: 14.5px; color: var(--ink); }
+  .note p + p { margin-top: 8px; }
+
+  /* ---------- code + terminal ---------- */
+  .code { border: 1px solid var(--vs-line); border-radius: 10px; overflow: hidden; background: var(--vs-bg); }
+  .code .bar { display: flex; align-items: center; gap: 8px; padding: 8px 13px; background: var(--vs-panel); border-bottom: 1px solid var(--vs-line); }
+  .code .bar .fn { font-family: var(--mono); font-size: 12px; color: var(--vs-dim); }
+  .code .bar .lang { margin-left: auto; font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vs-dim); }
+  .code pre { margin: 0; padding: 15px 16px; overflow-x: auto; }
+  .code code { font-family: var(--mono); font-size: 12.8px; line-height: 1.62; color: var(--vs-fg); }
+  .code pre::-webkit-scrollbar { height: 9px; }
+  .code pre::-webkit-scrollbar-thumb { background: var(--vs-line); border-radius: 9px; }
+  .t-key { color: #c792ea; } .t-str { color: #c3e88d; } .t-com { color: #5f6b7a; font-style: italic; }
+  .t-num { color: #f78c6c; } .t-fn { color: #82aaff; } .t-typ { color: #ffcb6b; } .t-pre { color: #89ddff; }
+  .t-pragma { color: #7fdbca; }
+
+  /* ---------- VSCode-ish UI panels (fixed dark world) ---------- */
+  .ui { border: 1px solid var(--vs-line); border-radius: 11px; overflow: hidden; background: var(--vs-bg); color: var(--vs-fg); box-shadow: 0 1px 0 rgba(0,0,0,0.04); }
+  .ui .cap { font-family: var(--mono); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--vs-dim);
+             padding: 9px 13px; background: var(--vs-panel); border-bottom: 1px solid var(--vs-line); display: flex; align-items: center; gap: 8px; }
+  .ui .cap .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--vs-teal); }
+  .ui .cap .side { margin-left: auto; color: var(--vs-dim); text-transform: none; letter-spacing: 0; }
+  .ui-body { padding: 8px 6px; }
+
+  /* tree rows */
+  .tree { font-family: var(--mono); font-size: 13px; }
+  .tree .row { display: flex; align-items: center; gap: 7px; padding: 3px 10px; border-radius: 5px; white-space: nowrap; }
+  .tree .row.sel { background: var(--vs-sel); }
+  .tree .row.hi { background: var(--vs-active); }
+  .tree .tw { color: var(--vs-dim); width: 0.9em; display: inline-block; }
+  .tree .ic { color: var(--vs-teal); }
+  .tree .ic.dut { color: #e0985a; } .tree .ic.env { color: #b48ead; } .tree .ic.mod { color: var(--vs-dim); }
+  .tree .lbl { color: var(--vs-fg); }
+  .tree .kind { color: var(--vs-dim); font-size: 11.5px; }
+  .tree .row.indent1 { padding-left: 24px; } .tree .row.indent2 { padding-left: 40px; } .tree .row.indent3 { padding-left: 56px; }
+  .badge { font-family: var(--mono); font-size: 11px; font-weight: 700; width: 15px; text-align: center; border-radius: 3px; }
+  .badge.b-new { color: #10131a; background: var(--vs-green); } /* new / unsaved */
+  .badge.b-gen { color: #10131a; background: var(--vs-amber); } /* not generated (U) */
+  .badge.b-old { color: #10131a; background: var(--vs-blue); }  /* stale (M) */
+  .b-legend { display: flex; flex-wrap: wrap; gap: 14px; font-family: var(--mono); font-size: 11.5px; color: var(--muted); margin-top: 10px; }
+  .b-legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+  /* context menu chip */
+  .ctx { margin-top: 6px; margin-left: 20px; display: inline-block; background: var(--vs-panel); border: 1px solid var(--vs-line); border-radius: 7px; padding: 5px 4px; font-family: var(--mono); font-size: 12.5px; box-shadow: 0 8px 24px rgba(0,0,0,0.3); }
+  .ctx .mi { padding: 4px 22px 4px 12px; border-radius: 4px; color: var(--vs-fg); }
+  .ctx .mi.on { background: var(--vs-teal); color: #10131a; font-weight: 600; }
+  .ctx .mi.dim { color: var(--vs-dim); }
+
+  /* schematic block with ports — a self-contained DARK canvas in either page theme */
+  .schem {
+    display: flex; justify-content: center; padding: 22px 10px;
+    background-color: var(--vs-bg);
+    background-image:
+      repeating-linear-gradient(0deg, transparent 0 23px, color-mix(in srgb, var(--vs-line) 80%, transparent) 23px 24px),
+      repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in srgb, var(--vs-line) 80%, transparent) 23px 24px);
+    border: 1px solid var(--vs-line); border-radius: 10px;
+  }
+  /* inside a UI panel the panel already frames it — drop the standalone frame */
+  .ui .schem { border: 0; border-radius: 0; }
+  .chip { display: grid; grid-template-columns: auto minmax(150px, 210px) auto; align-items: center; gap: 0 0; }
+  .chip .core { background: var(--vs-panel); border: 1.5px solid var(--vs-teal); border-radius: 9px; padding: 16px 12px; text-align: center; }
+  .chip .core .nm { font-family: var(--mono); font-weight: 700; color: var(--vs-fg); font-size: 14px; }
+  .chip .core .st { font-family: var(--mono); font-size: 10.5px; color: var(--vs-dim); margin-top: 3px; }
+  .chip .pins { display: flex; flex-direction: column; gap: 9px; padding-top: 6px; }
+  .chip .pins.l { align-items: flex-end; } .chip .pins.r { align-items: flex-start; }
+  .pin { font-family: var(--mono); font-size: 12px; color: var(--vs-fg); display: flex; align-items: center; gap: 7px; white-space: nowrap; }
+  .pins.l .pin { flex-direction: row; } .pins.r .pin { flex-direction: row-reverse; }
+  .pin .stub { width: 22px; height: 1.5px; background: var(--vs-dim); }
+  .pin.sel .stub { background: var(--vs-green); height: 2px; } .pin.sel { color: var(--vs-green); }
+  .pin.out.sel .stub { background: var(--vs-blue); } .pin.out.sel { color: var(--vs-blue); }
+  .pin .w { color: var(--vs-dim); font-size: 10.5px; }
+
+  /* properties panel */
+  .props { display: flex; flex-direction: column; gap: 2px; padding: 4px 10px 10px; }
+  .props .grp { font-family: var(--mono); font-size: 10.5px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--vs-dim); margin: 12px 0 5px; }
+  .props .prow { display: flex; align-items: center; gap: 10px; font-size: 13px; }
+  .props .plabel { width: 108px; color: var(--vs-dim); font-family: var(--mono); font-size: 12px; flex: none; }
+  .props .pctrl { flex: 1; background: var(--vs-bg); border: 1px solid var(--vs-line); border-radius: 5px; padding: 4px 8px; font-family: var(--mono); font-size: 12.5px; color: var(--vs-fg); min-width: 0; }
+  .props .pctrl.sel { border-color: var(--vs-teal); }
+  .props .disc { font-family: var(--mono); font-size: 12px; color: var(--vs-dim); margin: 10px 0 3px; }
+  .props .btnrow { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+  .vbtn { font-family: var(--mono); font-size: 12px; color: var(--vs-fg); background: var(--vs-panel); border: 1px solid var(--vs-line); border-radius: 6px; padding: 6px 11px; }
+  .vbtn.pri { background: var(--vs-teal); color: #10131a; font-weight: 600; border-color: var(--vs-teal); }
+
+  /* file grid */
+  .files { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 4px 14px; font-family: var(--mono); font-size: 12.5px; padding: 6px 12px 12px; }
+  .files .f { color: var(--vs-fg); display: flex; align-items: center; gap: 6px; }
+  .files .f .x { color: var(--vs-dim); }
+  .files .f.key { color: var(--vs-teal); }
+
+  /* terminal */
+  .term { background: #0c0f14; border: 1px solid var(--vs-line); border-radius: 10px; overflow: hidden; }
+  .term .cap { background: #12161d; }
+  .term pre { margin: 0; padding: 14px 16px; overflow-x: auto; font-family: var(--mono); font-size: 12.6px; line-height: 1.6; color: #cfd6de; }
+  .term .p { color: var(--vs-green); font-weight: 700; } .term .z { color: var(--vs-teal); } .term .dim { color: #6b7683; } .term .cmd { color: #e8ecf1; }
+
+  /* results / recap cards */
+  .grid2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+  .card { border: 1px solid var(--line); border-radius: 11px; background: var(--surface); padding: 16px 18px; }
+  .card h4 { margin: 0 0 6px; font-size: 15px; }
+  .card p { margin: 0; font-size: 14px; color: var(--muted); }
+  .card .big { font-family: var(--mono); font-size: 26px; font-weight: 700; color: var(--accent-ink); }
+
+  .rule { border: 0; border-top: 1px solid var(--line); margin: 0; }
+  .foot { margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
+  .foot b { color: var(--ink); }
+
+  /* real captures rendered from the extension's own webview */
+  .ui .shotimg { display: block; width: 100%; height: auto; background: #1e1e1e; }
+  .ui.narrow { max-width: 460px; align-self: center; }
+  .ui .shot-scroll { overflow-x: auto; }
+  .ui .shot-scroll .shotimg { width: auto; height: 132px; max-width: none; }
+  .cap .live { margin-left: auto; text-transform: none; letter-spacing: 0; color: var(--vs-green);
+               font-size: 10px; border: 1px solid color-mix(in srgb, var(--vs-green) 45%, transparent);
+               border-radius: 999px; padding: 1px 8px; display: inline-flex; align-items: center; gap: 5px; }
+  .cap .live::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--vs-green); }
+
+  @media (max-width: 620px) {
+    .lead { grid-template-columns: 1fr; } .num { grid-row: auto; margin-bottom: 6px; }
+    .props .plabel { width: 84px; }
+  }
+</style>
+
+<div class="wrap">
+
+  <header class="hero">
+    <div class="eyebrow">QuickUVM Architect · guided tutorial</div>
+    <h1>Build a UVM testbench for the YAPP router</h1>
+    <p class="lede">From an RTL module to a running, self-checking UVM environment — laid out by pointing at ports in a diagram, generated in one click, closed with a single line of golden model.</p>
+    <div class="meta">
+      <span class="tag">SystemVerilog · UVM 1.2</span>
+      <span class="tag">no base class to inherit</span>
+      <span class="tag">~20-line spec</span>
+      <span class="tag ok">✓ Xcelium 49/49 · Questa 49/49</span>
+    </div>
+    <div class="pipe">
+      <div class="cell"><div class="k">1 · Design</div><div class="v">Set the DUT</div></div>
+      <div class="cell"><div class="k">2 · Agent</div><div class="v">Pins → packet</div></div>
+      <div class="cell"><div class="k">3 · Checks</div><div class="v">Scoreboard + coverage</div></div>
+      <div class="cell"><div class="k">4 · Generate</div><div class="v">23 files</div></div>
+      <div class="cell res"><div class="k">5 · Run</div><div class="v">49/49 PASSED</div></div>
+    </div>
+  </header>
+
+  <section class="step" style="padding-top:40px">
+    <div class="lead">
+      <div class="num" style="border-style:dashed">·</div>
+      <h2>What you're building</h2>
+      <div class="sub">the DUT, the bench shape, the tools</div>
+    </div>
+    <div class="body">
+      <p>The <b>YAPP router</b> is a one-input, three-output packet router: each valid packet carries a 2-bit destination address and an 8-bit payload, and one cycle later the router presents it on the addressed output channel. Address <code>3</code> means <em>drop</em> — no output. It's the classic verification teaching DUT, small enough to hold in your head and rich enough to need a real scoreboard.</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>The DUT — yapp_router<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect symbol view of the yapp_router module: inputs in_valid, in_addr[1:0], in_data[7:0] on the left with clk and rst_n under a CLOCK / RESET divider, and the six outputs out0/out1/out2 _valid and _data[7:0] on the right." src="tutorial-shots/5-rtl-symbol.png">
+      </div>
+      <p>The bench is a <b>single agent</b> that drives the input channel and observes all three outputs, plus a <b>scoreboard</b> that predicts which output each packet should reach, and a <b>coverage</b> collector on the destination address. You'll specify all of it by selecting ports on a diagram — never by writing UVM boilerplate.</p>
+      <div class="note">
+        <div class="h">Before you start</div>
+        <p>You need three things: <b>QuickUVM</b> installed (<code>pip install quick-uvm</code>, the generator), the <b>QuickUVM Architect</b> VS Code extension (the diagram front-end), and a SystemVerilog simulator to run the result (Xcelium, Questa, or VCS). Create a folder with the router RTL below at <code>rtl/yapp_router.sv</code> and open it in VS Code.</p>
+      </div>
+      <div class="code">
+        <div class="bar"><span class="fn">rtl/yapp_router.sv</span><span class="lang">SystemVerilog</span></div>
+<pre><code><span class="t-com">// One input channel routes each valid packet to one of three outputs by its</span>
+<span class="t-com">// 2-bit address (0/1/2 = port, 3 = drop). One-cycle registered latency.</span>
+<span class="t-key">module</span> <span class="t-typ">yapp_router</span> (
+  <span class="t-key">input  logic</span>       clk,
+  <span class="t-key">input  logic</span>       rst_n,
+  <span class="t-key">input  logic</span>       in_valid,
+  <span class="t-key">input  logic</span> [<span class="t-num">1</span>:<span class="t-num">0</span>] in_addr,
+  <span class="t-key">input  logic</span> [<span class="t-num">7</span>:<span class="t-num">0</span>] in_data,
+  <span class="t-key">output logic</span>       out0_valid, <span class="t-key">output logic</span> [<span class="t-num">7</span>:<span class="t-num">0</span>] out0_data,
+  <span class="t-key">output logic</span>       out1_valid, <span class="t-key">output logic</span> [<span class="t-num">7</span>:<span class="t-num">0</span>] out1_data,
+  <span class="t-key">output logic</span>       out2_valid, <span class="t-key">output logic</span> [<span class="t-num">7</span>:<span class="t-num">0</span>] out2_data
+);
+  <span class="t-key">always_ff</span> @(<span class="t-key">posedge</span> clk <span class="t-key">or negedge</span> rst_n) <span class="t-key">begin</span>
+    <span class="t-key">if</span> (!rst_n) <span class="t-key">begin</span>
+      out0_valid &lt;= <span class="t-num">0</span>; out1_valid &lt;= <span class="t-num">0</span>; out2_valid &lt;= <span class="t-num">0</span>;
+      out0_data  &lt;= <span class="t-num">0</span>; out1_data  &lt;= <span class="t-num">0</span>; out2_data  &lt;= <span class="t-num">0</span>;
+    <span class="t-key">end else begin</span>
+      out0_valid &lt;= in_valid &amp;&amp; (in_addr == <span class="t-num">2'd0</span>);
+      out1_valid &lt;= in_valid &amp;&amp; (in_addr == <span class="t-num">2'd1</span>);
+      out2_valid &lt;= in_valid &amp;&amp; (in_addr == <span class="t-num">2'd2</span>);
+      out0_data  &lt;= in_data; out1_data &lt;= in_data; out2_data &lt;= in_data;
+    <span class="t-key">end</span>
+  <span class="t-key">end</span>
+<span class="t-key">endmodule</span></code></pre>
+      </div>
+      <p class="sub" style="color:var(--muted)">A note on the pictures below: every schematic and panel is a <b>live capture</b> — the module’s <b>symbol view</b>, the <b>verification schematics</b> and the <b>Properties panel</b> are all rendered straight from the extension’s own webview, driven by this exact model and config. Only the design / verification <b>tree views</b> and the <b>right-click menus</b> are illustrations drawn here — they are native VS Code UI, not webviews — kept legible at any size and in either theme.</p>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- STEP 1 -->
+  <section class="step" id="s1">
+    <div class="lead">
+      <div class="num">01</div>
+      <h2>Point QuickUVM at the DUT</h2>
+      <div class="sub">Design Hierarchy → Set as DUT</div>
+    </div>
+    <div class="body">
+      <p>Open the QuickUVM Architect view from the activity bar. The extension parses every <code>.sv</code> in the workspace and shows the module tree under <b>Design Hierarchy</b>. Find <code>yapp_router</code>, right-click it, and choose <span class="menu">Set as DUT</span>.</p>
+      <div class="do"><span class="arrow">▸</span><p class="txt">Right-click <b>yapp_router</b> in <b>Design Hierarchy</b> → <span class="menu">Set as DUT</span>. This creates <code>yapp.quickuvm.yaml</code> with the DUT, its clock (<code>clk</code>), and reset (<code>rst_n</code>) already filled in.</p></div>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Design Hierarchy<span class="side">yapp.quickuvm.yaml</span></div>
+        <div class="ui-body tree">
+          <div class="row"><span class="tw">▾</span><span class="ic mod">▢</span><span class="lbl">top module</span><span class="kind">yapp_router</span></div>
+          <div class="row sel indent1"><span class="tw"> </span><span class="ic dut">◈</span><span class="lbl">yapp_router</span><span class="kind">yapp_router</span></div>
+        </div>
+        <div class="ctx">
+          <div class="mi on">Set as DUT</div>
+          <div class="mi">Open Schematic View</div>
+          <div class="mi">Go to Source</div>
+          <div class="mi dim">Open Verification View</div>
+        </div>
+      </div>
+      <div class="note">
+        <div class="h">Why start here</div>
+        <p>Setting the DUT is what turns a browsing session into a project: it's the anchor everything else hangs off. From here on, the extension edits one YAML config — the same file you could hand-write, kept surgically so your comments and hand edits survive every regeneration.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 2 -->
+  <section class="step" id="s2">
+    <div class="lead">
+      <div class="num">02</div>
+      <h2>See the ports as a schematic</h2>
+      <div class="sub">Open Schematic View</div>
+    </div>
+    <div class="body">
+      <p>Right-click the DUT and pick <span class="menu">Open Schematic View</span> (or use the toolbar). The router is drawn as a block with its inputs on the left and outputs on the right — this is the surface you'll select on to define the agent.</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Schematic — yapp_router<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect symbol view of yapp_router: in_valid, in_addr[1:0] and in_data[7:0] on the left with clk and rst_n grouped under a CLOCK / RESET divider, and out0/out1/out2 _valid and _data[7:0] on the right." src="tutorial-shots/5-rtl-symbol.png">
+      </div>
+      <p><code>clk</code> and <code>rst_n</code> are recognized as the clock and reset — they belong to the testbench harness, not to any agent, so you'll leave them out of the selection in the next step.</p>
+    </div>
+  </section>
+
+  <!-- STEP 3 -->
+  <section class="step" id="s3">
+    <div class="lead">
+      <div class="num">03</div>
+      <h2>Turn the ports into a packet agent</h2>
+      <div class="sub">select pins → Create Agent from Selection</div>
+    </div>
+    <div class="body">
+      <p>Rubber-band or <kbd>Ctrl</kbd>-click to select the data ports — the three inputs (<code>in_valid</code>, <code>in_addr</code>, <code>in_data</code>) and all six outputs — then right-click and choose <span class="menu">Create Agent from Selection</span>. Name it <b>pkt</b>.</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Schematic — selection<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect symbol view with the nine data ports selected and highlighted blue — in_valid, in_addr, in_data and the six out0/out1/out2 _valid/_data pins — while clk and rst_n stay unselected." src="tutorial-shots/6-rtl-symbol-selected.png">
+        <div class="ctx" style="margin-left:0">
+          <div class="mi on">Create Agent from Selection</div>
+          <div class="mi">Ignore Selected Ports</div>
+        </div>
+      </div>
+      <p>Direction does the work: the extension routes the <b>inputs</b> to what the agent <em>drives</em> and the <b>outputs</b> to what it <em>observes</em>. One agent now owns the whole router interface.</p>
+      <div class="note">
+        <div class="h">One agent, not four</div>
+        <p>A packet router invites a “one input agent + three output agents” instinct. Here a single agent that drives the input and samples all three outputs is the simpler, more robust choice: the scoreboard can then predict the entire output vector from one input packet in a single self-consistent transaction — no cross-agent ordering to reconcile. (Independent per-channel handshakes are where you'd reach for separate output agents.)</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 4 -->
+  <section class="step" id="s4">
+    <div class="lead">
+      <div class="num">04</div>
+      <h2>Shape the packet in the Properties panel</h2>
+      <div class="sub">Properties → agent “pkt”</div>
+    </div>
+    <div class="body">
+      <p>Select the <b>pkt</b> agent (in the diagram or the Verification tree) and the <b>Properties</b> view fills with its fields. Three edits turn a raw port list into a meaningful packet:</p>
+      <ul>
+        <li>Give <code>in_addr</code> a <b>symbolic enum</b> — <code>P0=0, P1=1, P2=2, DROP=3</code> — so the destinations read by name and randomization self-constrains to the four legal values.</li>
+        <li>Add a <b>constraint</b> <code>in_valid == 1</code> so every generated item is a real packet.</li>
+        <li>Set <b>emit_when</b> to <code>in_valid</code> so the scoreboard only scores cycles that actually carry a packet.</li>
+      </ul>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Properties<span class="side">agent · pkt</span></div>
+        <div class="props">
+          <div class="grp">Agent properties</div>
+          <div class="prow"><span class="plabel">Role</span><span class="pctrl">Active (drives + monitors)</span></div>
+          <div class="prow"><span class="plabel">Mode</span><span class="pctrl">Initiator</span></div>
+          <div class="disc">▾ Ports</div>
+          <div class="prow"><span class="plabel">in_addr · enum</span><span class="pctrl sel">P0=0, P1=1, P2=2, DROP=3</span></div>
+          <div class="prow"><span class="plabel">in_data · width</span><span class="pctrl">8</span></div>
+          <div class="disc">▾ Advanced</div>
+          <div class="prow"><span class="plabel">Constraint</span><span class="pctrl sel">in_valid == 1</span></div>
+          <div class="prow"><span class="plabel">emit_when</span><span class="pctrl sel">in_valid</span></div>
+        </div>
+      </div>
+      <p>Drilling into the <b>pkt</b> agent (double-click it, or <span class="menu">Open Verification View</span>) shows the three components QuickUVM will generate — the <code>sequencer</code> feeds the <code>driver</code> a <code>seq_item</code>, the driver and <code>monitor</code> share the <code>pkt_if</code> interface, and the monitor publishes on its analysis port <code>ap</code>:</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Verification View — inside the pkt agent<span class="live">live capture</span></div>
+        <div class="shot-scroll"><img class="shotimg" alt="The real QuickUVM Architect schematic inside the pkt agent: sequencer feeding the driver a seq_item, the driver driving the pkt_if interface, the interface sampled by the monitor, and the monitor publishing on its analysis port ap." src="tutorial-shots/4-schematic-agent.png"></div>
+      </div>
+      <div class="note">
+        <div class="h">Black-box on purpose</div>
+        <p>The enum is the <em>testbench's own</em> type, declared from the spec — not imported from the DUT. If the RTL ever encoded the addresses differently, the bench would catch it rather than mirror the mistake. That's the black-box default; white-box type sharing stays opt-in.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 5 -->
+  <section class="step" id="s5">
+    <div class="lead">
+      <div class="num">05</div>
+      <h2>Add the scoreboard and coverage</h2>
+      <div class="sub">Add component → Scoreboard · Coverage</div>
+    </div>
+    <div class="body">
+      <p>With nothing selected, the Properties panel shows the bench-level <b>Add component</b> palette. Add two things:</p>
+      <div class="do"><span class="arrow">▸</span><p class="txt"><b>Scoreboard from pkt</b> — a single-stream scoreboard <code>sbd</code>. Its source is <code>pkt</code>; there's no separate monitor agent because this one agent already sees inputs and outputs together.</p></div>
+      <div class="do"><span class="arrow">▸</span><p class="txt"><b>Coverage for pkt</b> — a collector with a coverpoint on <code>in_addr</code>. Being an enum field, it auto-bins one bin per destination, so closure means “we exercised P0, P1, P2 <em>and</em> DROP”.</p></div>
+      <div class="ui narrow">
+        <div class="cap"><span class="dot"></span>Properties — bench<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect Properties panel for the yapp bench, nothing selected: the Add component palette (Coverage collector, Scoreboard, Virtual sequence, VIP agent by reference), the register-model and regression sections, and the blue Generate testbench button." src="tutorial-shots/1-properties-panel.png">
+      </div>
+      <div class="note">
+        <div class="h">Single-stream ≠ no check</div>
+        <p>A single-stream scoreboard predicts the outputs from the sampled inputs and compares them against what the DUT produced — the whole check lives in one transaction. You'll write that prediction in Step 7; it's the only code this bench needs.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 6 -->
+  <section class="step" id="s6">
+    <div class="lead">
+      <div class="num">06</div>
+      <h2>Read the verification hierarchy</h2>
+      <div class="sub">Verification Hierarchy — before generating</div>
+    </div>
+    <div class="body">
+      <p>The <b>Verification Hierarchy</b> now shows the whole testbench you've specified — DUT, environment, the <code>pkt</code> agent with its sequencer / driver / monitor, the <code>sbd</code> scoreboard and the coverage collector. Every element carries a badge telling you its generation state.</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Verification Hierarchy<span class="side">yapp (tb)</span></div>
+        <div class="ui-body tree">
+          <div class="row"><span class="tw">▾</span><span class="ic env">⚗</span><span class="lbl">yapp (tb)</span><span class="kind">verification environment</span></div>
+          <div class="row indent1"><span class="tw"> </span><span class="ic mod">▢</span><span class="lbl">yapp_router</span><span class="kind">DUT</span></div>
+          <div class="row indent1"><span class="tw">▾</span><span class="ic env">{}</span><span class="lbl">Env</span></div>
+          <div class="row indent2"><span class="tw">▾</span><span class="ic">↔</span><span class="lbl">pkt</span><span class="kind">active agent</span><span style="flex:1"></span><span class="badge b-gen">U</span></div>
+          <div class="row indent3"><span class="tw"> </span><span class="ic mod">≣</span><span class="lbl">sequencer</span></div>
+          <div class="row indent3"><span class="tw"> </span><span class="ic mod">▸</span><span class="lbl">driver</span></div>
+          <div class="row indent3"><span class="tw"> </span><span class="ic mod">◉</span><span class="lbl">monitor</span></div>
+          <div class="row indent2"><span class="tw"> </span><span class="ic">≡</span><span class="lbl">sbd</span><span class="kind">scoreboard</span><span style="flex:1"></span><span class="badge b-gen">U</span></div>
+          <div class="row indent2"><span class="tw"> </span><span class="ic">▦</span><span class="lbl">pkt_cov</span><span class="kind">coverage</span><span style="flex:1"></span><span class="badge b-gen">U</span></div>
+        </div>
+      </div>
+      <div class="b-legend">
+        <span><span class="badge b-new">●</span> new — not saved to the config yet</span>
+        <span><span class="badge b-gen">U</span> not generated</span>
+        <span><span class="badge b-old">M</span> modified since generate</span>
+      </div>
+      <p>The amber <b>U</b> badges mean “declared, but no code behind it yet” — exactly the state before your first generate. After Step 7 they clear; edit the config afterward and they turn to a blue <b>M</b> (stale) until you regenerate. The badges are your at-a-glance map of what's real on disk.</p>
+      <p>The same testbench, drawn as a schematic — right-click the env → <span class="menu">Open Verification View</span>. At the top level it is the DUT wired to the Env through the <code>pkt_if</code> interface:</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Verification View — testbench top<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect verification schematic at the testbench top: the yapp_router DUT connected through the pkt_if interface to the Env, which lists its pkt agent and its sbd scoreboard and pkt coverage under analysis." src="tutorial-shots/2-schematic-top.png">
+      </div>
+      <p>Double-click the <b>Env</b> to drop inside it: the <code>pkt</code> agent (green) fans out through its analysis port to the <code>sbd</code> scoreboard (orange) and the <code>pkt_cov</code> coverage collector (purple).</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>Verification View — inside the Env<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect verification schematic for the yapp env: the pkt active agent (interface pkt_if, item pkt_seq_item, components sequencer/driver/monitor) connected through its analysis port to the sbd scoreboard and the pkt_cov coverage collector, plus the pkt_if interface." src="tutorial-shots/3-schematic-env.png">
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 7 -->
+  <section class="step" id="s7">
+    <div class="lead">
+      <div class="num">07</div>
+      <h2>Generate the testbench</h2>
+      <div class="sub">Generate Testbench</div>
+    </div>
+    <div class="body">
+      <p>Hit <span class="menu">Generate Testbench</span> (the ▷ on the Properties title bar, or the command palette). QuickUVM writes the full environment — 23 files — into <code>gen/</code>.</p>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>gen/<span class="side">23 created</span></div>
+        <div class="files">
+          <div class="f key"><span class="x">▸</span>pkt_agent.svh</div>
+          <div class="f"><span class="x">▸</span>pkt_driver.svh</div>
+          <div class="f"><span class="x">▸</span>pkt_monitor.svh</div>
+          <div class="f"><span class="x">▸</span>pkt_sequencer.svh</div>
+          <div class="f"><span class="x">▸</span>pkt_seq_item.svh</div>
+          <div class="f"><span class="x">▸</span>pkt_seq.svh</div>
+          <div class="f"><span class="x">▸</span>pkt_if.sv</div>
+          <div class="f"><span class="x">▸</span>pkt_cfg.svh</div>
+          <div class="f"><span class="x">▸</span>pkt_cov.svh</div>
+          <div class="f key"><span class="x">▸</span>…_scoreboard.svh</div>
+          <div class="f"><span class="x">▸</span>…_predictor.svh</div>
+          <div class="f"><span class="x">▸</span>…_comparator.svh</div>
+          <div class="f key"><span class="x">▸</span>…_reference_model.svh</div>
+          <div class="f"><span class="x">▸</span>…_env.svh</div>
+          <div class="f"><span class="x">▸</span>…_base_test.svh</div>
+          <div class="f"><span class="x">▸</span>rand_test.svh</div>
+          <div class="f"><span class="x">▸</span>clkgen.sv</div>
+          <div class="f"><span class="x">▸</span>tb_top.sv</div>
+          <div class="f"><span class="x">▸</span>pkg.f · run.f</div>
+        </div>
+      </div>
+      <p>That's a complete UVM environment — driver, monitor, sequencer, agent, sequence, config, coverage, a two-part scoreboard, the env, a base test and a random test, the interface, the clock generator, the top and the filelists — with <b>no base class to inherit and nothing to wire by hand</b>. Every file is plain, readable UVM you own.</p>
+      <div class="note">
+        <div class="h">The one seam left open</div>
+        <p>Everything generated is complete except one function: the golden model. QuickUVM cannot know your DUT's behavior, so it leaves <code>predict()</code> as a fail-closed stub that <em>fatals</em> until you fill it — a generated bench that measures nothing is the easiest way to fool yourself, so it refuses to pass empty.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 8 -->
+  <section class="step" id="s8">
+    <div class="lead">
+      <div class="num">08</div>
+      <h2>Write the golden model</h2>
+      <div class="sub">Open Generated Code → predict()</div>
+    </div>
+    <div class="body">
+      <p>Right-click the <code>sbd</code> scoreboard → <span class="menu">Open Generated Code</span>, which opens the reference model at its <code>prediction_logic</code> seam. The router's whole behavior is six lines: a valid packet appears next cycle on <code>out&lt;addr&gt;</code>; the payload is latched on every channel and gated by <code>out*_valid</code>.</p>
+      <div class="code">
+        <div class="bar"><span class="fn">gen/yapp_router_reference_model.svh</span><span class="lang">predict()</span></div>
+<pre><code><span class="t-key">function</span> <span class="t-typ">pkt_seq_item</span> <span class="t-fn">yapp_router_predictor::predict</span>(<span class="t-typ">pkt_seq_item</span> t);
+  <span class="t-typ">pkt_seq_item</span> extr = <span class="t-typ">pkt_seq_item</span>::type_id::<span class="t-fn">create</span>(<span class="t-str">"extr"</span>);
+  extr.<span class="t-fn">copy</span>(t);            <span class="t-com">// carry the sampled inputs through</span>
+
+  <span class="t-pragma">// pragma quickuvm custom prediction_logic begin</span>
+  <span class="t-com">// Route by the packet's destination address; DROP (3) produces no output.</span>
+  extr.out0_valid = (t.in_addr == <span class="t-typ">P0</span>);
+  extr.out1_valid = (t.in_addr == <span class="t-typ">P1</span>);
+  extr.out2_valid = (t.in_addr == <span class="t-typ">P2</span>);
+  extr.out0_data  = t.in_data;
+  extr.out1_data  = t.in_data;
+  extr.out2_data  = t.in_data;
+  <span class="t-pragma">// pragma quickuvm custom prediction_logic end</span>
+
+  <span class="t-key">return</span> extr;
+<span class="t-key">endfunction</span></code></pre>
+      </div>
+      <p>That's the only code in the whole environment. The scoreboard compares this prediction against what the monitor sampled, on every packet — and because the model is written from the spec, a real routing bug in the RTL now shows up as a mismatch instead of hiding.</p>
+      <div class="note">
+        <div class="h">Prove it can fail before you trust it</div>
+        <p>A passing scoreboard proves nothing until you've seen it fail. Flip one line — say <code>out0_valid = (t.in_addr == P1)</code> — regenerate the run, and confirm it reports errors. Then put it back. A check you've never watched fail is not yet a check.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- STEP 9 -->
+  <section class="step" id="s9">
+    <div class="lead">
+      <div class="num">09</div>
+      <h2>Run it</h2>
+      <div class="sub">compile · elaborate · simulate</div>
+    </div>
+    <div class="body">
+      <p>Point your simulator at the generated filelist plus the RTL, and run the random test. On Cadence Xcelium:</p>
+      <div class="term">
+        <div class="cap"><span class="dot"></span>sim — xrun</div>
+<pre><span class="dim">$</span> <span class="cmd">xrun -f xrun.f +UVM_TESTNAME=rand_test</span>
+
+UVM_INFO ... [pkt_seq]   sending packet {in_addr: P2, in_data: 0x5a}
+UVM_INFO ... [PASS ]     Expected out2_valid=1 out2_data=5a  Actual out2_data=5a
+   ...
+<span class="dim">--- UVM Report Summary ---</span>
+UVM_ERROR : <span class="z">   0</span>
+UVM_FATAL : <span class="z">   0</span>
+
+<span class="p">*** TEST PASSED - Vectors: 49 Ran / 49 Passed ***</span></pre>
+      </div>
+      <p>Zero errors, forty-nine packets routed and checked. The same generated bench runs green on <b>Xcelium, Questa and VCS</b> unchanged — the generated code is vendor-portable, so your one filelist works across all three.</p>
+      <div class="grid2" style="margin-top:6px">
+        <div class="card"><h4>Xcelium</h4><div class="big">49/49</div><p>0 UVM_ERROR</p></div>
+        <div class="card"><h4>Questa (qrun)</h4><div class="big">49/49</div><p>0 UVM_ERROR</p></div>
+        <div class="card"><h4>Lines you wrote</h4><div class="big">6</div><p>the golden model — nothing else</p></div>
+      </div>
+    </div>
+  </section>
+
+  <hr class="rule">
+
+  <!-- RECAP -->
+  <section class="step" id="recap">
+    <div class="lead">
+      <div class="num" style="border-style:dashed">✓</div>
+      <h2>What you built, and where to go</h2>
+      <div class="sub">the spec behind the bench</div>
+    </div>
+    <div class="body">
+      <p>Every gesture above edited one small, readable config — this is the entire specification the diagram produced. You can keep working in the diagram or hand-edit this file; the two stay in sync.</p>
+      <div class="code">
+        <div class="bar"><span class="fn">yapp.quickuvm.yaml</span><span class="lang">the whole spec</span></div>
+<pre><code><span class="t-key">project</span>: {<span class="t-key">name</span>: yapp}
+<span class="t-key">dut</span>:   {<span class="t-key">name</span>: yapp_router, <span class="t-key">reset</span>: rst_n}
+<span class="t-key">reset</span>: {<span class="t-key">external</span>: <span class="t-num">true</span>}
+<span class="t-key">clock</span>: {<span class="t-key">period</span>: <span class="t-num">10</span>, <span class="t-key">unit</span>: ns}
+
+<span class="t-key">agents</span>:
+  - <span class="t-key">name</span>: pkt
+    <span class="t-key">emit_when</span>: in_valid            <span class="t-com"># score only real packets</span>
+    <span class="t-key">constraints</span>: [<span class="t-str">"in_valid == 1"</span>]
+    <span class="t-key">ports</span>:
+      <span class="t-key">inputs</span>:
+        - {<span class="t-key">name</span>: in_valid, <span class="t-key">width</span>: <span class="t-num">1</span>}
+        - {<span class="t-key">name</span>: in_addr,  <span class="t-key">width</span>: <span class="t-num">2</span>, <span class="t-key">enum</span>: {P0: <span class="t-num">0</span>, P1: <span class="t-num">1</span>, P2: <span class="t-num">2</span>, DROP: <span class="t-num">3</span>}}
+        - {<span class="t-key">name</span>: in_data,  <span class="t-key">width</span>: <span class="t-num">8</span>}
+      <span class="t-key">outputs</span>:
+        - {<span class="t-key">name</span>: out0_valid, <span class="t-key">width</span>: <span class="t-num">1</span>}
+        - {<span class="t-key">name</span>: out0_data,  <span class="t-key">width</span>: <span class="t-num">8</span>}
+        <span class="t-com"># … out1_*, out2_* …</span>
+
+<span class="t-key">tests</span>:    [{<span class="t-key">name</span>: rand_test, <span class="t-key">num_items</span>: <span class="t-num">50</span>}]
+<span class="t-key">analysis</span>:
+  <span class="t-key">coverage</span>:    [{<span class="t-key">agent</span>: pkt, <span class="t-key">coverpoints</span>: [{<span class="t-key">field</span>: in_addr}]}]
+  <span class="t-key">scoreboards</span>: [{<span class="t-key">name</span>: sbd, <span class="t-key">source</span>: pkt}]</code></pre>
+      </div>
+      <div class="grid2">
+        <div class="card"><h4>Cover more thoroughly</h4><p>Add a coverpoint on <code>in_data</code> corners and a cross <code>in_addr × in_data</code> to ask “did every port see the boundary payloads?”</p></div>
+        <div class="card"><h4>Direct the traffic</h4><p>Add a directed sequence that blasts one address, or a virtual sequence that interleaves patterned packets — all from the diagram's add palette.</p></div>
+        <div class="card"><h4>Regress it</h4><p>Add a <code>regress:</code> block and QuickUVM emits a Makefile that runs the test across seeds and merges coverage.</p></div>
+        <div class="card"><h4>Go multi-vendor</h4><p>Add a <code>sim:</code> block to emit run scripts for Xcelium, VCS and Questa plus an LSP-clean <code>compile.f</code> — one core, thin per-vendor wrappers.</p></div>
+      </div>
+      <div class="foot">
+        <p><b>The loop that matters:</b> diagram → config → generate → one seam of golden model → green. You never inherited a base class, never wired a TLM port, never hand-wrote a driver. The picture <em>is</em> the specification — and the specification is what you can read, diff, and hand a teammate.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
