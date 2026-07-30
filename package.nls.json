@@ -47,5 +47,6 @@
   "view.properties.contextualTitle": "QuickUVM Architect properties",
   "view.verification.name": "Verification Hierarchy",
   "welcome.hierarchy": "No project model yet.\n[Set Top Module](command:quickuvm.setTop)\n[Load Model](command:quickuvm.reloadModel)\nSources are discovered via Bender.yml, a .f file list (the quickuvm.fileList setting) or a glob (quickuvm.sourceGlob).",
-  "welcome.verification": "No QuickUVM testbench configured yet.\nSet a DUT and create agents from the design views; the verification environment appears here.\n[Open Verification View](command:quickuvm.openVerificationView)"
+  "welcome.verification": "No QuickUVM testbench configured yet.\nSelect the DUT in Design Hierarchy, then press \"Set as DUT\" in the Properties panel — the verification environment appears here.",
+  "welcome.verificationEmpty": "The configuration has no components yet.\nSelect ports in the design view and press \"Agent from selection\" in the Properties panel.\n[Open Verification View](command:quickuvm.openVerificationView)"
 }

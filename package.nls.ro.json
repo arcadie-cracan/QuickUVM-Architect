@@ -47,5 +47,6 @@
   "view.properties.contextualTitle": "Proprietăți QuickUVM Architect",
   "view.verification.name": "Ierarhia verificării",
   "welcome.hierarchy": "Nu există încă un model de proiect.\n[Setează modulul top](command:quickuvm.setTop)\n[Încarcă modelul](command:quickuvm.reloadModel)\nSursele se caută prin Bender.yml, printr-un fișier .f (setarea quickuvm.fileList) sau prin glob (quickuvm.sourceGlob).",
-  "welcome.verification": "Niciun testbench QuickUVM configurat încă.\nSetează un DUT și creează agenți din vederile designului; mediul de verificare apare aici.\n[Deschide vederea de verificare](command:quickuvm.openVerificationView)"
+  "welcome.verification": "Niciun testbench QuickUVM configurat încă.\nSelectează DUT-ul în Design Hierarchy, apoi apasă „Set as DUT” în panoul Properties — mediul de verificare apare aici.",
+  "welcome.verificationEmpty": "Configurația nu are încă nicio componentă.\nSelectează porturi în vederea designului și apasă „Agent from selection” în panoul Properties.\n[Deschide vederea de verificare](command:quickuvm.openVerificationView)"
 }

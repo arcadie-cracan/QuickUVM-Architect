@@ -565,6 +565,17 @@ export function activate(context: vscode.ExtensionContext): void {
     }
   });
   config.onOverlay((overlay) => {
+    // Menu gating: actions that need a QuickUVM config must not be OFFERED before one
+    // exists. "Open Verification View" used to sit in the hierarchy's context menu from
+    // the first second, and its only possible outcome was an information message saying
+    // to use "Set as DUT" — an entry whose sole behaviour is to refuse is noise, not
+    // discoverability. The command itself keeps its guard (the palette can still reach
+    // it, and discovery is async).
+    void vscode.commands.executeCommand(
+      "setContext",
+      "quickuvm.hasConfig",
+      Boolean(config.configUri)
+    );
     DiagramPanel.current?.postOverlay(overlay);
     DiagramPanel.current?.postConfig(); // the verification (TB) view (docs/05)
     // the sidebar inspector renders from the same messages
