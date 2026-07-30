@@ -527,9 +527,17 @@ export function activate(context: vscode.ExtensionContext): void {
     config.setModel(m);
     layout.setModel(m); // graceful invalidation of the sidecar (docs/04)
     DiagramPanel.current?.postModel(m);
+    // ...and to the SIDEBAR inspector, which resolves the selected pins and the current
+    // instance out of the model. Its only other source is the `ready`/visibility replay,
+    // and the view mounts on activation — BEFORE the first compile finishes — so without
+    // this push its model stays undefined for the whole session and every pin-driven
+    // action ("Agent from selection", "Ignore selection") is permanently disabled.
+    propsView.post({ v: 1, type: "model/full", model: m });
   });
   layout.onExternalChange((sidecar) => {
     DiagramPanel.current?.postLayout(sidecar);
+    // same reasoning: the sidebar reads fold state and per-net render overrides from it
+    propsView.post({ v: 1, type: "layout/full", sidecar });
   });
   // the generate status chip is updated after each run (docs/05); a generate also
   // (re)creates files, so refresh the "not generated" decoration (docs/07 line 1)
