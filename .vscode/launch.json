@@ -1,30 +1,28 @@
 {
+  // Each config names the DOCUMENT it belongs to. There are two yapp designs and they
+  // are NOT interchangeable: `yapp_buffer` (this repo, one-slot buffer, valid/ready both
+  // ways -> TWO agents) is the MVP validation exercise; `yapp_router` (the QuickUVM repo,
+  // 1->3 demux, out0/1/2 -> ONE agent) is what the visual walkthrough documents. Picking
+  // the wrong one shows a symbol whose ports match none of the pictures.
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Ruleaza extensia (examples/)",
+      "name": "Run the extension (walkthrough: yapp_router demux) -> docs/yapp-router-walkthrough.html",
       "type": "extensionHost",
       "request": "launch",
+      // the QuickUVM repo cloned SIDE BY SIDE with this one (docs/setup-windows.md).
+      // Its .vscode/settings.json sets quickuvm.top AND quickuvm.outputDir=gen -- the
+      // latter matters, because outputDir is also excluded from the source glob and
+      // gen/ contains a DUT stub that would otherwise shadow rtl/yapp_router.sv.
       "args": [
         "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}/examples"
+        "${workspaceFolder}/../QuickUVM/examples/yapp"
       ],
       "outFiles": ["${workspaceFolder}/dist/**/*.js"],
       "preLaunchTask": "npm: build"
     },
     {
-      "name": "Ruleaza extensia (Bender: common_cells)",
-      "type": "extensionHost",
-      "request": "launch",
-      "args": [
-        "--extensionDevelopmentPath=${workspaceFolder}",
-        "${workspaceFolder}/examples-bender/common_cells"
-      ],
-      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
-      "preLaunchTask": "npm: build"
-    },
-    {
-      "name": "Ruleaza extensia (tutorial: yapp_buffer)",
+      "name": "Run the extension (tutorial: yapp_buffer) -> docs/tutorial-yapp-buffer.md",
       "type": "extensionHost",
       "request": "launch",
       "args": [
@@ -35,7 +33,29 @@
       "preLaunchTask": "npm: build"
     },
     {
-      "name": "Ruleaza extensia (cross-probing: deep_pipe)",
+      "name": "Run the extension (examples/: demo_top regression design)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/examples"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "npm: build"
+    },
+    {
+      "name": "Run the extension (Bender: common_cells)",
+      "type": "extensionHost",
+      "request": "launch",
+      "args": [
+        "--extensionDevelopmentPath=${workspaceFolder}",
+        "${workspaceFolder}/examples-bender/common_cells"
+      ],
+      "outFiles": ["${workspaceFolder}/dist/**/*.js"],
+      "preLaunchTask": "npm: build"
+    },
+    {
+      "name": "Run the extension (cross-probing: deep_pipe)",
       "type": "extensionHost",
       "request": "launch",
       "args": [
