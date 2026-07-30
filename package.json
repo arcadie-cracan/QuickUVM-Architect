@@ -87,7 +87,13 @@
       },
       {
         "view": "quickuvm.verification",
-        "contents": "%welcome.verification%"
+        "contents": "%welcome.verification%",
+        "when": "!quickuvm.hasConfig"
+      },
+      {
+        "view": "quickuvm.verification",
+        "contents": "%welcome.verificationEmpty%",
+        "when": "quickuvm.hasConfig"
       }
     ],
     "commands": [
@@ -222,11 +228,6 @@
           "group": "navigation"
         },
         {
-          "command": "quickuvm.openSchematicView",
-          "when": "view == quickuvm.hierarchy && viewItem == instance",
-          "group": "navigation"
-        },
-        {
           "command": "quickuvm.openSource",
           "when": "view == quickuvm.hierarchy && viewItem == instance",
           "group": "navigation"
@@ -238,7 +239,7 @@
         },
         {
           "command": "quickuvm.openVerificationView",
-          "when": "view == quickuvm.hierarchy && viewItem == instance",
+          "when": "view == quickuvm.hierarchy && viewItem == instance && quickuvm.hasConfig",
           "group": "quickuvm@2"
         },
         {
