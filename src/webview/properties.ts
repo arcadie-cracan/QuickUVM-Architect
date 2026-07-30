@@ -91,6 +91,18 @@ function render(): void {
     ? (buildTbScene(state.config, state.tbFocus, state.configPath) ?? undefined)
     : undefined;
   const viewId = state.viewId;
+  // A LEAF module has no `views` entry, so "Open Schematic View" on one leaves the host
+  // reporting mode "schematic" while the DIAGRAM has fallen back to drawing the symbol
+  // (main.ts does exactly this normalization before rendering). Mirror it, or the two
+  // surfaces disagree about what is on screen: `scene` would be null AND `pins` empty,
+  // so nothing resolves the selection and every pin-driven action ("Agent from
+  // selection", "Ignore selection") sits disabled on a perfectly good selection.
+  if (
+    state.mode === "schematic" &&
+    !(state.model && viewId && hasSchematic(state.model, viewId))
+  ) {
+    state.mode = "symbol";
+  }
   const netsOv = viewId ? (sidecar.views[viewId]?.nets ?? {}) : {};
   const scene =
     state.mode === "schematic" && state.model && viewId
