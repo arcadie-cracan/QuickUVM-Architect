@@ -1,16 +1,31 @@
-// The sidebar "Properties" view (docs/07 UX slice 2): the CONFIG-editing half of the
-// inspector, rendered next to the Hierarchy and Verification trees instead of inside
-// the diagram. It reuses inspector-view.ts verbatim — the only difference is
-// `canvas: false`, which drops the drawing tools (flip, fold, net render, pin
-// selection, cone) that can only act on a canvas this view does not have.
+// The sidebar "Properties" view: the ONE inspector. It used to be the config-editing
+// half of a pair, with the diagram's `<aside>` keeping the drawing tools; the split
+// cost a whole column of horizontal space and had already drifted (the aside grew
+// Set as DUT / Agent from selection / Wire connections — config edits, not canvas
+// tools — and duplicated Generate testbench). The aside is gone; everything renders
+// here.
+//
+// The drawing gestures still need a canvas, so they are RELAYED: this view posts
+// them, the host forwards them to the panel, and the panel applies them exactly as
+// if they had come from its own inspector. If no panel is open they are dropped —
+// nothing in this view depends on their effect.
 //
 // It is a SEPARATE bundle from the diagram: no SVG, no layout, no ELK. That is the
 // whole reason the inspector was extracted first — the sidebar view is always open,
-// so it must not carry the diagram's weight.
+// so it must not carry the diagram's weight. The two SCENE builders it does pull in
+// (tbscene, scene) are the same pure ones the diagram uses, so the two surfaces
+// cannot disagree about what exists.
 
+import { buildSchematicScene, hasSchematic, netOfPin as sceneNetOfPin } from "./scene";
 import { buildTbScene } from "./tbscene";
 import { renderInspector } from "./inspector-view";
-import type { HostMessage, WebviewMessage, ActionKind } from "../protocol";
+import { pinIdentities } from "../inspector";
+import type {
+  ActionKind,
+  HostMessage,
+  SidecarData,
+  WebviewMessage,
+} from "../protocol";
 import type { State } from "./state";
 
 declare function acquireVsCodeApi(): {
@@ -27,6 +42,8 @@ const root = document.getElementById("inspector") as HTMLElement;
 const state: State = {
   model: undefined,
   viewId: undefined,
+  // the diagram owns the mode; until a view/show arrives there is no RTL view to
+  // inspect, and "tb" is the only thing renderable from the config alone
   mode: "tb",
   selection: new Set<string>(),
   overlay: null,
@@ -38,6 +55,23 @@ const state: State = {
   ty: 0,
   k: 1,
 };
+
+/** the layout sidecar — needed for the per-net render overrides and the fold state,
+ *  so the scene built here is the one the diagram is actually showing */
+let sidecar: SidecarData = { schema_version: 1, views: {}, orphans: [] };
+
+/** the explicitly expanded folds per view, mirrored from the sidecar exactly as the
+ *  diagram does it: a fold changes node/pin IDs, so a disagreement here would make
+ *  the relayed selection resolve to nothing */
+function expandedFor(viewId: string): Set<string> {
+  const out = new Set<string>();
+  for (const [nodeId, n] of Object.entries(sidecar.views[viewId]?.nodes ?? {})) {
+    if (n.collapsed === false) {
+      out.add(nodeId);
+    }
+  }
+  return out;
+}
 
 function post(message: WebviewMessage): void {
   vscode.postMessage(message);
@@ -51,37 +85,58 @@ function render(): void {
   if (!root) {
     return;
   }
-  // the TB scene is derived from the config by the same pure builder the diagram
-  // uses, so the two views cannot disagree about what exists
+  // Both scenes come from the same pure builders the diagram uses, so the two
+  // surfaces cannot disagree about what exists.
   const tbScene = state.config
     ? (buildTbScene(state.config, state.tbFocus, state.configPath) ?? undefined)
     : undefined;
+  const viewId = state.viewId;
+  const netsOv = viewId ? (sidecar.views[viewId]?.nets ?? {}) : {};
+  const scene =
+    state.mode === "schematic" && state.model && viewId
+      ? buildSchematicScene(
+          state.model,
+          viewId,
+          expandedFor(viewId),
+          new Map(Object.entries(netsOv).map(([n, o]) => [n, o.render as "wire" | "label"]))
+        )
+      : null;
+  // in the symbol view the selectable pins are the module's own ports; in the
+  // schematic they are the boundary flags, which the inspector reads off the scene
+  const def =
+    state.mode === "symbol" && state.model && viewId
+      ? state.model.modules[
+          state.model.instances.find((i) => i.path === viewId)?.module ?? ""
+        ]
+      : undefined;
+
   renderInspector({
-    canvas: false, // no drawing surface here: the canvas tools stay with the diagram
     root,
     state,
     tbScene,
-    scene: null,
-    pins: [],
+    scene,
+    pins: def ? pinIdentities(def) : [],
     post,
     postAction,
     vscode,
-    // Navigation and drawing gestures belong to the diagram. From here they are
-    // relayed as messages; the host forwards them to the panel (which may not even
-    // be open, in which case they are simply dropped — nothing here depends on them).
+    // The drawing gestures need a canvas this view does not have, so they are
+    // relayed: the host forwards each to the panel, which applies it as if its own
+    // inspector had sent it. With no panel open they are dropped — nothing here
+    // depends on their effect.
     onOpen: (drill) => post({ v: 1, type: "tb/focus", focus: drill }),
-    onFlip: () => undefined,
-    onSelectPins: () => undefined,
-    findInstance: () => undefined,
+    onFlip: (id, axis) =>
+      post({ v: 1, type: "relay/flip", nodeId: id, axis }),
+    onSelectPins: (names) => post({ v: 1, type: "relay/selectPins", names }),
+    findInstance: (v) => state.model?.instances.find((i) => i.path === v),
     tbAvailable: () => Boolean(state.config),
-    // the diagram is what has a TB view to open; from here it is a no-op
-    openTbView: () => undefined,
-    netOfPin: () => null,
-    sidecar: null,
-    toggleNetRender: () => undefined,
-    toggleFold: () => undefined,
-    hasSchematic: () => false,
-    navigateTo: () => undefined,
+    openTbView: () => post({ v: 1, type: "relay/openTb" }),
+    netOfPin: (id) => (scene ? sceneNetOfPin(scene, id) : null),
+    sidecar,
+    toggleNetRender: (net) => post({ v: 1, type: "relay/netRender", net }),
+    toggleFold: (id) => post({ v: 1, type: "relay/fold", foldId: id }),
+    hasSchematic: (_model, v) => Boolean(state.model && hasSchematic(state.model, v)),
+    navigateTo: (v, mode) =>
+      post({ v: 1, type: "nav/drill", instancePath: v, mode }),
   });
 }
 
@@ -106,6 +161,18 @@ window.addEventListener("message", (event: MessageEvent<HostMessage>) => {
       break;
     case "view/show":
       state.viewId = m.viewId;
+      // the mode decides which half of the inspector is meaningful (RTL actions vs
+      // the TB component editors); without it the sidebar was pinned to "tb" and
+      // could never show Set as DUT / Agent from selection
+      if (m.mode) {
+        state.mode = m.mode;
+      }
+      break;
+    case "model/full":
+      state.model = m.model;
+      break;
+    case "layout/full":
+      sidecar = m.sidecar;
       break;
     default:
       return; // everything else is diagram business

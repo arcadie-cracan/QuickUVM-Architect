@@ -33,17 +33,7 @@ import type { State } from "./state";
 
 /** Everything the inspector used to reach through module globals. */
 export interface InspectorCtx {
-  /**
-   * Does this inspector sit next to a CANVAS? The split is by what a control acts
-   * on, not by where it looks nicer:
-   *   true  — the diagram's aside: canvas tools (flip, fold, net render, pin
-   *           selection, cone) plus the schematic reading of the current view.
-   *   false — the sidebar "Properties" view: everything that edits the CONFIG.
-   * Neither surface renders the other's controls, so nothing is duplicated and no
-   * button is shown that could not do anything from where it stands.
-   */
-  canvas: boolean;
-  /** the element the rows are appended to (`#inspector` in either webview) */
+  /** the element the rows are appended to (`#inspector`, in the sidebar view) */
   root: HTMLElement;
   state: State;
   tbScene: TbScene | undefined;
@@ -1618,7 +1608,7 @@ export function renderInspector(c: InspectorCtx): void {
   const byName = new Map<string, { name: string; iface: boolean }>(
     ctx.pins.map((p) => [p.name, p])
   );
-  if (ctx.canvas && ctx.state.mode === "schematic" && ctx.scene) {
+  if (ctx.state.mode === "schematic" && ctx.scene) {
     for (const b of ctx.scene.boundary) {
       byName.set(b.name, b);
     }
@@ -1736,21 +1726,17 @@ export function renderInspector(c: InspectorCtx): void {
           button("Open (double-click)", true, () => ctx.onOpen(target), true)
         );
       }
-      // flip (docs/04): H = the west<->east sides of the ports, V = the order
-      if (ctx.canvas) {
-        // flipping is a drawing gesture: it belongs to the canvas, not to the config
-        ctx.root.append(
-          button("Flip horizontal (H)", true, () => ctx.onFlip(selNode.id, "h"), true),
-          button("Flip vertical (V)", true, () => ctx.onFlip(selNode.id, "v"), true)
-        );
-      }
+      // flip (docs/04): H = the west<->east sides of the ports, V = the order.
+      // A drawing gesture — relayed to the panel, which owns the canvas.
+      ctx.root.append(
+        button("Flip horizontal (H)", true, () => ctx.onFlip(selNode.id, "h"), true),
+        button("Flip vertical (V)", true, () => ctx.onFlip(selNode.id, "v"), true)
+      );
       // editing + deletion per component type (slice 2). Scoreboard/coverage/
       // vseq are leaves; the agent falls in cascade (host: modal confirmation).
-      // These edit the CONFIG, so they live on the sidebar surface — the diagram's
-      // aside keeps only what acts on the drawing (docs/07 UX slice 2).
       const del = (kind: string, dname: string): void =>
         ctx.postAction("deleteComponent", { kind, name: dname });
-      if (!ctx.canvas) {
+      {
       // the property editor (only the scoreboards from `analysis`, id `sb:`;
       // NOT the cross-block ones `xsb:` = analysis.scoreboards with qualified endpoints)
       if (selNode.kind === "tbsb" && selNode.id.startsWith("sb:")) {
@@ -1811,7 +1797,7 @@ export function renderInspector(c: InspectorCtx): void {
     const selB = !selNode
       ? ctx.tbScene?.boundary.find((b) => ctx.state.selection.has(b.id))
       : undefined;
-    if (selB && ctx.canvas) {
+    if (selB) {
       ctx.root.append(
         h("h3", "", "Boundary"),
         h("div", "", selB.label),
@@ -1827,9 +1813,6 @@ export function renderInspector(c: InspectorCtx): void {
     // the add palette (slice 2, docs/05): the connections are not free
     // edges in QuickUVM — source/monitor are fields, so "add" creates the
     // component ALREADY connected (the selected agent preloads the source)
-    if (ctx.canvas) {
-      return; // the aside stops here: everything below edits the config
-    }
     const hasAgents = Boolean(ctx.state.config?.agents?.length);
     const hasActive = Boolean(
       ctx.state.config?.agents?.some((a) => a.active !== false)
@@ -1871,7 +1854,7 @@ export function renderInspector(c: InspectorCtx): void {
     return;
   }
 
-  if (ctx.canvas && ctx.state.mode === "schematic" && ctx.state.model && ctx.state.viewId) {
+  if (ctx.state.mode === "schematic" && ctx.state.model && ctx.state.viewId) {
     const nets = ctx.state.model.views[ctx.state.viewId]?.nets ?? [];
     // the net is selected through the wire/label (data-id = the net's name), BUT also
     // from a pin/flag: on a selection of ONE pin we derive its net, so that
@@ -1917,7 +1900,7 @@ export function renderInspector(c: InspectorCtx): void {
     }
   }
 
-  if (ctx.canvas && ctx.state.mode === "schematic" && ctx.scene) {
+  if (ctx.state.mode === "schematic" && ctx.scene) {
     const selNode = ctx.scene.nodes.find((n) => ctx.state.selection.has(n.id));
     if (selNode) {
       ctx.root.append(

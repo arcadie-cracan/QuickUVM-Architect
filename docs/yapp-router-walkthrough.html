@@ -289,9 +289,9 @@
     </div>
     <div class="body">
       <p>Open the QuickUVM Architect view from the activity bar. The extension parses every <code>.sv</code> in the workspace and shows the module tree under <b>Design Hierarchy</b>. Find <code>yapp_router</code>, right-click it, and choose <span class="menu">Set as DUT</span>.</p>
-      <div class="do"><span class="arrow">▸</span><p class="txt">Right-click <b>yapp_router</b> in <b>Design Hierarchy</b> → <span class="menu">Set as DUT</span>. This creates <code>yapp.quickuvm.yaml</code> with the DUT, its clock (<code>clk</code>), and reset (<code>rst_n</code>) already filled in.</p></div>
+      <div class="do"><span class="arrow">▸</span><p class="txt">Right-click <b>yapp_router</b> in <b>Design Hierarchy</b> → <span class="menu">Set as DUT</span>. This creates <code>yapp_router.quickuvm.yaml</code> — the extension names the config after the module — with the DUT, its clock (<code>clk</code>), and reset (<code>rst_n</code>) already filled in.</p></div>
       <div class="ui">
-        <div class="cap"><span class="dot"></span>Design Hierarchy<span class="side">yapp.quickuvm.yaml</span></div>
+        <div class="cap"><span class="dot"></span>Design Hierarchy<span class="side">yapp_router.quickuvm.yaml</span></div>
         <div class="ui-body tree">
           <div class="row"><span class="tw">▾</span><span class="ic mod">▢</span><span class="lbl">top module</span><span class="kind">yapp_router</span></div>
           <div class="row sel indent1"><span class="tw"> </span><span class="ic dut">◈</span><span class="lbl">yapp_router</span><span class="kind">yapp_router</span></div>
@@ -464,9 +464,9 @@
       <div class="sub">Generate Testbench</div>
     </div>
     <div class="body">
-      <p>Hit <span class="menu">Generate Testbench</span> (the ▷ on the Properties title bar, or the command palette). QuickUVM writes the full environment — 23 files — into <code>gen/</code>.</p>
+      <p>Hit <span class="menu">Generate Testbench</span> (the ▷ on the Properties title bar, or the command palette). QuickUVM writes the full environment — 23 files — into <code>tb/</code> (the <code>quickuvm.outputDir</code> setting; the copy shipped in <code>QuickUVM/examples/yapp</code> uses <code>gen/</code>).</p>
       <div class="ui">
-        <div class="cap"><span class="dot"></span>gen/<span class="side">23 created</span></div>
+        <div class="cap"><span class="dot"></span>tb/<span class="side">23 created</span></div>
         <div class="files">
           <div class="f key"><span class="x">▸</span>pkt_agent.svh</div>
           <div class="f"><span class="x">▸</span>pkt_driver.svh</div>
@@ -507,7 +507,7 @@
     <div class="body">
       <p>Right-click the <code>sbd</code> scoreboard → <span class="menu">Open Generated Code</span>, which opens the reference model at its <code>prediction_logic</code> seam. The router's whole behavior is six lines: a valid packet appears next cycle on <code>out&lt;addr&gt;</code>; the payload is latched on every channel and gated by <code>out*_valid</code>.</p>
       <div class="code">
-        <div class="bar"><span class="fn">gen/yapp_router_reference_model.svh</span><span class="lang">predict()</span></div>
+        <div class="bar"><span class="fn">tb/yapp_router_reference_model.svh</span><span class="lang">predict()</span></div>
 <pre><code><span class="t-key">function</span> <span class="t-typ">pkt_seq_item</span> <span class="t-fn">yapp_router_predictor::predict</span>(<span class="t-typ">pkt_seq_item</span> t);
   <span class="t-typ">pkt_seq_item</span> extr = <span class="t-typ">pkt_seq_item</span>::type_id::<span class="t-fn">create</span>(<span class="t-str">"extr"</span>);
   extr.<span class="t-fn">copy</span>(t);            <span class="t-com">// carry the sampled inputs through</span>
@@ -576,8 +576,8 @@ UVM_FATAL : <span class="z">   0</span>
     <div class="body">
       <p>Every gesture above edited one small, readable config — this is the entire specification the diagram produced. You can keep working in the diagram or hand-edit this file; the two stay in sync.</p>
       <div class="code">
-        <div class="bar"><span class="fn">yapp.quickuvm.yaml</span><span class="lang">the whole spec</span></div>
-<pre><code><span class="t-key">project</span>: {<span class="t-key">name</span>: yapp}
+        <div class="bar"><span class="fn">yapp_router.quickuvm.yaml</span><span class="lang">the whole spec</span></div>
+<pre><code><span class="t-key">project</span>: {<span class="t-key">name</span>: yapp_router}
 <span class="t-key">dut</span>:   {<span class="t-key">name</span>: yapp_router, <span class="t-key">reset</span>: rst_n}
 <span class="t-key">reset</span>: {<span class="t-key">external</span>: <span class="t-num">true</span>}
 <span class="t-key">clock</span>: {<span class="t-key">period</span>: <span class="t-num">10</span>, <span class="t-key">unit</span>: ns}

@@ -31,12 +31,21 @@ un motiv nou.
 
 ## Convenții de cod
 
-- **Comentariile din surse sunt în ENGLEZĂ** (decizie 2026-07-20, pentru
-  creșterea comunității): orice comentariu nou din `src/**`, `backend/**`,
-  `scripts/**` se scrie în engleză; corpusul vechi (comentarii în română fără
-  diacritice) se migrează progresiv la engleză. Backend Python: PEP 8.
-  Comunicarea cu utilizatorul rămâne în română cu diacritice; documentația
-  (`docs/**`, acest fișier) rămâne română până la o decizie separată.
+- **TOTUL ÎN ENGLEZĂ** (decizie 2026-07-30 — aceasta ESTE „decizia separată"
+  pe care o aștepta regula veche): nu doar comentariile din `src/**`,
+  `backend/**`, `scripts/**` (regula din 2026-07-20, pentru creșterea
+  comunității), ci și **documentația**: `docs/**`, acest fișier, `README.md`,
+  mesajele de eroare aruncate din host și comentariile fixturilor din
+  `examples*/**`. Backend Python: PEP 8.
+  **Migrarea e în curs** — corpusul e mare (~3100 de linii cu română la data
+  deciziei, majoritatea în `docs/06-plan-mvp.md`, `CLAUDE.md`,
+  `docs/07-plan-post-mvp.md`, `docs/04-layout-si-rutare.md`). Regula pentru
+  orice sesiune: **nu adăuga română nouă nicăieri**, iar când atingi un fișier
+  din listă, tradu-i secțiunile pe care le modifici. Traducerea e o rescriere
+  atentă, nu o înlocuire mecanică: documentele sunt înregistrări
+  arhitecturale dense (listele de capcane, jurnalul deciziilor), unde o
+  redare aproximativă pierde exact motivul pentru care regula există.
+  Comunicarea în chat cu utilizatorul rămâne în română cu diacritice.
 - **UI-ul extensiei: engleză** (decizia D19), localizat prin `package.nls.json`
   (+`package.nls.ro.json`) și `vscode.l10n.t()` + `l10n/bundle.l10n.ro.json`;
   orice șir nou vizibil utilizatorului în host se împachetează în `l10n.t()`
@@ -120,9 +129,17 @@ cu `scripts/harness.html` (stub `acquireVsCodeApi` + modelul de regresie):
 `/scripts/harness.html?view=demo_top.u_soc&mode=schematic` (adaugă `&nomodel=1`
 ca să simulezi editorul per-fișier din felia 4: vederea TB doar din config).
 Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
-`docs/tutorial-yapp-router.md` — cu fixtura `examples-yapp/yapp_router.sv`
-(configurația de lansare „tutorial: yapp_router"); pașii sunt verificați empiric
+`docs/tutorial-yapp-buffer.md` — cu fixtura `examples-yapp/yapp_buffer.sv`
+(configurația de lansare „tutorial: yapp_buffer"); pașii sunt verificați empiric
 (svmodel parsează designul, iar config-ul rezultat generează curat cu quick-uvm).
+**Fixtura NU e routerul YAPP** (redenumită iul. 2026): routerul e demuxul 1→3 din
+`QuickUVM/examples/yapp/rtl/yapp_router.sv` (`out0_*`/`out1_*`/`out2_*`, un singur
+agent), subiectul walkthrough-ului `docs/yapp-router-walkthrough.html` și al
+capturilor din `docs/tutorial-shots/`. Fixtura e reducerea lui la un buffer de un
+slot, fiindcă handshake-ul `ready` în ambele sensuri e ce dă cei **doi** agenți
+ceruți de criteriul de închidere. Cât timp ambele module s-au numit `yapp_router`,
+pașii tutorialului și capturile descriau designuri diferite — nu reintroduce
+coliziunea de nume.
 
 ## Capcane cunoscute (descoperite la validare)
 
@@ -646,7 +663,7 @@ metode (cu QuickPick-uri) merg pe oricare țintă, zero duplicare. `diagramHtml`
 (în `panel.ts`) e HTML-ul webview partajat. Orice schimbare de text →
 `config/full` → re-randare (fără buclă). Validat în harness cu `?nomodel=1`.
 **Faza 3b e ÎNCHEIATĂ** (16 iul. 2026): utilizatorul a parcurs integral
-tutorialul `docs/tutorial-yapp-router.md` în Extension Development Host —
+tutorialul `docs/tutorial-yapp-buffer.md` în Extension Development Host —
 criteriul de închidere (mediu cu ≥2 agenți + scoreboard two-stream +
 coverage, construit și re-aranjat integral grafic, YAML lizibil, `generate`
 curat) e bifat. **MVP-ul e validat.**

@@ -1,4 +1,4 @@
-# Tutorial — un mediu de verificare pentru `yapp_router`
+# Tutorial — un mediu de verificare pentru `yapp_buffer`
 
 Acesta e exercițiul de **validare de închidere a MVP-ului** (criteriul din
 `docs/06-plan-mvp.md`, Felia 3b): pornind de la un design SystemVerilog, se
@@ -7,9 +7,19 @@ verificare cu **≥2 agenți, un scoreboard two-stream și un colector de
 coverage**, se re-aranjează diagrama, iar la final `quick-uvm generate` produce
 un testbench curat dintr-un YAML lizibil.
 
-Designul-fixtură e [`examples-yapp/yapp_router.sv`](../examples-yapp/yapp_router.sv):
-un router de pachete minimal cu o graniță clară intrare/ieșire — exact cei doi
-agenți de care avem nevoie:
+Designul-fixtură e [`examples-yapp/yapp_buffer.sv`](../examples-yapp/yapp_buffer.sv):
+un buffer de pachete de un slot, cu o graniță clară intrare/ieșire — exact cei doi
+agenți de care avem nevoie.
+
+> **Nu-l confunda cu routerul YAPP.** Routerul e un demux 1→3
+> (`out0_*`/`out1_*`/`out2_*`) și trăiește în celălalt repo, la
+> `QuickUVM/examples/yapp/rtl/yapp_router.sv`; el e subiectul walkthrough-ului
+> vizual [`yapp-router-walkthrough.html`](yapp-router-walkthrough.html), care se
+> verifică cu **un singur** agent. Fixtura de aici e o reducere deliberată a lui:
+> handshake-ul `ready` în ambele sensuri e ce dă **doi** agenți, adică exact ce
+> cere criteriul de închidere. (Până în iul. 2026 fixtura se numea tot
+> `yapp_router`, ceea ce făcea ca pașii de mai jos și capturile walkthrough-ului
+> să descrie două designuri diferite cu același nume.)
 
 | Semnal | Direcție DUT | Rol în verificare |
 |---|---|---|
@@ -29,9 +39,9 @@ agenți de care avem nevoie:
 ## 0. Pornește Extension Development Host
 
 În VSCode (repo-ul extensiei deschis), din panoul **Run and Debug** alege
-configurația **„Ruleaza extensia (tutorial: yapp_router)"** și apasă F5. Se
+configurația **„Ruleaza extensia (tutorial: yapp_buffer)"** și apasă F5. Se
 compilează extensia (`npm: build`) și se deschide o fereastră nouă cu folderul
-`examples-yapp/` ca workspace, cu `quickuvm.top = yapp_router` presetat.
+`examples-yapp/` ca workspace, cu `quickuvm.top = yapp_buffer` presetat.
 
 În fereastra nouă, deschide bara laterală **QuickUVM Architect** (iconița din
 activity bar). Vezi două secțiuni: **Design Hierarchy** și **Verification
@@ -42,13 +52,13 @@ Hierarchy**.
 ## 1. Deschide designul și setează DUT-ul
 
 1. În **Design Hierarchy** apare rădăcina **„top module"** și, sub ea,
-   `yapp_router`. Clic pe `yapp_router` → se deschide **schema/simbolul** lui
+   `yapp_buffer`. Clic pe `yapp_buffer` → se deschide **schema/simbolul** lui
    (o cutie cu toți pinii pe laturi).
 2. În inspectorul din dreapta, la secțiunea de configurare, apasă
    **„Set this module as DUT"**. Extensia:
    - detectează euristic ceasul (`clk`) și reset-ul (`rst_n`, activ-jos — sufixul
      `_n`), pe care le confirmi;
-   - creează un fișier `yapp_router.quickuvm.yaml` lângă design.
+   - creează un fișier `yapp_buffer.quickuvm.yaml` lângă design.
 
    Overlay-ul se aprinde: pinii nemapați (toți, deocamdată) sunt marcați, iar
    `clk`/`rst_n` primesc rolul de ceas/reset.
@@ -57,7 +67,7 @@ Hierarchy**.
 
 ## 2. Agentul de COMANDĂ (`cmd`) — din pinii de intrare
 
-1. În schema/simbolul lui `yapp_router`, **selectează** pinii fluxului de
+1. În schema/simbolul lui `yapp_buffer`, **selectează** pinii fluxului de
    comandă: `in_data`, `in_addr`, `in_valid` și handshake-ul `in_ready`
    (clic pe fiecare pin; sau lasso peste ei).
 2. În inspector apare **„Agent from selection (4)"** — apasă-l.
@@ -89,12 +99,12 @@ Ai două căi echivalente — a doua validează **Felia 4**:
 
 - **A.** În inspector, apasă **„Open verification view"** (sau butonul
   **„Testbench"** din header-ul diagramei).
-- **B.** *(Felia 4)* În **Explorer**, dublu-clic pe `yapp_router.quickuvm.yaml`
+- **B.** *(Felia 4)* În **Explorer**, dublu-clic pe `yapp_buffer.quickuvm.yaml`
   → fișierul se deschide **direct ca diagrama de verificare** (editorul
   implicit). Pentru YAML brut: clic-dreapta pe tab → **„Reopen Editor With… →
   Text Editor"**.
 
-Vezi rădăcina testbench-ului: **DUT** (`yapp_router`) + **Env**, cu o interfață
+Vezi rădăcina testbench-ului: **DUT** (`yapp_buffer`) + **Env**, cu o interfață
 per agent între ei. Dublu-clic pe **Env** coboară la nivelul agenților.
 
 ---
@@ -111,7 +121,7 @@ apasă **„Scoreboard"**. Completează în QuickPick-uri:
 5. **Nume** → `pkt_sb` (sau lasă implicitul `sbd`).
 
 > Alternativă mai simplă: la strategie alege **„In order (FIFO pair)"** — nu
-> cere match key, și e corectă pentru acest router de un slot. Ambele generează.
+> cere match key, și e corectă pentru acest buffer de un slot. Ambele generează.
 
 Apare o cutie `pkt_sb` legată de ambii agenți. ✔️ *criteriul „scoreboard two-stream"*
 
@@ -152,14 +162,14 @@ Apasă **„Generate testbench"** (header sau inspector). Extensia rulează
 scrie testbench-ul în `quickuvm.outputDir` (implicit `tb/`).
 
 Fișiere-cheie așteptate:
-`cmd_if.sv`, `rsp_if.sv`, `cmd_cov.svh`, `yapp_router_scoreboard.svh`,
-`yapp_router_env.svh`, `yapp_router_virtual_sequencer.svh`, `tb_top.sv`.
+`cmd_if.sv`, `rsp_if.sv`, `cmd_cov.svh`, `yapp_buffer_scoreboard.svh`,
+`yapp_buffer_env.svh`, `yapp_buffer_virtual_sequencer.svh`, `tb_top.sv`.
 
 ---
 
 ## 9. Verifică rezultatul
 
-- **YAML lizibil**: deschide `yapp_router.quickuvm.yaml` ca text — trebuie să
+- **YAML lizibil**: deschide `yapp_buffer.quickuvm.yaml` ca text — trebuie să
   arate ca mai jos, curat și editabil de mână.
 - **`generate` curat**: fără erori în panoul **Problems** sau în canalul de
   ieșire **QuickUVM Architect**.
@@ -168,16 +178,16 @@ Fișiere-cheie așteptate:
 # Configuratie QuickUVM — creata de QuickUVM Architect, editabila si manual.
 # Extensia pastreaza comentariile si campurile pe care nu le cunoaste.
 project:
-  name: yapp_router
+  name: yapp_buffer
 
 clock:
   period: 10
   unit: ns
 
 tests:
-  - { name: yapp_router_test }
+  - { name: yapp_buffer_test }
 dut:
-  name: yapp_router
+  name: yapp_buffer
   clock: clk
   reset: rst_n
 agents:
@@ -225,7 +235,7 @@ analysis:
 - [ ] **scoreboard two-stream** (`cmd` → `rsp`) adăugat grafic.
 - [ ] **colector de coverage** (pe `cmd`) adăugat grafic.
 - [ ] diagrama re-aranjată (drag/flip), pozițiile supraviețuiesc redeschiderii.
-- [ ] `yapp_router.quickuvm.yaml` deschis ca **diagrama de verificare** (Felia 4).
+- [ ] `yapp_buffer.quickuvm.yaml` deschis ca **diagrama de verificare** (Felia 4).
 - [ ] **YAML lizibil** la final.
 - [ ] **`quick-uvm generate` curat**, testbench-ul produs în `tb/`.
 

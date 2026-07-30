@@ -366,6 +366,19 @@ export function activate(context: vscode.ExtensionContext): void {
         : null;
       const overlay = config.lastOverlay;
       const out: HostMessage[] = [];
+      // the model + sidecar come FIRST: the inspector's RTL half resolves the
+      // instance, its pins and the fold state out of them, so a config/full that
+      // arrived first would render a view/show it cannot yet interpret
+      if (model) {
+        out.push({ v: 1, type: "model/full", model });
+      }
+      out.push({ v: 1, type: "layout/full", sidecar: layout.sidecar });
+      const view = DiagramPanel.current;
+      if (view?.currentView) {
+        out.push({
+          v: 1, type: "view/show", viewId: view.currentView, mode: view.currentMode,
+        });
+      }
       if (c) {
         out.push({ v: 1, type: "config/full", ...c });
       }
@@ -378,6 +391,46 @@ export function activate(context: vscode.ExtensionContext): void {
       // an editing gesture from the sidebar: the same protocol the panel speaks
       if (m.type === "action/request") {
         onWebviewAction(m.action, m.args);
+        return;
+      }
+      // a DRAWING gesture from the sidebar inspector: it has no canvas, so the
+      // panel performs it. No panel open => dropped, which is correct: the gesture
+      // only ever changes what is drawn.
+      switch (m.type) {
+        case "relay/flip":
+          DiagramPanel.current?.postRelay({
+            v: 1, type: "relay/flip", nodeId: m.nodeId, axis: m.axis,
+          });
+          break;
+        case "relay/fold":
+          DiagramPanel.current?.postRelay({ v: 1, type: "relay/fold", foldId: m.foldId });
+          break;
+        case "relay/netRender":
+          DiagramPanel.current?.postRelay({ v: 1, type: "relay/netRender", net: m.net });
+          break;
+        case "relay/selectPins":
+          DiagramPanel.current?.postRelay({
+            v: 1, type: "relay/selectPins", names: m.names,
+          });
+          break;
+        case "relay/openTb":
+          DiagramPanel.current?.postRelay({ v: 1, type: "relay/openTb" });
+          break;
+        case "tb/focus":
+          DiagramPanel.current?.postRelay({
+            v: 1, type: "tb/navigate", focus: m.focus, select: m.select ?? null,
+          });
+          break;
+        case "nav/drill":
+          void vscode.commands.executeCommand(
+            m.mode === "symbol"
+              ? "quickuvm.openSymbolView"
+              : "quickuvm.openSchematicView",
+            m.instancePath
+          );
+          break;
+        default:
+          break;
       }
     }
   );
@@ -427,7 +480,13 @@ export function activate(context: vscode.ExtensionContext): void {
       } else {
         revealInstance(ids, viewId, mode); // the RTL views -> the design hierarchy
       }
-      // ... and to the sidebar inspector, so both surfaces agree on what is selected
+      // ... and to the sidebar inspector, so both surfaces agree on what is selected.
+      // The VIEW goes with it: the sidebar's RTL half (Set as DUT, Agent from
+      // selection, the Net section) is meaningless without knowing which view and
+      // which mode the ids belong to.
+      if (viewId) {
+        propsView.post({ v: 1, type: "view/show", viewId, mode });
+      }
       propsView.post({ v: 1, type: "select/reveal", ids });
     },
     onAction: onWebviewAction,

@@ -19,7 +19,26 @@
 // choice made ELSEWHERE (a different section) keeps a visible hint instead — the user
 // cannot discover the fix from here.
 
+import type { ModuleDef } from "./model";
 import type { QuvmAgent, QuvmPort, QuvmScoreboard } from "./quickuvm";
+
+/**
+ * The pin identities the inspector reasons about: a name and whether it is an
+ * INTERFACE port (the two gestures differ — "Agent from selection" takes signal
+ * pins, "Agent from interface" takes a single interface pin).
+ *
+ * The diagram's own `buildPins` produces far more (label, side, bus, measured
+ * width) because it also lays the symbol out; the inspector never asks for any of
+ * it, and it is looked up through a by-name map, so ORDER is not part of the
+ * contract. Extracted so the sidebar can build the same list without the diagram's
+ * DOM text measurement.
+ */
+export function pinIdentities(def: ModuleDef): { name: string; iface: boolean }[] {
+  return [
+    ...def.ports.map((p) => ({ name: p.name, iface: false })),
+    ...def.iface_ports.map((p) => ({ name: p.name, iface: true })),
+  ];
+}
 
 export interface Rows {
   /** shown immediately */

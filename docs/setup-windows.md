@@ -19,9 +19,14 @@ winget install GitHub.cli
 
 Reopen PowerShell afterward so `PATH` updates.
 
-**Line endings — do this before cloning.** Neither repo ships a `.gitattributes`, and
-both the QuickUVM byte-identity gate and SystemVerilog simulators are sensitive to
-CRLF. Keep the working tree LF-consistent with the repo and CI:
+**Line endings.** Both repos ship a `.gitattributes` with `* text=auto`, so history
+stays LF whatever your working tree does — you do not need to configure anything.
+It is deliberately not `eol=lf`: the generator writes the host's native newline
+(Python emits CRLF on Windows) and the byte-identity gate compares the checked-out
+`gen/` against a fresh render, so forcing an LF checkout would make them mismatch
+here.
+
+If you want the working tree to match history byte for byte as well:
 
 ```powershell
 git config --global core.autocrlf false

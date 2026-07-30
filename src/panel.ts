@@ -221,6 +221,18 @@ export class DiagramPanel {
     }
   }
 
+  /**
+   * A drawing gesture from the SIDEBAR inspector (which has no canvas). Applied
+   * against whatever view the panel is showing — deliberately, so the sidebar
+   * cannot reach into a view the user is not looking at. Dropped before `ready`:
+   * a gesture on a panel that has not rendered has nothing to act on.
+   */
+  postRelay(message: HostMessage): void {
+    if (this.ready) {
+      this.post(message);
+    }
+  }
+
   /** sidecar changed outside the current gesture (external/invalidation/cleanup) */
   postLayout(sidecar: SidecarData): void {
     if (this.ready) {
@@ -463,9 +475,11 @@ export function diagramHtml(
 <body>
 <div id="banner" hidden></div>
 <header id="head"></header>
+<!-- No inspector aside: the ONE inspector is the sidebar "Properties" view, so the
+     canvas gets the full width of the editor. The webview's renderInspectorHere is
+     a no-op without #inspector (guarded, and covered by test:webview-load). -->
 <div id="main">
   <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
-  <aside id="inspector"></aside>
 </div>
 <div id="empty">${vscode.l10n.t('Select an instance from the "Hierarchy" view.')}</div>
 <script nonce="${nonce}" src="${script}"></script>
