@@ -2205,9 +2205,19 @@ canvas.addEventListener("pointermove", (e) => {
     marquee.rect.setAttribute("y", String(y1 - cb.top));
     marquee.rect.setAttribute("width", String(x2 - x1));
     marquee.rect.setAttribute("height", String(y2 - y1));
-    // the live selection: the base (Ctrl) plus the rectangle's targets — by default
-    // only those completely enclosed ("window selection"); with
-    // quickuvm.lassoMode=intersect, also those merely touched ("crossing")
+    // the live selection: the base (Ctrl) combined with the rectangle's targets — by
+    // default only those completely enclosed ("window selection"); with
+    // quickuvm.lassoMode=intersect, also those merely touched ("crossing").
+    //
+    // Ctrl TOGGLES, it does not merely add: an enclosed element already in the base
+    // is removed. That is what Ctrl+click already does (`selection.delete(id)` or
+    // add), and one modifier must not mean two things — the add-only lasso taught the
+    // opposite of the click and left no gesture for deselecting a region at all.
+    // Toggle subsumes add: over an unselected region the result is identical.
+    //
+    // `base` is frozen for the whole drag, so this is stable while the pointer moves:
+    // sweeping OVER an already-selected element removes it, sweeping back OFF restores
+    // it. Computing against the live selection instead would flip it on every frame.
     const hit = new Set(marquee.base);
     for (const c of marquee.candidates ?? []) {
       const inside =
@@ -2215,7 +2225,11 @@ canvas.addEventListener("pointermove", (e) => {
           ? c.r.left < x2 && c.r.right > x1 && c.r.top < y2 && c.r.bottom > y1
           : c.r.left >= x1 && c.r.right <= x2 && c.r.top >= y1 && c.r.bottom <= y2;
       if (inside) {
-        hit.add(c.id);
+        if (marquee.base.has(c.id)) {
+          hit.delete(c.id);
+        } else {
+          hit.add(c.id);
+        }
       }
     }
     state.selection = hit;
