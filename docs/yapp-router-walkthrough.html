@@ -246,6 +246,7 @@
       <div class="note">
         <div class="h">Before you start</div>
         <p>You need three things: <b>QuickUVM</b> installed (<code>pip install quick-uvm</code>, the generator), the <b>QuickUVM Architect</b> VS Code extension (the diagram front-end), and a SystemVerilog simulator to run the result (Xcelium, Questa, or VCS). Create a folder with the router RTL below at <code>rtl/yapp_router.sv</code> and open it in VS Code.</p>
+        <p><b>Developing the extension from source?</b> Press <kbd>F5</kbd> and pick <span class="menu">Run the extension (walkthrough: yapp_router demux)</span>. Do <i>not</i> pick the <code>yapp_buffer</code> config — that is a <b>different DUT</b> for the other tutorial (a one-slot buffer with <code>in_ready</code>/<code>out_ready</code> and a single <code>out_data</code>, verified with <b>two</b> agents). If the symbol on your screen shows <code>in_ready</code> instead of <code>out0_valid</code>, you are on the wrong one.</p>
       </div>
       <div class="code">
         <div class="bar"><span class="fn">rtl/yapp_router.sv</span><span class="lang">SystemVerilog</span></div>

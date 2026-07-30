@@ -89,8 +89,20 @@ npm run build            # dist/ is gitignored — you MUST build. Use `npm run 
 ## 5. Launch the Extension Development Host
 
 1. `code C:\dev\QuickUVM-Architect`
-2. Press **F5** → a second VS Code window opens with the extension loaded.
-3. In that window, **open your DUT project folder** (e.g. `C:\dev\QuickUVM\examples\yapp`).
+2. Press **F5** and pick a launch configuration. Each is named after the document it goes
+   with — **pick the one matching the tutorial you are reading**:
+
+   | Config | Opens | Follow |
+   |---|---|---|
+   | `walkthrough: yapp_router demux` | `../QuickUVM/examples/yapp` (needs the sibling clone) | [`yapp-router-walkthrough.html`](yapp-router-walkthrough.html) |
+   | `tutorial: yapp_buffer` | `examples-yapp/` | [`tutorial-yapp-buffer.md`](tutorial-yapp-buffer.md) |
+
+   The two yapp designs are **not** interchangeable: `yapp_router` is a 1→3 demux
+   (`out0/1/2_*`, verified with **one** agent), `yapp_buffer` is a one-slot buffer
+   (`in_ready`/`out_ready`, **two** agents — the MVP closure criterion). If the symbol
+   shows `in_ready` where the walkthrough shows `out0_valid`, you picked the wrong config.
+3. A second VS Code window opens with the extension loaded on that folder. To use your own
+   DUT instead, open its folder in that window.
 
 ## 6. Point the extension at your venv (the key Windows step)
 
