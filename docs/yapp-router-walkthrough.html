@@ -464,7 +464,8 @@
       <div class="sub">Generate Testbench</div>
     </div>
     <div class="body">
-      <p>Hit <span class="menu">Generate Testbench</span> (the ▷ on the Properties title bar, or the command palette). QuickUVM writes the full environment — 23 files — into <code>tb/</code> (the <code>quickuvm.outputDir</code> setting; the copy shipped in <code>QuickUVM/examples/yapp</code> uses <code>gen/</code>).</p>
+      <p>Hit <span class="menu">Generate Testbench</span> (the ▷ on the Properties title bar, or the command palette). QuickUVM writes the full environment — 23 files — into <code>tb/</code>, the <code>quickuvm.outputDir</code> setting.</p>
+      <div class="do"><span class="arrow">▸</span><p class="txt"><b>Point <code>quickuvm.outputDir</code> at your generated folder.</b> It is not just a destination — the extension <i>excludes</i> it from the SystemVerilog source glob. The generated tree contains a <b>DUT stub</b>: a second module with your DUT's name, ports declared outputs-first. If the folder stays in the glob, the symbol shows the stub's interface instead of your RTL, and the generated UVM sources make the parse fail on <code>uvm_pkg</code>. (The copy shipped in <code>QuickUVM/examples/yapp</code> generates into <code>gen/</code>, so its workspace sets <code>outputDir</code> to <code>gen</code>.)</p></div>
       <div class="ui">
         <div class="cap"><span class="dot"></span>tb/<span class="side">23 created</span></div>
         <div class="files">
