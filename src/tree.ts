@@ -20,8 +20,6 @@ export interface InstanceNode {
   inst?: Instance;
   /** true for the synthetic "top module" root */
   synthetic?: boolean;
-  /** the module has an internal schematic (views[path]) — decides the open command */
-  hasSchematic?: boolean;
   /** the label relative to the parent (may include the generate segment) */
   label: string;
   children: InstanceNode[];
@@ -99,12 +97,17 @@ export class HierarchyProvider implements vscode.TreeDataProvider<InstanceNode> 
     );
     item.id = inst.path;
     item.contextValue = "instance";
-    // a module with a name shows the internal schematic; a leaf (without a schematic) falls
-    // gracefully onto the symbol in the webview, so the schematic command is uniform (docs/05)
+    // Selecting an INSTANCE always means "show me what is inside it", so the command is
+    // uniformly the schematic one and the webview decides how to answer: the interconnect
+    // when there are child instances, otherwise the leaf's boundary — its ports as flags,
+    // with the header saying the internal functionality is not represented.
+    //
+    // It used to branch to openSymbolView on a leaf, which answered a DIFFERENT question
+    // (the module from outside, as one box) and made the leaf inside-view unreachable from
+    // the tree — the only place it is ever opened from. The synthetic "top module" root is
+    // what shows the symbol (see above); that separation is the whole point of D24.
     item.command = {
-      command: node.hasSchematic
-        ? "quickuvm.openSchematicView"
-        : "quickuvm.openSymbolView",
+      command: "quickuvm.openSchematicView",
       title: vscode.l10n.t("Open"),
       arguments: [inst.path],
     };
@@ -135,12 +138,10 @@ export function buildTree(model: ProjectModel): {
 } {
   const byPath = new Map<string, InstanceNode>();
   const tops: InstanceNode[] = [];
-  const hasView = (p: string): boolean => Boolean(model.views[p]);
   for (const inst of model.instances) {
     const node: InstanceNode = {
       inst,
       label: inst.path,
-      hasSchematic: hasView(inst.path),
       children: [],
     };
     let idx = inst.path.lastIndexOf(".");
