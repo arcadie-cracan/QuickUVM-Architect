@@ -18,7 +18,7 @@ import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
 import { cameraForMinimapPoint, minimapLayout, minimapUseTransform, minimapViewRect, MmLayout } from "./minimap";
-import { buildSchematicScene, coneOf, hasSchematic, netOfPin as sceneNetOfPin, portLabel, SchematicScene } from "./scene";
+import { buildLeafScene, buildSchematicScene, coneOf, hasSchematic, netOfPin as sceneNetOfPin, portLabel, SchematicScene } from "./scene";
 import {
   h,
   renderInspector as renderInspectorInto,
@@ -587,7 +587,10 @@ async function layoutSymbol(
  * (the ascent from docs/05), the module with the effective parameters and the
  * Symbol/Schematic switch (only when the instance has a schematic).
  */
-function renderHeader(inst: Instance): void {
+/** `leafInside` = the inside view of a module with no child instances: only its
+ *  ports are drawable, so the header says the behaviour is not represented rather
+ *  than leaving an empty-looking canvas unexplained. */
+function renderHeader(inst: Instance, leafInside = false): void {
   head.replaceChildren();
   const crumbs = h("span", "crumbs");
   const segs = inst.path.split(".");
@@ -619,6 +622,17 @@ function renderHeader(inst: Instance): void {
     .join(", ");
   if (params) {
     head.append(h("span", "params", `  #(${params})`));
+  }
+  if (leafInside) {
+    const note = h(
+      "span",
+      "leafnote",
+      "  · ports only — internal functionality is not represented"
+    );
+    note.title =
+      `${inst.module} instantiates no sub-modules, so there is no interconnect to draw. ` +
+      "The flags are its ports; select them to build an agent.";
+    head.append(note);
   }
   // no Symbol/Schematic switch (D24): the view is derived from the node
   // selected in the hierarchy — the „top module" root -> the top's symbol, the rest
@@ -2714,22 +2728,26 @@ async function render(refit = false): Promise<void> {
     return;
   }
   empty.hidden = true;
-  if (state.mode === "schematic" && !hasSchematic(state.model, state.viewId)) {
-    // leaf without a schematic: falls gracefully onto the symbol (docs/05)
-    state.mode = "symbol";
-    persistState();
-  }
-  renderHeader(inst);
+  // A LEAF asked for its inside view. It has no `views` entry, so there is no
+  // interconnect to draw — but falling back to the SYMBOL answers a different
+  // question (the module from outside, as one box). Draw the boundary instead: the
+  // ports as they cross into the module, interior empty, and say plainly that the
+  // behaviour behind them is not represented (renderHeader adds the note).
+  const leafInside =
+    state.mode === "schematic" && !hasSchematic(state.model, state.viewId);
+  renderHeader(inst, leafInside);
   const gen = ++renderGen;
   if (state.mode === "schematic") {
     currentPins = [];
     const netsOv = sidecar.views[state.viewId]?.nets ?? {};
-    const scene = buildSchematicScene(
-      state.model,
-      state.viewId,
-      expandedFor(state.viewId),
-      new Map(Object.entries(netsOv).map(([n, o]) => [n, o.render]))
-    );
+    const scene = leafInside
+      ? buildLeafScene(state.model, state.viewId)
+      : buildSchematicScene(
+          state.model,
+          state.viewId,
+          expandedFor(state.viewId),
+          new Map(Object.entries(netsOv).map(([n, o]) => [n, o.render]))
+        );
     if (!scene) {
       return;
     }
@@ -2820,6 +2838,41 @@ function freeSpot(
   return null;
 }
 
+/**
+ * Put a LEAF's boundary flags back in DECLARATION order.
+ *
+ * A leaf inside-view has no edges, so ELK's crossing minimization has nothing to
+ * order the flags by and emits an arbitrary sequence (`rst_n, in_valid, in_data,
+ * clk, in_addr…`) — useless for the one thing that view exists for, reading the
+ * ports. This keeps ELK's geometry (widths, canvas size, the two separated layers)
+ * and only PERMUTES the y values it produced, per side.
+ *
+ * Done as a post-pass rather than by seeding: seeds switch ELK to interactive
+ * layering, which throws `UnsupportedConfigurationException` against the
+ * `FIRST/LAST_SEPARATE` constraints these flags carry (docs/04) — and the RTL
+ * render path, unlike renderTb, does not catch it, so the view silently went blank.
+ * No-op on a real schematic, which has nodes.
+ */
+function orderLeafFlags(scene: SchematicScene, layout: ElkNode): void {
+  if (scene.nodes.length > 0) {
+    return;
+  }
+  const byId = new Map((layout.children ?? []).map((c) => [c.id ?? "", c]));
+  for (const side of ["WEST", "EAST"] as const) {
+    const flags = scene.boundary.filter((b) => b.side === side);
+    const slots = flags
+      .map((b) => byId.get(b.id)?.y)
+      .filter((y): y is number => y !== undefined)
+      .sort((a, b) => a - b);
+    flags.forEach((b, i) => {
+      const child = byId.get(b.id);
+      if (child && slots[i] !== undefined) {
+        child.y = slots[i];
+      }
+    });
+  }
+}
+
 async function presentScene(
   scene: SchematicScene,
   gen: number
@@ -2856,6 +2909,7 @@ async function presentScene(
   if (gen !== renderGen) {
     return false;
   }
+  orderLeafFlags(scene, layout);
   currentScene = scene;
   currentLayout = layout;
   // the selection requested by the host (select/reveal) can refer to FOLDED generate

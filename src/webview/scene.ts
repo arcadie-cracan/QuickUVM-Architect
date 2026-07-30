@@ -274,6 +274,71 @@ function paramText(params: Record<string, string>): string {
  * of the generated groups stay folded implicitly (docs/05). Returns null if
  * the instance has no schematic in the model.
  */
+/**
+ * The INSIDE of a leaf module: its ports as boundary flags, and nothing else.
+ *
+ * A leaf has no `views` entry (svmodel emits views only where there are child
+ * instances to draw), so `buildSchematicScene` returns null for it and the diagram
+ * used to fall back to the symbol — the module seen from OUTSIDE, as one box. That
+ * silently answers a different question than the one asked: selecting the DUT in the
+ * hierarchy means "show me what is inside", and the honest answer for a leaf is "the
+ * ports cross this boundary, the behaviour behind them is not represented".
+ *
+ * Deliberately NOT folded into `buildSchematicScene`: its `null` return is the
+ * "no internal structure" signal that `sidecarops` and the navigation rules key on,
+ * and `hasSchematic` keeps meaning "has child instances". Callers opt in.
+ */
+export function buildLeafScene(
+  model: ProjectModel,
+  viewId: string
+): SchematicScene | null {
+  const inst = model.instances.find((i) => i.path === viewId);
+  const def = model.modules[inst?.module ?? ""];
+  if (!inst || !def) {
+    return null;
+  }
+  return {
+    viewId,
+    module: inst.module,
+    nodes: [],
+    edges: [],
+    boundary: [
+      ...def.ports.map((p) => {
+        const elemW = p.elem_width ?? p.width;
+        return {
+          id: `<port>.${p.name}`,
+          name: p.name,
+          dir: p.dir,
+          side: (p.dir === "in" ? "WEST" : "EAST") as "WEST" | "EAST",
+          iface: false,
+          bus: elemW !== null && elemW > 1,
+          width: elemW,
+          mult: p.unpacked_dims ? `×${p.unpacked_dims.join("×")}` : null,
+          label: portLabel(p),
+          nets: [],
+          tooltip: `${p.name}: ${p.dir} ${(p.type ?? "").replace("$", " ")} — port of module ${inst.module}`,
+        };
+      }),
+      ...def.iface_ports.map((ip) => ({
+        id: `<port>.${ip.name}`,
+        name: ip.name,
+        dir: "inout" as Dir,
+        side: "WEST" as const,
+        iface: true,
+        bus: false,
+        width: null,
+        mult: null,
+        label: `${ip.name} : ${ip.interface}${ip.modport ? "." + ip.modport : ""}`,
+        nets: [],
+        tooltip:
+          `${ip.name}: interface ${ip.interface}` +
+          (ip.modport ? `, modport ${ip.modport}` : "") +
+          ` — port of module ${inst.module}`,
+      })),
+    ],
+  };
+}
+
 export function buildSchematicScene(
   model: ProjectModel,
   viewId: string,

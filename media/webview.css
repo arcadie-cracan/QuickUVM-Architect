@@ -86,6 +86,16 @@ body {
   font-size: 12px;
 }
 
+/* the inside view of a leaf module: ports only. Informational, NOT a warning —
+   a module with no sub-modules is normal, so this is descriptionForeground and
+   not the #banner's validation styling. */
+#head .leafnote {
+  opacity: 0.75;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+}
+
 #main {
   flex: 1;
   display: flex;
