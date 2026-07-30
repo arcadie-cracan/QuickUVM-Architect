@@ -19,6 +19,20 @@ import { newConfigText, topConfigPaths } from "./yamlops";
 export { WIDTH_CODE } from "./configcheck";
 
 /**
+ * `quickuvm.autoSaveConfig` — save the config document after every gesture.
+ *
+ * Shared by BOTH editing surfaces (`ConfigService.apply` for the active config and
+ * `DocumentEditTarget.apply` for the per-file editor), so the two cannot disagree
+ * about whether a gesture leaves the file dirty.
+ */
+export function autoSaveConfig(): boolean {
+  const root = vscode.workspace.workspaceFolders?.[0];
+  return vscode.workspace
+    .getConfiguration("quickuvm", root?.uri)
+    .get<boolean>("autoSaveConfig", false);
+}
+
+/**
  * The minimal surface that the TB EDITING gestures (add/delete/edit) require from
  * a configuration source: the parsed config, the URI and a mutation `apply`
  * (slice 4). `ConfigService` satisfies it (the ACTIVE config), and the
@@ -244,6 +258,15 @@ export class ConfigService implements vscode.Disposable {
     );
     const ok = await vscode.workspace.applyEdit(edit);
     if (ok) {
+      // Opt-in `quickuvm.autoSaveConfig`: keep the DISK in step with the diagram.
+      // Every gesture leaves the document dirty by default (see the doc comment
+      // above — the user decides), but the manifest, the U/M badges and quick-uvm
+      // itself all read the file from disk, so a forgotten save makes the tool
+      // disagree with the screen. Off by default: saving on the user's behalf is
+      // a change of their editing contract, not a bug fix.
+      if (autoSaveConfig()) {
+        await doc.save();
+      }
       // synchronous, not debounced: callers read `current` right after apply
       // (checkDut after "Set this module as DUT" silently aborted on stale state —
       // a real regression caught during validation on common_cells)

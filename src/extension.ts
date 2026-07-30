@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 import { Actions } from "./actions";
 import { Backend } from "./backend";
 import { ConfigService, WidthFixProvider } from "./config";
+import { DirtyConfigStatus } from "./dirtystatus";
 import { QuvmConfigEditor } from "./customeditor";
 import { Generator } from "./generate";
 import { resolveLocPath } from "./filelistops";
@@ -604,6 +605,25 @@ export function activate(context: vscode.ExtensionContext): void {
   // discovered at activation would otherwise leave the gen-state (badges + the
   // per-item generate) empty until the first edit.
   void genState.refresh(config.configUri, config.current);
+
+  // "config unsaved" indicator. Gestures leave the document dirty by design, and
+  // everything that reads the config off DISK (generate, the manifest, the U/M
+  // badges) cannot see those edits until it is saved. VS Code gives an extension no
+  // way to warn at the window's close button — there is no onWillQuit API — so the
+  // warning lives where the state does, for as long as it lasts.
+  const dirtyStatus = new DirtyConfigStatus(() => config.configUri);
+  context.subscriptions.push(
+    dirtyStatus,
+    vscode.commands.registerCommand("quickuvm.saveConfig", async () => {
+      const uri = config.configUri;
+      if (!uri) {
+        return;
+      }
+      const doc = await vscode.workspace.openTextDocument(uri);
+      await doc.save();
+      dirtyStatus.refresh();
+    })
+  );
 
   // cursor tracking (docs/05): debounced, non-invasive — only the .xprobe
   // halo of the current view; a file unknown to the model = turn off

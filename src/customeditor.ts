@@ -11,7 +11,7 @@
 
 import * as vscode from "vscode";
 import type { Actions } from "./actions";
-import type { TbEditTarget } from "./config";
+import { autoSaveConfig, type TbEditTarget } from "./config";
 import {
   clearActiveExporter,
   diagramHtml,
@@ -63,7 +63,13 @@ class DocumentEditTarget implements TbEditTarget {
       ),
       newText
     );
-    return vscode.workspace.applyEdit(edit);
+    const ok = await vscode.workspace.applyEdit(edit);
+    // the same opt-in as ConfigService.apply — one helper, so the two editing
+    // surfaces cannot disagree about whether a gesture leaves the file dirty
+    if (ok && autoSaveConfig()) {
+      await this.doc.save();
+    }
+    return ok;
   }
 }
 
