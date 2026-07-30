@@ -335,7 +335,7 @@
       <div class="sub">select pins → Create Agent from Selection</div>
     </div>
     <div class="body">
-      <p>Rubber-band or <kbd>Ctrl</kbd>-click to select the data ports — the three inputs (<code>in_valid</code>, <code>in_addr</code>, <code>in_data</code>) and all six outputs — then right-click and choose <span class="menu">Create Agent from Selection</span>. Name it <b>pkt</b>.</p>
+      <p>Rubber-band or <kbd>Ctrl</kbd>-click to select the data ports — the three inputs (<code>in_valid</code>, <code>in_addr</code>, <code>in_data</code>) and all six outputs — then, in the <b>Properties</b> panel, press <span class="menu">Agent from selection (9)</span>. Name it <b>pkt</b>. The count in the button label is your check that all nine pins are selected and <code>clk</code>/<code>rst_n</code> are not.</p>
       <div class="ui">
         <div class="cap"><span class="dot"></span>Schematic — selection<span class="live">live capture</span></div>
         <img class="shotimg" alt="The real QuickUVM Architect symbol view with the nine data ports selected and highlighted blue — in_valid, in_addr, in_data and the six out0/out1/out2 _valid/_data pins — while clk and rst_n stay unselected." src="tutorial-shots/6-rtl-symbol-selected.png">
@@ -443,7 +443,7 @@
         <span><span class="badge b-old">M</span> modified since generate</span>
       </div>
       <p>The amber <b>U</b> badges mean “declared, but no code behind it yet” — exactly the state before your first generate. After Step 7 they clear; edit the config afterward and they turn to a blue <b>M</b> (stale) until you regenerate. The badges are your at-a-glance map of what's real on disk.</p>
-      <p>The same testbench, drawn as a schematic — right-click the env → <span class="menu">Open Verification View</span>. At the top level it is the DUT wired to the Env through the <code>pkt_if</code> interface:</p>
+      <p>The same testbench, drawn as a schematic — right-click <code>yapp_router</code> in <b>Design Hierarchy</b> → <span class="menu">Open Verification View</span> (or the button of the same name in <b>Properties</b>). At the top level it is the DUT wired to the Env through the <code>pkt_if</code> interface:</p>
       <div class="ui">
         <div class="cap"><span class="dot"></span>Verification View — testbench top<span class="live">live capture</span></div>
         <img class="shotimg" alt="The real QuickUVM Architect verification schematic at the testbench top: the yapp_router DUT connected through the pkt_if interface to the Env, which lists its pkt agent and its sbd scoreboard and pkt coverage under analysis." src="tutorial-shots/2-schematic-top.png">
