@@ -37,6 +37,9 @@ export interface QuvmAgent {
   proactive?: boolean;
   /** replicate the agent N× onto one vectored DUT; needs `reset: {external: true}` */
   replicas?: number;
+  /** A2 — monitor publish qualifier: a 1-bit port OF THIS AGENT; the monitor writes to
+   *  its analysis port only on cycles where it is non-zero (absent = every cycle) */
+  emit_when?: string;
   /** multi-clock/multi-reset: which declared domain this agent samples/is gated by */
   clock?: string;
   reset?: string;

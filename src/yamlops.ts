@@ -570,6 +570,7 @@ export type AgentField =
   | "reorder_policy"
   | "proactive"
   | "replicas"
+  | "emit_when"
   | "clock"
   | "reset";
 
@@ -585,6 +586,8 @@ const AGENT_DEFAULTS: Record<AgentField, string | number | boolean> = {
   reorder_policy: "priority",
   proactive: false,
   replicas: 1,
+  // A2 monitor publish qualifier: absent = publish every sampled cycle
+  emit_when: "",
   clock: "",
   reset: "",
 };

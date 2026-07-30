@@ -361,25 +361,15 @@
       <div class="sub">Properties → agent “pkt”</div>
     </div>
     <div class="body">
-      <p>Select the <b>pkt</b> agent (in the diagram or the Verification tree) and the <b>Properties</b> view fills with its fields. Three edits turn a raw port list into a meaningful packet:</p>
+      <p>Select the <b>pkt</b> agent (in the diagram or the Verification tree) and the <b>Properties</b> view fills with its fields. Three edits turn a raw port list into a meaningful packet — note <em>where</em> each one lives, since two are <b>per port</b> and one is on the agent:</p>
       <ul>
-        <li>Give <code>in_addr</code> a <b>symbolic enum</b> — <code>P0=0, P1=1, P2=2, DROP=3</code> — so the destinations read by name and randomization self-constrains to the four legal values.</li>
-        <li>Add a <b>constraint</b> <code>in_valid == 1</code> so every generated item is a real packet.</li>
-        <li>Set <b>emit_when</b> to <code>in_valid</code> so the scoreboard only scores cycles that actually carry a packet.</li>
+        <li>Under <b>PORTS</b> → <code>in_addr</code> → <span class="menu">MORE</span>, give it a <b>symbolic enum</b>: <code>P0=0, P1=1, P2=2, DROP=3</code>. The destinations then read by name and randomization self-constrains to the four legal values.</li>
+        <li>Under <b>PORTS</b> → <code>in_valid</code> → <span class="menu">MORE</span>, set <b>Constraint</b> to <code>in_valid == 1</code>, so every generated item is a real packet.</li>
+        <li>Under <b>AGENT PROPERTIES</b> → <span class="menu">ADVANCED</span>, set <b>Emit when</b> to <code>in_valid</code>, so the monitor publishes only on cycles that actually carry a packet. The list offers only <b>1-bit ports of this agent</b> — QuickUVM requires exactly that, because the generated gate is <code>if (tr.in_valid)</code>.</li>
       </ul>
       <div class="ui">
-        <div class="cap"><span class="dot"></span>Properties<span class="side">agent · pkt</span></div>
-        <div class="props">
-          <div class="grp">Agent properties</div>
-          <div class="prow"><span class="plabel">Role</span><span class="pctrl">Active (drives + monitors)</span></div>
-          <div class="prow"><span class="plabel">Mode</span><span class="pctrl">Initiator</span></div>
-          <div class="disc">▾ Ports</div>
-          <div class="prow"><span class="plabel">in_addr · enum</span><span class="pctrl sel">P0=0, P1=1, P2=2, DROP=3</span></div>
-          <div class="prow"><span class="plabel">in_data · width</span><span class="pctrl">8</span></div>
-          <div class="disc">▾ Advanced</div>
-          <div class="prow"><span class="plabel">Constraint</span><span class="pctrl sel">in_valid == 1</span></div>
-          <div class="prow"><span class="plabel">emit_when</span><span class="pctrl sel">in_valid</span></div>
-        </div>
+        <div class="cap"><span class="dot"></span>Properties — agent pkt<span class="live">live capture</span></div>
+        <div class="shot-scroll"><img class="shotimg" alt="The real QuickUVM Architect Properties panel with the pkt agent selected: Agent properties (Role, Mode) with an Advanced disclosure holding Seq item style, Emit when set to in_valid and Replicas; then PORTS (9), each port showing its Width and a MORE disclosure with Randomize, Constraint and Enum — in_valid carrying the constraint in_valid == 1 and in_addr the enum P0=0, P1=1, P2=2, DROP=3." src="tutorial-shots/7-properties-agent.png"></div>
       </div>
       <p>Drilling into the <b>pkt</b> agent (double-click it, or <span class="menu">Open Verification View</span>) shows the three components QuickUVM will generate — the <code>sequencer</code> feeds the <code>driver</code> a <code>seq_item</code>, the driver and <code>monitor</code> share the <code>pkt_if</code> interface, and the monitor publishes on its analysis port <code>ap</code>:</p>
       <div class="ui">
@@ -444,6 +434,12 @@
         <span><span class="badge b-old">M</span> modified since generate</span>
       </div>
       <p>The amber <b>U</b> badges mean “declared, but no code behind it yet” — exactly the state before your first generate. After Step 7 they clear; edit the config afterward and they turn to a blue <b>M</b> (stale) until you regenerate. The badges are your at-a-glance map of what's real on disk.</p>
+      <div class="note">
+        <div class="h">No badges at all? Your output folder is already populated</div>
+        <p>The badge asks one question: <em>do the files this element owns exist in <code>quickuvm.outputDir</code>?</em> It cannot tell code you generated from code that arrived with a clone — and it deliberately will not call a file <b>M</b> whose provenance it does not know, so an unrecognised tree reads as clean rather than as a lie.</p>
+        <p>That is exactly what you get if you run this walkthrough against <code>QuickUVM/examples/yapp</code>: that directory <b>ships a complete generated testbench</b> in <code>gen/</code>, and its <code>outputDir</code> points there (it must — the same setting is what keeps the DUT stub in <code>gen/</code> from shadowing <code>rtl/yapp_router.sv</code>). Every element is already present, so nothing badges.</p>
+        <p>To see the states, work in your <b>own folder</b> as this walkthrough assumes — just the RTL from Step 1, nothing generated yet — or delete <code>gen/</code> in the example (<code>quick-uvm generate -c yapp.yaml -o gen</code> puts it back).</p>
+      </div>
       <p>The same testbench, drawn as a schematic — right-click <code>yapp_router</code> in <b>Design Hierarchy</b> → <span class="menu">Open Verification View</span> (or the button of the same name in <b>Properties</b>). At the top level it is the DUT wired to the Env through the <code>pkt_if</code> interface:</p>
       <div class="ui">
         <div class="cap"><span class="dot"></span>Verification View — testbench top<span class="live">live capture</span></div>
