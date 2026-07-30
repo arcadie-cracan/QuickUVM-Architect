@@ -44,8 +44,14 @@ compilează extensia (`npm: build`) și se deschide o fereastră nouă cu folder
 `examples-yapp/` ca workspace, cu `quickuvm.top = yapp_buffer` presetat.
 
 În fereastra nouă, deschide bara laterală **QuickUVM Architect** (iconița din
-activity bar). Vezi două secțiuni: **Design Hierarchy** și **Verification
-Hierarchy**.
+activity bar). Vezi trei secțiuni: **Design Hierarchy**, **Verification
+Hierarchy** și **Properties**.
+
+> **Properties e SINGURUL inspector** (iul. 2026). Până atunci, diagrama avea și
+> ea un inspector propriu, într-o coloană în dreapta pânzei; acela a fost SCOS,
+> iar tot ce edita el a fost mutat în Properties — deci diagrama ocupă acum toată
+> lățimea editorului. Dacă un pas de mai jos spune doar „inspector", e vorba de
+> panoul **Properties** din bara laterală.
 
 ---
 
@@ -54,8 +60,8 @@ Hierarchy**.
 1. În **Design Hierarchy** apare rădăcina **„top module"** și, sub ea,
    `yapp_buffer`. Clic pe `yapp_buffer` → se deschide **schema/simbolul** lui
    (o cutie cu toți pinii pe laturi).
-2. În inspectorul din dreapta, la secțiunea de configurare, apasă
-   **„Set this module as DUT"**. Extensia:
+2. În panoul **Properties** din bara laterală, la secțiunea de configurare, apasă
+   **„Set as DUT"**. Extensia:
    - detectează euristic ceasul (`clk`) și reset-ul (`rst_n`, activ-jos — sufixul
      `_n`), pe care le confirmi;
    - creează un fișier `yapp_buffer.quickuvm.yaml` lângă design.
@@ -157,7 +163,10 @@ integral grafic"*
 
 ## 8. Generează testbench-ul
 
-Apasă **„Generate testbench"** (header sau inspector). Extensia rulează
+Apasă **„Generate testbench"** — butonul ▷ din bara de titlu a panoului
+**Properties**, butonul din corpul panoului, sau comanda din paletă. (NU din
+antetul diagramei: acolo e doar *cipul de stare* al ultimului generate.)
+Extensia rulează
 `quick-uvm generate` (cu fallback `python -c` dacă `quick-uvm` nu e pe PATH) și
 scrie testbench-ul în `quickuvm.outputDir` (implicit `tb/`).
 
