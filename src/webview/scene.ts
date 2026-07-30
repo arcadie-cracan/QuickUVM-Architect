@@ -715,6 +715,36 @@ function coneWalk(seed: ConeSeed, dir: "up" | "down", m: ConeMaps): Set<string> 
  * data-id of their own — a click on them falls onto the pin: it starts from the
  * pin's nets (label or wire), it does not turn into a non-existent net.
  */
+/**
+ * The net a selected pin/boundary flag belongs to — from the edges, or from the
+ * label when the net is drawn as one. Makes the inspector's Net section reachable
+ * from ANY endpoint, not just by clicking the wire itself (observation at
+ * validation, B1). Pure so both inspector surfaces resolve it identically.
+ */
+export function netOfPin(scene: SchematicScene, id: string): string | null {
+  for (const e of scene.edges) {
+    if (!e.net) {
+      continue;
+    }
+    // child pin (sourcePort/targetPort) or boundary flag (source/target node)
+    if (e.sourcePort === id || e.targetPort === id || e.source === id || e.target === id) {
+      return e.net;
+    }
+  }
+  // labeled net (without an edge): from bport.nets / pin.nets or the port name
+  if (id.startsWith("<port>.")) {
+    const b = scene.boundary.find((bb) => bb.id === id);
+    return b?.nets[0] ?? id.slice("<port>.".length);
+  }
+  for (const n of scene.nodes) {
+    const p = n.pins.find((pp) => pp.id === id);
+    if (p?.nets.length) {
+      return p.nets[0];
+    }
+  }
+  return null;
+}
+
 export function coneOf(
   scene: SchematicScene,
   id: string,

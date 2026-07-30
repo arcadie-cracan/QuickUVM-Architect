@@ -239,7 +239,14 @@ export type HostMessage =
   // requests the SVG serialization of the current view (the quickuvm.exportSvg command);
   // the webview replies with export/result
   | { v: 1; type: "export/request" }
-  | { v: 1; type: "theme/changed" };
+  | { v: 1; type: "theme/changed" }
+  // the sidebar inspector's drawing gestures, forwarded by the host (see the
+  // `relay/*` block in WebviewMessage): same names, same payloads, other direction
+  | { v: 1; type: "relay/flip"; nodeId: string; axis: "h" | "v" }
+  | { v: 1; type: "relay/fold"; foldId: string }
+  | { v: 1; type: "relay/netRender"; net: string }
+  | { v: 1; type: "relay/selectPins"; names: string[] }
+  | { v: 1; type: "relay/openTb" };
 
 // ------------------------------------------------------------ webview -> host
 
@@ -298,4 +305,15 @@ export type WebviewMessage =
       action: ActionKind;
       args: Record<string, unknown>;
     }
-  | { v: 1; type: "relayout/request"; viewId: string; scope: "all" | "new" };
+  | { v: 1; type: "relayout/request"; viewId: string; scope: "all" | "new" }
+  // ---------------------------------------------------------------- relayed
+  // The inspector lives in the SIDEBAR, which has no canvas. Its drawing gestures
+  // are sent to the host, which forwards them to the panel; the panel applies them
+  // against ITS current view, which is why none of these carry a viewId — the
+  // sidebar must not be able to move a view the user is not looking at. With no
+  // panel open they are dropped.
+  | { v: 1; type: "relay/flip"; nodeId: string; axis: "h" | "v" }
+  | { v: 1; type: "relay/fold"; foldId: string }
+  | { v: 1; type: "relay/netRender"; net: string }
+  | { v: 1; type: "relay/selectPins"; names: string[] }
+  | { v: 1; type: "relay/openTb" };

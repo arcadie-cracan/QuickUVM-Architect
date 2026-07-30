@@ -1,20 +1,27 @@
-// yapp_router — un router de pachete minimal, fixtura tutorialului de validare
-// a QuickUVM Architect (docs/tutorial-yapp-router.md). Inspirat de exemplul
-// clasic „Yet Another Packet Processor" din literatura UVM, redus la esenta:
+// yapp_buffer — un buffer de pachete de un slot, fixtura tutorialului de validare
+// a QuickUVM Architect (docs/tutorial-yapp-buffer.md).
+//
+// NU e routerul YAPP: acela e un demux 1->3 si traieste in QuickUVM
+// (examples/yapp/rtl/yapp_router.sv, cu out0_*/out1_*/out2_*), verificat de
+// walkthrough-ul vizual docs/yapp-router-walkthrough.html. Fixtura de aici e o
+// reducere DELIBERATA a lui, pastrata separat fiindca are nevoie de altceva:
 //
 //   - un FLUX DE COMANDA (intrare): un pachet {payload, adresa-canal} intra
 //     printr-un handshake valid/ready;
-//   - un FLUX DE RASPUNS (iesire): pachetul rutat iese prin acelasi protocol.
+//   - un FLUX DE RASPUNS (iesire): pachetul iese prin acelasi protocol.
 //
-// Granita clara intrare/iesire da exact cei doi agenti de care are nevoie
-// criteriul de inchidere (>=2 agenti + scoreboard two-stream + coverage):
+// Granita clara intrare/iesire da exact cei DOI agenti de care are nevoie
+// criteriul de inchidere al MVP-ului (>=2 agenti + scoreboard two-stream +
+// coverage) — un demux cu un singur canal de intrare da un singur agent.
+//
 //   - un agent de COMANDA care conduce fluxul de intrare;
 //   - un agent de RASPUNS care esantioneaza fluxul de iesire.
 //
-// RTL-ul e un buffer de un slot (deci in-order): suficient ca svmodel sa
-// extraga porturile si latimile, si ca quick-uvm sa genereze un testbench.
+// (Se numea `yapp_router` si el, ceea ce facea ca pasii tutorialului si
+// capturile walkthrough-ului sa descrie doua designuri diferite cu acelasi
+// nume — de aici redenumirea.)
 
-module yapp_router #(
+module yapp_buffer #(
     parameter int DW = 8,  // latimea payload-ului
     parameter int AW = 2   // latimea adresei (canalul destinatie, 0..3)
 ) (
@@ -25,7 +32,7 @@ module yapp_router #(
     input  logic [AW-1:0] in_addr,
     input  logic          in_valid,
     output logic          in_ready,
-    // fluxul de RASPUNS (iesire): pachetul rutat
+    // fluxul de RASPUNS (iesire): pachetul preluat
     output logic [DW-1:0] out_data,
     output logic [AW-1:0] out_addr,
     output logic          out_valid,

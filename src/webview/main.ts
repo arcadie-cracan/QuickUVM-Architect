@@ -18,7 +18,7 @@ import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
 import { cameraForMinimapPoint, minimapLayout, minimapUseTransform, minimapViewRect, MmLayout } from "./minimap";
-import { buildSchematicScene, coneOf, hasSchematic, portLabel, SchematicScene } from "./scene";
+import { buildSchematicScene, coneOf, hasSchematic, netOfPin as sceneNetOfPin, portLabel, SchematicScene } from "./scene";
 import {
   h,
   renderInspector as renderInspectorInto,
@@ -219,15 +219,21 @@ function selectPins(names: string[]): void {
   renderInspectorHere();
 }
 
-/** Build the inspector context from this webview's state and render into `#inspector`.
- *  The inspector lives in its own module so the sidebar "Properties" view can render
- *  the same UI without the diagram; here we simply supply the diagram's callbacks. */
+/**
+ * Retired: the inspector is the sidebar "Properties" view alone, so the panel has
+ * no `#inspector` to render into and this returns immediately. The call sites are
+ * kept as the points where the inspector WOULD need refreshing — the host already
+ * relays selection/view there, so the sidebar refreshes itself.
+ *
+ * Kept rather than deleted because the diagram's callbacks below are the reference
+ * implementation of every relayed gesture: `relay/*` from the sidebar lands on
+ * exactly these functions.
+ */
 function renderInspectorHere(): void {
   if (!inspector) {
     return;
   }
   renderInspectorInto({
-    canvas: true, // the diagram's aside owns the canvas tools
     root: inspector,
     state,
     tbScene: currentTbScene ?? undefined,
@@ -416,6 +422,25 @@ window.addEventListener("message", (e: MessageEvent) => {
         }
       }
       void render(true);
+      break;
+    // ------------------------------------------------- relayed from the sidebar
+    // The inspector has no canvas; these are its drawing gestures, applied against
+    // the view THIS panel is showing. Same functions the aside used to call, so the
+    // two paths cannot drift.
+    case "relay/flip":
+      toggleFlip(m.nodeId, m.axis);
+      break;
+    case "relay/fold":
+      toggleFold(m.foldId);
+      break;
+    case "relay/netRender":
+      toggleNetRender(m.net);
+      break;
+    case "relay/selectPins":
+      selectPins(m.names);
+      break;
+    case "relay/openTb":
+      openTbView();
       break;
     default:
       break; // messages of the following phases
@@ -681,33 +706,10 @@ function toggleFold(foldId: string): void {
  *  of the pins on each side; persisted in the sidecar through node/flipped */
 /** level 4 (docs/04): toggles a net between wire and label; a choice
  *  equal to the model's suggestion deletes the override (the host does the same) */
-/** the net a selected pin/flag belongs to (from edges or label),
- *  so that the inspector's Net section is discoverable from any endpoint */
+/** the net a selected pin/flag belongs to (pure resolution in scene.ts, shared with
+ *  the sidebar inspector so both agree on what the Net section is about) */
 function netOfPin(id: string): string | null {
-  if (!currentScene) {
-    return null;
-  }
-  for (const e of currentScene.edges) {
-    if (!e.net) {
-      continue;
-    }
-    // child pin (sourcePort/targetPort) or boundary flag (source/target node)
-    if (e.sourcePort === id || e.targetPort === id || e.source === id || e.target === id) {
-      return e.net;
-    }
-  }
-  // labeled net (without an edge): from bport.nets / pin.nets or the port name
-  if (id.startsWith("<port>.")) {
-    const b = currentScene.boundary.find((bb) => bb.id === id);
-    return b?.nets[0] ?? id.slice("<port>.".length);
-  }
-  for (const n of currentScene.nodes) {
-    const p = n.pins.find((pp) => pp.id === id);
-    if (p?.nets.length) {
-      return p.nets[0];
-    }
-  }
-  return null;
+  return currentScene ? sceneNetOfPin(currentScene, id) : null;
 }
 
 function toggleNetRender(net: string): void {
@@ -939,18 +941,18 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   const byId = new Map(pins.map((p) => [p.id, p]));
 
   // pin sections by role (docs/04): clock/reset are already grouped bottom-left
-  // (buildPins). We make the grouping VISIBLE — gap + divider + titles — by moving
-  // the clock/reset group down (ELK FIXED_ORDER does not leave a gap per-group) and
+  // (buildPins). We make the grouping VISIBLE — gap + title — by moving the
+  // clock/reset group down (ELK FIXED_ORDER does not leave a gap per-group) and
   // enlarging the box. Only in the symbol view and only when both sections exist
   const westPorts = (ctx.ports ?? [])
     .filter((p) => byId.get(p.id)?.side === "WEST")
     .sort((a, b) => (a.y ?? 0) - (b.y ?? 0));
-  let dividerY = -1;
+  let sectionY = -1;
   for (let i = 1; i < westPorts.length; i++) {
     const prev = byId.get(westPorts[i - 1].id)?.section;
     const cur = byId.get(westPorts[i].id)?.section;
     if (prev === "signals" && cur === "clock/reset") {
-      dividerY = (westPorts[i - 1].y ?? 0) + 4 + SECTION_GAP / 2;
+      sectionY = (westPorts[i - 1].y ?? 0) + 4 + SECTION_GAP / 2;
       for (let j = i; j < westPorts.length; j++) {
         westPorts[j].y = (westPorts[j].y ?? 0) + SECTION_GAP;
       }
@@ -984,17 +986,16 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   );
   vp.append(node);
 
-  // the divider + the titles of the pin sections (role, docs/04): only when
-  // the clock/reset group was separated by a gap (dividerY >= 0)
-  if (dividerY >= 0) {
+  // the title of the pin section (role, docs/04): only when the clock/reset
+  // group was separated by a gap (sectionY >= 0). NO rule across the box: the
+  // grouping is a WEST-column concept, so a full-width line carries no meaning
+  // on the east half and strikes through the right-anchored output labels
+  // (`[7:0]out1_data`). The gap plus this caption carry the grouping alone.
+  if (sectionY >= 0) {
     node.append(
-      el("line", {
-        class: "sym-divider",
-        x1: "8", y1: String(dividerY), x2: String(nodeW - 8), y2: String(dividerY),
-      }),
       el(
         "text",
-        { class: "sym-section", x: "10", y: String(dividerY + 11) },
+        { class: "sym-section", x: "10", y: String(sectionY + 11) },
         "clock / reset"
       )
     );

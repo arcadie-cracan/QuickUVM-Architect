@@ -439,15 +439,9 @@ body.sidebar #inspector {
   text-anchor: middle;
 }
 
-/* sectiuni de pini pe rol in vederea-simbol (docs/04): divizor discret +
-   titlu mic uppercase (symbolator) */
-.sym-divider {
-  stroke: var(--vscode-foreground);
-  stroke: color-mix(in srgb, var(--vscode-foreground, #888) 30%, transparent);
-  stroke-width: 1;
-  stroke-dasharray: 3 3;
-}
-
+/* pin sections by role in the symbol view (docs/04): a gap plus a small
+   uppercase title (symbolator). There is deliberately NO rule — the grouping
+   is west-column only, and a full-width one crossed the east pin labels. */
 text.sym-section {
   font-size: 8px;
   letter-spacing: 0.06em;
