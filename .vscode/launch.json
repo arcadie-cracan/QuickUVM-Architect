@@ -24,7 +24,7 @@
       "preLaunchTask": "npm: build"
     },
     {
-      "name": "Ruleaza extensia (tutorial: yapp_router)",
+      "name": "Ruleaza extensia (tutorial: yapp_buffer)",
       "type": "extensionHost",
       "request": "launch",
       "args": [

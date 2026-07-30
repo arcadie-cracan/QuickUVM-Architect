@@ -393,8 +393,10 @@ Ordinea de implementare (începută în iul. 2026):
    → `config/full` → re-randare (idempotent, fără buclă). Validat în harness cu
    `?nomodel=1` (vederea TB + editarea funcționează DOAR din config).
    **Tutorial pas-cu-pas pentru validarea manuală**:
-   `docs/tutorial-yapp-router.md` (fixtura `examples-yapp/yapp_router.sv` +
-   configurația de lansare „tutorial: yapp_router"); pașii sunt verificați
+   `docs/tutorial-yapp-buffer.md` (fixtura `examples-yapp/yapp_buffer.sv` +
+   configurația de lansare „tutorial: yapp_buffer"; ambele se numeau
+   `yapp_router` până în iul. 2026, în coliziune cu demuxul real din
+   `QuickUVM/examples/yapp`); pașii sunt verificați
    empiric — designul se parsează cu svmodel și config-ul rezultat generează
    curat cu quick-uvm (ambele variante de scoreboard). **Pasul manual de
    închidere e BIFAT** (16 iul. 2026): utilizatorul a parcurs integral
@@ -406,7 +408,7 @@ Ordinea de implementare (începută în iul. 2026):
 Criteriu de încheiere: un mediu cu ≥2 agenți, un scoreboard two-stream și un
 colector de coverage, construit și re-aranjat integral grafic (fără editor de
 text), cu YAML lizibil la final și `quick-uvm generate` curat. **Bifat —
-MVP-ul e validat** (16 iul. 2026, tutorialul yapp_router).
+MVP-ul e validat** (16 iul. 2026, tutorialul yapp_buffer).
 
 După închidere a rulat o **trecere de călire a plasei de teste** (16 iul.
 2026, audit multi-agent + recenzie adversarială): golul sistematic era că

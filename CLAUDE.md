@@ -120,9 +120,17 @@ cu `scripts/harness.html` (stub `acquireVsCodeApi` + modelul de regresie):
 `/scripts/harness.html?view=demo_top.u_soc&mode=schematic` (adaugă `&nomodel=1`
 ca să simulezi editorul per-fișier din felia 4: vederea TB doar din config).
 Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
-`docs/tutorial-yapp-router.md` — cu fixtura `examples-yapp/yapp_router.sv`
-(configurația de lansare „tutorial: yapp_router"); pașii sunt verificați empiric
+`docs/tutorial-yapp-buffer.md` — cu fixtura `examples-yapp/yapp_buffer.sv`
+(configurația de lansare „tutorial: yapp_buffer"); pașii sunt verificați empiric
 (svmodel parsează designul, iar config-ul rezultat generează curat cu quick-uvm).
+**Fixtura NU e routerul YAPP** (redenumită iul. 2026): routerul e demuxul 1→3 din
+`QuickUVM/examples/yapp/rtl/yapp_router.sv` (`out0_*`/`out1_*`/`out2_*`, un singur
+agent), subiectul walkthrough-ului `docs/yapp-router-walkthrough.html` și al
+capturilor din `docs/tutorial-shots/`. Fixtura e reducerea lui la un buffer de un
+slot, fiindcă handshake-ul `ready` în ambele sensuri e ce dă cei **doi** agenți
+ceruți de criteriul de închidere. Cât timp ambele module s-au numit `yapp_router`,
+pașii tutorialului și capturile descriau designuri diferite — nu reintroduce
+coliziunea de nume.
 
 ## Capcane cunoscute (descoperite la validare)
 
@@ -646,7 +654,7 @@ metode (cu QuickPick-uri) merg pe oricare țintă, zero duplicare. `diagramHtml`
 (în `panel.ts`) e HTML-ul webview partajat. Orice schimbare de text →
 `config/full` → re-randare (fără buclă). Validat în harness cu `?nomodel=1`.
 **Faza 3b e ÎNCHEIATĂ** (16 iul. 2026): utilizatorul a parcurs integral
-tutorialul `docs/tutorial-yapp-router.md` în Extension Development Host —
+tutorialul `docs/tutorial-yapp-buffer.md` în Extension Development Host —
 criteriul de închidere (mediu cu ≥2 agenți + scoreboard two-stream +
 coverage, construit și re-aranjat integral grafic, YAML lizibil, `generate`
 curat) e bifat. **MVP-ul e validat.**
