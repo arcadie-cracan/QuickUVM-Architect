@@ -105,31 +105,31 @@ export const SCHEMA_VERSION = 1;
  */
 export function validateModel(data: unknown): ProjectModel {
   if (typeof data !== "object" || data === null) {
-    throw new Error("modelul nu este un obiect JSON");
+    throw new Error("the model is not a JSON object");
   }
   const m = data as Record<string, unknown>;
   if (m.schema_version !== SCHEMA_VERSION) {
     throw new Error(
-      `versiune de schema necunoscuta: ${String(m.schema_version)} ` +
-        `(host-ul intelege ${SCHEMA_VERSION})`
+      `unknown schema version: ${String(m.schema_version)} ` +
+        `(this host understands ${SCHEMA_VERSION})`
     );
   }
   if (!Array.isArray(m.tops) || m.tops.length === 0) {
-    throw new Error("modelul nu are `tops`");
+    throw new Error("the model has no `tops`");
   }
   if (typeof m.modules !== "object" || m.modules === null) {
-    throw new Error("modelul nu are `modules`");
+    throw new Error("the model has no `modules`");
   }
   if (!Array.isArray(m.instances)) {
-    throw new Error("modelul nu are `instances`");
+    throw new Error("the model has no `instances`");
   }
   if (typeof m.views !== "object" || m.views === null) {
-    throw new Error("modelul nu are `views`");
+    throw new Error("the model has no `views`");
   }
   for (const inst of m.instances as unknown[]) {
     const i = inst as Record<string, unknown>;
     if (typeof i.path !== "string" || typeof i.module !== "string") {
-      throw new Error("instanta fara `path`/`module` in model");
+      throw new Error("an instance without `path`/`module` in the model");
     }
   }
   return data as ProjectModel;

@@ -39,7 +39,7 @@ export function parseSidecar(text: string): SidecarData {
   }
   const data = parse(text) as Record<string, unknown> | null;
   if (data === null || typeof data !== "object") {
-    throw new Error("sidecar-ul nu este un obiect YAML");
+    throw new Error("the sidecar is not a YAML object");
   }
   if (data.schema_version !== SIDECAR_VERSION) {
     throw new Error(

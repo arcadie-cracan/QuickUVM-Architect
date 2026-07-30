@@ -31,12 +31,21 @@ un motiv nou.
 
 ## Convenții de cod
 
-- **Comentariile din surse sunt în ENGLEZĂ** (decizie 2026-07-20, pentru
-  creșterea comunității): orice comentariu nou din `src/**`, `backend/**`,
-  `scripts/**` se scrie în engleză; corpusul vechi (comentarii în română fără
-  diacritice) se migrează progresiv la engleză. Backend Python: PEP 8.
-  Comunicarea cu utilizatorul rămâne în română cu diacritice; documentația
-  (`docs/**`, acest fișier) rămâne română până la o decizie separată.
+- **TOTUL ÎN ENGLEZĂ** (decizie 2026-07-30 — aceasta ESTE „decizia separată"
+  pe care o aștepta regula veche): nu doar comentariile din `src/**`,
+  `backend/**`, `scripts/**` (regula din 2026-07-20, pentru creșterea
+  comunității), ci și **documentația**: `docs/**`, acest fișier, `README.md`,
+  mesajele de eroare aruncate din host și comentariile fixturilor din
+  `examples*/**`. Backend Python: PEP 8.
+  **Migrarea e în curs** — corpusul e mare (~3100 de linii cu română la data
+  deciziei, majoritatea în `docs/06-plan-mvp.md`, `CLAUDE.md`,
+  `docs/07-plan-post-mvp.md`, `docs/04-layout-si-rutare.md`). Regula pentru
+  orice sesiune: **nu adăuga română nouă nicăieri**, iar când atingi un fișier
+  din listă, tradu-i secțiunile pe care le modifici. Traducerea e o rescriere
+  atentă, nu o înlocuire mecanică: documentele sunt înregistrări
+  arhitecturale dense (listele de capcane, jurnalul deciziilor), unde o
+  redare aproximativă pierde exact motivul pentru care regula există.
+  Comunicarea în chat cu utilizatorul rămâne în română cu diacritice.
 - **UI-ul extensiei: engleză** (decizia D19), localizat prin `package.nls.json`
   (+`package.nls.ro.json`) și `vscode.l10n.t()` + `l10n/bundle.l10n.ro.json`;
   orice șir nou vizibil utilizatorului în host se împachetează în `l10n.t()`
