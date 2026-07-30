@@ -150,6 +150,12 @@
         "icon": "$(play)"
       },
       {
+        "command": "quickuvm.saveConfig",
+        "title": "%cmd.saveConfig%",
+        "category": "QuickUVM Architect",
+        "icon": "$(save)"
+      },
+      {
         "command": "quickuvm.generateItem",
         "title": "%cmd.generateItem%",
         "category": "QuickUVM Architect",
@@ -377,6 +383,11 @@
           "type": "string",
           "default": "tb",
           "description": "%config.outputDir%"
+        },
+        "quickuvm.autoSaveConfig": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.autoSaveConfig%"
         },
         "quickuvm.seqItemStyle": {
           "type": "string",
