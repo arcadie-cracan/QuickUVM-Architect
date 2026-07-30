@@ -881,6 +881,25 @@ function tbBenchIdentity(cfg: QuvmConfig): void {
 const openSections = new Set<string>();
 let sectionsLoaded = false;
 
+/**
+ * What the panel is currently ABOUT. Two renders with the same identity show the same
+ * subject, so the scroll offset carries across them; a different identity means
+ * different content and the panel starts at the top.
+ *
+ * Deliberately NOT derived from the config: editing a field changes the config but not
+ * the subject, and that is precisely the case the scroll has to survive.
+ */
+let lastPanelIdentity = "";
+
+function panelIdentity(): string {
+  return [
+    ctx.state.mode,
+    ctx.state.viewId ?? "",
+    ctx.state.tbFocus,
+    [...ctx.state.selection].sort().join(","),
+  ].join("|");
+}
+
 function loadSections(): void {
   if (sectionsLoaded) {
     return;
@@ -1595,6 +1614,27 @@ export function renderInspector(c: InspectorCtx): void {
   if (!ctx.root) {
     return;
   }
+  // Every render REBUILDS the panel, and `replaceChildren` resets the container's
+  // scroll to the top. Editing a field re-renders — the edit round-trips through the
+  // YAML and comes back as config/full — so the panel jumped away from whatever the
+  // user was working on, at exactly the moment they were working on it. Same for
+  // opening a disclosure, which re-renders too.
+  //
+  // Restored only when the panel is still showing the SAME thing. On a different
+  // selection the content is different and starting at the top is right; carrying a
+  // scroll offset across would land the user at an arbitrary place in new content.
+  //
+  // Via queueMicrotask because this function has several early returns: the restore
+  // has to happen whichever one is taken, after the synchronous build. A newer render
+  // simply queues a later microtask, so the last one wins.
+  const key = panelIdentity();
+  const keep = key === lastPanelIdentity;
+  const scrollTop = keep ? ctx.root.scrollTop : 0;
+  lastPanelIdentity = key;
+  const root = ctx.root;
+  queueMicrotask(() => {
+    root.scrollTop = scrollTop; // the browser clamps if the content got shorter
+  });
   ctx.root.replaceChildren();
   const inst = ctx.state.viewId ? ctx.findInstance(ctx.state.viewId) : undefined;
   const ov = ctx.state.overlay;
