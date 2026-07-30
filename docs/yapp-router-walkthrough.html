@@ -361,25 +361,15 @@
       <div class="sub">Properties → agent “pkt”</div>
     </div>
     <div class="body">
-      <p>Select the <b>pkt</b> agent (in the diagram or the Verification tree) and the <b>Properties</b> view fills with its fields. Three edits turn a raw port list into a meaningful packet:</p>
+      <p>Select the <b>pkt</b> agent (in the diagram or the Verification tree) and the <b>Properties</b> view fills with its fields. Three edits turn a raw port list into a meaningful packet — note <em>where</em> each one lives, since two are <b>per port</b> and one is on the agent:</p>
       <ul>
-        <li>Give <code>in_addr</code> a <b>symbolic enum</b> — <code>P0=0, P1=1, P2=2, DROP=3</code> — so the destinations read by name and randomization self-constrains to the four legal values.</li>
-        <li>Add a <b>constraint</b> <code>in_valid == 1</code> so every generated item is a real packet.</li>
-        <li>Set <b>emit_when</b> to <code>in_valid</code> so the scoreboard only scores cycles that actually carry a packet.</li>
+        <li>Under <b>PORTS</b> → <code>in_addr</code> → <span class="menu">MORE</span>, give it a <b>symbolic enum</b>: <code>P0=0, P1=1, P2=2, DROP=3</code>. The destinations then read by name and randomization self-constrains to the four legal values.</li>
+        <li>Under <b>PORTS</b> → <code>in_valid</code> → <span class="menu">MORE</span>, set <b>Constraint</b> to <code>in_valid == 1</code>, so every generated item is a real packet.</li>
+        <li>Under <b>AGENT PROPERTIES</b> → <span class="menu">ADVANCED</span>, set <b>Emit when</b> to <code>in_valid</code>, so the monitor publishes only on cycles that actually carry a packet. The list offers only <b>1-bit ports of this agent</b> — QuickUVM requires exactly that, because the generated gate is <code>if (tr.in_valid)</code>.</li>
       </ul>
       <div class="ui">
-        <div class="cap"><span class="dot"></span>Properties<span class="side">agent · pkt</span></div>
-        <div class="props">
-          <div class="grp">Agent properties</div>
-          <div class="prow"><span class="plabel">Role</span><span class="pctrl">Active (drives + monitors)</span></div>
-          <div class="prow"><span class="plabel">Mode</span><span class="pctrl">Initiator</span></div>
-          <div class="disc">▾ Ports</div>
-          <div class="prow"><span class="plabel">in_addr · enum</span><span class="pctrl sel">P0=0, P1=1, P2=2, DROP=3</span></div>
-          <div class="prow"><span class="plabel">in_data · width</span><span class="pctrl">8</span></div>
-          <div class="disc">▾ Advanced</div>
-          <div class="prow"><span class="plabel">Constraint</span><span class="pctrl sel">in_valid == 1</span></div>
-          <div class="prow"><span class="plabel">emit_when</span><span class="pctrl sel">in_valid</span></div>
-        </div>
+        <div class="cap"><span class="dot"></span>Properties — agent pkt<span class="live">live capture</span></div>
+        <div class="shot-scroll"><img class="shotimg" alt="The real QuickUVM Architect Properties panel with the pkt agent selected: Agent properties (Role, Mode) with an Advanced disclosure holding Seq item style, Emit when set to in_valid and Replicas; then PORTS (9), each port showing its Width and a MORE disclosure with Randomize, Constraint and Enum — in_valid carrying the constraint in_valid == 1 and in_addr the enum P0=0, P1=1, P2=2, DROP=3." src="tutorial-shots/7-properties-agent.png"></div>
       </div>
       <p>Drilling into the <b>pkt</b> agent (double-click it, or <span class="menu">Open Verification View</span>) shows the three components QuickUVM will generate — the <code>sequencer</code> feeds the <code>driver</code> a <code>seq_item</code>, the driver and <code>monitor</code> share the <code>pkt_if</code> interface, and the monitor publishes on its analysis port <code>ap</code>:</p>
       <div class="ui">

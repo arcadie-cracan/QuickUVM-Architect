@@ -55,7 +55,11 @@ export interface Rows {
  */
 export function agentRows(agent: QuvmAgent): Rows {
   const basic = ["active", "mode"];
-  const advanced = ["seq_item_style", "replicas"];
+  // `emit_when` gates what the MONITOR publishes (A2): with it, idle and
+  // pipeline-fill cycles never reach the scoreboard. Always valid, seldom needed —
+  // a stream that carries a transaction every cycle wants nothing here — so by the
+  // RARITY rule it is advanced, not hidden: no other control would reveal it.
+  const advanced = ["seq_item_style", "emit_when", "replicas"];
   if (agent.mode === "responder") {
     const respond = agent.respond ?? "on_request";
     basic.push("respond", "request_valid");

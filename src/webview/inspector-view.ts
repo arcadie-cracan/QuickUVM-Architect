@@ -1331,6 +1331,36 @@ function tbAgentEditor(agent: QuvmAgent): void {
           )
         );
         break;
+      case "emit_when": {
+        // A2 — the monitor publishes only on cycles where this port is non-zero.
+        // QuickUVM requires it to name a port OF THIS AGENT and to be exactly 1 bit
+        // (the generated gate is `if (tr.<emit_when>)`, so a wider field would be a
+        // surprising reduction-OR); offering only those is what keeps the panel from
+        // writing a config the generator then refuses. Driven ports count too — the
+        // monitor samples the whole interface, not just the DUT's outputs.
+        const oneBit = [...driven, ...sampled].filter(
+          (p: QuvmPort) => p.name && (p.width ?? 1) === 1
+        );
+        ctx.root.append(
+          tbPropRow(
+            "Emit when",
+            tbSelect(
+              [
+                ["", "— every cycle —"],
+                ...oneBit.map((p) => [p.name as string, p.name as string] as const),
+              ],
+              agent.emit_when ?? "",
+              (v) => send("emit_when", v)
+            )
+          )
+        );
+        if (!oneBit.length) {
+          ctx.root.append(
+            h("div", "note", "this agent has no 1-bit port to qualify on")
+          );
+        }
+        break;
+      }
       case "replicas": {
         const repIn = h("input", "prop");
         repIn.type = "number";
