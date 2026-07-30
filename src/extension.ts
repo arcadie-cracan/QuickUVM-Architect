@@ -676,7 +676,10 @@ export function activate(context: vscode.ExtensionContext): void {
       async (arg?: string | InstanceNode) => {
         let path = typeof arg === "string" ? arg : arg?.inst?.path ?? undefined;
         if (!path) {
-          path = await pickInstance((i) => Boolean(model?.views[i.path]));
+          // every instance is offered, not only those with a `views` entry: a leaf
+          // now has an inside view too (its boundary), so filtering them out would
+          // make the palette disagree with the tree, which opens any instance
+          path = await pickInstance();
         }
         if (path) {
           DiagramPanel.show(context, panelDeps, path, "schematic");
