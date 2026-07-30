@@ -434,6 +434,12 @@
         <span><span class="badge b-old">M</span> modified since generate</span>
       </div>
       <p>The amber <b>U</b> badges mean “declared, but no code behind it yet” — exactly the state before your first generate. After Step 7 they clear; edit the config afterward and they turn to a blue <b>M</b> (stale) until you regenerate. The badges are your at-a-glance map of what's real on disk.</p>
+      <div class="note">
+        <div class="h">No badges at all? Your output folder is already populated</div>
+        <p>The badge asks one question: <em>do the files this element owns exist in <code>quickuvm.outputDir</code>?</em> It cannot tell code you generated from code that arrived with a clone — and it deliberately will not call a file <b>M</b> whose provenance it does not know, so an unrecognised tree reads as clean rather than as a lie.</p>
+        <p>That is exactly what you get if you run this walkthrough against <code>QuickUVM/examples/yapp</code>: that directory <b>ships a complete generated testbench</b> in <code>gen/</code>, and its <code>outputDir</code> points there (it must — the same setting is what keeps the DUT stub in <code>gen/</code> from shadowing <code>rtl/yapp_router.sv</code>). Every element is already present, so nothing badges.</p>
+        <p>To see the states, work in your <b>own folder</b> as this walkthrough assumes — just the RTL from Step 1, nothing generated yet — or delete <code>gen/</code> in the example (<code>quick-uvm generate -c yapp.yaml -o gen</code> puts it back).</p>
+      </div>
       <p>The same testbench, drawn as a schematic — right-click <code>yapp_router</code> in <b>Design Hierarchy</b> → <span class="menu">Open Verification View</span> (or the button of the same name in <b>Properties</b>). At the top level it is the DUT wired to the Env through the <code>pkt_if</code> interface:</p>
       <div class="ui">
         <div class="cap"><span class="dot"></span>Verification View — testbench top<span class="live">live capture</span></div>
