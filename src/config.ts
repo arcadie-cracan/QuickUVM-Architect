@@ -25,6 +25,15 @@ export { WIDTH_CODE } from "./configcheck";
  * `DocumentEditTarget.apply` for the per-file editor), so the two cannot disagree
  * about whether a gesture leaves the file dirty.
  */
+async function fileExists(uri: vscode.Uri): Promise<boolean> {
+  try {
+    await vscode.workspace.fs.stat(uri);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function autoSaveConfig(): boolean {
   const root = vscode.workspace.workspaceFolders?.[0];
   return vscode.workspace
@@ -165,14 +174,28 @@ export class ConfigService implements vscode.Disposable {
   }
 
   /**
+   * Did the last `ensureConfig` CREATE the file (rather than find an existing one)?
+   *
+   * `createFile` is a filesystem operation: the skeleton hits disk immediately, while
+   * the `dut:` that follows goes through `apply` into the document BUFFER, which stays
+   * unsaved. A config with no `dut:` is not a partial config, it is a meaningless one —
+   * and if that buffer is discarded, what remains on disk makes the extension tell the
+   * user to "Set as DUT first" when they just did. So the creating gesture persists the
+   * pair together; an edit to an EXISTING config keeps the usual "the user decides".
+   */
+  justCreated = false;
+
+  /**
    * The configuration file, created when needed (the first configuration action).
    * The new name: `<modulDut>.quickuvm.yaml` in the workspace root.
    */
   async ensureConfig(dutModule: string): Promise<vscode.Uri | undefined> {
     await this.refresh(true);
+    this.justCreated = false;
     if (this.uri) {
       return this.uri;
     }
+    this.justCreated = true;
     const root = vscode.workspace.workspaceFolders?.[0];
     if (!root) {
       return undefined;
@@ -203,6 +226,9 @@ export class ConfigService implements vscode.Disposable {
     }
     const dir = this.uri ? vscode.Uri.joinPath(this.uri, "..") : root.uri;
     const uri = vscode.Uri.joinPath(dir, `${dutModule}.quickuvm.yaml`);
+    // `ignoreIfExists` means this may adopt an existing file rather than create one;
+    // the caller's decision to persist depends on which happened (see `justCreated`)
+    this.justCreated = !(await fileExists(uri));
     const edit = new vscode.WorkspaceEdit();
     edit.createFile(uri, {
       ignoreIfExists: true,

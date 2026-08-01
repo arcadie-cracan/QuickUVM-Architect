@@ -169,8 +169,19 @@ export class Actions {
     if (!uri) {
       return;
     }
+    const created = this.config.justCreated;
     if (await this.config.apply((t) => ops.setDut(t, spec))) {
       this.log.appendLine(`[actions] setDut ${inst.module} -> ${uri.fsPath}`);
+      if (created) {
+        // The skeleton reached DISK the moment the file was created, but the `dut:`
+        // only reached the buffer. Losing that buffer leaves a config that is not
+        // partial but meaningless — and the extension then tells the user to
+        // "Set as DUT first" when they already did (reported from a real run: the
+        // file existed with project/clock/tests and nothing else). Persist the pair
+        // together. Only on CREATION; editing an existing config keeps "the user
+        // decides", and `quickuvm.autoSaveConfig` covers that if wanted.
+        await (await vscode.workspace.openTextDocument(uri)).save();
+      }
     }
   }
 
