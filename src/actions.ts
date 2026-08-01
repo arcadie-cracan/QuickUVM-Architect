@@ -1839,20 +1839,9 @@ export class Actions {
       }
       return;
     }
-    const fields: ops.AgentField[] = [
-      "seq_item_style",
-      "mode",
-      "respond",
-      "request_valid",
-      "request_ready",
-      "reorder_by",
-      "reorder_policy",
-      "proactive",
-      "replicas",
-      "clock",
-      "reset",
-    ];
-    if (!fields.includes(field as ops.AgentField)) {
+    // derived from AGENT_DEFAULTS, not listed here: a hand-written copy silently
+    // dropped `emit_when` for a whole release (see AGENT_FIELDS)
+    if (!ops.AGENT_FIELDS.includes(field as ops.AgentField)) {
       return;
     }
     const f = field as ops.AgentField;
