@@ -1203,6 +1203,38 @@ writeFileSync(join(outDir, "sample.yaml"),
   ));
 console.log(`\n(exemplu generat: ${join(outDir, "sample.yaml")})`);
 
+// --- the host's agent-field gate must cover EVERY AgentField -------------------
+// `emit_when` shipped in the type, the defaults and the inspector while the host's
+// hand-written allow-list still lacked it: the edit was dropped without a word and
+// the control looked like it reset itself. AGENT_FIELDS is now derived from
+// AGENT_DEFAULTS, and this pins BOTH halves: the list is complete, and a write
+// through it actually lands.
+test("AGENT_FIELDS covers every writable agent field, emit_when included", () => {
+  assert.ok(ops.AGENT_FIELDS.includes("emit_when"), "emit_when missing from the gate");
+  for (const f of ["mode", "respond", "request_valid", "replicas", "clock", "reset"]) {
+    assert.ok(ops.AGENT_FIELDS.includes(f), `${f} missing from the gate`);
+  }
+  // no stray entries: `active` goes through setAgentActive, not setAgentField
+  assert.ok(!ops.AGENT_FIELDS.includes("active"), "active must not be an AgentField");
+});
+
+test("setAgentField writes emit_when, and the default deletes it", () => {
+  let t = ops.newConfigText("d");
+  t = ops.setDut(t, {
+    module: "d", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  t = ops.createAgent(t, {
+    name: "pkt",
+    inputs: [{ name: "in_valid", width: 1 }],
+    outputs: [{ name: "out0_valid", width: 1 }],
+  });
+  const set = ops.setAgentField(t, "pkt", "emit_when", "in_valid");
+  assert.match(set, /emit_when: in_valid/, "emit_when was not written");
+  // "— every cycle —" is the empty value: it must REMOVE the key, not write ""
+  const cleared = ops.setAgentField(set, "pkt", "emit_when", "");
+  assert.ok(!cleared.includes("emit_when"), "clearing must delete the key");
+});
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

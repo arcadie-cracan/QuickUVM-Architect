@@ -593,6 +593,20 @@ const AGENT_DEFAULTS: Record<AgentField, string | number | boolean> = {
 };
 
 /**
+ * Every agent field the host may write — DERIVED from `AGENT_DEFAULTS`, never listed
+ * by hand.
+ *
+ * The host checks an incoming field name against this before applying it. That check
+ * used to be a hand-written array in actions.ts, and it DRIFTED: `emit_when` was added
+ * to `AgentField`, to the defaults and to the inspector, but not to the array — so the
+ * edit was silently dropped and the control appeared to reset itself on the next
+ * render (reported from a real run). `AGENT_DEFAULTS` is a `Record<AgentField, …>`, so
+ * the compiler already forces it to cover every field; deriving the gate from it means
+ * the gate cannot fall behind the type again.
+ */
+export const AGENT_FIELDS = Object.keys(AGENT_DEFAULTS) as AgentField[];
+
+/**
  * Edits one field of an agent (identified by name); throws if the agent is missing
  * (`setScoreboardField` is the precedent). A default value DELETES the key, so the
  * YAML stays canonical.
