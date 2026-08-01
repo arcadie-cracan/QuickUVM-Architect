@@ -50,6 +50,101 @@ Efect măsurat pe un bench realist (RAL + regresie + 2 domenii de ceas + 1 reset
 
 ---
 
+## The inference gap — the config understates the artifact
+
+*(Analysis, Aug 2026, prompted by a real walkthrough run. Open against QuickUVM as
+[#115](https://github.com/arcadie-cracan/QuickUVM/issues/115) and
+[#116](https://github.com/arcadie-cracan/QuickUVM/issues/116); no Architect work is
+scheduled until #116 lands.)*
+
+### The observation
+
+The verification view renders the config **as written**; quick-uvm generates it **as
+interpreted**. Defaults live in the generator, so the diagram is a view of the literal
+YAML text, not of its meaning. `analysis:` absent does not mean "no analysis" — it means
+"default analysis", and today the diagram draws that as nothing.
+
+A user adding a scoreboard through the GUI therefore loses the implicit coverage
+collector with no signal anywhere: not in the diagram, not in the YAML they can see, not
+at generate time, not at run time.
+
+**The extension already contradicts itself about this.** `classify` reports
+`missing: ['agent:pkt', 'sb:sbd']` for a config that declares no scoreboard at all — the
+generation-state layer tracks a component the tree and diagram refuse to draw.
+
+### What is actually inferred (measured, not guessed)
+
+Three distinct kinds, only the third of which is the problem:
+
+1. **Defaulted values** — absent key ⇒ documented value, no topology change: `match:
+   in_order`, `active: true`, `randomize: true`, `reset_active_low`, `emit_when` absent =
+   every cycle, `layout: flat`, `kind: bench`. Unremarkable.
+2. **Presence-switched blocks** — the presence of a key changes MODE: `analysis:`,
+   `regress:`, `register_model:`, and `clock:`/`reset:` where a 1-element LIST is not a
+   mapping. (`probes:` is the counterexample: absence is byte-identical.)
+3. **Inferred topology** — components in the artifact that appear nowhere in the config:
+   the `sbd` scoreboard and `<primary>_cov` coverage on `agents[0]`, `<dut>_vseq` + vsqr
+   at >= 2 stimulus agents, the default `test1`, and `<agent>_seq` per agent. **Five.**
+
+### Why "remove the defaults" is the wrong conclusion
+
+QuickUVM has already had this argument and resolved it, in
+`ProjectConfig.unchecked_stimulus_agents`: refusing to infer "would tax the simple case",
+so the convenience is kept and the gap it opens is made **loud at runtime**, at a severity
+proportionate to the harm — `UNFILLED_PREDICTOR` (fatal), `UNFILLED_WINDOW` (fatal),
+`UNCHECKED_AGENT` (warning), `SB_LEFTOVER`, `SB_CMP` "compared 0 transactions".
+
+So "simple by default" was never reconciled with transparency by making the CONFIG
+complete. It was reconciled by making the RUN honest. That policy is sound and should not
+be reopened.
+
+Its hole is narrow: it covers every way inference can make a bench pass FALSELY, and
+nothing that makes a bench silently WEAKER. Losing coverage is exactly the latter — hence
+QuickUVM#115, an `UNCOVERED_AGENT` warning by analogy with `UNCHECKED_AGENT`.
+
+### Why this surfaced in the GUI and not in four years of YAML
+
+A text config may defer meaning to a generator; the reader knows they wrote a partial
+spec. **A diagram claiming to be the testbench cannot.** The Architect promises "this is
+your bench", and a promise that omits five component kinds is a different promise from
+"this is your YAML, drawn".
+
+### Options considered
+
+- **A — draw the inferred components (ghosted).** Correct in principle; blocked in
+  practice, because the rules would have to be reimplemented in TypeScript. That is the
+  exact drift `quick-uvm manifest` was created to stop (hard-coded element→filename
+  mappings drifted). And the manifest cannot rescue it: it is **byte-identical** for a
+  config with and without `analysis:` — it models file ownership, not topology.
+- **B — show components only after generation.** Rejected. It inverts design→generate,
+  makes deletions linger until a regenerate, and duplicates a channel that already exists:
+  the U/M/● badges ARE "declared vs on disk". Mechanically it would also mean recovering
+  topology by parsing generated SystemVerilog.
+- **C — make the GUI always declare** (write the full `analysis:` inference produces).
+  Attractive — text, meaning and diagram agree, no ghosts — but it writes YAML the user
+  did not ask for and takes implicit mode away from GUI users.
+
+### Decision
+
+**A, once QuickUVM#116 gives us the primitive**: `quick-uvm resolve -c` emitting the
+effective config with provenance. The diagram then renders the RESOLVED topology, marks
+inferred nodes distinctly, and the extension never mirrors a generator rule.
+
+Two sharp edges to design for when it lands, both consequences of the mode switch:
+
+- editing an inferred component must materialise **the whole inferred set**, or clicking
+  the ghost scoreboard silently deletes the ghost coverage beside it;
+- deleting an inferred component means WRITING a block (`analysis: {scoreboards: []}`) in
+  order to express absence — the mirror of the existing `keepAnalysis` guard, which stops
+  a deletion from resurrecting what it deleted.
+
+**Interim, independent of #116:** when the extension writes the FIRST `analysis:` entry it
+should also emit the entries inference would have provided, so a GUI gesture never
+silently removes a component the user already had. Small, and justified without any
+visualisation work.
+
+---
+
 ### Vocabularul stărilor de generare
 
 Trei stări, colorate și insignate cu vocabularul PROPRIU al VS Code, ca să nu fie
