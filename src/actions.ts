@@ -710,11 +710,17 @@ export class Actions {
     }
     let agent = preselect && choices.includes(preselect) ? preselect : undefined;
     if (!agent) {
-      agent = await vscode.window.showQuickPick(choices, {
-        title: vscode.l10n.t("Coverage collector for agent"),
-      });
-      if (!agent) {
-        return;
+      // one candidate = no choice; ask only when there is something to decide
+      if (choices.length === 1) {
+        agent = choices[0];
+      } else {
+        agent = await vscode.window.showQuickPick(choices, {
+          title: vscode.l10n.t("Coverage collector — which agent's transactions?"),
+          placeHolder: vscode.l10n.t("pick an agent (its <agent>_cov is wired to the env)"),
+        });
+        if (!agent) {
+          return;
+        }
       }
     }
     const a = agent;
@@ -738,30 +744,73 @@ export class Actions {
     if (!agents.length) {
       return this.warnNoAgents();
     }
+    // Each agent labelled with what it IS, so the choice can be made without knowing
+    // the schema vocabulary. The old prompt said "stimulus/source agent" over a bare
+    // name list, which read as a free-text field: a user typed the scoreboard's name
+    // into it, matched nothing, and the gesture aborted silently.
+    const item = (a: string): vscode.QuickPickItem => {
+      const decl = (cfg.current.agents ?? []).find((x) => x.name === a);
+      return {
+        label: a,
+        description: !decl
+          ? vscode.l10n.t("agent of a composed block")
+          : decl.active === false
+            ? vscode.l10n.t("passive agent — monitors only")
+            : vscode.l10n.t("active agent — drives + monitors"),
+      };
+    };
+
     let source =
       preselSource && agents.includes(preselSource) ? preselSource : undefined;
     if (!source) {
-      source = await vscode.window.showQuickPick(agents, {
-        title: vscode.l10n.t("Scoreboard: stimulus/source agent"),
-        placeHolder: vscode.l10n.t("the stream fed into the predictor"),
-      });
-      if (!source) {
-        return;
+      if (agents.length === 1) {
+        // no choice to make — asking is pure friction (same shortcut as
+        // addVirtualSequence takes for a single active agent)
+        source = agents[0];
+      } else {
+        const pick = await vscode.window.showQuickPick(agents.map(item), {
+          title: vscode.l10n.t("Scoreboard — whose transactions are predicted FROM?"),
+          placeHolder: vscode.l10n.t(
+            "pick the agent whose stream feeds the predictor (the scoreboard's name is asked at the end)"
+          ),
+        });
+        if (!pick) {
+          return;
+        }
+        source = pick.label;
       }
     }
     const src = source;
-    const NONE = vscode.l10n.t("$(circle-slash) None (single-stream)");
-    const monPick = await vscode.window.showQuickPick(
-      [NONE, ...agents.filter((a) => a !== src)],
-      {
-        title: vscode.l10n.t("Scoreboard: response/monitor agent (A2 two-stream)"),
-        placeHolder: vscode.l10n.t("the observed stream compared against the prediction"),
+    const others = agents.filter((a) => a !== src);
+    const NONE = vscode.l10n.t("None — single-stream");
+    let monitor: string | undefined;
+    if (others.length) {
+      const monPick = await vscode.window.showQuickPick(
+        [
+          {
+            label: NONE,
+            description: vscode.l10n.t(
+              "check {0}'s own outputs against the prediction",
+              src
+            ),
+          },
+          ...others.map(item),
+        ],
+        {
+          title: vscode.l10n.t("Scoreboard — compare the prediction from “{0}” AGAINST?", src),
+          placeHolder: vscode.l10n.t(
+            "a second agent whose observed stream is compared, or None"
+          ),
+        }
+      );
+      if (monPick === undefined) {
+        return;
       }
-    );
-    if (monPick === undefined) {
-      return;
+      monitor = monPick.label === NONE ? undefined : monPick.label;
     }
-    const monitor = monPick === NONE ? undefined : monPick;
+    // else: the only agent is the source, so single-stream is the ONLY possibility —
+    // a pick listing just "None" asks a question with one answer. The comparison
+    // strategy below is likewise skipped, being two-stream only.
 
     let match: "in_order" | "out_of_order" = "in_order";
     let matchKey: string | undefined;
@@ -797,6 +846,9 @@ export class Actions {
     );
     const name = await vscode.window.showInputBox({
       title: vscode.l10n.t("Scoreboard name"),
+      prompt: vscode.l10n.t(
+        "the generated class is <dut>_scoreboard; this names the entry in analysis.scoreboards"
+      ),
       value: Actions.uniqueName("sbd", taken),
       validateInput: (v) =>
         !SV_IDENT_RE.test(v)
