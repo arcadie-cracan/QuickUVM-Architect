@@ -11,7 +11,8 @@ the host messages the extension normally sends, so no live VS Code GUI is needed
 
 | File | View (tutorial step) |
 |------|----------------------|
-| `5-rtl-symbol.png`          | RTL Schematic — the `yapp_router` symbol / ports (Step 2) |
+| `5-rtl-symbol.png`          | RTL — the `yapp_router` symbol, i.e. the "top module" node (Step 2) |
+| `8-rtl-leaf-ports.png`      | RTL — the same module from INSIDE: ports as boundary flags, "ports only" (Step 2) |
 | `6-rtl-symbol-selected.png` | RTL Schematic — the symbol with the 9 data ports selected (Step 3) |
 | `7-properties-agent.png`    | Properties — agent selected: Advanced (Emit when) + per-port MORE (Constraint, Enum) (Step 4) |
 | `4-schematic-agent.png`     | Verification View — inside the agent: sequencer · driver · monitor (Step 4) |

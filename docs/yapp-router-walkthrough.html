@@ -192,6 +192,8 @@
   .rule { border: 0; border-top: 1px solid var(--line); margin: 0; }
   .foot { margin-top: 40px; padding-top: 22px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13.5px; }
   .foot b { color: var(--ink); }
+  /* a caption under a mocked UI fragment: what the picture does NOT show */
+  .tiny { margin: 6px 0 0; color: var(--muted); font-size: 12.5px; line-height: 1.5; }
 
   /* real captures rendered from the extension's own webview */
   .ui .shotimg { display: block; width: 100%; height: auto; background: #1e1e1e; }
@@ -298,15 +300,19 @@
           <div class="row sel indent1"><span class="tw"> </span><span class="ic dut">◈</span><span class="lbl">yapp_router</span><span class="kind">yapp_router</span></div>
         </div>
         <div class="ctx">
-          <div class="mi on">Set as DUT</div>
-          <div class="mi">Open Schematic View</div>
           <div class="mi">Go to Source</div>
-          <div class="mi dim">Open Verification View</div>
+          <div class="mi on">Set as DUT</div>
         </div>
+        <p class="tiny">Two entries only, before a config exists. <span class="menu">Open Verification View</span> appears once there is something to verify, and there is no “Open Schematic View” item — clicking the module already opens it.</p>
       </div>
       <div class="note">
         <div class="h">Why start here</div>
         <p>Setting the DUT is what turns a browsing session into a project: it's the anchor everything else hangs off. From here on, the extension edits one YAML config — the same file you could hand-write, kept surgically so your comments and hand edits survive every regeneration.</p>
+      </div>
+      <div class="note">
+        <div class="h">Every gesture leaves the file unsaved — on purpose</div>
+        <p>Edits arrive as ordinary text edits, so undo/redo and diffing work normally and <em>you</em> decide when they reach disk. The catch: generation, the manifest and the <b>U</b>/<b>M</b> badges all read the file <em>from disk</em>, so until you save, the tooling is looking at an older bench than the diagram shows.</p>
+        <p>Watch for <span class="menu">QuickUVM: unsaved</span> in the status bar — click it to save. Set <code>quickuvm.autoSaveConfig</code> to <code>true</code> if you would rather the file always match the diagram. (Generate itself is safe either way: it saves before running, so a forgotten save never produced a testbench from stale YAML.)</p>
       </div>
     </div>
   </section>
@@ -315,15 +321,22 @@
   <section class="step" id="s2">
     <div class="lead">
       <div class="num">02</div>
-      <h2>See the ports as a schematic</h2>
-      <div class="sub">Open Schematic View</div>
+      <h2>See the ports</h2>
+      <div class="sub">Design Hierarchy → click</div>
     </div>
     <div class="body">
-      <p>Right-click the DUT and pick <span class="menu">Open Schematic View</span> (or use the toolbar). The router is drawn as a block with its inputs on the left and outputs on the right — this is the surface you'll select on to define the agent.</p>
+      <p>Just <b>click</b> — the hierarchy has two nodes and they answer two different questions. There is no menu entry for this; clicking is the gesture.</p>
+      <div class="do"><span class="arrow">▸</span><p class="txt">Click <b>top module</b> for the module seen from <b>outside</b>: one block, pins on its sides, <code>clk</code> and <code>rst_n</code> grouped under a CLOCK / RESET divider.</p></div>
       <div class="ui">
-        <div class="cap"><span class="dot"></span>Schematic — yapp_router<span class="live">live capture</span></div>
-        <img class="shotimg" alt="The real QuickUVM Architect symbol view of yapp_router: in_valid, in_addr[1:0] and in_data[7:0] on the left with clk and rst_n grouped under a CLOCK / RESET divider, and out0/out1/out2 _valid and _data[7:0] on the right." src="tutorial-shots/5-rtl-symbol.png">
+        <div class="cap"><span class="dot"></span>top module — the symbol<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect symbol view of yapp_router: in_valid, in_addr[1:0] and in_data[7:0] on the left with clk and rst_n grouped under a CLOCK / RESET label, and out0/out1/out2 _valid and _data[7:0] on the right." src="tutorial-shots/5-rtl-symbol.png">
       </div>
+      <div class="do"><span class="arrow">▸</span><p class="txt">Click <b>yapp_router</b> (the instance) for the module seen from <b>inside</b>: its ports as boundary flags, pointing the way the data flows. <code>yapp_router</code> instantiates no sub-modules, so there is no interconnect to draw — the header says so rather than leaving you with an empty-looking canvas.</p></div>
+      <div class="ui">
+        <div class="cap"><span class="dot"></span>yapp_router — inside<span class="live">live capture</span></div>
+        <img class="shotimg" alt="The real QuickUVM Architect inside view of the yapp_router leaf module: its eleven ports drawn as boundary flags, inputs clk, rst_n, in_valid, in_addr[1:0] and in_data[7:0] on the left, outputs out0/out1/out2 _valid and _data[7:0] on the right, with the header noting: ports only — internal functionality is not represented." src="tutorial-shots/8-rtl-leaf-ports.png">
+      </div>
+      <p>Either view works for the next step: the flags and the pins carry the same identities, so a selection made on one means the same thing on the other.</p>
       <p><code>clk</code> and <code>rst_n</code> are recognized as the clock and reset — they belong to the testbench harness, not to any agent, so you'll leave them out of the selection in the next step.</p>
     </div>
   </section>
@@ -337,6 +350,7 @@
     </div>
     <div class="body">
       <p>Rubber-band or <kbd>Ctrl</kbd>-click to select the data ports — the three inputs (<code>in_valid</code>, <code>in_addr</code>, <code>in_data</code>) and all six outputs — then, in the <b>Properties</b> panel, press <span class="menu">Agent from selection (9)</span>. Name it <b>pkt</b>. The count in the button label is your check that all nine pins are selected and <code>clk</code>/<code>rst_n</code> are not.</p>
+      <p><kbd>Ctrl</kbd> <b>toggles</b>, for the rubber band as well as for a click: sweep over something already selected and it comes out. So the quickest route here is one band over everything, then <kbd>Ctrl</kbd>-click <code>clk</code> and <code>rst_n</code> back off.</p>
       <div class="ui">
         <div class="cap"><span class="dot"></span>Schematic — selection<span class="live">live capture</span></div>
         <img class="shotimg" alt="The real QuickUVM Architect symbol view with the nine data ports selected and highlighted blue — in_valid, in_addr, in_data and the six out0/out1/out2 _valid/_data pins — while clk and rst_n stay unselected." src="tutorial-shots/6-rtl-symbol-selected.png">
@@ -391,9 +405,14 @@
       <div class="sub">Add component → Scoreboard · Coverage</div>
     </div>
     <div class="body">
-      <p>With nothing selected, the Properties panel shows the bench-level <b>Add component</b> palette. Add two things:</p>
-      <div class="do"><span class="arrow">▸</span><p class="txt"><b>Scoreboard from pkt</b> — a single-stream scoreboard <code>sbd</code>. Its source is <code>pkt</code>; there's no separate monitor agent because this one agent already sees inputs and outputs together.</p></div>
-      <div class="do"><span class="arrow">▸</span><p class="txt"><b>Coverage for pkt</b> — a collector with a coverpoint on <code>in_addr</code>. Being an enum field, it auto-bins one bin per destination, so closure means “we exercised P0, P1, P2 <em>and</em> DROP”.</p></div>
+      <p>With nothing selected, the Properties panel shows the bench-level <b>Add component</b> palette. Add <b>both</b> — the reason they are a pair is below, and it is not obvious:</p>
+      <div class="do"><span class="arrow">▸</span><p class="txt"><span class="menu">Scoreboard</span> → a single-stream scoreboard <code>sbd</code>. With one agent there is nothing to choose, so the only prompt is the name, already filled in as <code>sbd</code> — press Enter. Its source is <code>pkt</code>; there is no separate monitor agent because this one agent already sees inputs and outputs together.</p></div>
+      <div class="do"><span class="arrow">▸</span><p class="txt"><span class="menu">Coverage collector</span> → no prompt at all, for the same reason. You get a collector with a coverpoint on <code>in_addr</code>; being an enum field it auto-bins one bin per destination, so closure means “we exercised P0, P1, P2 <em>and</em> DROP”.</p></div>
+      <div class="note">
+        <div class="h">Why both, when you would have had both for free</div>
+        <p>Omit <code>analysis:</code> entirely and QuickUVM wires <em>one scoreboard and one coverage collector</em> to the first agent by itself. The block is <b>presence-switched</b>: writing it at all replaces that default with exactly what you list. So adding the scoreboard is what <em>removes</em> the collector you already had — which is why the second gesture is not optional here.</p>
+        <p>Two newer generator features make this visible rather than something you have to know. A declared <code>analysis:</code> with scoreboards but no coverage now raises <code>UNCOVERED_AGENT</code> at elaboration — writing <code>coverage: []</code> means “measure nothing” deliberately and stays quiet. And <code>quick-uvm resolve -c &lt;yaml&gt;</code> prints the effective topology with every entry marked <code>declared</code> or <code>inferred</code>, so you can see what a config really produces without generating it. Both postdate quick-uvm 1.1.0; run <code>quick-uvm --help</code> to see whether your build has <code>resolve</code>.</p>
+      </div>
       <div class="ui narrow">
         <div class="cap"><span class="dot"></span>Properties — bench<span class="live">live capture</span></div>
         <img class="shotimg" alt="The real QuickUVM Architect Properties panel for the yapp bench, nothing selected: the Add component palette (Coverage collector, Scoreboard, Virtual sequence, VIP agent by reference), the register-model and regression sections, and the blue Generate testbench button." src="tutorial-shots/1-properties-panel.png">
