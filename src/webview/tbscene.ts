@@ -19,6 +19,8 @@
 import { coveredAgent } from "../coverage";
 import { isCrossBlockSb } from "../quickuvm";
 import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
+import { inferredComponents } from "../resolved";
+import type { ResolvedConfig } from "../resolved";
 
 // quick-uvm >= 1.0.0: the cross-block scoreboards NO longer have their own key
 // `subenv_scoreboards` — they are `analysis.scoreboards` entries with
@@ -82,6 +84,10 @@ export interface TbNode {
   /** the level's focus on double-click (block with structure); null = leaf */
   drill: string | null;
   tooltip: string;
+  /** the generator supplies this component, the config does not mention it (implicit
+   *  mode). Drawn as a GHOST, and not editable/deletable — there is nothing in the
+   *  YAML to edit or delete. See `src/resolved.ts`. */
+  inferred?: boolean;
 }
 
 /** boundary flag: a connection that crosses the level (like `<port>` at RTL) */
@@ -105,6 +111,8 @@ export interface TbEdge {
   sourcePort: string | null;
   target: string;
   targetPort: string | null;
+  /** wired by the generator, not by the config — drawn as a ghost with its node */
+  inferred?: boolean;
 }
 
 export interface TbScene {
@@ -233,7 +241,8 @@ function probeNote(p: NonNullable<QuvmConfig["probes"]>[number]): string | null 
 export function buildTbScene(
   config: QuvmConfig,
   focus: string,
-  configPath: string | null
+  configPath: string | null,
+  resolved?: ResolvedConfig | null
 ): TbScene | null {
   const viewId = `tb:${configPath ?? ""}`;
   const agents = (config.agents ?? []).filter((a) => a.name);
@@ -256,7 +265,7 @@ export function buildTbScene(
   if (focus === "") {
     level = levelTop(config, hasDut, dutName, agents, subenvs);
   } else if (focus === "env") {
-    level = levelEnv(config, hasDut, agents, subenvs);
+    level = levelEnv(config, hasDut, agents, subenvs, resolved);
   } else if (focus.startsWith("agent:")) {
     const name = focus.slice("agent:".length);
     const a = agents.find((x) => x.name === name);
@@ -405,7 +414,8 @@ function levelEnv(
   config: QuvmConfig,
   hasDut: boolean,
   agents: NonNullable<QuvmConfig["agents"]>,
-  subenvs: NonNullable<QuvmConfig["subenvs"]>
+  subenvs: NonNullable<QuvmConfig["subenvs"]>,
+  resolved?: ResolvedConfig | null
 ): { nodes: TbNode[]; boundary: TbBoundary[]; edges: TbEdge[] } {
   const nodes: TbNode[] = [];
   const edges: TbEdge[] = [];
@@ -533,6 +543,58 @@ function levelEnv(
         sourcePort: `${agentId(agent)}.ap`,
         target: id,
         targetPort: `${id}.ap`,
+      });
+    }
+  }
+
+  // GHOSTS — components the generator supplies that the config never mentions.
+  // Without an `analysis:` key quick-uvm wires a scoreboard AND a coverage collector
+  // onto the primary agent; drawn nowhere, the Env looked like it held a lone agent
+  // while the generated env held three things. The provenance comes from
+  // `quick-uvm resolve` (src/resolved.ts) — never re-derived here, because the rule
+  // is generator policy and a silent drift would draw a bench that does not exist.
+  //
+  // STALENESS FLOOR: `resolve` reads the file on DISK, so between an edit and its
+  // save it describes the previous text. The LIVE config decides the mode — the
+  // generator infers only when there is no `analysis:` key at all — so the moment
+  // the document grows one, every ghost goes. Without this, typing `analysis:` by
+  // hand rendered a declared scoreboard AND the inferred ghosts at once, a bench
+  // quick-uvm cannot produce. The guard only ever HIDES ghosts, never invents them.
+  const drawn = new Set(nodes.map((n) => n.id));
+  const liveMode = config.analysis === undefined || config.analysis === null;
+  for (const inf of liveMode ? inferredComponents(resolved) : []) {
+    if (drawn.has(inf.id)) {
+      continue; // already drawn from the config — declared wins, never doubled
+    }
+    drawn.add(inf.id);
+    const cov = inf.kind === "coverage";
+    const pin = cov ? "ap" : "source";
+    nodes.push({
+      id: inf.id,
+      kind: cov ? "tbcov" : "tbsb",
+      label: cov ? `${inf.name}_cov` : inf.name,
+      stereotype: cov ? "«coverage»" : "«scoreboard»",
+      compartments: [{ items: ["inferred — not in the config"] }],
+      ports: [port(inf.id, pin, "WEST", `${pin} ◆`)],
+      drill: null,
+      inferred: true,
+      tooltip:
+        `${cov ? "functional coverage for" : "scoreboard on"} ${inf.source} — ` +
+        "supplied by quick-uvm because the config has no `analysis:` block. " +
+        "Add a scoreboard or a coverage collector to take control of this; " +
+        "declaring either one switches to declared mode and drops BOTH inferred " +
+        "components, keeping only what you list.",
+    });
+    if (agentNames.has(inf.source)) {
+      edges.push({
+        id: `e:${inf.id}`,
+        net: inf.id,
+        kind: "wire",
+        source: agentId(inf.source),
+        sourcePort: `${agentId(inf.source)}.ap`,
+        target: inf.id,
+        targetPort: `${inf.id}.${pin}`,
+        inferred: true,
       });
     }
   }

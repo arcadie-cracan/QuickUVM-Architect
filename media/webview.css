@@ -869,9 +869,30 @@ text.split-sign {
 .tbnode.tb-vsqr .tb-box,
 .tbnode.tb-probe .tb-box { stroke-dasharray: 5 3; }
 .tbnode.tb-subenv .tb-box { stroke-width: 2; }
-/* internele agentului raman atenuate prin UMPLERE; frontiera ramane crisp —
-   cu stroke-opacity si border-ul slab, cutiile dispareau pe temele inchise */
+/* the agent's internals stay attenuated by FILL; the border stays crisp — with
+   stroke-opacity and the weak border, the boxes vanished on dark themes */
 .tbnode.tb-unit .tb-box { fill-opacity: 0.7; }
+
+/* GHOSTS (docs/07): components quick-uvm generates that the config never mentions.
+   Without an `analysis:` block the generator wires a scoreboard AND a coverage
+   collector onto the primary agent, so an Env drawn from the YAML alone showed one
+   agent where the testbench actually has three components.
+
+   Dashed + dimmed, never hidden: the point is that these EXIST. The distinction has
+   to survive both themes and the already-dashed vsqr/probe boxes above, so it is
+   carried by OPACITY on the whole group (a dimmed border alone read as "far away",
+   not "not yours" — the label has to dim with it) and by a coarser dash (6 4) than
+   the vsqr's (5 3). Interaction is off: there is nothing in the YAML to drag,
+   select or delete. */
+.tbnode.ghost { opacity: 0.55; }
+.tbnode.ghost .tb-box {
+  stroke-dasharray: 6 4;
+  fill: none;
+  cursor: default;
+}
+.tbnode.ghost .tb-comp { font-style: italic; }
+.tb-edge.ghost { opacity: 0.5; }
+.tb-edge.ghost .tb-edge-line { stroke-dasharray: 6 4; }
 
 .tb-name {
   font-size: 12px;
@@ -1159,4 +1180,14 @@ text.split-sign {
 
 .gen-chip.gen-fail {
   color: var(--vscode-editorError-foreground, #f14c4c);
+}
+
+/* the explanation shown for an INFERRED (ghost) component — docs/07. It replaces
+   the property editor, which would otherwise offer to edit an entry that does not
+   exist in the YAML, so it has to read as prose, not as a disabled control. */
+#inspector .prop-explain {
+  margin: 4px 0 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
 }

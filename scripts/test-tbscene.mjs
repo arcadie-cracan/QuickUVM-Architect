@@ -246,4 +246,136 @@ test("regresie: probe fara agenti (env gol) nu produce muchie/port dangling", ()
   assert.ok(!s.nodes[0].ports.some((pp) => pp.port === "internals"));
 });
 
-console.log(`\ntest-tbscene: ${passed} teste au trecut.`);
+// --- ghosts: components quick-uvm supplies that the config never mentions ---------
+// Implicit mode (no `analysis:` key) wires a scoreboard AND a coverage collector onto
+// the primary agent. Drawn from `quick-uvm resolve` provenance, never re-derived here.
+
+/** a config in IMPLICIT mode — note the deliberate absence of `analysis` */
+const IMPLICIT = {
+  project: { name: "y" },
+  dut: { name: "yapp_router", clock: "clk", reset: "rst_n" },
+  agents: [{ name: "pkt", interface: "pkt_if" }],
+};
+const RESOLVED_IMPLICIT = {
+  version: "1.1.0",
+  dut: "yapp_router",
+  analysis: {
+    mode: "implicit",
+    scoreboards: [{ name: "sbd", source: "pkt", origin: "inferred" }],
+    coverage: [{ agent: "pkt", origin: "inferred" }],
+  },
+  tests: [],
+  virtual_sequences: [],
+  agents: [],
+  guards: [],
+};
+
+test("ghost: implicit mode draws the scoreboard and coverage the YAML omits", () => {
+  const bare = buildTbScene(IMPLICIT, "env", null);
+  assert.ok(!nodeById(bare, "sb:sbd"), "without resolve the Env holds only the agent");
+  assert.ok(!nodeById(bare, "cov:pkt"));
+
+  const s = buildTbScene(IMPLICIT, "env", null, RESOLVED_IMPLICIT);
+  const sb = nodeById(s, "sb:sbd");
+  const cov = nodeById(s, "cov:pkt");
+  assert.ok(sb && cov, "both inferred components are drawn");
+  assert.equal(sb.inferred, true);
+  assert.equal(cov.inferred, true);
+  assert.equal(sb.kind, "tbsb");
+  assert.equal(cov.kind, "tbcov");
+  assert.equal(cov.label, "pkt_cov");
+});
+
+test("ghost: it is wired to its agent, and the wire is ghosted too", () => {
+  const s = buildTbScene(IMPLICIT, "env", null, RESOLVED_IMPLICIT);
+  const e = s.edges.find((x) => x.target === "sb:sbd");
+  assert.ok(e, "the inferred scoreboard hangs off the agent's analysis port");
+  assert.equal(e.source, "agent:pkt");
+  assert.equal(e.sourcePort, "agent:pkt.ap");
+  assert.equal(e.targetPort, "sb:sbd.source");
+  assert.equal(e.inferred, true);
+  assert.equal(s.edges.find((x) => x.target === "cov:pkt").inferred, true);
+});
+
+test("ghost: a ghost carries no drill and says why it is there", () => {
+  const s = buildTbScene(IMPLICIT, "env", null, RESOLVED_IMPLICIT);
+  const sb = nodeById(s, "sb:sbd");
+  assert.equal(sb.drill, null);
+  assert.match(sb.tooltip, /analysis:/);
+  assert.ok(sb.compartments.some((c) => c.items.some((i) => /inferred/.test(i))));
+});
+
+test("ghost: declared components are NOT ghosted or doubled", () => {
+  // the same shape, but the config declares them: resolve reports origin=declared
+  const declared = {
+    ...IMPLICIT,
+    analysis: { coverage: ["pkt"], scoreboards: [{ name: "sbd", source: "pkt" }] },
+  };
+  const s = buildTbScene(declared, "env", null, {
+    ...RESOLVED_IMPLICIT,
+    analysis: {
+      mode: "declared",
+      scoreboards: [{ name: "sbd", source: "pkt", origin: "declared" }],
+      coverage: [{ agent: "pkt", origin: "declared" }],
+    },
+  });
+  assert.equal(s.nodes.filter((n) => n.id === "sb:sbd").length, 1);
+  assert.equal(s.nodes.filter((n) => n.id === "cov:pkt").length, 1);
+  assert.ok(!nodeById(s, "sb:sbd").inferred, "a declared scoreboard is solid");
+  assert.ok(!nodeById(s, "cov:pkt").inferred);
+});
+
+test("ghost: a declared node already drawn is never overdrawn by an inferred one", () => {
+  // defensive — quick-uvm cannot report both today (the mode switch is exclusive),
+  // but a future rule that did must not produce two nodes with one id.
+  const declared = {
+    ...IMPLICIT,
+    analysis: { scoreboards: [{ name: "sbd", source: "pkt" }] },
+  };
+  const s = buildTbScene(declared, "env", null, RESOLVED_IMPLICIT);
+  assert.equal(s.nodes.filter((n) => n.id === "sb:sbd").length, 1);
+  assert.ok(!nodeById(s, "sb:sbd").inferred, "the config's own node wins");
+  assert.equal(new Set(s.nodes.map((n) => n.id)).size, s.nodes.length);
+});
+
+test("ghost: an inferred component on an unknown agent draws no dangling edge", () => {
+  const s = buildTbScene(IMPLICIT, "env", null, {
+    ...RESOLVED_IMPLICIT,
+    analysis: {
+      mode: "implicit",
+      scoreboards: [{ name: "sbd", source: "gone", origin: "inferred" }],
+      coverage: [],
+    },
+  });
+  assert.ok(nodeById(s, "sb:sbd"), "still drawn — fail-soft, like the declared path");
+  assert.ok(!s.edges.some((e) => e.target === "sb:sbd"));
+});
+
+test("ghost: a live `analysis:` key kills the ghosts even if resolve is stale", () => {
+  // resolve reads the file on DISK; the diagram reads the OPEN document. The instant
+  // the document declares an `analysis:` block the generator leaves implicit mode,
+  // so a stale resolve must not keep drawing ghosts next to the declared component.
+  const justTyped = { ...IMPLICIT, analysis: {} };
+  const s = buildTbScene(justTyped, "env", null, RESOLVED_IMPLICIT);
+  assert.ok(!nodeById(s, "sb:sbd"), "an empty `analysis: {}` already switches mode");
+  assert.ok(!nodeById(s, "cov:pkt"));
+  assert.ok(!s.edges.some((e) => e.inferred));
+
+  // and with a scoreboard already typed in, only the declared one survives
+  const withSb = {
+    ...IMPLICIT,
+    analysis: { scoreboards: [{ name: "mine", source: "pkt" }] },
+  };
+  const s2 = buildTbScene(withSb, "env", null, RESOLVED_IMPLICIT);
+  assert.deepEqual(
+    s2.nodes.filter((n) => n.kind === "tbsb" || n.kind === "tbcov").map((n) => n.id),
+    ["sb:mine"]
+  );
+});
+
+test("ghost: ghosts live at the Env level only, not at the testbench root", () => {
+  const s = buildTbScene(IMPLICIT, "", null, RESOLVED_IMPLICIT);
+  assert.deepEqual(s.nodes.map((n) => n.id).sort(), ["dut", "env"]);
+});
+
+console.log(`\ntest-tbscene: ${passed} tests passed.`);
