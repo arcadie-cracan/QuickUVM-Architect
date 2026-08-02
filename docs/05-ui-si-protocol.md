@@ -77,11 +77,20 @@ mesajele tot aici, la implementare.
   arbore: deschide nivelul + selectează). Sincronizarea diagramă↔arbore se
   face pe identitatea `<focus>|<bloc>` (arborele și scena împart nivelurile
   și id-urile).
-- **Protocol**: host→webview `config/full {configPath, config}` — subsetul
-  QuvmConfig parsat (agents, analysis, virtual_sequences, probes, subenvs,
-  connections, subenv_scoreboards), trimis la `ready` și la orice schimbare
-  a YAML-ului (ca `overlay/config`); `view/show {viewId: "tb:…", mode:
-  "tb"}`.
+- **Protocol**: host→webview `config/full {configPath, config, resolved?}` —
+  subsetul QuvmConfig parsat (agents, analysis, virtual_sequences, probes,
+  subenvs, connections, subenv_scoreboards), trimis la `ready` și la orice
+  schimbare a YAML-ului (ca `overlay/config`); `view/show {viewId: "tb:…",
+  mode: "tb"}`.
+- **`resolved` — topologia efectivă** (aug. 2026): ieșirea lui `quick-uvm
+  resolve` (>= 1.1.0), din care vederea desenează componentele **inferate**
+  (fantomele — vezi docs/07). Călătorește pe ACELAȘI mesaj ca `config`, nu pe
+  unul propriu: o re-randare căzută între două mesaje ar împerechea fantomele
+  unui bench cu configurația altuia. Cum vine dintr-un subproces, nu se așteaptă
+  pe calea de randare — mesajul poartă ce e în cache (cel mult o editare în
+  urmă), iar un `resolve` încheiat re-trimite `config/full`. Absent (sau `null`)
+  pe quick-uvm mai vechi sau la o configurație care nu se rezolvă: atunci nu se
+  desenează nicio fantomă, niciodată o diagramă ruptă.
 - **Editarea — adăugarea** (felia 2, iul. 2026): în QuickUVM conexiunile NU
   sunt muchii libere — `source`/`monitor` sunt câmpuri, deci „adaugă"
   creează componenta deja conectată. Paleta „Add component" din inspector

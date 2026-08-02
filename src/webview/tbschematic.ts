@@ -335,10 +335,17 @@ function drawBox(p: TbPlaced): SVGGElement {
   const n = p.node;
   const drill = n.drill !== null;
   const g = el("g", {
-    class: `tbnode ${CLASS[n.kind] ?? ""}${drill ? " drill" : ""}`,
+    // `ghost` = the generator supplies this component, the config does not mention it
+    // (docs/07). Dashed and dimmed, so "quick-uvm will build this" reads differently
+    // from "you asked for this" — without it, an implicit bench looked EMPTY next to
+    // the three components it actually generates.
+    class: `tbnode ${CLASS[n.kind] ?? ""}${drill ? " drill" : ""}${n.inferred ? " ghost" : ""}`,
     transform: `translate(${p.x},${p.y})`,
   });
   g.dataset.id = n.id;
+  if (n.inferred) {
+    g.dataset.inferred = "1"; // read by the context menu / delete gate
+  }
   if (n.drill) {
     g.dataset.drill = n.drill;
   }
@@ -553,7 +560,9 @@ export function drawTbEdges(
     const d = pts
       ? "M " + pts.map((q) => `${q.x} ${q.y}`).join(" L ")
       : `M ${s.x} ${s.y} L ${mx} ${s.y} L ${mx} ${t.y} L ${t.x} ${t.y}`;
-    const edge = el("g", { class: `tb-edge ${e.kind}` });
+    const edge = el("g", {
+      class: `tb-edge ${e.kind}${e.inferred ? " ghost" : ""}`,
+    });
     if (e.net) {
       edge.dataset.id = e.net;
     }

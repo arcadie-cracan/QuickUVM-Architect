@@ -7,6 +7,7 @@ import * as vscode from "vscode";
 import { resolveLocPath } from "./filelistops";
 import { Loc, ProjectModel } from "./model";
 import type { QuvmConfig } from "./quickuvm";
+import type { ResolvedConfig } from "./resolved";
 import {
   ActionKind,
   GenerateStatus,
@@ -46,6 +47,9 @@ export interface PanelDeps {
     configPath: string | null;
     config: QuvmConfig;
     childAgents?: Record<string, string[]>;
+    /** docs/07 — the effective topology from `quick-uvm resolve`, which is what
+     *  lets the view draw the components the generator infers (src/resolved.ts) */
+    resolved?: ResolvedConfig | null;
   };
   /** the quick-uvm status decorations (docs/05): validations + the last generate;
    *  plus the generation-state element ids (docs/07 line 1) */

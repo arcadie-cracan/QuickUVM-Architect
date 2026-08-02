@@ -26,6 +26,7 @@ import { PropertiesViewProvider } from "./propertiesview";
 import { LayoutStore } from "./sidecar";
 import { VerificationProvider } from "./tbtree";
 import { GenStateService } from "./genstate-service";
+import { ResolveService } from "./resolve-service";
 import { GenDecorationProvider } from "./tbdecorations";
 import { HierarchyProvider, InstanceNode } from "./tree";
 
@@ -58,6 +59,9 @@ export function activate(context: vscode.ExtensionContext): void {
     () => genState.missing,
     () => genState.stale
   );
+  // docs/07 — the GHOST components in the verification view, driven by
+  // `quick-uvm resolve` (what the generator supplies that the config never mentions).
+  const resolve = new ResolveService(log);
   // the tree star (FileDecoration), the row actions (Generate/Regenerate) and the
   // diagram badges all refresh when the generation state changes
   genState.onDidChange(() => {
@@ -67,7 +71,7 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(
     log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
-    layout, genState, genDeco,
+    layout, genState, genDeco, resolve,
     vscode.window.registerFileDecorationProvider(genDeco)
   );
 
@@ -90,7 +94,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // the editing gestures apply on the DOCUMENT (via TbEditTarget)
     vscode.window.registerCustomEditorProvider(
       QuvmConfigEditor.viewType,
-      new QuvmConfigEditor(context, layout, actions, log),
+      new QuvmConfigEditor(context, layout, actions, log, resolve),
       {
         webviewOptions: { retainContextWhenHidden: true },
         supportsMultipleEditorsPerDocument: false,
@@ -363,6 +367,10 @@ export function activate(context: vscode.ExtensionContext): void {
             configPath: vscode.workspace.asRelativePath(config.configUri),
             config: config.current,
             childAgents: config.childAgents,
+            // the replay must carry what the live push carries, or a sidebar that
+            // reloads (view moved, window reopened) loses its ghosts until the next
+            // config edit — the divergence that once left "Create agent" disabled
+            resolved: resolve.current,
           }
         : null;
       const overlay = config.lastOverlay;
@@ -442,6 +450,28 @@ export function activate(context: vscode.ExtensionContext): void {
     )
   );
 
+  // A completed `resolve` re-pushes `config/full` rather than a message of its own:
+  // the ghosts must travel WITH the config they describe, or a re-render landing
+  // between two messages would pair one bench's components with another's.
+  // Registered here, after `propsView` exists — the subprocess can only return
+  // long after activation, but the ordering should not depend on that.
+  resolve.onDidChange((uri) => {
+    if (uri.toString() !== config.configUri?.toString()) {
+      return; // another config's answer (a custom editor's) — it re-posts its own
+    }
+    DiagramPanel.current?.postConfig();
+    if (config.configUri) {
+      propsView.post({
+        v: 1,
+        type: "config/full",
+        configPath: vscode.workspace.asRelativePath(config.configUri),
+        config: config.current,
+        childAgents: config.childAgents,
+        resolved: resolve.current,
+      });
+    }
+  });
+
   const panelDeps: PanelDeps = {
     getModel: () => model,
     getOverlay: () => config.lastOverlay,
@@ -451,6 +481,7 @@ export function activate(context: vscode.ExtensionContext): void {
         : null,
       config: config.current,
       childAgents: config.childAgents,
+      resolved: resolve.current,
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
     getStatus: () => ({
@@ -546,6 +577,7 @@ export function activate(context: vscode.ExtensionContext): void {
     generator.onStatus(() => {
       DiagramPanel.current?.postStatus();
       void genState.refresh(config.configUri, config.current);
+      void resolve.refresh(config.configUri);
     })
   );
   backend.onStale((errors) => {
@@ -590,6 +622,7 @@ export function activate(context: vscode.ExtensionContext): void {
         configPath: vscode.workspace.asRelativePath(config.configUri),
         config: config.current,
         childAgents: config.childAgents,
+        resolved: resolve.current,
       });
     }
     DiagramPanel.current?.postStatus(); // the status decorations (docs/05)
@@ -600,11 +633,13 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     // recompute the "not generated" decoration from the (possibly changed) config
     void genState.refresh(config.configUri, config.current);
+    void resolve.refresh(config.configUri);
   });
   // initial manifest load: onOverlay only fires on a CHANGE, so a config already
   // discovered at activation would otherwise leave the gen-state (badges + the
   // per-item generate) empty until the first edit.
   void genState.refresh(config.configUri, config.current);
+  void resolve.refresh(config.configUri);
 
   // "config unsaved" indicator. Gestures leave the document dirty by design, and
   // everything that reads the config off DISK (generate, the manifest, the U/M
@@ -829,6 +864,7 @@ export function activate(context: vscode.ExtensionContext): void {
         let files = genState.scopedFiles(nodeId);
         if (!files) {
           await genState.refresh(config.configUri, config.current);
+          void resolve.refresh(config.configUri);
           files = genState.scopedFiles(nodeId);
         }
         if (!files) {
@@ -860,6 +896,7 @@ export function activate(context: vscode.ExtensionContext): void {
         // load the manifest on demand if it is not cached yet (as generateItem)
         if (!genState.primaryFilePath(nodeId)) {
           await genState.refresh(config.configUri, config.current);
+          void resolve.refresh(config.configUri);
         }
         const primary = genState.primaryFilePath(nodeId);
         if (!primary) {
