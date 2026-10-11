@@ -1,6 +1,6 @@
 {
   "name": "quickuvm-architect",
-  "displayName": "QuickUVM Architect \u2014 SystemVerilog schematic viewer & UVM testbench designer",
+  "displayName": "QuickUVM Architect — SystemVerilog schematic viewer & UVM testbench designer",
   "description": "%description%",
   "version": "0.1.0",
   "publisher": "arcadie-cracan",
@@ -416,6 +416,7 @@
     "watch": "node esbuild.mjs --watch",
     "typecheck": "tsc --noEmit",
     "test:tbscene": "node scripts/test-tbscene.mjs",
+    "test:resolved": "node scripts/test-resolved.mjs",
     "test:tblayout": "node scripts/test-tblayout.mjs",
     "test:scene": "node scripts/test-scene.mjs",
     "test:router": "node scripts/test-router.mjs",

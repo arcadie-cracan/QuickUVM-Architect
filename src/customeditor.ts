@@ -11,6 +11,7 @@
 
 import * as vscode from "vscode";
 import type { Actions } from "./actions";
+import type { ResolveService } from "./resolve-service";
 import { autoSaveConfig, type TbEditTarget } from "./config";
 import {
   clearActiveExporter,
@@ -80,7 +81,10 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
     private readonly context: vscode.ExtensionContext,
     private readonly layout: LayoutStore,
     private readonly actions: Actions,
-    private readonly log: vscode.OutputChannel
+    private readonly log: vscode.OutputChannel,
+    /** docs/07 — the effective topology, for the inferred (ghost) components. Keyed
+     *  per document: this editor can hold a config that is NOT the active one. */
+    private readonly resolve?: ResolveService
   ) {}
 
   resolveCustomTextEditor(
@@ -109,6 +113,7 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           type: "config/full",
           configPath,
           config: parseQuvm(document.getText()),
+          resolved: this.resolve?.resolvedFor(document.uri) ?? null,
         });
       }
     };
@@ -122,6 +127,32 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           postConfig();
         }
       }),
+      // `resolve` reads the file on DISK, so the ghosts can only follow a SAVE.
+      // Between an edit and its save the scene's live-mode guard keeps them honest
+      // (src/webview/tbscene.ts) — it drops every ghost the moment the open document
+      // declares an `analysis:` block, whatever the cache still says.
+      vscode.workspace.onDidSaveTextDocument((d) => {
+        if (d.uri.toString() === document.uri.toString()) {
+          void this.resolve?.refresh(document.uri, false);
+        }
+      }),
+      // A finished `resolve` for THIS document re-posts, whoever started it. The
+      // save handler's own `refresh` is not enough: ConfigService refreshes the
+      // ACTIVE config on the same save (file watcher, debounced), ResolveService
+      // keeps only the newest in-flight request per uri, and a Python subprocess
+      // outlives the 200 ms debounce — so the editor's request was routinely
+      // superseded. Re-posting from its `.then` then carried the PREVIOUS cache,
+      // while the winner's result reached the panel and the sidebar but never this
+      // webview: ghosts one save late, in the default editor of the file.
+      ...(this.resolve
+        ? [
+            this.resolve.onDidChange((uri) => {
+              if (uri.toString() === document.uri.toString()) {
+                postConfig();
+              }
+            }),
+          ]
+        : []),
       vscode.window.onDidChangeActiveColorTheme(() => {
         if (ready) {
           void webview.postMessage({ v: 1, type: "theme/changed" });
@@ -173,6 +204,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           const decorations = quvm.get<boolean>("schematicDecorations", true);
           void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations });
           postConfig();
+          // The inferred components need a subprocess, so the first paint cannot
+          // wait for them: post the config now; `onDidChange` above re-posts once
+          // `resolve` lands (a cached, unchanged answer was already in the post).
+          // Without this the ghosts appeared only after the first SAVE, which reads
+          // as "the feature is broken" on a config opened and merely looked at.
+          void this.resolve?.refresh(document.uri, false);
           void webview.postMessage({
             v: 1,
             type: "view/show",

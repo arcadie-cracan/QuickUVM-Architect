@@ -77,11 +77,23 @@ mesajele tot aici, la implementare.
   arbore: deschide nivelul + selectează). Sincronizarea diagramă↔arbore se
   face pe identitatea `<focus>|<bloc>` (arborele și scena împart nivelurile
   și id-urile).
-- **Protocol**: host→webview `config/full {configPath, config}` — subsetul
-  QuvmConfig parsat (agents, analysis, virtual_sequences, probes, subenvs,
-  connections, subenv_scoreboards), trimis la `ready` și la orice schimbare
-  a YAML-ului (ca `overlay/config`); `view/show {viewId: "tb:…", mode:
-  "tb"}`.
+- **Protocol**: host→webview `config/full {configPath, config, resolved?}` —
+  subsetul QuvmConfig parsat (agents, analysis, virtual_sequences, probes,
+  subenvs, connections, subenv_scoreboards), trimis la `ready` și la orice
+  schimbare a YAML-ului (ca `overlay/config`); `view/show {viewId: "tb:…",
+  mode: "tb"}`.
+- **`resolved` — the effective topology** (Aug 2026): the output of `quick-uvm
+  resolve` (>= 1.1.0), from which the view draws the **inferred** components
+  (the ghosts — see docs/07). It travels on the SAME message as `config`, never
+  on one of its own: a re-render landing between two messages would pair one
+  bench's ghosts with another's configuration. Since it comes from a
+  subprocess it is never awaited on the render path — the message carries
+  whatever is cached (at most one edit behind), and a completed `resolve`
+  re-posts `config/full` to every surface showing that config (panel, sidebar,
+  and the per-file editor, which subscribes to `ResolveService.onDidChange`
+  for its own uri). Absent (or `null`) on an older quick-uvm or for a
+  configuration that does not resolve: then no ghost is drawn, never a broken
+  diagram.
 - **Editarea — adăugarea** (felia 2, iul. 2026): în QuickUVM conexiunile NU
   sunt muchii libere — `source`/`monitor` sunt câmpuri, deci „adaugă"
   creează componenta deja conectată. Paleta „Add component" din inspector

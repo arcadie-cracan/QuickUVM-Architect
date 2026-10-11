@@ -18,6 +18,7 @@ export type Side = "north" | "south" | "east" | "west";
 
 /** display mode of an RTL view (docs/05): the symbol or the schematic */
 import type { QuvmConfig } from "./quickuvm";
+import type { ResolvedConfig } from "./resolved";
 
 /** "tb" = the verification (TB) view (phase 3b, docs/05), the key `tb:<config-path>` */
 export type ViewMode = "symbol" | "schematic" | "tb";
@@ -205,6 +206,12 @@ export type HostMessage =
       type: "config/full";
       configPath: string | null;
       config: QuvmConfig;
+      /** docs/07 — the effective topology from `quick-uvm resolve` (>= 1.1.0), which
+       *  is what lets the view draw the components the generator INFERS and the YAML
+       *  never mentions. Travels with the config it describes on purpose: a separate
+       *  message could interleave and pair ghosts with the wrong bench. Absent when
+       *  quick-uvm is older or the config does not resolve — then nothing is ghosted. */
+      resolved?: ResolvedConfig | null;
       /** docs/07 P3c — the agents of each composed child, keyed by subenv name. A
        *  cross-block scoreboard's endpoints are `<subenv>.<agent>`, and the child's
        *  agents live in another file, so they cannot come from `config`. */

@@ -59,6 +59,7 @@ const state: State = {
   config: null,
   configPath: null,
   childAgents: {},
+  resolved: null,
   tbFocus: "",
   tx: 0,
   ty: 0,
@@ -382,6 +383,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       state.config = m.config;
       state.configPath = m.configPath;
       state.childAgents = m.childAgents ?? {};
+      state.resolved = m.resolved ?? null;
       if (state.mode === "tb") {
         // another active config => another view key: the positions are not written
         // under the old config's key
@@ -3097,13 +3099,13 @@ async function renderTb(refit: boolean): Promise<void> {
   currentPins = [];
   // the current level (D24): "" testbench, "env", "agent:X". On a nonexistent
   // focus (config changed), it falls onto the root.
-  let scene = buildTbScene(state.config, state.tbFocus, state.configPath);
+  let scene = buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved);
   if (!scene && state.tbFocus !== "") {
     // the focus level disappeared (config changed): it falls onto the root and
     // notifies the host, so that the reveal from the tree does not stay on the old level
     state.tbFocus = "";
     post({ v: 1, type: "tb/focus", focus: "", select: null });
-    scene = buildTbScene(state.config, "", state.configPath);
+    scene = buildTbScene(state.config, "", state.configPath, state.resolved);
   }
   if (!scene) {
     currentScene = null;

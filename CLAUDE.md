@@ -328,6 +328,44 @@ coliziunea de nume.
   `analysis` (vezi `keepAnalysis` în `src/yamlops.ts`). Fișierul `<agent>_cov.svh`
   se generează oricum, per agent — `analysis` controlează **cablarea în env**, nu
   existența clasei.
+- **The inferred components are drawn from `quick-uvm resolve`, never re-derived**
+  (Aug. 2026, QuickUVM#118). Implicit mode wires a scoreboard AND a coverage
+  collector onto the primary agent, so a config with no `analysis:` key generates
+  three components where the YAML mentions one. The provenance comes from the
+  generator (`src/resolved.ts` → `ResolveService` → `config/full.resolved` →
+  `buildTbScene`); do NOT reimplement "implicit means sbd + cov on agents[0]" in
+  TypeScript, however small it looks — it is generator policy, it has changed
+  before, and a drift draws a bench that does not exist. Three invariants held by
+  tests: (1) the cache is **per config uri**, because the custom editor can hold a
+  config that is not the active one and a shared slot pairs one bench's ghosts with
+  another's diagram; (2) `resolved` travels on `config/full`, never on its own
+  message, so the two cannot interleave — and it is never awaited on the render
+  path (the message carries the cache; a finished resolve re-posts); (3) `resolve`
+  reads the file on **DISK**, so `buildTbScene` drops every ghost the moment the
+  LIVE config has an `analysis:` key — otherwise hand-typing `analysis:` renders a
+  declared scoreboard next to the inferred ghosts, a state the generator cannot
+  produce. Ghosts are READ-ONLY: `tbDeleteTarget` returns `null` for them, which
+  disables the inspector button, the `Delete` key and the context menu at once
+  (all three resolve through it — gating the call sites separately is how one gets
+  missed). The origin filter needs its OWN suite (`test:resolved`): at scene level
+  it is masked by the dedup guard, and dropping it left `test:tbscene` fully green.
+  Two more, caught at the merge review (Oct 2026): (4) the ghost rect has
+  `fill: none`, SVG hit-testing ignores unpainted interiors, and node labels carry
+  `pointer-events: none` — so the rect needs `pointer-events: all`, or the only
+  clickable part of a ghost is its dashed stroke and the inspector's explainer is
+  unreachable (proved in the harness); (5) the custom editor re-posts on
+  `ResolveService.onDidChange` for ITS uri, not from its own `refresh().then`:
+  ConfigService refreshes the active config on the same save, the newest request
+  per uri wins, and the editor's own request was routinely superseded — its
+  `.then` carried the previous cache and the winner's answer never reached that
+  webview (ghosts one save late, in the file's default editor); (6) in
+  `config.onOverlay`, `resolve.refresh` runs BEFORE the posts that read
+  `resolve.current` — it moves the active pointer synchronously; posting first
+  paired the new config with the old config's ghosts after a rediscovery. Known
+  and accepted: drag/flip on a ghost DO persist under its id in the sidecar (D21
+  total snapshot) — a later declared `sb:<name>` inherits the position; and the
+  `drawn` dedup guard in `levelEnv` is unreachable by construction (no
+  `analysis:` key ⇒ no declared sb/cov node), kept as a defensive wall only.
 - **Probele whitebox (K2)** — sondat empiric pe quick-uvm 0.9.2
   (`ProbeConfig`/`validate_probes` în `quick_uvm/models.py`; `test:e2e`
   scenariul 5): obligatorii doar `name` (identificator SV) și `path`; `width`

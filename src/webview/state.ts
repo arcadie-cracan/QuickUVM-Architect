@@ -4,6 +4,7 @@
 import type { ProjectModel } from "../model";
 import type { OverlayConfig, ViewMode } from "../protocol";
 import type { QuvmConfig } from "../quickuvm";
+import type { ResolvedConfig } from "../resolved";
 
 export interface State {
   model: ProjectModel | undefined;
@@ -19,6 +20,10 @@ export interface State {
   /** docs/07 P3c — agents of each composed child, by subenv name (cross-block
    *  scoreboard endpoints are `<subenv>.<agent>`, declared in another file) */
   childAgents: Record<string, string[]>;
+  /** docs/07 — the effective topology from `quick-uvm resolve`: what the generator
+   *  supplies that the config never mentions, drawn as GHOSTS (src/resolved.ts).
+   *  null when quick-uvm is older than 1.1.0 or the config does not resolve. */
+  resolved: ResolvedConfig | null;
   /** the current level of the verification (TB) view (D24): "", "env", "agent:X" */
   tbFocus: string;
   // the pan/zoom transform of the view

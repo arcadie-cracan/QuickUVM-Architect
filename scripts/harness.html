@@ -77,6 +77,29 @@
     virtual_sequences: [{ name: "smoke", body: [{ agent: "cmd", sequence: "cmd_seq" }] }],
     probes: [{ name: "lvl", path: "u.lvl", width: 3 }],
   };
+  // ?implicit=1 — a config with NO `analysis:` key, the mode in which quick-uvm
+  // infers a scoreboard and a coverage collector onto the first agent. Paired with
+  // the `resolve` output that reports them, it is how the GHOST rendering is probed
+  // without a live quick-uvm (docs/07).
+  const IMPLICIT_CONFIG = {
+    project: TB_CONFIG.project,
+    dut: TB_CONFIG.dut,
+    agents: TB_CONFIG.agents,
+  };
+  const TB_RESOLVED = {
+    version: "1.1.0",
+    dut: "soc_top",
+    analysis: {
+      mode: "implicit",
+      scoreboards: [{ name: "sbd", source: "cmd", origin: "inferred" }],
+      coverage: [{ agent: "cmd", origin: "inferred" }],
+    },
+    tests: [{ name: "test1", origin: "inferred" }],
+    virtual_sequences: [],
+    agents: [],
+    guards: [],
+  };
+  const IMPLICIT = params.has("implicit");
   const harnessState = {
     viewId: params.get("view") || "demo_top",
     mode: params.get("mode") || "symbol",
@@ -141,7 +164,8 @@
                 v: 1,
                 type: "config/full",
                 configPath: TB_CONFIG_PATH,
-                config: TB_CONFIG,
+                config: IMPLICIT ? IMPLICIT_CONFIG : TB_CONFIG,
+                resolved: IMPLICIT ? TB_RESOLVED : null,
               },
               "*"
             );
@@ -154,6 +178,18 @@
               },
               "*"
             );
+            // ?focus=env / agent:cmd — open a TB level directly, the way the host's
+            // `tb/navigate` does from the verification tree. Without it the harness
+            // could only ever show the testbench root, so everything that lives at
+            // the Env level (scoreboards, coverage, the inferred ghosts) needed a
+            // hand-driven double-click and could not be captured headlessly.
+            const focus = params.get("focus");
+            if (focus !== null) {
+              window.postMessage(
+                { v: 1, type: "tb/navigate", focus, select: null },
+                "*"
+              );
+            }
           })();
         }
       },

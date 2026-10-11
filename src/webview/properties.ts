@@ -50,6 +50,7 @@ const state: State = {
   config: null,
   configPath: null,
   childAgents: {},
+  resolved: null,
   tbFocus: "",
   tx: 0,
   ty: 0,
@@ -88,7 +89,7 @@ function render(): void {
   // Both scenes come from the same pure builders the diagram uses, so the two
   // surfaces cannot disagree about what exists.
   const tbScene = state.config
-    ? (buildTbScene(state.config, state.tbFocus, state.configPath) ?? undefined)
+    ? (buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved) ?? undefined)
     : undefined;
   const viewId = state.viewId;
   // A LEAF module has no `views` entry, so "Open Schematic View" on one leaves the host
@@ -159,6 +160,7 @@ window.addEventListener("message", (event: MessageEvent<HostMessage>) => {
       state.config = m.config;
       state.configPath = m.configPath;
       state.childAgents = m.childAgents ?? {};
+      state.resolved = m.resolved ?? null;
       break;
     case "overlay/config":
       state.overlay = m;

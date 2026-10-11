@@ -143,6 +143,36 @@ should also emit the entries inference would have provided, so a GUI gesture nev
 silently removes a component the user already had. Small, and justified without any
 visualisation work.
 
+### Status — shipped (Aug 2026)
+
+QuickUVM#118 landed `resolve`, and option A is implemented **read-only**:
+
+- `src/resolved.ts` (pure, `npm run test:resolved`) reads the provenance and returns the
+  inferred components as diagram-node ids. It never re-derives what gets inferred — that
+  rule stays in the generator, which is the whole point of having asked for the command.
+- `ResolveService` (`src/resolve-service.ts`) runs `quick-uvm resolve` and caches **per
+  config uri** — one slot would be wrong, because the custom editor can hold a config that
+  is not the active one, and answering it from a shared cache pairs one bench's ghosts
+  with another's diagram.
+- The result travels on `config/full` (docs/05), never on a message of its own, so ghosts
+  and config can never interleave. It is never awaited on the render path: the message
+  carries the cache, and a completed resolve re-posts.
+- `buildTbScene` draws them dashed + dimmed with an "inferred — not in the config" note,
+  and the inspector replaces the property editor with an explanation of the mode switch.
+
+**Deliberately still read-only.** Both sharp edges above are mutations, and neither is
+implemented: `tbDeleteTarget` returns `null` for a ghost, which disables the inspector
+button, the Delete key and the context menu in one place (they all resolve through it).
+A ghost is therefore visible and explained, but not editable — the honest state until
+materialisation is designed, and strictly better than the previous behaviour, where the
+components were invisible.
+
+One guard is worth remembering: `resolve` reads the file on **disk**, so between an edit
+and its save the cache describes the previous text. The scene therefore drops every ghost
+as soon as the LIVE config has an `analysis:` key. Without it, hand-typing `analysis:`
+rendered a declared scoreboard AND the inferred ghosts at once — a bench quick-uvm cannot
+produce. The guard only ever hides ghosts, never invents them.
+
 ---
 
 ### Vocabularul stărilor de generare

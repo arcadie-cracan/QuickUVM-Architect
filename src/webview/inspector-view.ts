@@ -1426,6 +1426,48 @@ function tbAgentEditor(agent: QuvmAgent): void {
 }
 
 /**
+ * A GHOST component (docs/07): quick-uvm builds it, the YAML never mentions it.
+ *
+ * There is no editor and no Delete — both would address an entry that does not
+ * exist — so this panel does the one thing that is actually useful: name the rule
+ * that produced the component, and spell out what changes if the user takes it over.
+ *
+ * The mode switch is the part nobody guesses from the file. `analysis:` is
+ * presence-switched: writing the key at all moves the generator from implicit to
+ * declared, and from then on it wires EXACTLY what is listed. So adding the
+ * scoreboard the tutorial asks for silently removes the coverage collector that was
+ * there for free — the user hit precisely this and asked why the tutorial bothers.
+ * quick-uvm then arms UNCOVERED_AGENT at run time, which is the safety net, but a
+ * warning during simulation is a poor substitute for seeing it here.
+ */
+function tbGhostExplainer(node: TbScene["nodes"][number]): void {
+  const cov = node.kind === "tbcov";
+  ctx.root.append(h("div", "prop-group", "Inferred component"));
+  ctx.root.append(
+    h(
+      "p",
+      "prop-explain",
+      `quick-uvm generates this ${cov ? "coverage collector" : "scoreboard"} ` +
+        "even though the configuration does not mention it: with no `analysis:` " +
+        "block, it wires one scoreboard and one coverage collector onto the first " +
+        "agent. Nothing here can be edited or deleted — there is no entry in the " +
+        "YAML to change."
+    )
+  );
+  ctx.root.append(
+    h(
+      "p",
+      "prop-explain",
+      "Adding EITHER an `analysis:` scoreboard or a coverage collector switches " +
+        "quick-uvm to declared mode, where it builds exactly what you list — so " +
+        `declaring one of them removes the other. If you add ${
+          cov ? "a scoreboard" : "coverage"
+        } and want to keep this too, declare both.`
+    )
+  );
+}
+
+/**
  * The property editor of a scoreboard (slice 2): source/monitor/match/
  * match_key/max_latency, inline editing in the inspector -> the editScoreboard action
  * (one WorkspaceEdit per change; the diagram re-renders at config/full).
@@ -1597,6 +1639,16 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
 export function tbDeleteTarget(
   node: TbScene["nodes"][number]
 ): { kind: string; name: string; label: string } | null {
+  if (node.inferred) {
+    // A GHOST (docs/07): quick-uvm supplies it, the YAML does not mention it, so
+    // there is nothing to delete — a delete mutation would find no entry and the
+    // gesture would silently do nothing. Gated HERE because this one function
+    // resolves the target for the inspector button, the Delete key AND the context
+    // menu; gating the three call sites separately is how one of them gets missed.
+    // The way to "remove" an inferred component is to declare an `analysis:` block,
+    // which is what the inspector tells the user when a ghost is selected.
+    return null;
+  }
   if (node.kind === "tbsb" && node.id.startsWith("sb:")) {
     const sb = ctx.state.config?.analysis?.scoreboards?.find(
       (s) => (s.name ?? "sbd") === node.label
@@ -1767,9 +1819,15 @@ export function renderInspector(c: InspectorCtx): void {
       const del = (kind: string, dname: string): void =>
         ctx.postAction("deleteComponent", { kind, name: dname });
       {
-      // the property editor (only the scoreboards from `analysis`, id `sb:`;
-      // NOT the cross-block ones `xsb:` = analysis.scoreboards with qualified endpoints)
-      if (selNode.kind === "tbsb" && selNode.id.startsWith("sb:")) {
+      // A GHOST (docs/07): quick-uvm builds it, the YAML never mentions it. No editor
+      // and no Delete — every one of them would edit an entry that does not exist —
+      // so the panel says what it is and what changes if you take it over. The mode
+      // switch is the part users cannot guess: declaring ONE analysis component makes
+      // the generator stop inferring the OTHER, so writing a scoreboard silently
+      // costs the coverage collector you were getting for free.
+      if (selNode.inferred) {
+        tbGhostExplainer(selNode);
+      } else if (selNode.kind === "tbsb" && selNode.id.startsWith("sb:")) {
         const sb = ctx.state.config?.analysis?.scoreboards?.find(
           (s) => (s.name ?? "sbd") === selNode.label
         );

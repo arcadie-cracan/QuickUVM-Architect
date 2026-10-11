@@ -128,4 +128,38 @@ test("isBenchScope: bench sections show only with NO component selected", () => 
   }
 });
 
+// --- the delete gate (src/webview/inspector-view.ts) ------------------------------
+// `tbDeleteTarget` is the ONE id->name resolution behind the inspector's Delete
+// button, the Delete key on the diagram and the context menu — so a component it
+// refuses is refused on all three paths at once. That is why the ghost gate lives
+// there and is tested here: a ghost has no YAML entry, so a delete would find
+// nothing to remove and the gesture would report success having done nothing.
+//
+// Only the ghost branch is exercised: it returns before touching the module's
+// render context, while every other branch reads `ctx.state.config`, which exists
+// only under a real render. Testing the gate, not the resolution.
+const ivFile = join(mkdtempSync(join(tmpdir(), "quickuvm-iv-")), "iv.mjs");
+await esbuild.build({
+  entryPoints: ["src/webview/inspector-view.ts"],
+  outfile: ivFile,
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  logLevel: "silent",
+});
+const { tbDeleteTarget } = await import(pathToFileURL(ivFile));
+
+test("a ghost is not deletable on ANY path (button, Delete key, context menu)", () => {
+  for (const node of [
+    { id: "sb:sbd", kind: "tbsb", label: "sbd", inferred: true },
+    { id: "cov:pkt", kind: "tbcov", label: "pkt_cov", inferred: true },
+  ]) {
+    assert.equal(
+      tbDeleteTarget(node),
+      null,
+      `${node.id}: an inferred component has no YAML entry to delete`
+    );
+  }
+});
+
 console.log(`\ntest-inspector: ${passed} tests passed.`);
