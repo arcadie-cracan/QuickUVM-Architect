@@ -82,15 +82,18 @@ mesajele tot aici, la implementare.
   subenvs, connections, subenv_scoreboards), trimis la `ready` și la orice
   schimbare a YAML-ului (ca `overlay/config`); `view/show {viewId: "tb:…",
   mode: "tb"}`.
-- **`resolved` — topologia efectivă** (aug. 2026): ieșirea lui `quick-uvm
-  resolve` (>= 1.1.0), din care vederea desenează componentele **inferate**
-  (fantomele — vezi docs/07). Călătorește pe ACELAȘI mesaj ca `config`, nu pe
-  unul propriu: o re-randare căzută între două mesaje ar împerechea fantomele
-  unui bench cu configurația altuia. Cum vine dintr-un subproces, nu se așteaptă
-  pe calea de randare — mesajul poartă ce e în cache (cel mult o editare în
-  urmă), iar un `resolve` încheiat re-trimite `config/full`. Absent (sau `null`)
-  pe quick-uvm mai vechi sau la o configurație care nu se rezolvă: atunci nu se
-  desenează nicio fantomă, niciodată o diagramă ruptă.
+- **`resolved` — the effective topology** (Aug 2026): the output of `quick-uvm
+  resolve` (>= 1.1.0), from which the view draws the **inferred** components
+  (the ghosts — see docs/07). It travels on the SAME message as `config`, never
+  on one of its own: a re-render landing between two messages would pair one
+  bench's ghosts with another's configuration. Since it comes from a
+  subprocess it is never awaited on the render path — the message carries
+  whatever is cached (at most one edit behind), and a completed `resolve`
+  re-posts `config/full` to every surface showing that config (panel, sidebar,
+  and the per-file editor, which subscribes to `ResolveService.onDidChange`
+  for its own uri). Absent (or `null`) on an older quick-uvm or for a
+  configuration that does not resolve: then no ghost is drawn, never a broken
+  diagram.
 - **Editarea — adăugarea** (felia 2, iul. 2026): în QuickUVM conexiunile NU
   sunt muchii libere — `source`/`monitor` sunt câmpuri, deci „adaugă"
   creează componenta deja conectată. Paleta „Add component" din inspector

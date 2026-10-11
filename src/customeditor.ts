@@ -133,9 +133,26 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       // declares an `analysis:` block, whatever the cache still says.
       vscode.workspace.onDidSaveTextDocument((d) => {
         if (d.uri.toString() === document.uri.toString()) {
-          void this.resolve?.refresh(document.uri, false).then(() => postConfig());
+          void this.resolve?.refresh(document.uri, false);
         }
       }),
+      // A finished `resolve` for THIS document re-posts, whoever started it. The
+      // save handler's own `refresh` is not enough: ConfigService refreshes the
+      // ACTIVE config on the same save (file watcher, debounced), ResolveService
+      // keeps only the newest in-flight request per uri, and a Python subprocess
+      // outlives the 200 ms debounce — so the editor's request was routinely
+      // superseded. Re-posting from its `.then` then carried the PREVIOUS cache,
+      // while the winner's result reached the panel and the sidebar but never this
+      // webview: ghosts one save late, in the default editor of the file.
+      ...(this.resolve
+        ? [
+            this.resolve.onDidChange((uri) => {
+              if (uri.toString() === document.uri.toString()) {
+                postConfig();
+              }
+            }),
+          ]
+        : []),
       vscode.window.onDidChangeActiveColorTheme(() => {
         if (ready) {
           void webview.postMessage({ v: 1, type: "theme/changed" });
@@ -188,12 +205,11 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations });
           postConfig();
           // The inferred components need a subprocess, so the first paint cannot
-          // wait for them: post the config now, then re-post once `resolve` lands.
+          // wait for them: post the config now; `onDidChange` above re-posts once
+          // `resolve` lands (a cached, unchanged answer was already in the post).
           // Without this the ghosts appeared only after the first SAVE, which reads
           // as "the feature is broken" on a config opened and merely looked at.
-          void this.resolve
-            ?.refresh(document.uri, false)
-            .then(() => postConfig());
+          void this.resolve?.refresh(document.uri, false);
           void webview.postMessage({
             v: 1,
             type: "view/show",

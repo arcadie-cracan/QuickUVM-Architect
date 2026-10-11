@@ -349,6 +349,16 @@ coliziunea de nume.
   (all three resolve through it — gating the call sites separately is how one gets
   missed). The origin filter needs its OWN suite (`test:resolved`): at scene level
   it is masked by the dedup guard, and dropping it left `test:tbscene` fully green.
+  Two more, caught at the merge review (Oct 2026): (4) the ghost rect has
+  `fill: none`, SVG hit-testing ignores unpainted interiors, and node labels carry
+  `pointer-events: none` — so the rect needs `pointer-events: all`, or the only
+  clickable part of a ghost is its dashed stroke and the inspector's explainer is
+  unreachable (proved in the harness); (5) the custom editor re-posts on
+  `ResolveService.onDidChange` for ITS uri, not from its own `refresh().then`:
+  ConfigService refreshes the active config on the same save, the newest request
+  per uri wins, and the editor's own request was routinely superseded — its
+  `.then` carried the previous cache and the winner's answer never reached that
+  webview (ghosts one save late, in the file's default editor).
 - **Probele whitebox (K2)** — sondat empiric pe quick-uvm 0.9.2
   (`ProbeConfig`/`validate_probes` în `quick_uvm/models.py`; `test:e2e`
   scenariul 5): obligatorii doar `name` (identificator SV) și `path`; `width`

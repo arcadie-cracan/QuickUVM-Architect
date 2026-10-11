@@ -882,12 +882,19 @@ text.split-sign {
    to survive both themes and the already-dashed vsqr/probe boxes above, so it is
    carried by OPACITY on the whole group (a dimmed border alone read as "far away",
    not "not yours" — the label has to dim with it) and by a coarser dash (6 4) than
-   the vsqr's (5 3). Interaction is off: there is nothing in the YAML to drag,
-   select or delete. */
+   the vsqr's (5 3). A ghost IS selectable — that is how the inspector gets to
+   explain it — but not deletable (`tbDeleteTarget` gates all three delete paths).
+
+   `pointer-events: all` is load-bearing: `fill: none` leaves the interior
+   unpainted, SVG hit-testing (`visiblePainted`) ignores unpainted interiors, and
+   the labels carry `pointer-events: none` like on every node — so without it the
+   only clickable part of a ghost was its dashed 1px stroke, and the explainer was
+   unreachable in practice (caught in the harness at review). */
 .tbnode.ghost { opacity: 0.55; }
 .tbnode.ghost .tb-box {
   stroke-dasharray: 6 4;
   fill: none;
+  pointer-events: all;
   cursor: default;
 }
 .tbnode.ghost .tb-comp { font-style: italic; }
