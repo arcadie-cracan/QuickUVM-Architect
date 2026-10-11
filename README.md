@@ -123,6 +123,8 @@ reface clona: `examples-bender/README.md`).
 | `docs/04-layout-si-rutare.md` | strategia de layout (ELK + poziții deținute de utilizator), formatul sidecar, ierarhia de override-uri de rutare |
 | `docs/05-ui-si-protocol.md` | vederile, fluxurile UI de configurare, protocolul de mesaje extensie↔webview |
 | `docs/06-plan-mvp.md` | planul pe faze, riscuri, jurnalul deciziilor |
+| `docs/07-plan-post-mvp.md` | post-MVP plan: generation feedback loop, schema parity, the inference gap |
+| `docs/08-ux-inspiration.md` | UX research synthesis: the tools we can learn from, the directness diagnosis, 25 prioritized recommendations |
 | `examples/` | design de test + `model.json` generat |
 | `CLAUDE.md` | convenții și context pentru sesiunile de lucru cu Claude Code |
 
