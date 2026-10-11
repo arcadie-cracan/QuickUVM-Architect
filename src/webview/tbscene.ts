@@ -564,7 +564,11 @@ function levelEnv(
   const liveMode = config.analysis === undefined || config.analysis === null;
   for (const inf of liveMode ? inferredComponents(resolved) : []) {
     if (drawn.has(inf.id)) {
-      continue; // already drawn from the config — declared wins, never doubled
+      // declared wins, never doubled. Defensive: with `liveMode` true the config
+      // has no `analysis:` key, hence no declared sb/cov node, so this cannot fire
+      // today — it guards a future generator reporting an inferred entry next to a
+      // declared one under the same id (no test can reach it; see test-tbscene).
+      continue;
     }
     drawn.add(inf.id);
     const cov = inf.kind === "coverage";

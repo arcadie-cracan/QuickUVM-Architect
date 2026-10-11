@@ -358,7 +358,14 @@ coliziunea de nume.
   ConfigService refreshes the active config on the same save, the newest request
   per uri wins, and the editor's own request was routinely superseded — its
   `.then` carried the previous cache and the winner's answer never reached that
-  webview (ghosts one save late, in the file's default editor).
+  webview (ghosts one save late, in the file's default editor); (6) in
+  `config.onOverlay`, `resolve.refresh` runs BEFORE the posts that read
+  `resolve.current` — it moves the active pointer synchronously; posting first
+  paired the new config with the old config's ghosts after a rediscovery. Known
+  and accepted: drag/flip on a ghost DO persist under its id in the sidecar (D21
+  total snapshot) — a later declared `sb:<name>` inherits the position; and the
+  `drawn` dedup guard in `levelEnv` is unreachable by construction (no
+  `analysis:` key ⇒ no declared sb/cov node), kept as a defensive wall only.
 - **Probele whitebox (K2)** — sondat empiric pe quick-uvm 0.9.2
   (`ProbeConfig`/`validate_probes` în `quick_uvm/models.py`; `test:e2e`
   scenariul 5): obligatorii doar `name` (identificator SV) și `path`; `width`

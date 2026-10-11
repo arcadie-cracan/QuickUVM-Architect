@@ -59,6 +59,17 @@ export class ResolveService implements vscode.Disposable {
       return;
     }
     const key = configUri.toString();
+    // `resolve` reads the file on DISK. While the document is dirty the disk is
+    // what it was at the last save, so a cached answer is still its answer — and
+    // ConfigService refreshes on every 200 ms-debounced keystroke, which would
+    // otherwise spawn a ~0.8 s Python process per burst only to repeat it. Never
+    // skipped: the first answer (nothing cached yet) and a clean document.
+    const open = vscode.workspace.textDocuments.find(
+      (d) => d.uri.toString() === key
+    );
+    if (open?.isDirty && this.cache.has(key)) {
+      return;
+    }
     const mine = (this.seq.get(key) ?? 0) + 1;
     this.seq.set(key, mine);
 
@@ -74,7 +85,12 @@ export class ResolveService implements vscode.Disposable {
       // an invalid config, or a quick-uvm without `resolve`. Either way: no ghosts,
       // no diagnostic — ConfigService already reports what is wrong with the config,
       // and an old quick-uvm is a missing feature, not an error.
-      if (!this.warned && r.err.trim()) {
+      // Logged once, and ONLY for a quick-uvm that lacks the command (click:
+      // "No such command 'resolve'"). An invalid config also exits non-zero with a
+      // pydantic message on stderr; it used to consume this one-shot log with a
+      // misleading ">= 1.1.0 required" line, after which a genuinely old quick-uvm
+      // was never logged at all.
+      if (!this.warned && /No such command/i.test(r.err)) {
         this.warned = true;
         this.log.appendLine(
           `[resolve] unavailable — the verification view will not show inferred ` +

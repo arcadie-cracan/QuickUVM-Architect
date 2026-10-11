@@ -325,9 +325,12 @@ test("ghost: declared components are NOT ghosted or doubled", () => {
   assert.ok(!nodeById(s, "cov:pkt").inferred);
 });
 
-test("ghost: a declared node already drawn is never overdrawn by an inferred one", () => {
-  // defensive — quick-uvm cannot report both today (the mode switch is exclusive),
-  // but a future rule that did must not produce two nodes with one id.
+test("ghost: a declared config with a STALE implicit resolve draws its node once, solid", () => {
+  // What this proves: the live `analysis:` key wins over a resolve that still
+  // reports inferred entries (staleness floor), so no ghost and no duplicate.
+  // What it does NOT reach: the `drawn` dedup guard in buildTbScene — with no
+  // `analysis:` key there is no declared sb/cov node, so the guard is unreachable
+  // by construction (a mutant without it passes; found at the merge review).
   const declared = {
     ...IMPLICIT,
     analysis: { scoreboards: [{ name: "sbd", source: "pkt" }] },

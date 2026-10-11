@@ -609,6 +609,14 @@ export function activate(context: vscode.ExtensionContext): void {
       "quickuvm.hasConfig",
       Boolean(config.configUri)
     );
+    // Point the resolve cache at the (possibly NEW) active config BEFORE anything
+    // below reads `resolve.current`: `refresh` moves `active` synchronously, only
+    // the subprocess comes later. Posting first paired config B with config A's
+    // ghosts after a rediscovery (the configFile setting, a file created/deleted) —
+    // and when B's answer was already cached identically (opened earlier in the
+    // per-file editor) `set()` dedups, no event fires, and the mismatch stuck until
+    // the next edit. Found at the merge review of the ghost branch.
+    void resolve.refresh(config.configUri);
     DiagramPanel.current?.postOverlay(overlay);
     DiagramPanel.current?.postConfig(); // the verification (TB) view (docs/05)
     // the sidebar inspector renders from the same messages
@@ -633,7 +641,6 @@ export function activate(context: vscode.ExtensionContext): void {
     );
     // recompute the "not generated" decoration from the (possibly changed) config
     void genState.refresh(config.configUri, config.current);
-    void resolve.refresh(config.configUri);
   });
   // initial manifest load: onOverlay only fires on a CHANGE, so a config already
   // discovered at activation would otherwise leave the gen-state (badges + the

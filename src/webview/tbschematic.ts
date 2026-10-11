@@ -344,7 +344,9 @@ function drawBox(p: TbPlaced): SVGGElement {
   });
   g.dataset.id = n.id;
   if (n.inferred) {
-    g.dataset.inferred = "1"; // read by the context menu / delete gate
+    // a DOM hook for probes and the harness only — the delete gate reads
+    // `TbNode.inferred` from the scene (`tbDeleteTarget`), not the DOM
+    g.dataset.inferred = "1";
   }
   if (n.drill) {
     g.dataset.drill = n.drill;
