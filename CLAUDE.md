@@ -445,15 +445,19 @@ coliziunea de nume.
   (`planWireEdits` + `subenvMapping` în `src/compose.ts`, `test:compose`);
   host-ul din `actions.ts` doar citește fișierele și construiește
   `WorkspaceEdit`-ul din plan.
-- Testbench-ul generat de quick-uvm conține un **stub al DUT-ului** (definiție
-  duplicată care câștigă rezoluția slang → `port does not exist` pe designul
-  real) plus surse care cer `uvm_macros.svh`: dosarul `quickuvm.outputDir` se
-  exclude din glob-ul de surse (`outputDirExclude` în `src/filelistops.ts` —
-  pur, testat în `test:filelist` —, consumat de `resolveFileList` din
-  `src/filelist.ts`), altfel extensia își otrăvește singură modelul după
-  primul „Generează testbench" (regresie reală: `test:e2e` lasă
-  `examples/tb/`, iar arborele rămâne pe ecranul de bun-venit fără nicio
-  explicație vizibilă).
+- The testbench quick-uvm generates contains a **stub of the DUT** (a duplicate
+  definition that wins slang's resolution → `port does not exist` on the real
+  design) plus sources that need `uvm_macros.svh`: the `quickuvm.outputDir`
+  folder is excluded from the source glob (`outputDirExclude` in
+  `src/filelistops.ts` — pure, tested in `test:filelist` —, consumed by
+  `resolveFileList` in `src/filelist.ts`), otherwise the extension poisons its
+  own model after the first "Generate testbench" (a real regression: a generated
+  `examples/tb/` left the hierarchy on the welcome screen with no visible
+  explanation). The folder is still produced by every "Generate testbench" and
+  by the e2e scenarios of the time, which wrote into the workspace; today
+  `test:e2e` writes only to temporary directories (verified Oct 2026: nothing is
+  left behind), so the exclusion guards the user's own generations, not the
+  test run.
 
 ## Faza curentă
 
