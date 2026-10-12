@@ -118,6 +118,7 @@ npm run test:router      # ruterul A* pe grila + obstacolele din etichetele pini
 npm run test:minimap     # matematica minimapului (incadrare, U = M ∘ V⁻¹, salt)
 npm run test:locmap      # cross-probing editor->diagrama: loc->tinta + tinta->id-uri
 npm run test:status      # decoratiile de stare: findings->decoratii + decoratii->id-uri
+npm run test:navfind     # keyboard navigation (docs/08 R5): view history, Ctrl+F ranking, up-level, fit bounds
 npm run test:e2e         # yamlops -> quick-uvm generate real (cere quick-uvm)
 ```
 

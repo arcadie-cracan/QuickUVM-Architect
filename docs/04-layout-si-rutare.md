@@ -196,6 +196,21 @@ cererea utilizatorului, iul. 2026): convenție de scroll (jos = vezi conținut
 dedesubt), pas mai mare cu Shift, ținut apăsat = derulare continuă; camera
 devine a utilizatorului și se salvează ca la pan-ul cu mouse-ul (stare de
 sesiune). Nu declanșează în câmpurile inspectorului (bail pe INPUT/SELECT/…).
+**Keyboard parity with node editors** (docs/08 R5, Oct 2026): `Home` fits all
+like `F`; `G` fits the selection (blocks and flags; pins alone fall back to fit
+all); `U` / `PageUp` go up one level (TB: agent → env → root; RTL: the parent
+view, skipping generate segments, and the top's schematic climbs to its symbol);
+`Ctrl+[` / `Ctrl+]` walk the session's view history (recorded on every render of
+a different view, so re-renders add nothing; a new visit after going back drops
+the forward branch, like a browser); `Ctrl+F` opens a find box at the top of the
+canvas — exact label, then prefix, then word-start, then substring of label or
+id — `Enter` selects and centers the match, keeping the zoom; `Alt+arrows` nudge
+the selection by one grid step (`Shift` ×5) through the same path as a drag end
+(undo entry + total snapshot, D21), while the plain arrows keep scrolling;
+`Shift+1..5` store a camera quick mark of the current level and `1..5` jump to
+it (session state, like the camera; an empty slot never moves the camera).
+`F2` rename waits for the rename mutation (docs/08 R14). The pure rules live in
+`src/webview/navfind.ts` (`test:navfind`).
 **Trasare interactivă** (faza 4, implementată): în vederea-schemă,
 **Shift+click** pe un net (fir sau etichetă) sau pe un bloc/steag selectează
 **conul aval** (tot ce e condus, tranzitiv, de element), iar

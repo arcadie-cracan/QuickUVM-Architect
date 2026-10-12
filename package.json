@@ -437,7 +437,8 @@
     "test:configcheck": "node scripts/test-configcheck.mjs",
     "test:e2e": "node scripts/e2e-quickuvm.mjs",
     "vscode:prepublish": "npm run build",
-    "test:tbtree": "node scripts/test-tbtree.mjs"
+    "test:tbtree": "node scripts/test-tbtree.mjs",
+    "test:navfind": "node scripts/test-navfind.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -29,6 +29,16 @@ import type { TbScene } from "./tbscene";
 import { buildTbScene } from "./tbscene";
 import { drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
 import { el, measurer, SVG_NS } from "./svg";
+import {
+  findMatches,
+  NavHistory,
+  QuickMarks,
+  rtlParentPath,
+  tbParentFocus,
+  unionBounds,
+  type FindItem,
+  type Rect,
+} from "./navfind";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
@@ -649,7 +659,7 @@ function renderHeader(inst: Instance, leafInside = false): void {
     tgl.append(tb);
   }
   const fitBtn = h("button", "mbtn", "⛶");
-  fitBtn.title = "Fit to window (F)";
+  fitBtn.title = "Fit to window (F / Home) — G fits the selection";
   fitBtn.addEventListener("click", fitView);
   tgl.append(fitBtn);
   if (state.mode === "schematic") {
@@ -2360,6 +2370,281 @@ new ResizeObserver(onViewportResize).observe(
 );
 window.addEventListener("resize", onViewportResize);
 
+// ------------------------------------- keyboard navigation (docs/08 R5)
+//
+// The vocabulary node editors converge on (Houdini, Blueprints, Simulink): fit
+// all (Home/F), fit the selection (G), up one level (U/PageUp), back/forward
+// through the views visited (Ctrl+[ / Ctrl+]), find in the diagram (Ctrl+F),
+// nudge the selection by a grid step (Alt+arrows, ×5 with Shift — the plain
+// arrows keep scrolling the viewport, a gesture the user asked for), and five
+// camera quick marks per level (Shift+1..5 stores, 1..5 jumps). The rules that
+// can be wrong on their own are pure in navfind.ts (test:navfind); this block is
+// the DOM glue. F2 (rename) waits for the rename mutation (docs/08 R14).
+
+const navHistory = new NavHistory();
+/** true while a history entry is being applied: its render must not record */
+let navApplying = false;
+const quickMarks = new QuickMarks();
+
+function recordVisit(): void {
+  if (navApplying || !state.viewId) {
+    return;
+  }
+  navHistory.visit({
+    mode: state.mode,
+    viewId: state.viewId,
+    focus: state.mode === "tb" ? state.tbFocus : "",
+  });
+}
+
+/** Ctrl+[ (back) / Ctrl+] (forward): re-opens a visited view, without recording */
+function goHistory(back: boolean): void {
+  const entry = back ? navHistory.back() : navHistory.forward();
+  if (!entry) {
+    return;
+  }
+  navApplying = true;
+  try {
+    if (entry.mode === "tb") {
+      state.viewId = entry.viewId;
+      state.mode = "tb";
+      persistState();
+      tbNavigate(entry.focus); // tb/focus keeps the host's level in step
+    } else {
+      navigateTo(entry.viewId, entry.mode as ViewMode); // nav/drill does the same
+    }
+  } finally {
+    navApplying = false;
+  }
+}
+
+/** U / PageUp: the level above — TB: agent -> env -> root; RTL: the parent view
+ *  (generate blocks skipped), and the top's schematic climbs to its symbol */
+function goUp(): void {
+  if (state.mode === "tb") {
+    const parent = tbParentFocus(state.tbFocus);
+    if (parent !== null) {
+      tbNavigate(parent);
+    }
+    return;
+  }
+  if (!state.viewId) {
+    return;
+  }
+  const parent = rtlParentPath(state.viewId, (p) => Boolean(findInstance(p)));
+  if (parent) {
+    navigateTo(parent, "schematic");
+  } else if (state.mode === "schematic") {
+    navigateTo(state.viewId, "symbol");
+  }
+}
+
+/** the rectangle of a node/flag in diagram coordinates, if it is a draggable thing */
+function rectOf(id: string): Rect | null {
+  if (state.mode === "tb") {
+    const n = currentTbLayout?.nodes.get(id);
+    if (n) {
+      return { x: n.x, y: n.y, w: n.w, h: n.h };
+    }
+    const b = currentTbLayout?.boundary.get(id);
+    return b ? { x: b.x, y: b.y, w: b.w, h: 16 } : null;
+  }
+  const c = currentLayout?.children?.find((k) => k.id === id);
+  return c
+    ? { x: c.x ?? 0, y: c.y ?? 0, w: c.width ?? 0, h: c.height ?? 0 }
+    : null;
+}
+
+/** G: fits the selected blocks/flags; with nothing (or only pins) selected, fits all */
+function fitSelection(): void {
+  const rects: Rect[] = [];
+  for (const id of state.selection) {
+    const r = rectOf(id);
+    if (r) {
+      rects.push(r);
+    }
+  }
+  const b = unionBounds(rects);
+  if (!b) {
+    fitView();
+    return;
+  }
+  fit(b);
+  autoCam = false; // a chosen frame, not the automatic fit (resize keeps it)
+  scheduleCameraSave();
+}
+
+/** centers the camera on a rectangle, keeping the zoom (find, quick jumps) */
+function centerOnRect(r: Rect): void {
+  const vw = canvas.clientWidth || 800;
+  const vh = canvas.clientHeight || 600;
+  state.tx = vw / 2 - (r.x + r.w / 2) * state.k;
+  state.ty = vh / 2 - (r.y + r.h / 2) * state.k;
+  autoCam = false;
+  applyTransform();
+  scheduleCameraSave();
+}
+
+/** Alt+arrows: moves the selected blocks/flags by (dx, dy) on the grid — the same
+ *  path as a drag end (undo entry + total snapshot, D21) */
+function nudgeSelection(dx: number, dy: number): void {
+  const key = layoutKey();
+  const before = capturePositions();
+  if (!key || !before) {
+    return;
+  }
+  const next: PosMap = { ...before };
+  let moved = 0;
+  for (const id of state.selection) {
+    const p = before[id];
+    if (p) {
+      next[id] = { x: p.x + dx, y: p.y + dy };
+      moved++;
+    }
+  }
+  if (!moved) {
+    return;
+  }
+  pushPosUndo(before);
+  applyPositions(key, next);
+}
+
+function setQuickMark(slot: number): void {
+  const key = layoutKey();
+  if (key) {
+    quickMarks.set(key, slot, { tx: state.tx, ty: state.ty, k: state.k });
+  }
+}
+
+function jumpQuickMark(slot: number): void {
+  const key = layoutKey();
+  const cam = key ? quickMarks.get(key, slot) : null;
+  if (!cam) {
+    return; // an empty slot never moves the camera
+  }
+  state.tx = cam.tx;
+  state.ty = cam.ty;
+  state.k = cam.k;
+  autoCam = false;
+  applyTransform();
+  scheduleCameraSave();
+}
+
+// --- Ctrl+F: find in the diagram -----------------------------------------
+
+let findBox: HTMLElement | null = null;
+
+/** what the find box can land on in the current view */
+function findItems(): FindItem[] {
+  if (state.mode === "tb") {
+    const s = currentTbScene;
+    if (!s) {
+      return [];
+    }
+    return [
+      ...s.nodes.map((n) => ({ id: n.id, label: n.label })),
+      ...s.boundary.map((b) => ({ id: b.id, label: b.label })),
+    ];
+  }
+  const s = currentScene;
+  if (s) {
+    return [
+      ...s.nodes.map((n) => ({ id: n.id, label: n.name })),
+      ...s.boundary.map((b) => ({ id: b.id, label: b.name })),
+    ];
+  }
+  return currentPins.map((p) => ({ id: p.id, label: p.name }));
+}
+
+function closeFind(): void {
+  findBox?.remove();
+  findBox = null;
+}
+
+function selectAndCenter(id: string): void {
+  state.selection = new Set([id]);
+  applySelectionClasses();
+  postSelection();
+  renderInspectorHere();
+  const r = rectOf(id);
+  if (r) {
+    centerOnRect(r);
+  }
+}
+
+function openFind(): void {
+  if (findBox) {
+    findBox.querySelector("input")?.focus();
+    return;
+  }
+  const items = findItems();
+  const box = h("div", "findbox");
+  const input = document.createElement("input");
+  input.className = "findinput";
+  input.placeholder = "Find in diagram…";
+  input.setAttribute("aria-label", "Find in diagram");
+  const list = h("div", "findlist");
+  box.append(input, list);
+  let matches: FindItem[] = [];
+  let active = 0;
+  const renderList = (): void => {
+    list.replaceChildren();
+    matches.forEach((m, i) => {
+      const row = h("div", `finditem${i === active ? " active" : ""}`, m.label);
+      if (m.id !== m.label) {
+        row.append(h("span", "dim", ` ${m.id}`));
+      }
+      row.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault(); // keep the input's focus until the selection lands
+        selectAndCenter(m.id);
+        closeFind();
+      });
+      list.append(row);
+    });
+  };
+  input.addEventListener("input", () => {
+    matches = findMatches(items, input.value, 8);
+    active = 0;
+    renderList();
+  });
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeFind();
+      canvas.focus();
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      const m = matches[active];
+      if (m) {
+        selectAndCenter(m.id);
+        closeFind();
+      }
+    } else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (matches.length) {
+        active = (active + (ev.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length;
+        renderList();
+      }
+    }
+    ev.stopPropagation(); // the diagram's own keys must not fire while typing
+  });
+  input.addEventListener("blur", () => {
+    // closed when the focus leaves it (click elsewhere); deferred so a click on
+    // a row runs first (its pointerdown prevented the blur anyway)
+    setTimeout(() => {
+      if (findBox === box && document.activeElement !== input) {
+        closeFind();
+      }
+    }, 120);
+  });
+  const cb = canvas.getBoundingClientRect();
+  box.style.left = `${cb.left + cb.width / 2}px`;
+  box.style.top = `${cb.top + 8}px`;
+  document.body.append(box);
+  findBox = box;
+  input.focus();
+}
+
 window.addEventListener("keydown", (e) => {
   // the keys command the diagram only when you are NOT editing a field in the inspector
   // (match_key/max_latency/selects) — otherwise "f"/"h"/"Delete" would trigger
@@ -2397,6 +2682,30 @@ window.addEventListener("keydown", (e) => {
       return;
     }
   }
+  // docs/08 R5: Ctrl+F find, Ctrl+[ / Ctrl+] history (view back/forward)
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+    if (key === "f") {
+      e.preventDefault();
+      openFind();
+      return;
+    }
+    if (e.key === "[" || e.key === "]") {
+      e.preventDefault();
+      goHistory(e.key === "[");
+      return;
+    }
+  }
+  // docs/08 R5: Alt+arrows nudge the selection by a grid step (×5 with Shift);
+  // the plain arrows keep scrolling the viewport (below)
+  if (e.altKey && !e.ctrlKey && !e.metaKey && key.startsWith("arrow")) {
+    e.preventDefault();
+    const step = e.shiftKey ? 5 * GRID : GRID;
+    nudgeSelection(
+      key === "arrowleft" ? -step : key === "arrowright" ? step : 0,
+      key === "arrowup" ? -step : key === "arrowdown" ? step : 0
+    );
+    return;
+  }
   if (e.ctrlKey || e.metaKey || e.altKey) {
     return;
   }
@@ -2412,9 +2721,30 @@ window.addEventListener("keydown", (e) => {
     }
     return;
   }
-  // F: fits the diagram into the window
-  if (key === "f") {
+  // F / Home: fits the diagram into the window; G: fits the selection (docs/08 R5)
+  if (key === "f" || key === "home") {
+    e.preventDefault();
     fitView();
+    return;
+  }
+  if (key === "g") {
+    fitSelection();
+    return;
+  }
+  // U / PageUp: up one level — TB: agent -> env -> root; RTL: the parent view
+  if (key === "u" || key === "pageup") {
+    e.preventDefault();
+    goUp();
+    return;
+  }
+  // 1..5 jump to a camera quick mark of this level, Shift+1..5 store one
+  if (/^Digit[1-5]$/.test(e.code)) {
+    const slot = Number(e.code.slice(5));
+    if (e.shiftKey) {
+      setQuickMark(slot);
+    } else {
+      jumpQuickMark(slot);
+    }
     return;
   }
   // M: toggles the minimap (the overview navigator, docs/04)
@@ -2728,6 +3058,7 @@ function hideBanner(): void {
 }
 
 async function render(refit = false): Promise<void> {
+  recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   if (state.mode === "tb") {
     return renderTb(refit);
   }
@@ -3283,7 +3614,7 @@ function renderTbHeader(scene: TbScene | null): void {
   const tb = h("button", "mbtn active", "Testbench");
   tgl.append(tb);
   const fitBtn = h("button", "mbtn", "⛶");
-  fitBtn.title = "Fit to window (F)";
+  fitBtn.title = "Fit to window (F / Home) — G fits the selection";
   fitBtn.addEventListener("click", fitView);
   tgl.append(fitBtn);
   // Re-arrange all (docs/04): deletes the level's positions and returns to ELK
