@@ -133,4 +133,13 @@ test("round trip: the caret anywhere inside an element's span resolves to that e
   }
 });
 
+test("docs/08 R15: entryText restores the list dash and dedents the continuation lines", async () => {
+  const { entryText } = await import(pathToFileURL(outFile));
+  const text = "agents:\n  - name: cmd\n    interface: cmd_if\n    ports:\n      inputs: []\n  - name: rsp\nvirtual_sequences:\n  - { name: smoke }\n";
+  const sb = elementRange(text, "agent:cmd");
+  assert.equal(entryText(text, sb), "- name: cmd\n  interface: cmd_if\n  ports:\n    inputs: []");
+  const block = elementRange(text, "vsqr");
+  assert.equal(entryText(text, block), "virtual_sequences:\n  - { name: smoke }", "a top-level block stays as written");
+});
+
 console.log(`\ntest-yamlmap: ${passed} tests passed.`);

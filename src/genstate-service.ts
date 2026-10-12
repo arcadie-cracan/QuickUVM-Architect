@@ -22,6 +22,7 @@ import {
   primaryFile,
   scopedFilesFor,
 } from "./genstate";
+import { ownedFilesFor } from "./genstate";
 import type { QuvmConfig } from "./quickuvm";
 
 /** workspaceState key holding, per config uri, the element → config-hash records */
@@ -44,6 +45,9 @@ export class GenStateService implements vscode.Disposable {
    *  file on DISK, so between an edit and its save it does not know about a
    *  just-added component; this is what lets its badge appear immediately. */
   private declared: string[] = [];
+  /** the manifest's files that exist on disk, as of the last `recompute` — the
+   *  card's ✓/○ flags come from HERE, not from the manifest's snapshot */
+  private present: Set<string> | undefined;
 
   constructor(
     private readonly log: vscode.OutputChannel,
@@ -67,6 +71,24 @@ export class GenStateService implements vscode.Disposable {
    *  if the manifest is unavailable or the element is unknown. */
   scopedFiles(nodeId: string): string[] | null {
     return this.manifest ? scopedFilesFor(this.manifest, nodeId) : null;
+  }
+
+  /** docs/08 R15 — the files an element owns, with their on-disk flags; null when
+   *  the manifest is unavailable (the card then says so, instead of "none"). The
+   *  flags are the LIVE ones of the last recompute (the output-dir watcher keeps
+   *  them current), not the manifest's snapshot */
+  filesFor(nodeId: string): { file: string; exists: boolean }[] | null {
+    if (!this.manifest) {
+      return null;
+    }
+    const present = this.present;
+    return ownedFilesFor(this.manifest, nodeId).map((f) =>
+      present ? { file: f.file, exists: present.has(f.file) } : f
+    );
+  }
+
+  get hasManifest(): boolean {
+    return Boolean(this.manifest);
   }
 
   /** The absolute path of the representative file to OPEN for an element (2.3),
@@ -99,7 +121,13 @@ export class GenStateService implements vscode.Disposable {
     this.outDirAbs = path.isAbsolute(outDir) ? outDir : path.join(cwd, outDir);
     this.retarget(this.outDirAbs);
 
-    const r = await invokeQuickUvm(["manifest", "-c", configUri.fsPath], cwd, cfg);
+    // `-o`: without it quick-uvm computes the `exists` flags against its default
+    // `tb/` under the cwd, not the extension's output dir (review finding)
+    const r = await invokeQuickUvm(
+      ["manifest", "-c", configUri.fsPath, "-o", this.outDirAbs],
+      cwd,
+      cfg
+    );
     if (r.code !== 0 || !r.out.trim()) {
       // manifest failed (invalid config, or quick-uvm < 1.1.0) — decorate nothing.
       if (r.err.trim()) {
@@ -135,6 +163,7 @@ export class GenStateService implements vscode.Disposable {
         present.add(f);
       }
     }
+    this.present = present;
     this.configHash = await this.hashOf(this.config);
     this.set(
       classify(

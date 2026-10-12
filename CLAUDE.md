@@ -575,6 +575,36 @@ coliziunea de nume.
   host and the panel refuse 0 now); the `match` cascade deletes `match_key`
   on the step to in_order, so the pill shows the key and its tooltip says so;
   a modifier click (Ctrl/Shift) must fall through to the selection.
+- **"What will this generate" card (docs/08 R15)**: the data is requested per
+  dwell (`card/request`) and answered from the config TEXT (`elementRange`,
+  the R4 map) plus the CACHED manifest (`GenStateService.filesFor` /
+  `hasManifest`) — never from a generator run; the webview caches `card/full`
+  per id and clears the cache on `config/full` and `status/decorations`, so a
+  card never shows a stale entry or a stale ●/U/M state. The card is a DOM
+  overlay (`.gencard`), not a `<foreignObject>`: the SVG export must stay
+  untouched and the card must sit above the R1 node-tools strip. It closes on
+  every `render()` (its box is redrawn), on a press (a drag/wire/selection is
+  not a dwell), on a wheel (a fixed overlay would detach), and leaves with the
+  pointer unless the pointer moved ONTO the card (its buttons) or `I` pinned
+  it. `manifest: false` is distinct from "no files": the card says "not
+  resolved" (quick-uvm < 1.1.0, an invalid config) instead of claiming the
+  element owns nothing. The per-file editor's card gets the manifest's files
+  only when its document IS the active config (the manifest is the active
+  config's). From the adversarial review: the ●/U/M line appears only for ids
+  the badges TRACK (agents, scoreboards, probes, vsqr — `ownerToNodeId`) and
+  only once a `status/decorations` snapshot arrived (the per-file editor never
+  sends one) — a fall-through "✓ generated" lied for `cov:`, `env`, `dut`,
+  `sub:` and the agent internals; the ids the manifest does not own map onto
+  the owner that does (`ownedFilesFor`: `agent:<a>:u.driver` → the agent's
+  `_driver` file, `cov:<a>` → `<a>_cov.svh`, `xsb:` → `scoreboard:`); the
+  manifest is produced with `-o <outputDir>` (without it quick-uvm checks
+  `exists` against its default `tb/`) and the card's flags come from the
+  service's LIVE `present` set, not the manifest's snapshot; `card/full` and
+  `status/decorations` re-render through `refreshCard`, which never touches
+  the dwell/hide timers (an answer that cleared the pending hide left a card
+  orphaned after the pointer had gone); a pinned card follows pan/zoom/drag
+  (`repositionCard` in `applyTransform` and `dragReroute`); the dwell restarts
+  only when the hovered BOX changes, not on every compartment crossing.
 
 ## Faza curentă
 
@@ -860,4 +890,8 @@ action.
 (`active` on agents, `match`/`latency` on two-stream scoreboards) through the
 existing `editAgent`/`editScoreboard` actions; `TbNode.widgets` in
 `test:tbscene`.
+**R15 (docs/08) is implemented** (Oct 2026): the "what will this generate"
+hover card (YAML entry, owned files from the manifest, ●/U/M state, open
+generated code / YAML beside); `card/request` / `card/full`, the
+`openGeneratedCode` action, `ownedFilesFor` in `test:genstate`.
 Planul complet: `docs/06-plan-mvp.md`.

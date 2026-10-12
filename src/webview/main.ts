@@ -13,7 +13,7 @@ import type {
   ViewMode,
   WebviewMessage,
 } from "../protocol";
-import type { GenerateStatus, Proposal, ProposalApply, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
+import type { ElementCard, GenerateStatus, Proposal, ProposalApply, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
@@ -27,7 +27,7 @@ import {
 } from "./inspector-view";
 import { SV_KEYWORDS } from "../heuristics";
 import type { State } from "./state";
-import type { TbScene } from "./tbscene";
+import type { TbNode, TbScene } from "./tbscene";
 import { buildTbScene } from "./tbscene";
 import { anchor, drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
 import {
@@ -380,8 +380,20 @@ window.addEventListener("message", (e: MessageEvent) => {
       probeTargets = m.targets;
       applySelectionClasses();
       break;
+    case "card/full": {
+      // docs/08 R15 — the answer to the hover card's request: cached until the
+      // config or the generation state changes; drawn if the card still shows it
+      const { v: _v, type: _t, ...c } = m;
+      cardCache.set(c.id, c);
+      cardRequested.delete(c.id);
+      refreshCard(); // the open card, if it is about this subject; timers untouched
+      break;
+    }
     case "status/decorations":
       // the quick-uvm status decorations (docs/05): badges + generate chip
+      cardCache.clear(); // the generation state changed: the cards say so
+      cardRequested.clear();
+      genStatusKnown = true;
       statusDecos = m.decos;
       state.statusDecos = m.decos; // the Properties panel lists them too (R3)
       genStatus = m.generate;
@@ -391,6 +403,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       applyStatusBadges();
       applyGenBadges();
       updateGenChip();
+      refreshCard(); // a pinned card shows the new ●/U/M state and flags
       break;
     case "overlay/config": {
       const { v: _v, type: _t, ...overlay } = m;
@@ -414,6 +427,8 @@ window.addEventListener("message", (e: MessageEvent) => {
       }
       break;
     case "config/full":
+      cardCache.clear(); // docs/08 R15 — the YAML changed: the cards are stale
+      cardRequested.clear();
       state.config = m.config;
       state.configPath = m.configPath;
       state.childAgents = m.childAgents ?? {};
@@ -1093,6 +1108,7 @@ function applyTransform(): void {
   );
   updateMinimap();
   positionNodeTools(); // docs/08 R1: the "+" strip rides along with its node
+  repositionCard(); // docs/08 R15: a pinned card follows its box — AFTER the new transform
 }
 
 interface Bounds {
@@ -2075,6 +2091,7 @@ function dragReroute(): void {
     if (currentTbScene && currentTbLayout && currentTbEdgesGroup) {
       drawTbEdges(currentTbScene, currentTbLayout, currentTbEdgesGroup);
     }
+    repositionCard(); // docs/08 R15: a pinned card follows its dragged box
   } else if (currentScene && currentLayout && currentEdgesGroup) {
     routeEdges(currentScene, currentLayout, currentEdgesGroup);
   }
@@ -2164,6 +2181,289 @@ function undoPositions(redo: boolean): void {
   }
   applyPositions(key, snap);
 }
+
+// ------------------------------- "what will this generate" card (docs/08 R15)
+//
+// A dwell on a TB box (or `I` on the selected one, which pins it) opens a card
+// beside it: the YAML entry the box stands for (the R4 map, from the host), the
+// files it owns in the generated bench (the CACHED manifest — never a generator
+// run) with their on-disk state, the ●/U/M generation state, and two actions:
+// the generated code beside the diagram, the YAML entry beside the diagram.
+// Figma's Code panel, MPS's preview of the generated text. The data comes on
+// demand (`card/request` -> `card/full`) and is cached until the config or the
+// generation state changes.
+
+const cardCache = new Map<string, ElementCard>();
+/** the requests in flight (cleared with the cache): one per subject, not per render */
+const cardRequested = new Set<string>();
+let card: HTMLElement | null = null;
+let cardId: string | null = null;
+/** the box the pointer rests on — the dwell restarts only when it changes, not
+ *  on every compartment crossing inside the same box */
+let cardHoverId: string | null = null;
+/** pinned (the I key): stays until Escape / I / a render; hover cards leave with the pointer */
+let cardPinned = false;
+let cardTimer: ReturnType<typeof setTimeout> | undefined;
+let cardHideTimer: ReturnType<typeof setTimeout> | undefined;
+/** a `status/decorations` snapshot has arrived: the ●/U/M sets mean something.
+ *  The per-file editor never sends one — its cards show no state line */
+let genStatusKnown = false;
+
+/** what a box's card is ABOUT, in the host's terms: the id to request (the YAML
+ *  entry + the owned files), the id whose generation state applies (the badges
+ *  track agents, scoreboards, probes, vsqr only), and a note for the rest */
+function cardSubject(nodeId: string): { request: string | null; stateId: string | null; note?: string } {
+  if (nodeId.startsWith("u.") && state.tbFocus.startsWith("agent:")) {
+    // an agent's internal (driver/monitor/sequencer): the agent's entry, its file of that part
+    return { request: `${state.tbFocus}:${nodeId}`, stateId: state.tbFocus, note: `part of agent ${state.tbFocus.slice("agent:".length)}` };
+  }
+  if (nodeId.startsWith("cov:")) {
+    return { request: nodeId, stateId: `agent:${nodeId.slice("cov:".length)}`, note: "the collector is emitted with its agent" };
+  }
+  if (nodeId.startsWith("xsb:")) {
+    return { request: nodeId, stateId: `sb:${nodeId.slice("xsb:".length)}` };
+  }
+  if (nodeId.startsWith("sub:")) {
+    return { request: nodeId, stateId: null, note: "generated in the child bench, from its own configuration" };
+  }
+  if (nodeId === "env") {
+    return { request: null, stateId: null, note: "the env and package files are regenerated with every element" };
+  }
+  if (nodeId === "dut") {
+    return { request: "dut", stateId: null, note: "the DUT is instantiated by tb_top, regenerated with every element" };
+  }
+  return { request: nodeId, stateId: nodeId };
+}
+
+function closeCard(): void {
+  clearTimeout(cardTimer);
+  clearTimeout(cardHideTimer);
+  card?.remove();
+  card = null;
+  cardId = null;
+  cardPinned = false;
+  cardHoverId = null; // a new dwell may start on the same box (Escape with the pointer still on it)
+}
+
+/** the generation state of an element, as the badges say it (docs/07 line 1);
+ *  null when nothing is known — no snapshot yet (the per-file editor), or an
+ *  element the badges do not track: no line beats a line that lies */
+function genStateOf(id: string | null): { text: string; cls: string } | null {
+  if (!genStatusKnown || !id) {
+    return null;
+  }
+  if (genUnsaved.has(id)) {
+    return { text: "● new — not saved to the configuration yet", cls: "unsaved" };
+  }
+  if (genMissing.has(id)) {
+    return { text: "U not generated — run Generate Testbench", cls: "missing" };
+  }
+  if (genStale.has(id)) {
+    return { text: "M modified — the config changed since Generate Testbench", cls: "stale" };
+  }
+  return { text: "✓ generated from this configuration", cls: "ok" };
+}
+
+function openCard(id: string, pinned: boolean): void {
+  const node = currentTbScene?.nodes.find((n) => n.id === id);
+  const g = canvas.querySelector<SVGGraphicsElement>(`.tbnode[data-id="${CSS.escape(id)}"]`);
+  if (!node || !g || state.mode !== "tb") {
+    return;
+  }
+  clearTimeout(cardTimer);
+  clearTimeout(cardHideTimer);
+  if (cardId !== id) {
+    card?.remove();
+    card = null;
+  }
+  cardId = id;
+  cardPinned = pinned;
+  if (!card) {
+    card = h("div", "gencard");
+    card.addEventListener("pointerenter", () => clearTimeout(cardHideTimer));
+    card.addEventListener("pointerleave", () => {
+      if (!cardPinned) {
+        scheduleCardHide();
+      }
+    });
+    document.body.append(card);
+  }
+  refreshCard();
+}
+
+/** (re)draws the open card from the cache and asks the host once for what is
+ *  missing — without touching the dwell/hide timers (an answer must not keep a
+ *  card the pointer already left; review finding) */
+function refreshCard(): void {
+  if (!card || !cardId) {
+    return;
+  }
+  const node = currentTbScene?.nodes.find((n) => n.id === cardId);
+  const g = canvas.querySelector<SVGGraphicsElement>(`.tbnode[data-id="${CSS.escape(cardId)}"]`);
+  if (!node || !g) {
+    closeCard();
+    return;
+  }
+  const subject = cardSubject(node.id);
+  renderCard(node, subject, subject.request ? cardCache.get(subject.request) ?? null : null);
+  positionCard(g);
+  if (subject.request && !node.inferred && !cardCache.has(subject.request) && !cardRequested.has(subject.request)) {
+    cardRequested.add(subject.request);
+    post({ v: 1, type: "card/request", id: subject.request });
+  }
+}
+
+/** a pinned card follows its box across pan, zoom and drag */
+function repositionCard(): void {
+  if (!card || !cardId) {
+    return;
+  }
+  const g = canvas.querySelector<SVGGraphicsElement>(`.tbnode[data-id="${CSS.escape(cardId)}"]`);
+  if (g) {
+    positionCard(g);
+  }
+}
+
+function renderCard(
+  node: TbNode,
+  subject: { request: string | null; stateId: string | null; note?: string },
+  data: ElementCard | null
+): void {
+  if (!card) {
+    return;
+  }
+  card.replaceChildren();
+  const head = h("div", "gencard-head");
+  head.append(h("span", "gencard-name", node.label));
+  if (node.stereotype) {
+    head.append(h("span", "gencard-stereo", node.stereotype));
+  }
+  card.append(head);
+  if (node.inferred) {
+    card.append(
+      h("div", "gencard-note", "inferred by quick-uvm (implicit mode) — nothing in the YAML; the generator wires it on its own")
+    );
+    return;
+  }
+  if (subject.note) {
+    card.append(h("div", "gencard-note", subject.note));
+  }
+  const st = genStateOf(subject.stateId);
+  if (st) {
+    card.append(h("div", `gencard-state ${st.cls}`, st.text));
+  }
+  if (subject.request) {
+    card.append(h("div", "gencard-title", "YAML"));
+    card.append(h("pre", "gencard-yaml", data ? (data.yaml ?? "(no entry of its own in the YAML)") : "…"));
+  }
+  card.append(h("div", "gencard-title", "Generated files"));
+  if (!subject.request) {
+    card.append(h("div", "gencard-note", "the aggregate files (env, package, tb_top, filelist)"));
+  } else if (!data) {
+    card.append(h("div", "gencard-note", "…"));
+  } else if (data.manifest === "unavailable") {
+    card.append(h("div", "gencard-note", "not resolved — needs quick-uvm ≥ 1.1.0 and a valid configuration"));
+  } else if (data.manifest === "inactive") {
+    card.append(h("div", "gencard-note", "the manifest belongs to the active configuration — this file is not it"));
+  } else if (!data.files.length) {
+    card.append(h("div", "gencard-note", "no file of its own"));
+  } else {
+    const ul = h("ul", "gencard-files");
+    for (const f of data.files) {
+      ul.append(h("li", f.exists ? "ok" : "missing", `${f.exists ? "✓" : "○"} ${f.file}`));
+    }
+    card.append(ul);
+  }
+  if (!subject.request) {
+    return; // nothing to open for a level box
+  }
+  const actions = h("div", "gencard-actions");
+  const open = h("button", "assist-btn", "Open generated code beside");
+  open.disabled = !data || data.manifest !== "ok" || !data.files.length;
+  const openId = subject.stateId ?? node.id; // the OWNER's file (an internal opens its agent's)
+  open.addEventListener("click", () => {
+    postAction("openGeneratedCode", { id: openId, label: node.label });
+  });
+  const yamlBtn = h("button", "assist-btn secondary", "Show YAML beside");
+  yamlBtn.addEventListener("click", () => postAction("openConfigBeside", { id: subject.request }));
+  actions.append(open, yamlBtn);
+  card.append(actions);
+}
+
+/** beside the box: to its right, or to its left when the window ends; kept on screen */
+function positionCard(g: SVGGraphicsElement): void {
+  if (!card) {
+    return;
+  }
+  const r = g.getBoundingClientRect();
+  const cw = card.offsetWidth || 320;
+  const ch = card.offsetHeight || 200;
+  let left = r.right + 8;
+  if (left + cw > window.innerWidth - 4) {
+    left = r.left - cw - 8; // to the left of the box when the window ends
+  }
+  left = Math.max(4, Math.min(left, window.innerWidth - cw - 4)); // never off-screen
+  const top = Math.max(4, Math.min(r.top, window.innerHeight - ch - 4));
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+}
+
+function scheduleCardHide(): void {
+  clearTimeout(cardHideTimer);
+  cardHideTimer = setTimeout(() => {
+    if (!cardPinned) {
+      closeCard();
+    }
+  }, 220);
+}
+
+canvas.addEventListener("pointerover", (e) => {
+  if (state.mode !== "tb" || e.buttons !== 0 || wire || drag) {
+    return; // a press in progress is a drag or a wire, not a dwell
+  }
+  const id = (e.target as Element).closest<SVGElement>(".tbnode")?.dataset.id;
+  if (!id) {
+    return;
+  }
+  clearTimeout(cardHideTimer);
+  if (cardPinned || id === cardId || id === cardHoverId) {
+    return; // the same box: crossing its compartments is not a new dwell
+  }
+  cardHoverId = id;
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => openCard(id, false), 450);
+});
+canvas.addEventListener("pointerout", (e) => {
+  const from = (e.target as Element).closest<SVGElement>(".tbnode")?.dataset.id;
+  if (!from) {
+    return;
+  }
+  const to = e.relatedTarget as Element | null;
+  const stillOn = to?.closest?.<SVGElement>(".tbnode")?.dataset.id === from;
+  if (stillOn || to?.closest?.(".gencard")) {
+    return; // onto the card itself: it stays, for its buttons
+  }
+  cardHoverId = null;
+  clearTimeout(cardTimer);
+  if (!cardPinned) {
+    scheduleCardHide();
+  }
+});
+canvas.addEventListener("pointerdown", () => {
+  clearTimeout(cardTimer);
+  if (!cardPinned) {
+    closeCard(); // a press is a gesture (drag, wire, selection), not a dwell
+  }
+});
+canvas.addEventListener(
+  "wheel",
+  () => {
+    if (!cardPinned) {
+      closeCard(); // a hover card does not survive a zoom; a pinned one follows its box
+    }
+  },
+  { passive: true }
+);
 
 // --------------------------------------------- in-place rename (docs/08 R14)
 //
@@ -3868,6 +4168,13 @@ window.addEventListener("keydown", (e) => {
       closeCtxMenu(); // Escape closes the context menu first, not the selection
       return;
     }
+    if (card) {
+      const pinned = cardPinned;
+      closeCard(); // docs/08 R15 — a PINNED card consumes Escape; a hover card just goes
+      if (pinned) {
+        return;
+      }
+    }
     if (state.selection.size) {
       state.selection.clear();
       applySelectionClasses();
@@ -3911,6 +4218,21 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) {
+    return;
+  }
+  // I: pins the "what will this generate" card of the selected TB box (docs/08
+  // R15); again, or Escape, closes it
+  if (key === "i" && state.mode === "tb" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const node =
+      state.selection.size === 1
+        ? currentTbScene?.nodes.find((n) => state.selection.has(n.id))
+        : undefined;
+    if (card && cardPinned) {
+      closeCard();
+    } else if (node) {
+      e.preventDefault();
+      openCard(node.id, true);
+    }
     return;
   }
   // F2: renames the selected TB component in place (docs/08 R14) — one selected
@@ -4312,6 +4634,7 @@ function hideBanner(): void {
 async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
+  closeCard(); // docs/08 R15: the card is anchored to a box that is about to be redrawn
   renderAssist(); // docs/08 R12: the strip follows the view (hidden on a mismatch)
   if (state.mode === "tb") {
     return renderTb(refit);

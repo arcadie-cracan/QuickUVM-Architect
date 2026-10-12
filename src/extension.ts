@@ -12,7 +12,7 @@ import { Backend } from "./backend";
 import { ConfigService, onGestureApplied, WidthFixProvider } from "./config";
 import { postToConfigEditors } from "./customeditor";
 import { YamlLink } from "./yamllink";
-import { elementAtOffset } from "./yamlmap";
+import { elementAtOffset, elementRange, entryText } from "./yamlmap";
 import { DirtyConfigStatus } from "./dirtystatus";
 import { QuvmConfigEditor } from "./customeditor";
 import { Generator } from "./generate";
@@ -118,7 +118,17 @@ export function activate(context: vscode.ExtensionContext): void {
     // the editing gestures apply on the DOCUMENT (via TbEditTarget)
     vscode.window.registerCustomEditorProvider(
       QuvmConfigEditor.viewType,
-      new QuvmConfigEditor(context, layout, actions, log, resolve, yamlLink),
+      new QuvmConfigEditor(context, layout, actions, log, resolve, yamlLink, (uri, id) =>
+        // docs/08 R15 — the manifest is the ACTIVE config's; another document
+        // gets its YAML entry only
+        uri.toString() === config.configUri?.toString()
+          ? {
+              files: genState.filesFor(id) ?? [],
+              primary: genState.primaryFilePath(id),
+              manifest: genState.hasManifest ? ("ok" as const) : ("unavailable" as const),
+            }
+          : { files: [], primary: null, manifest: "inactive" as const }
+      ),
       {
         webviewOptions: { retainContextWhenHidden: true },
         supportsMultipleEditorsPerDocument: false,
@@ -390,8 +400,20 @@ export function activate(context: vscode.ExtensionContext): void {
           void generator.generate();
           break;
         case "openConfigBeside":
-          // docs/08 R4 — the active configuration as text, beside the diagram
-          void vscode.commands.executeCommand("quickuvm.openConfigBeside");
+          // docs/08 R4 — the active configuration as text, beside the diagram;
+          // with an `id` (the R15 card) the element's entry is revealed too
+          void vscode.commands.executeCommand(
+            "quickuvm.openConfigBeside",
+            typeof args.id === "string" ? args.id : undefined
+          );
+          break;
+        case "openGeneratedCode":
+          // docs/08 R15 — the element's generated code beside the diagram
+          void vscode.commands.executeCommand("quickuvm.openGeneratedCode", {
+            id: typeof args.id === "string" ? args.id : "",
+            label: typeof args.label === "string" ? args.label : "item",
+            beside: true,
+          });
           break;
         case "openSource":
           break; // handled directly in the panel (it needs the model); does not reach here
@@ -536,6 +558,24 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
     getStatus: () => statusSnapshot(),
+    // docs/08 R15 — the "what will this generate" card of a TB element: its YAML
+    // entry (the R4 map on the document text), the files it owns (the CACHED
+    // manifest — never a generator run) and the representative file to open
+    getCard: async (id) => {
+      const uri = config.configUri;
+      if (!uri) {
+        return null;
+      }
+      const text = (await vscode.workspace.openTextDocument(uri)).getText();
+      const span = elementRange(text, id);
+      return {
+        id,
+        yaml: span ? entryText(text, span) : null,
+        files: genState.filesFor(id) ?? [],
+        primary: genState.primaryFilePath(id),
+        manifest: genState.hasManifest ? "ok" : "unavailable",
+      };
+    },
     // docs/08 R12 — the designer-assistance proposals of the view the panel shows
     getProposals: (viewId, mode) =>
       proposalsFor(
@@ -985,7 +1025,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // generated yet (line 1's `missing`), offer to generate it first, then open.
     vscode.commands.registerCommand(
       "quickuvm.openGeneratedCode",
-      async (node?: { id?: string; label?: string }) => {
+      async (node?: { id?: string; label?: string; beside?: boolean }) => {
         if (!node?.id) {
           return;
         }
@@ -1024,7 +1064,11 @@ export function activate(context: vscode.ExtensionContext): void {
           }
         }
         try {
-          await vscode.window.showTextDocument(vscode.Uri.file(primary));
+          await vscode.window.showTextDocument(
+            vscode.Uri.file(primary),
+            // docs/08 R15 — from the card: beside the diagram, focus kept on it
+            node.beside ? { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true } : undefined
+          );
         } catch {
           void vscode.window.showWarningMessage(
             vscode.l10n.t(
@@ -1036,12 +1080,17 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     ),
 
-    vscode.commands.registerCommand("quickuvm.openConfigBeside", async () => {
+    vscode.commands.registerCommand("quickuvm.openConfigBeside", async (id?: string) => {
       // docs/08 R4 — the "YAML" header button: the configuration as TEXT beside
-      // the diagram, focus kept on the diagram; without a config, say why
+      // the diagram, focus kept on the diagram; without a config, say why. With an
+      // element id (the R15 card) its entry is revealed and flashed as well.
       const uri = config.configUri;
       if (uri) {
         await yamlLink.openBeside(uri);
+        if (typeof id === "string" && id) {
+          const text = (await vscode.workspace.openTextDocument(uri)).getText();
+          yamlLink.revealElement(uri, text, id);
+        }
       } else {
         await vscode.commands.executeCommand("quickuvm.openConfig");
       }

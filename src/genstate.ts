@@ -209,6 +209,46 @@ export function scopedFilesFor(manifest: Manifest, nodeId: string): string[] | n
 }
 
 /**
+ * docs/08 R15 — the files an element OWNS in the generated bench (not the
+ * aggregates), with their on-disk flags: what the "what will this generate"
+ * card lists. The diagram's ids that the manifest does not own directly are
+ * mapped onto the owner that does: an agent's internals (`agent:<a>:u.driver`
+ * — the agent's files, narrowed to `_driver`), its coverage collector
+ * (`cov:<a>` — `<a>_cov.svh`, emitted under the agent, docs/07), a cross-block
+ * scoreboard (`xsb:<n>` — the generator's owner is `scoreboard:<n>` either way).
+ * Empty when nothing owns files for it.
+ */
+export function ownedFilesFor(
+  manifest: Manifest,
+  nodeId: string
+): { file: string; exists: boolean }[] {
+  let target = nodeId;
+  let narrow: string | null = null;
+  const internal = /^(agent:[^:]+):u\.([a-z_]+)$/.exec(nodeId);
+  if (internal) {
+    target = internal[1];
+    narrow = `_${internal[2]}.`;
+  } else if (nodeId.startsWith("cov:")) {
+    target = `agent:${nodeId.slice("cov:".length)}`;
+    narrow = "_cov.";
+  } else if (nodeId.startsWith("xsb:")) {
+    target = `sb:${nodeId.slice("xsb:".length)}`;
+  }
+  const out: { file: string; exists: boolean }[] = [];
+  for (const el of manifest.elements) {
+    if (el.owner !== "aggregate" && ownerToNodeId(el.owner) === target) {
+      out.push(...el.files.map((f) => ({ file: f.file, exists: f.exists })));
+    }
+  }
+  if (narrow) {
+    const n = narrow;
+    const sub = out.filter((f) => f.file.includes(n));
+    return sub.length ? sub : out; // an unexpected naming: the agent's files, not nothing
+  }
+  return out;
+}
+
+/**
  * docs/07 line 2 (2.3) — the representative source file to OPEN for an element:
  * the agent class / scoreboard / probe interface / virtual sequencer, chosen by
  * suffix from the element's own files (falling back to the first). `null` if the
