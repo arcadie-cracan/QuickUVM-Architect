@@ -70,6 +70,10 @@ export interface InspectorCtx {
   toggleFold(id: string): void;
   hasSchematic(model: unknown, viewId: string): boolean;
   navigateTo(viewId: string, mode: "schematic" | "symbol"): void;
+  /** docs/08 R17 — render EVERY section open (the action palette collects the
+   *  enabled buttons from a detached render; a closed section would hide its
+   *  actions). Never set for the visible panel. */
+  allOpen?: boolean;
 }
 
 // assigned by `renderInspector` before any helper runs (they are only reachable
@@ -913,7 +917,9 @@ function loadSections(): void {
 }
 
 function persistSections(): void {
+  // the other keys of the state (the palette's recency, R17) are kept
   ctx.vscode.setState({
+    ...(ctx.vscode.getState() ?? {}),
     viewId: ctx.state.viewId,
     mode: ctx.state.mode,
     openSections: [...openSections],
@@ -932,9 +938,16 @@ function tbSection(
   render: () => void,
   defaultOpen = false
 ): void {
-  const open = openSections.has(id) || (defaultOpen && !openSections.has(`!${id}`));
+  const open =
+    Boolean(ctx.allOpen) ||
+    openSections.has(id) ||
+    (defaultOpen && !openSections.has(`!${id}`));
   const head = h("div", "sec-head");
   head.append(h("span", "sec-twisty", open ? "▾" : "▸"), h("span", "", title));
+  // the context of THIS render: a later detached render (the R17 palette)
+  // reassigns the module's `ctx`, and a click on a visible head must still
+  // re-render the visible panel
+  const mine = ctx;
   head.addEventListener("click", () => {
     // both states are recorded, so a closed default-open section stays closed
     if (open) {
@@ -945,7 +958,7 @@ function tbSection(
       openSections.delete(`!${id}`);
     }
     persistSections();
-    renderInspector(ctx);
+    renderInspector(mine);
   });
   ctx.root.append(head);
   if (open) {
@@ -2098,7 +2111,7 @@ export function renderInspector(c: InspectorCtx): void {
       if (selNode.kind === "fold") {
         ctx.root.append(
           h("div", "dim", `${selNode.foldCount} folded instances`),
-          button("Expand fold", true, () => ctx.toggleFold(selNode.id), true)
+          button("Expand group", true, () => ctx.toggleFold(selNode.id), true)
         );
       } else if (selNode.instPath) {
         const p = selNode.instPath;

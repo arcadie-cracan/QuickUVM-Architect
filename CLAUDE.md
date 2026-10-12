@@ -605,6 +605,31 @@ coliziunea de nume.
   orphaned after the pointer had gone); a pinned card follows pan/zoom/drag
   (`repositionCard` in `applyTransform` and `dragReroute`); the dwell restarts
   only when the hovered BOX changes, not on every compartment crossing.
+- **Action palette (docs/08 R17)**: the palette owns NO legality rule — it
+  collects: `tbMenuItems(id)` / `rtlMenuItemsFor(el)` (the context menus,
+  refactored into builders so right-click and the palette cannot diverge),
+  `nodeToolsFor`, the node's `widgets`, and the Properties panel's enabled
+  `button.btn` rows from a DETACHED render (`inspectorCtx(root, allOpen=true)`
+  — `InspectorCtx.allOpen` opens every section; never set it for the visible
+  panel). That render sets the inspector module's `ctx` to the detached root;
+  harmless in the diagram webview (it has no `#inspector`), but the sidebar
+  webview (`properties.ts`) must never call it. A proposal row is offered one
+  by one EXCEPT the ghost (`materialize`) rows — those are all-or-nothing in
+  the strip, and go through `applyProposalItems` like the strip's Apply (the
+  flash of what was created, the set retired) — a bare `applyProposals` left
+  the strip offering the applied row until the host's next set. Labels are
+  de-duplicated across surfaces (trailing "(…)" hints stripped, case-folded)
+  and the recency key is the NORMALISED label; the R1 "+" tools are NOT
+  rows — the panel's add buttons already carry the preselected agent
+  ("Scoreboard from cmd"), and the tools' titles would have doubled them.
+  Recency (`paletteRecent`) rides in the webview state next to
+  `openSections` — `persistState` must keep writing it, and
+  `persistSections` (inspector-view) spreads the existing state so it does
+  not drop it. The harness HAS an `#inspector`: a section head captures ITS
+  render context (`mine`), or a click after a detached render would re-render
+  into the detached root. `render()` closes the palette (its rows close over
+  the old scene); the active row is scrolled into view (the list holds up to
+  40 rows, the box shows ~10).
 
 ## Faza curentă
 
@@ -894,4 +919,7 @@ existing `editAgent`/`editScoreboard` actions; `TbNode.widgets` in
 hover card (YAML entry, owned files from the manifest, ●/U/M state, open
 generated code / YAML beside); `card/request` / `card/full`, the
 `openGeneratedCode` action, `ownedFilesFor` in `test:genstate`.
+**R17 (docs/08) is implemented** (Oct 2026): the contextual action palette
+(Ctrl+Space / Ctrl+/ / the "Actions" header button) — the legal actions for the
+selection, recent first; `rankPalette` / `pushRecent` in `test:navfind`.
 Planul complet: `docs/06-plan-mvp.md`.

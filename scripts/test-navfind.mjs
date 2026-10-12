@@ -150,4 +150,25 @@ test("quick marks: per layout key, copies in and out, empty slot = null", () => 
   assert.equal(m.get("tb:x|", 1), null, "another level, another slot set");
 });
 
+const { rankPalette, pushRecent } = await import(pathToFileURL(outFile));
+test("docs/08 R17: the palette lists the recent actions first, then the rest in order; a query ranks instead", () => {
+  const items = [
+    { id: "View|Fit to window (F)", label: "Fit to window (F)" },
+    { id: "Selection|Delete agent…", label: "Delete agent…" },
+    { id: "Config|Generate testbench", label: "Generate testbench" },
+    { id: "Selection|Rename… (F2)", label: "Rename… (F2)" },
+  ];
+  assert.deepEqual(rankPalette(items, [], "").map((i) => i.id), items.map((i) => i.id), "no recent: the offered order");
+  const recent = pushRecent(pushRecent([], "Config|Generate testbench"), "Selection|Rename… (F2)");
+  assert.deepEqual(recent, ["Selection|Rename… (F2)", "Config|Generate testbench"], "newest first");
+  assert.deepEqual(rankPalette(items, [...recent, "gone|not offered any more"], "").map((i) => i.id), [
+    "Selection|Rename… (F2)", "Config|Generate testbench", "View|Fit to window (F)", "Selection|Delete agent…",
+  ], "recent first (only those offered), then the rest");
+  assert.deepEqual(rankPalette(items, recent, "generate").map((i) => i.id), ["Config|Generate testbench"], "a query ranks, recency is ignored");
+  assert.deepEqual(rankPalette(items, recent, "gen").map((i) => i.id), ["Config|Generate testbench", "Selection|Delete agent…"], "prefix before substring (a-GEN-t)");
+  assert.deepEqual(rankPalette(items, recent, "", 2).length, 2, "capped");
+  assert.equal(pushRecent(["a", "b", "c"], "b").join(","), "b,a,c", "re-running moves to the front, no duplicates");
+  assert.equal(pushRecent(["1", "2", "3", "4", "5", "6", "7", "8"], "9").length, 8, "capped at 8");
+});
+
 console.log(`\ntest-navfind: ${passed} tests passed.`);

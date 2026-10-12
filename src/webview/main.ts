@@ -13,7 +13,7 @@ import type {
   ViewMode,
   WebviewMessage,
 } from "../protocol";
-import type { ElementCard, GenerateStatus, Proposal, ProposalApply, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
+import type { ElementCard, GenerateStatus, Proposal, ProposalApply, ProposalSet, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
@@ -44,7 +44,9 @@ import { el, measurer, SVG_NS } from "./svg";
 import {
   findMatches,
   NavHistory,
+  pushRecent,
   QuickMarks,
+  rankPalette,
   rtlParentPath,
   tbParentFocus,
   unionBounds,
@@ -55,12 +57,13 @@ import {
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
   getState():
-    | { viewId?: string; mode?: ViewMode; openSections?: string[] }
+    | { viewId?: string; mode?: ViewMode; openSections?: string[]; paletteRecent?: string[] }
     | undefined;
   setState(state: {
     viewId?: string;
     mode?: ViewMode;
     openSections?: string[];
+    paletteRecent?: string[];
   }): void;
 };
 
@@ -259,8 +262,19 @@ function renderInspectorHere(): void {
   if (!inspector) {
     return;
   }
-  renderInspectorInto({
-    root: inspector,
+  renderInspectorInto(inspectorCtx(inspector));
+  // With the config editors on the sidebar, the aside is often empty (a TB view with
+  // nothing selected). An empty 250px column is exactly the space the diagram wanted
+  // back, so it collapses rather than sitting there blank.
+  inspector.hidden = inspector.childElementCount === 0;
+}
+
+/** the inspector's render context for `root` — the panel's aside, or a
+ *  detached element the action palette collects the buttons from (R17) */
+function inspectorCtx(root: HTMLElement, allOpen = false): Parameters<typeof renderInspectorInto>[0] {
+  return {
+    root,
+    allOpen,
     state,
     tbScene: currentTbScene ?? undefined,
     scene: currentScene,
@@ -280,11 +294,7 @@ function renderInspectorHere(): void {
     toggleFold,
     hasSchematic,
     navigateTo,
-  });
-  // With the config editors on the sidebar, the aside is often empty (a TB view with
-  // nothing selected). An empty 250px column is exactly the space the diagram wanted
-  // back, so it collapses rather than sitting there blank.
-  inspector.hidden = inspector.childElementCount === 0;
+  };
 }
 
 function persistState(): void {
@@ -294,6 +304,7 @@ function persistState(): void {
     // the inspector's disclosures are persisted by inspector-view.ts, which owns
     // them; re-reading here would clobber them with a stale copy
     openSections: vscode.getState()?.openSections,
+    paletteRecent, // docs/08 R17: the recent actions, newest first
   });
 }
 
@@ -717,6 +728,11 @@ function renderHeader(inst: Instance, leafInside = false): void {
   yml.title = "Open the QuickUVM configuration beside the diagram";
   yml.addEventListener("click", () => postAction("openConfigBeside", {}));
   tgl.append(yml);
+  // docs/08 R17 — the action palette: the legal actions for the selection
+  const act = h("button", "mbtn", "Actions");
+  act.title = "Actions for the selection (Ctrl+Space, Ctrl+/)";
+  act.addEventListener("click", openPalette);
+  tgl.append(act);
   head.append(tgl);
   updateGenChip(); // the generate status chip (docs/05)
 }
@@ -2852,6 +2868,23 @@ function applyFlash(): void {
   setTimeout(() => els.forEach((e) => e.classList.remove("flash")), 1800);
 }
 
+/** applies proposals of the set `p`: the strip's Apply and the palette's rows
+ *  share it, so both flash what was created and retire the set (docs/08 R12) */
+function applyProposalItems(p: ProposalSet, items: ProposalApply[]): void {
+  if (!items.length) {
+    return;
+  }
+  pendingFlash = { key: flashKey(), before: flashableIds(), at: Date.now() };
+  postAction("applyProposals", { items });
+  // this exact set was acted upon: a render before the host's next
+  // `proposals/full` (the config/overlay change arrives first) must not
+  // re-show it — the next, different set will
+  dismissedProposals.set(p.viewId, p.items.map((i) => i.id).join("\u0001"));
+  if (assist) {
+    assist.hidden = true;
+  }
+}
+
 function renderAssist(): void {
   if (!assist) {
     return;
@@ -2911,16 +2944,7 @@ function renderAssist(): void {
     const items: ProposalApply[] = ghosts
       ? [{ kind: "materialize", args: {}, accept: checked.map((i) => i.id) }]
       : checked.map((i) => ({ kind: i.kind, args: i.args }));
-    if (!items.length) {
-      return;
-    }
-    pendingFlash = { key: flashKey(), before: flashableIds(), at: Date.now() };
-    postAction("applyProposals", { items });
-    // this exact set was acted upon: a render before the host's next
-    // `proposals/full` (the config/overlay change arrives first) must not
-    // re-show it — the next, different set will
-    dismissedProposals.set(p.viewId, sig);
-    assist.hidden = true;
+    applyProposalItems(p, items);
   });
   const dismiss = h("button", "assist-btn secondary", "Dismiss");
   dismiss.addEventListener("click", () => {
@@ -4140,6 +4164,248 @@ function openFind(): void {
   input.focus();
 }
 
+
+// ------------------------------- contextual action palette (docs/08 R17)
+//
+// Ctrl+Space / Ctrl+/ (or the "Actions" header button) opens a palette of the
+// actions that are LEGAL right now, recent ones first (GLSP's command palette,
+// Figma's quick actions): the selected element's own actions (the context
+// menu's items, the "+" tools, the inline widgets' steps, the generation card),
+// the Properties panel's enabled buttons (rendered into a detached element so
+// the enabling rules stay in ONE place — the panel's), the applicable proposals
+// of the assistance strip, and the view/config commands. Every row runs exactly
+// what its surface would (the same host action, the same confirmations); the
+// palette adds nothing of its own. Display names, never ids (the GLSP bug).
+
+interface PaletteItem {
+  /** `<group>|<label>`: the recency key, stable across renders */
+  key: string;
+  label: string;
+  group: string;
+  danger?: boolean;
+  run: () => void;
+}
+
+let palette: HTMLElement | null = null;
+let paletteRecent: string[] = vscode.getState()?.paletteRecent ?? [];
+
+/** the Properties panel's enabled buttons, as actions: rendered into a detached
+ *  element with every section open, grouped by the heading above each button */
+function inspectorButtons(): { group: string; label: string; run: () => void }[] {
+  const root = h("div", "");
+  try {
+    renderInspectorInto(inspectorCtx(root, true));
+  } catch {
+    return [];
+  }
+  const out: { group: string; label: string; run: () => void }[] = [];
+  let group = "Actions";
+  root.querySelectorAll<HTMLElement>("h3, .sec-head, button.btn").forEach((el) => {
+    if (el.tagName === "H3") {
+      group = el.textContent?.trim() || group;
+    } else if (el.classList.contains("sec-head")) {
+      group = el.lastElementChild?.textContent?.trim() || group;
+    } else if (!(el as HTMLButtonElement).disabled) {
+      const label = el.textContent?.trim();
+      if (label) {
+        out.push({ group, label, run: () => el.click() });
+      }
+    }
+  });
+  return out;
+}
+
+/** every action legal for the current selection and view, grouped; one entry
+ *  per label (the first surface that offers it wins) */
+function paletteItems(): PaletteItem[] {
+  const out: PaletteItem[] = [];
+  const seen = new Set<string>();
+  const add = (group: string, label: string, run: () => void, danger = false): void => {
+    const norm = label.replace(/\s*\((?:[^()]*)\)\s*$/, "").trim().toLowerCase();
+    if (seen.has(norm)) {
+      return;
+    }
+    seen.add(norm);
+    // the recency key is the NORMALISED label: a count in the label ("Agent from
+    // selection (2)") must not make a new key per selection
+    out.push({ key: `${group}|${norm}`, label, group, run, danger });
+  };
+  const selId = state.selection.size === 1 ? [...state.selection][0] : null;
+  if (selId) {
+    const el = canvas.querySelector<SVGElement>(`[data-id="${CSS.escape(selId)}"]`);
+    const items = state.mode === "tb" ? tbMenuItems(selId) : el ? rtlMenuItemsFor(el).items : [];
+    for (const it of items) {
+      if (!it.info) {
+        add("Selection", it.label, it.action, it.danger);
+      }
+    }
+    if (state.mode === "tb") {
+      // the "+" tools are NOT added: the panel's add buttons below carry the
+      // same preselected actions ("Scoreboard from cmd") — one row per action
+      const node = currentTbScene?.nodes.find((n) => n.id === selId);
+      for (const w of node?.widgets ?? []) {
+        if (w.next === undefined) {
+          continue; // a number editor is not a one-shot action
+        }
+        const label =
+          w.kind === "toggle"
+            ? `Set ${node?.label} ${w.next === "true" ? "active" : "passive"}`
+            : `Set ${w.field} ${w.next}`;
+        const value = w.next;
+        add("Selection", label, () => postAction(w.action, { name: w.name, field: w.field, value }));
+      }
+      if (node && !node.inferred) {
+        add("Selection", "What will this generate (I)", () => openCard(selId, true));
+      }
+    }
+  }
+  for (const b of inspectorButtons()) {
+    add(b.group, b.label, b.run);
+  }
+  const p = state.proposals;
+  if (p && p.viewId === state.viewId && (p.mode === "tb") === (state.mode === "tb")) {
+    for (const it of p.items) {
+      if (it.kind !== "materialize") {
+        // the ghosts are all-or-nothing in the strip: not one by one here
+        // (through the shared apply: the flash of what was created + the set
+        // retired - a bare post left the strip offering the applied row)
+        add("Proposals", `Apply: ${it.label}`, () =>
+          applyProposalItems(p, [{ kind: it.kind, args: it.args }])
+        );
+      }
+    }
+  }
+  add("View", "Fit to window (F)", fitView);
+  if (state.selection.size) {
+    add("View", "Fit the selection (G)", fitSelection);
+  }
+  if (state.mode !== "symbol") {
+    add("View", "Re-arrange all (⟲)", relayoutAll);
+  }
+  const hasParent =
+    state.mode === "tb"
+      ? state.tbFocus !== ""
+      : Boolean(state.viewId && rtlParentPath(state.viewId, (p) => Boolean(findInstance(p))));
+  if (hasParent) {
+    add("View", "Up one level (U)", goUp);
+  }
+  if (navHistory.canBack) {
+    add("View", "Back (Ctrl+[)", () => goHistory(true));
+  }
+  if (navHistory.canForward) {
+    add("View", "Forward (Ctrl+])", () => goHistory(false));
+  }
+  add("View", "Find in diagram (Ctrl+F)", openFind);
+  add("View", "Export view as SVG", exportSvg);
+  if (state.mode !== "tb" && tbAvailable()) {
+    add("View", "Open verification view", openTbView); // the panel's label, so the two collapse
+  }
+  if (state.mode === "tb" && state.model) {
+    add("View", "Back to the design views", leaveTbView);
+  }
+  if (state.config) {
+    add("Config", "Open the YAML beside", () => postAction("openConfigBeside", {}));
+    add("Config", "Generate testbench", () => postAction("generate", {}));
+  }
+  return out;
+}
+
+function closePalette(): void {
+  palette?.remove();
+  palette = null;
+}
+
+function openPalette(): void {
+  if (palette) {
+    palette.querySelector("input")?.focus();
+    return;
+  }
+  closeFind();
+  closeCtxMenu();
+  const items = paletteItems();
+  const byKey = new Map(items.map((i) => [i.key, i]));
+  const findable: FindItem[] = items.map((i) => ({ id: i.key, label: i.label }));
+  const box = h("div", "findbox palette");
+  const input = document.createElement("input");
+  input.className = "findinput";
+  input.placeholder = "Action… (recent first; type to filter)";
+  input.setAttribute("aria-label", "Actions");
+  const list = h("div", "findlist");
+  box.append(input, list);
+  // the list scrolls: every legal action is reachable without typing (the
+  // find box's 8 would cut the Config group behind the panel's buttons)
+  const LIMIT = 40;
+  let matches = rankPalette(findable, paletteRecent, "", LIMIT);
+  let active = 0;
+  const run = (key: string): void => {
+    const it = byKey.get(key);
+    closePalette();
+    canvas.focus();
+    if (it) {
+      paletteRecent = pushRecent(paletteRecent, key);
+      persistState();
+      it.run();
+    }
+  };
+  const renderList = (): void => {
+    list.replaceChildren();
+    if (!matches.length) {
+      list.append(h("div", "finditem dim", "no action matches"));
+    }
+    matches.forEach((m, i) => {
+      const it = byKey.get(m.id);
+      const row = h("div", `finditem${i === active ? " active" : ""}${it?.danger ? " danger" : ""}`);
+      row.append(h("span", "grp", it?.group ?? ""), document.createTextNode(m.label));
+      row.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault(); // keep the input's focus until the action runs
+        run(m.id);
+      });
+      list.append(row);
+    });
+    // the list scrolls (up to LIMIT rows): the arrows must not walk off-screen
+    list.querySelector(".finditem.active")?.scrollIntoView({ block: "nearest" });
+  };
+  input.addEventListener("input", () => {
+    matches = rankPalette(findable, paletteRecent, input.value, LIMIT);
+    active = 0;
+    renderList();
+  });
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closePalette();
+      canvas.focus();
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      const m = matches[active];
+      if (m) {
+        run(m.id);
+      }
+    } else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (matches.length) {
+        active = (active + (ev.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length;
+        renderList();
+      }
+    }
+    ev.stopPropagation(); // the diagram's own keys must not fire while typing
+  });
+  input.addEventListener("blur", () => {
+    setTimeout(() => {
+      if (palette === box && document.activeElement !== input) {
+        closePalette();
+      }
+    }, 120);
+  });
+  const cb = canvas.getBoundingClientRect();
+  box.style.left = `${cb.left + cb.width / 2}px`;
+  box.style.top = `${cb.top + 8}px`;
+  document.body.append(box);
+  palette = box;
+  renderList();
+  input.focus();
+}
+
 window.addEventListener("keydown", (e) => {
   // the keys command the diagram only when you are NOT editing a field in the inspector
   // (match_key/max_latency/selects) — otherwise "f"/"h"/"Delete" would trigger
@@ -4193,11 +4459,17 @@ window.addEventListener("keydown", (e) => {
       return;
     }
   }
-  // docs/08 R5: Ctrl+F find, Ctrl+[ / Ctrl+] history (view back/forward)
+  // docs/08 R5: Ctrl+F find, Ctrl+[ / Ctrl+] history (view back/forward);
+  // docs/08 R17: Ctrl+Space / Ctrl+/ the action palette
   if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
     if (key === "f") {
       e.preventDefault();
       openFind();
+      return;
+    }
+    if (e.key === " " || e.key === "/") {
+      e.preventDefault();
+      openPalette();
       return;
     }
     if (e.key === "[" || e.key === "]") {
@@ -4414,7 +4686,24 @@ function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
  * the targets without actions (the pins of the folds) the native menu remains.
  */
 function rtlContextMenu(e: MouseEvent): void {
-  const t = e.target as Element;
+  const { items, selectId } = rtlMenuItemsFor(e.target as Element);
+  if (!items.length) {
+    closeCtxMenu();
+    return; // background / target without actions: the native menu
+  }
+  e.preventDefault();
+  if (selectId && !state.selection.has(selectId)) {
+    state.selection = new Set([selectId]);
+    applySelectionClasses();
+    postSelection();
+    renderInspectorHere();
+  }
+  openCtxMenu(e.clientX, e.clientY, items);
+}
+
+/** the actions of an RTL element under `t` (a pin, a block, a fold, the symbol):
+ *  the context menu's items, also the action palette's (docs/08 R17) */
+function rtlMenuItemsFor(t: Element): { items: CtxItem[]; selectId: string | null } {
   const openSrc = (args: Record<string, unknown>): void =>
     post({ v: 1, type: "action/request", action: "openSource", args });
   const items: CtxItem[] = [];
@@ -4488,18 +4777,7 @@ function rtlContextMenu(e: MouseEvent): void {
       });
     }
   }
-  if (!items.length) {
-    closeCtxMenu();
-    return; // background / target without actions: the native menu
-  }
-  e.preventDefault();
-  if (selectId && !state.selection.has(selectId)) {
-    state.selection = new Set([selectId]);
-    applySelectionClasses();
-    postSelection();
-    renderInspectorHere();
-  }
-  openCtxMenu(e.clientX, e.clientY, items);
+  return { items, selectId };
 }
 
 // Right-click on a component in the verification (TB) view: Open / Flip / Delete.
@@ -4525,6 +4803,12 @@ canvas.addEventListener("contextmenu", (e) => {
     postSelection();
     renderInspectorHere();
   }
+  openCtxMenu(e.clientX, e.clientY, tbMenuItems(id));
+});
+
+/** the actions of a TB element — the context menu's items, also the action
+ *  palette's "Selection" group (docs/08 R17): one list, two surfaces */
+function tbMenuItems(id: string): CtxItem[] {
   const items: CtxItem[] = [];
   const node = currentTbScene?.nodes.find((n) => n.id === id);
   if (node) {
@@ -4576,15 +4860,17 @@ canvas.addEventListener("contextmenu", (e) => {
         }
       }
     }
-  } else {
-    // boundary flag: only the LOCAL horizontal flip (V makes no sense)
+  } else if (currentTbScene?.boundary.some((b) => b.id === id)) {
+    // boundary flag: only the LOCAL horizontal flip (V makes no sense); an id
+    // the scene has NEITHER as a node nor as a flag gets nothing (a stale
+    // selection must not flip a dead id into the sidecar)
     items.push({
       label: "Flip horizontal (H)",
       action: () => toggleFlip(id, "h"),
     });
   }
-  openCtxMenu(e.clientX, e.clientY, items);
-});
+  return items;
+}
 
 // closing the menu: click outside (capture, so it precedes the canvas
 // handlers) and zoom; Escape is handled in the key handler
@@ -4635,6 +4921,7 @@ async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
   closeCard(); // docs/08 R15: the card is anchored to a box that is about to be redrawn
+  closePalette(); // docs/08 R17: its rows close over the scene that is about to change
   renderAssist(); // docs/08 R12: the strip follows the view (hidden on a mismatch)
   if (state.mode === "tb") {
     return renderTb(refit);
@@ -5240,6 +5527,11 @@ function renderTbHeader(scene: TbScene | null): void {
   yml.title = "Open the QuickUVM configuration beside the diagram";
   yml.addEventListener("click", () => postAction("openConfigBeside", {}));
   tgl.append(yml);
+  // docs/08 R17 — the action palette: the legal actions for the selection
+  const act = h("button", "mbtn", "Actions");
+  act.title = "Actions for the selection (Ctrl+Space, Ctrl+/)";
+  act.addEventListener("click", openPalette);
+  tgl.append(act);
   head.append(tgl);
   updateGenChip(); // the generate status chip (docs/05)
 }
