@@ -182,7 +182,7 @@ export function addAgentPorts(
     ? agents.items.findIndex((a) => isMap(a) && a.get("name") === agent)
     : -1;
   if (idx < 0) {
-    throw new Error(`agentul „${agent}" nu exista in configuratie`);
+    throw new Error(`agent "${agent}" does not exist in the configuration`);
   }
   const existing = new Set<string>();
   for (const side of ["inputs", "outputs", "inouts"] as const) {
