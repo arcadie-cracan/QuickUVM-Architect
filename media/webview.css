@@ -1457,3 +1457,27 @@ text.split-sign {
 .rename.invalid {
   border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground, #f14c4c));
 }
+
+/* ------------------------------------- inline widgets on boxes (docs/08 R13) */
+/* a pill per field under the compartments; clickable only while the box is
+   SELECTED (the accidental-edit rule): until then it takes no pointer events,
+   so the first click selects the box and the second one acts */
+.tb-widget { cursor: pointer; }
+.tb-widget-pill {
+  fill: var(--vscode-button-secondaryBackground, rgba(128, 128, 128, 0.2));
+  stroke: var(--vscode-panel-border);
+  stroke-width: 1;
+}
+.tb-widget-text {
+  font-size: 10.5px;
+  fill: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family);
+  pointer-events: none;
+}
+.tbnode:not(.selected) .tb-widget { pointer-events: none; opacity: 0.75; }
+.tbnode.selected .tb-widget:hover .tb-widget-pill {
+  fill: var(--vscode-button-secondaryHoverBackground, rgba(128, 128, 128, 0.35));
+  stroke: var(--vscode-focusBorder);
+}
+.tb-widget.toggle[data-value="true"] .tb-widget-pill { stroke: var(--vscode-charts-green, #89d185); }
+.rename.number { text-align: left; font-weight: 400; font-family: var(--vscode-editor-font-family); }

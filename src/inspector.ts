@@ -54,6 +54,10 @@ export interface Rows {
  * "only valid with …" error, so hiding it removes a row the generator would refuse.
  */
 export function agentRows(agent: QuvmAgent): Rows {
+  if (agent.from_vip) {
+    // a VIP reference takes `{name, from_vip}` only (extra keys rejected): nothing to edit
+    return { basic: [], advanced: [] };
+  }
   const basic = ["active", "mode"];
   // `emit_when` gates what the MONITOR publishes (A2): with it, idle and
   // pipeline-fill cycles never reach the scoreboard. Always valid, seldom needed —

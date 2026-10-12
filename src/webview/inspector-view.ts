@@ -1586,7 +1586,7 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
       case "max_latency": {
         const latIn = h("input", "prop");
         latIn.type = "number";
-        latIn.min = "0";
+        latIn.min = "1"; // quick-uvm: max_latency >= 1 cycle
         latIn.value = sb.max_latency != null ? String(sb.max_latency) : "";
         latIn.placeholder = "unbounded";
         latIn.addEventListener("change", () => send("max_latency", latIn.value));

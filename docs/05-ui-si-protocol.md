@@ -203,6 +203,25 @@ mesajele tot aici, la implementare.
   `<name>_if` / `<name>_seq_item` when conventional; `renameScoreboardAt`;
   `renameSubenv`: `connections` and cross-block endpoints) and reports the
   references updated.
+- **Inline widgets on the boxes** (docs/08 R13, Oct 2026): the two or three
+  facts a bench is tuned by sit ON the box, under its compartments, as pills
+  (`TbNode.widgets`, built in `buildTbScene`; sized and drawn in
+  `tbschematic.ts`): `active` / `passive` on an agent (a toggle), `match: …`
+  (a cycle in_order ↔ out_of_order) and `latency: …` (a small number editor,
+  empty = unbounded, at least 1 cycle — quick-uvm refuses 0) on a NAMED
+  two-stream scoreboard — a single-stream entry has neither fact, an unnamed or
+  duplicate-named one (`sb:x#2`) cannot be edited by name, a ghost has nothing
+  in the YAML, a VIP reference (`from_vip`) takes no keys. The `match` pill
+  shows the `match_key` with the mode and its tooltip says the step to in_order
+  drops it (the `setScoreboardField` cascade). A bad number (a stray `e`, a
+  fraction, 0) is flagged, keeps the editor on Enter and cancels on blur. A
+  click sends the SAME host action the Properties panel would
+  (`editAgent {name, field: active, value}` / `editScoreboard {name, field,
+  value}`), so the panel and the box stay in sync through the YAML. The
+  accidental-edit rule of the research: a widget takes pointer events only
+  while its box is SELECTED (the first click selects, the second acts), the
+  second click of a double-click is ignored (`e.detail > 1`) and a double-click
+  on a widget does not drill. No protocol change.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU

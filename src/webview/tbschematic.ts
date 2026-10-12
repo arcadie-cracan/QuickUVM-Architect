@@ -28,6 +28,8 @@ const BPORT_H = 16;
 const PIN_TOP = 40; // the first port below the title band (multiple of 8)
 const PIN_PITCH = 16;
 const LINE_H = 13; // the height of a compartment line
+/** docs/08 R13 — the height of an inline widget row (a pill + its text) */
+const WIDGET_H = 18;
 
 function ceilGrid(v: number): number {
   return Math.ceil(v / 8) * 8;
@@ -36,7 +38,7 @@ function ceilGrid(v: number): number {
 /** the UML box's size: title + stereotype + compartments, and min for ports */
 function boxSize(
   n: TbNode,
-  measure: (t: string) => number
+  measure: (t: string, mono?: boolean) => number
 ): { w: number; h: number } {
   let textH = 22; // the title band
   if (n.stereotype) {
@@ -55,6 +57,14 @@ function boxSize(
     textH += c.items.length * LINE_H;
     for (const it of c.items) {
       maxTextW = Math.max(maxTextW, measure(it) + 12);
+    }
+  }
+  if (n.widgets?.length && !n.inferred) {
+    // docs/08 R13 — one pill row per widget, under the compartments; the pill
+    // text is MONOSPACE (the measuring trap of CLAUDE.md), plus glyph + padding
+    textH += 4 + n.widgets.length * WIDGET_H;
+    for (const w of n.widgets) {
+      maxTextW = Math.max(maxTextW, measure(w.label, true) + 36);
     }
   }
   const west = n.ports.filter((p) => p.side === "WEST").length;
@@ -148,7 +158,7 @@ function flipPorts(ports: TbPort[], flip: Flip): TbPort[] {
 export async function layoutTb(
   elk: ElkLike,
   scene: TbScene,
-  measure: (t: string) => number,
+  measure: (t: string, mono?: boolean) => number,
   seeds?: ReadonlyMap<string, { x: number; y: number }>,
   flips?: ReadonlyMap<string, Flip>
 ): Promise<TbLayout> {
@@ -412,6 +422,48 @@ function drawBox(p: TbPlaced): SVGGElement {
       g.append(el("text", { class: "tb-comp", x: "8", y: String(y) }, it));
     }
     y += 2;
+  }
+  if (n.widgets?.length && !n.inferred) {
+    // docs/08 R13 — the inline widgets: a pill per field, data-* for the click
+    // handler in main.ts (which acts only while the box is selected)
+    g.append(
+      el("line", { class: "tb-sep", x1: "0", y1: String(y), x2: String(p.w), y2: String(y) })
+    );
+    y += 4;
+    for (const w of n.widgets) {
+      const wg = el("g", { class: `tb-widget ${w.kind}` });
+      wg.dataset.node = n.id;
+      wg.dataset.field = w.field;
+      wg.dataset.kind = w.kind;
+      wg.dataset.value = w.value;
+      if (w.next !== undefined) {
+        wg.dataset.next = w.next;
+      }
+      wg.dataset.action = w.action;
+      wg.dataset.name = w.name;
+      wg.append(
+        el("rect", {
+          class: "tb-widget-pill",
+          x: "8",
+          y: String(y),
+          width: String(p.w - 16),
+          height: String(WIDGET_H - 3),
+          rx: "7",
+        })
+      );
+      const glyph =
+        w.kind === "toggle" ? (w.value === "true" ? "●" : "○") : w.kind === "cycle" ? "⇄" : "✎";
+      wg.append(
+        el("text", { class: "tb-widget-text", x: "14", y: String(y + 11) }, `${glyph} ${w.label}`)
+      );
+      if (w.hint) {
+        const t = el("title", {});
+        t.textContent = w.hint;
+        wg.append(t);
+      }
+      g.append(wg);
+      y += WIDGET_H;
+    }
   }
   // the ports: short line + label on the side
   for (const port of n.ports) {

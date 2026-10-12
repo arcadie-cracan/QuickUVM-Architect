@@ -55,6 +55,22 @@ const CFG = {
   analysis: { scoreboards: [{ name: "sbd", source: "cmd", monitor: "rsp" }] },
 };
 
+await test("docs/08 R13: the widget rows are counted in the box (the pills fit)", async () => {
+  const scene = buildTbScene(CFG, "env", "d.yaml");
+  const layout = await layoutTb(elk, scene, measure);
+  const sb = layout.nodes.get("sb:sbd");
+  const noWidgets = { ...scene, nodes: scene.nodes.map((n) => ({ ...n, widgets: [] })) };
+  const bare = (await layoutTb(elk, noWidgets, measure)).nodes.get("sb:sbd");
+  // two pills (4 + 2*18 = 40px of text height) make the box taller than the
+  // port-driven minimum it had without them, on the 8px grid
+  assert.ok(sb.h > bare.h, `with widgets ${sb.h} vs without ${bare.h}`);
+  assert.equal(sb.h % 8, 0);
+  // the mono measurer is asked for the pill text: a wide label widens the box
+  const wide = { ...scene, nodes: scene.nodes.map((n) => n.id === "sb:sbd" ? { ...n, widgets: [{ ...n.widgets[0], label: "match: out_of_order (a_very_long_key_name)" }] } : n) };
+  const w = (await layoutTb(elk, wide, measure)).nodes.get("sb:sbd");
+  assert.ok(w.w > sb.w, `wide label ${w.w} vs ${sb.w}`);
+});
+
 await test("porturile sunt RELATIVE la originea nodului (0 sau w)", async () => {
   const scene = buildTbScene(CFG, "", "d.yaml");
   const layout = await layoutTb(elk, scene, measure);

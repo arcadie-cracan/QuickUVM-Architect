@@ -88,6 +88,32 @@ export interface TbPort {
   broken?: boolean;
 }
 
+/**
+ * docs/08 R13 — an inline widget on a box: the two or three fields a bench is
+ * tuned by, ON the canvas (ComfyUI's node widgets, Simulink's on-canvas tuning).
+ * `toggle` flips (`active`), `cycle` steps through a short enumeration (`match`),
+ * `number` opens a small editor (`max_latency`). A click sends the SAME host
+ * action the Properties panel would (`editAgent` / `editScoreboard` with
+ * `{name, field, value}`), so the two stay in sync through the YAML. Only on a
+ * SELECTED box (the accidental-edit rule of the research), never on a ghost.
+ */
+export interface TbWidget {
+  field: "active" | "match" | "max_latency";
+  kind: "toggle" | "cycle" | "number";
+  /** the text drawn in the pill, value included (`match: in_order`) */
+  label: string;
+  /** the current value as the action would send it; "" = unset */
+  value: string;
+  /** toggle/cycle: the value a click sends */
+  next?: string;
+  action: "editAgent" | "editScoreboard";
+  /** the config entry the action names */
+  name: string;
+  /** what the click will do beyond the obvious (a tooltip): e.g. the `match`
+   *  step to in_order drops the `match_key` (the setScoreboardField cascade) */
+  hint?: string;
+}
+
 /** a level's block: UML box with compartments; `drill` = the descent's focus */
 export interface TbNode {
   id: string;
@@ -99,6 +125,8 @@ export interface TbNode {
   /** the level's focus on double-click (block with structure); null = leaf */
   drill: string | null;
   tooltip: string;
+  /** docs/08 R13 — the inline widgets drawn under the compartments */
+  widgets?: TbWidget[];
   /** the generator supplies this component, the config does not mention it (implicit
    *  mode). Drawn as a GHOST, and not editable/deletable — there is nothing in the
    *  YAML to edit or delete. See `src/resolved.ts`. */
@@ -215,6 +243,42 @@ function sbSub(sb: QuvmScoreboard): string {
 
 const agentId = (name: string): string => `agent:${name}`;
 const subId = (name: string): string => `sub:${name}`;
+
+/** docs/08 R13 — the widgets of a NAMED local scoreboard: match and latency
+ *  are two-stream facts (a monitor), so a single-stream entry gets none; an
+ *  unnamed entry cannot be edited by name (`setScoreboardField`) — none either */
+function sbWidgets(sb: QuvmScoreboard, id: string): TbWidget[] {
+  // a duplicate name (`sb:x#2`) would edit the FIRST entry of that name: none
+  if (!sb.name || !sb.monitor || id.includes("#")) {
+    return [];
+  }
+  const match = sb.match ?? "in_order";
+  return [
+    {
+      field: "match",
+      kind: "cycle",
+      // the key is shown WITH the mode: the cascade of setScoreboardField deletes
+      // it on the step to in_order, and nothing else on the canvas showed it
+      label: `match: ${match}${sb.match_key ? ` (${sb.match_key})` : ""}`,
+      value: match,
+      next: match === "in_order" ? "out_of_order" : "in_order",
+      action: "editScoreboard",
+      name: sb.name,
+      hint:
+        match === "out_of_order" && sb.match_key
+          ? `in_order drops match_key: ${sb.match_key}`
+          : undefined,
+    },
+    {
+      field: "max_latency",
+      kind: "number",
+      label: `latency: ${sb.max_latency != null ? sb.max_latency : "—"}`,
+      value: sb.max_latency != null ? String(sb.max_latency) : "",
+      action: "editScoreboard",
+      name: sb.name,
+    },
+  ];
+}
 
 /** the names of the agents coordinated by virtual sequences (or auto at >=2 active) */
 function coordinatedAgents(config: QuvmConfig): Set<string> {
@@ -499,6 +563,21 @@ function levelEnv(
       ports,
       drill: id,
       tooltip: `${name} — double-click to open the agent`,
+      // docs/08 R13 — the one agent fact tuned most often, on the box. A VIP
+      // reference takes `{name, from_vip}` only (extra keys rejected): no toggle
+      widgets: a.from_vip
+        ? []
+        : [
+            {
+              field: "active",
+              kind: "toggle",
+              label: active ? "active" : "passive",
+              value: String(active),
+              next: String(!active),
+              action: "editAgent",
+              name,
+            },
+          ],
     });
   }
 
@@ -537,6 +616,7 @@ function levelEnv(
       ports,
       drill: null,
       tooltip: `scoreboard ${sb.name ?? "sbd"}`,
+      widgets: sbWidgets(sb, id),
     });
     const connect = (agent: string | undefined, p: string): void => {
       if (agent && agentNames.has(agent)) {
