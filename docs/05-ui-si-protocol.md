@@ -126,6 +126,42 @@ mesajele tot aici, la implementare.
   închideri: Escape, pointerdown în afară, zoom și **pierderea focusului
   webview-ului** (`blur` — clic în Design Hierarchy / editor nu produce
   pointerdown în iframe, deci `blur` e singura cale de a închide meniul).
+- **The temporary wire** (docs/08 R10/R11, Oct 2026): a press on a port's
+  hotspot starts a dashed orthogonal wire that follows the pointer; the DROP
+  decides, and every rule of what a drop means lives in the pure module
+  `src/webview/wiring.ts` (`wireOriginOf` / `wireTargets` / `wireChoices` /
+  `wireChoicesOnCanvas` / `rtlWireChoices`, `npm run test:wiring`). Hotspots: in
+  the TB view a transparent disc (`.tb-porthit`, `data-port` / `data-node`) at
+  the tip of every TLM port of a non-ghost box; in the RTL views the `.pin`
+  groups (the symbol's pins, a child block's pins in the schematic — NOT the
+  boundary flags: a drag on a flag moves it, docs/04; not clock/reset/ignored
+  pins). Drop on EMPTY canvas → a filtered menu at the drop point (R10): from an
+  agent's `<ap>` → "Scoreboard fed by X" / "Coverage on X" (`addScoreboard
+  {source}` / `addCoverage {agent}`; the webview keeps a `pendingDrop` and the
+  next `renderTb` of the same layout key places the first NEW node of that kind
+  at the drop point, then pins the whole view through `layout/snapshot` — total
+  seeds, D21); from a scoreboard's `source` / `monitor` → the legal agents
+  (`editScoreboard`); from a DUT pin → "Agent from pin X" / "Agent from the N
+  selected pins" (`createAgentFromPins {pins, viewId}`; the selection travels
+  only when the origin is part of it) / "Agent from interface X"
+  (`createAgentFromIface`). Drop on a LEGAL target (R11) → ONE outcome applies
+  directly, several open the menu: `<ap>` on a scoreboard box or input →
+  `editScoreboard {name, field: source|monitor, value: agent}`; a scoreboard
+  input on an agent → the same retarget; a DUT pin on a pin an agent already
+  claims (the overlay colors it — the symbol view) → `addPinsToAgent {agent,
+  pins, viewId}`. Legality is computed ONCE at the press and shown before the
+  drop (`.drop-ok` / `.drop-bad` on boxes and hotspots, the reason as a hint
+  under the pointer and as the toast of an illegal drop): already an endpoint,
+  source ≠ monitor, an unnamed scoreboard (endpoints are set BY NAME), a
+  cross-block scoreboard (edit `<subenv>.<agent>` in Properties), a ghost
+  (nothing in the YAML), a coverage collector (one agent each). The nearest
+  legal hotspot within 20 px snaps. Escape, the webview's `blur` and a press
+  outside the canvas cancel. TB only: a plain click on a hotspot ARMS
+  click-click mode (the wire follows the pointer until the next press — R11's
+  keyboard/touch fallback); in RTL a click on a pin keeps selecting it. NOT
+  wired by the gesture yet: `connections` between subenvs (they need a host
+  action with the children's widths — "Wire connections from design" stays in
+  the inspector).
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
@@ -260,7 +296,7 @@ JSON, versionat (`v: 1`), tipat în TypeScript într-un singur fișier partajat
 | `edge/override` | `{viewId, edgeId, patch}` | override de rutare (nivelurile 1–3) |
 | `net/render` | `{viewId, net, render: "wire"\|"label"}` | override-ul de nivel 4 (docs/04): comutarea unui net între fir și etichetă din inspector (netul se selectează prin click pe traseu sau pe eticheta lui). Webview-ul a aplicat deja local; host-ul persistă `nets[net].render` în sidecar — alegerea egală cu sugestia din model șterge override-ul; fără ecou |
 | `nav/drill` | `{instancePath, mode?}` | dublu-click pe instanță în vederea-schemă: webview-ul navighează local (schema dacă instanța are una, altfel simbolul), host-ul actualizează titlul panoului, vederea curentă și evidențiază instanța în ierarhie; `mode` (D24) distinge simbolul top-ului — reveal pe rădăcina sintetică „top module" — de schema lui — reveal pe nodul instanței (aceeași cale, vederi diferite) |
-| `action/request` | `{action, args}` | acțiuni care ating YAML sau sursele: `setDut`, `createAgentFromPins`, `createAgentFromIface`, `createSubenv`, `ignorePort`, `unignorePort`, `generate`, `openSource`, `addScoreboard`, `addCoverage`, `addVirtualSequence`, `deleteComponent {kind, name}`, `editScoreboard {name, field, value}`, `createProbe {net}`, `wireConnections {}`, `composeIntoParent {}`, `openSubenvConfig {config}` (deschide fișierul de config al unui subenv — calea din `subenvs[].config`, purtată de drill — cu editorul implicit), `openConfigBeside {}` (docs/08 R4: the "YAML" header button — the configuration as text beside the diagram, focus kept on the diagram; the host opens it, or the per-file editor opens its own document) — webview-ul NU scrie niciodată fișiere; cere host-ului. `openSource` acceptă și `peek: true` (cross-probing la hover, faza 4): host-ul doar **revelează** declarația în editoarele DEJA vizibile, cu o evidențiere tranzitorie a liniei (~1,2 s) — nu deschide tab-uri, nu fură focusul; setarea `quickuvm.hoverCrossProbe` (implicit on) îl stinge |
+| `action/request` | `{action, args}` | acțiuni care ating YAML sau sursele: `setDut`, `createAgentFromPins`, `createAgentFromIface`, `createSubenv`, `ignorePort`, `unignorePort`, `generate`, `openSource`, `addScoreboard`, `addCoverage`, `addVirtualSequence`, `deleteComponent {kind, name}`, `editScoreboard {name, field, value}`, `createProbe {net}`, `wireConnections {}`, `composeIntoParent {}`, `openSubenvConfig {config}` (deschide fișierul de config al unui subenv — calea din `subenvs[].config`, purtată de drill — cu editorul implicit), `openConfigBeside {}` (docs/08 R4: the "YAML" header button — the configuration as text beside the diagram, focus kept on the diagram; the host opens it, or the per-file editor opens its own document), `addPinsToAgent {agent, pins, viewId}` (docs/08 R10: a wire from a DUT pin dropped on a pin an agent already claims — the dragged pins join that agent through the `addAgentPorts` mutation, with the same port derivation as `createAgentFromPins`) — webview-ul NU scrie niciodată fișiere; cere host-ului. `openSource` acceptă și `peek: true` (cross-probing la hover, faza 4): host-ul doar **revelează** declarația în editoarele DEJA vizibile, cu o evidențiere tranzitorie a liniei (~1,2 s) — nu deschide tab-uri, nu fură focusul; setarea `quickuvm.hoverCrossProbe` (implicit on) îl stinge |
 | `export/result` | `{viewId, svg}` | SVG-ul AUTONOM al vederii curente (faza 4): clonă cu stilurile calculate inline-uite (culorile temei VSCode sunt copiate în export — CSS-ul extern cu `var(--vscode-*)` nu călătorește), `viewBox` pe conținut (fără camera de sesiune), fundal copt din tema curentă. Emis la butonul ⤓ din header sau ca răspuns la `export/request`; host: save dialog + scriere pe disc |
 | `relay/flip` \| `relay/fold` \| `relay/netRender` \| `relay/selectPins` \| `relay/openTb` | `{nodeId, axis}` \| `{foldId}` \| `{net}` \| `{names[]}` \| `{}` | **gesturile de desen ale inspectorului din sidebar** (iul. 2026). Inspectorul NU mai stă în panou: aside-ul `#inspector` a fost SCOS, iar vederea „Properties" din sidebar e singurul inspector — de aici, un flip/pliaj/net-render nu are pânză pe care să acționeze, așa că se trimit host-ului, care le retrimite panoului (aceleași nume, sens invers). **Niciunul nu poartă `viewId`**: panoul le aplică pe vederea pe care o arată el, deliberat — sidebar-ul nu trebuie să poată muta o vedere pe care utilizatorul nu o privește. Fără panou deschis se pierd, ceea ce e corect: singurul lor efect e ce se desenează |
 | `relayout/request` | `{viewId, scope: all}` | „Re-aranjează tot" (butonul ⟲ / docs/04): webview-ul a șters local pozițiile vederii și a revenit la layoutul ELK complet; host-ul șterge pozițiile (x/y) din nodurile vederii în sidecar — plierea și răsturnările rămân; fără ecou. `scope: new` e rezervat (inserarea elementelor noi se face automat, prin ELK interactiv) |
