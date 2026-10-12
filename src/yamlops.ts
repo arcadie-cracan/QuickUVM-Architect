@@ -457,6 +457,53 @@ export function addCoverage(text: string, agent: string): string {
   return doc.toString(TO_STRING);
 }
 
+/** the inferred components to write (docs/08 R12): the resolved entries, verbatim */
+export interface MaterializeSpec {
+  scoreboards: { name: string; source: string; monitor?: string; match?: string }[];
+  coverage: string[];
+}
+
+/**
+ * Writes the `analysis:` block of an implicit-mode bench from what quick-uvm
+ * inferred (docs/07's two sharp edges): the WHOLE kept set at once, and the
+ * unchecked members absent — `analysis: {}` when nothing is kept, which is
+ * declared mode with nothing wired (`keepAnalysis`). A config that already has
+ * an `analysis:` key has nothing inferred: the ORIGINAL text comes back
+ * byte-identical (no phantom edit).
+ */
+export function materializeAnalysis(text: string, spec: MaterializeSpec): string {
+  const doc = parse(text);
+  const current = doc.getIn(["analysis"]);
+  if (current !== undefined && current !== null) {
+    return text; // declared already; `analysis:` with no value counts as implicit (the scene agrees)
+  }
+  const analysis = doc.createNode({}) as YAMLMap;
+  if (spec.scoreboards.length) {
+    const seq = doc.createNode([]) as YAMLSeq;
+    for (const sb of spec.scoreboards) {
+      const node = doc.createNode({
+        name: sb.name,
+        source: sb.source,
+        ...(sb.monitor ? { monitor: sb.monitor } : {}),
+        ...(sb.match && sb.match !== "in_order" ? { match: sb.match } : {}),
+      }) as YAMLMap;
+      node.flow = true; // like addScoreboard: `- {name: sbd, source: cmd}`
+      seq.add(node);
+    }
+    analysis.set("scoreboards", seq);
+  }
+  if (spec.coverage.length) {
+    const seq = doc.createNode(spec.coverage) as YAMLSeq;
+    seq.flow = true; // like addCoverage: `coverage: [cmd]`
+    analysis.set("coverage", seq);
+  }
+  if (!spec.scoreboards.length && !spec.coverage.length) {
+    analysis.flow = true; // `analysis: {}`
+  }
+  doc.setIn(["analysis"], analysis);
+  return doc.toString(TO_STRING);
+}
+
 export interface VseqSpec {
   name: string;
   mode: "sequential" | "parallel";

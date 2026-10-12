@@ -13,7 +13,7 @@ import type {
   ViewMode,
   WebviewMessage,
 } from "../protocol";
-import type { GenerateStatus, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
+import type { GenerateStatus, Proposal, ProposalApply, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
@@ -82,6 +82,7 @@ const state: State = {
   resolved: null,
   statusDecos: [],
   tbFocus: "",
+  proposals: null,
   tx: 0,
   ty: 0,
   k: 1,
@@ -393,6 +394,14 @@ window.addEventListener("message", (e: MessageEvent) => {
       const { v: _v, type: _t, ...overlay } = m;
       state.overlay = overlay;
       void render();
+      break;
+    }
+    case "proposals/full": {
+      // docs/08 R12 — the host's proposals for the view it shows; the strip
+      // decides whether they belong to the view THIS webview displays
+      const { v: _v, type: _t, ...set } = m;
+      state.proposals = set;
+      renderAssist();
       break;
     }
     case "tb/navigate":
@@ -2118,6 +2127,152 @@ function undoPositions(redo: boolean): void {
   applyPositions(key, snap);
 }
 
+// ------------------------------------------- designer assistance (docs/08 R12)
+//
+// The host computes the proposals (src/proposals.ts: an interface without an
+// agent, a pin group by prefix, composed blocks wired in the design but not in
+// the YAML, the components quick-uvm infers on an implicit-mode bench) and sends
+// them as `proposals/full` for the view it shows; this strip only renders them
+// and sends back what the user CHECKED (`applyProposals`). Never automatic:
+// Apply or Dismiss (per view, until the set changes). What the apply created is
+// flashed once on the next render (the new agent's pins, the new TB boxes).
+
+const assist = document.getElementById("assist");
+/** dismissed sets per view id: the signature of the set the user waved away */
+const dismissedProposals = new Map<string, string>();
+/** the ids drawn BEFORE an apply, to flash what it created on the next render;
+ *  keyed by mode + layout key: the TB levels share `viewId`, and a root-level
+ *  apply must not light every box of the Env level on the next drill */
+let pendingFlash: { key: string; before: Set<string>; at: number } | undefined;
+/** the set the strip shows (view + signature): kept as is while it stays the
+ *  same, so a re-render does not reset the user's checkboxes */
+let renderedAssist = "";
+
+function flashKey(): string {
+  return `${state.mode}|${layoutKey() ?? ""}`;
+}
+
+/** what an apply can create in the current view: claimed pins (RTL), boxes (TB) */
+function flashableIds(): Set<string> {
+  const ids = new Set<string>();
+  if (state.mode === "tb") {
+    for (const n of currentTbScene?.nodes ?? []) {
+      if (!n.inferred) {
+        ids.add(n.id);
+      }
+    }
+  } else {
+    canvas.querySelectorAll<SVGElement>(".pin[data-id]").forEach((p) => {
+      if (p.dataset.id && CLAIMED_RE.test(p.getAttribute("class") ?? "")) {
+        ids.add(p.dataset.id);
+      }
+    });
+  }
+  return ids;
+}
+
+function applyFlash(): void {
+  const pf = pendingFlash;
+  if (!pf) {
+    return;
+  }
+  if (pf.key !== flashKey() || Date.now() - pf.at > 60_000) {
+    pendingFlash = undefined;
+    return;
+  }
+  const fresh = [...flashableIds()].filter((id) => !pf.before.has(id));
+  if (!fresh.length) {
+    return; // the host has not applied yet (a question of its own pending)
+  }
+  pendingFlash = undefined;
+  const els = fresh
+    .map((id) => canvas.querySelector<SVGElement>(`[data-id="${CSS.escape(id)}"]`))
+    .filter((e): e is SVGElement => Boolean(e));
+  els.forEach((e) => e.classList.add("flash"));
+  setTimeout(() => els.forEach((e) => e.classList.remove("flash")), 1800);
+}
+
+function renderAssist(): void {
+  if (!assist) {
+    return;
+  }
+  const p = state.proposals;
+  const tb = state.mode === "tb";
+  if (!p || p.viewId !== state.viewId || (p.mode === "tb") !== tb || !p.items.length) {
+    assist.hidden = true;
+    assist.replaceChildren();
+    renderedAssist = "";
+    return;
+  }
+  const sig = p.items.map((i) => i.id).join("\u0001");
+  if (dismissedProposals.get(p.viewId) === sig) {
+    assist.hidden = true;
+    renderedAssist = "";
+    return;
+  }
+  const shown = `${p.viewId}\u0001${sig}`;
+  if (!assist.hidden && renderedAssist === shown) {
+    // the same set is on screen: a rebuild would re-check every box, and an
+    // unchecked ghost would be written anyway on "Write analysis" (review finding)
+    return;
+  }
+  renderedAssist = shown;
+  assist.replaceChildren();
+  const ghosts = p.items.every((i) => i.kind === "materialize");
+  assist.append(
+    h(
+      "span",
+      "assist-title",
+      ghosts
+        ? "quick-uvm infers these on this bench (implicit mode) — write them into the YAML?"
+        : "Designer assistance — the design suggests:"
+    )
+  );
+  const boxes: { item: Proposal; cb: HTMLInputElement }[] = [];
+  for (const it of p.items) {
+    const lab = h("label", "assist-item");
+    const cb = h("input", "");
+    cb.type = "checkbox";
+    cb.checked = true;
+    lab.append(cb, h("span", "", it.label));
+    if (it.detail) {
+      lab.title = it.detail;
+    }
+    assist.append(lab);
+    boxes.push({ item: it, cb });
+  }
+  if (ghosts) {
+    assist.append(h("span", "assist-note", "Unchecked components will no longer be generated."));
+  }
+  const apply = h("button", "assist-btn", ghosts ? "Write analysis" : "Apply");
+  apply.addEventListener("click", () => {
+    const checked = boxes.filter((b) => b.cb.checked).map((b) => b.item);
+    // the ghosts travel as ONE item: the kept ids — the unchecked become absent
+    const items: ProposalApply[] = ghosts
+      ? [{ kind: "materialize", args: {}, accept: checked.map((i) => i.id) }]
+      : checked.map((i) => ({ kind: i.kind, args: i.args }));
+    if (!items.length) {
+      return;
+    }
+    pendingFlash = { key: flashKey(), before: flashableIds(), at: Date.now() };
+    postAction("applyProposals", { items });
+    // this exact set was acted upon: a render before the host's next
+    // `proposals/full` (the config/overlay change arrives first) must not
+    // re-show it — the next, different set will
+    dismissedProposals.set(p.viewId, sig);
+    assist.hidden = true;
+  });
+  const dismiss = h("button", "assist-btn secondary", "Dismiss");
+  dismiss.addEventListener("click", () => {
+    dismissedProposals.set(p.viewId, sig);
+    assist.hidden = true;
+  });
+  const btns = h("span", "assist-actions");
+  btns.append(apply, dismiss);
+  assist.append(btns);
+  assist.hidden = false;
+}
+
 // ------------------------------------------- temporary wire (docs/08 R10/R11)
 //
 // A press on a port's hotspot starts a dashed orthogonal wire that follows the
@@ -3780,6 +3935,7 @@ function hideBanner(): void {
 
 async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
+  renderAssist(); // docs/08 R12: the strip follows the view (hidden on a mismatch)
   if (state.mode === "tb") {
     return renderTb(refit);
   }
@@ -3843,6 +3999,7 @@ async function render(refit = false): Promise<void> {
   }
   renderInspectorHere();
   applyCameraAfterRender(refit);
+  applyFlash(); // docs/08 R12: what an applied proposal created, lit once
 }
 
 /**
@@ -4304,6 +4461,7 @@ async function renderTb(refit: boolean): Promise<void> {
   refreshMinimap();
   renderInspectorHere();
   applyCameraAfterRender(refit);
+  applyFlash(); // docs/08 R12: what an applied proposal created, lit once
 }
 
 /** navigation by levels in the verification (TB) view (drill / breadcrumb, D24) */

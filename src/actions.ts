@@ -16,10 +16,13 @@ import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
 import { kindBlockers, layoutBlockers } from "./benchid";
 import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
-import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE } from "./heuristics";
+import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
+import { connectedIface } from "./proposals";
+import type { ProposalApply } from "./protocol";
 import type { QuvmConfig } from "./quickuvm";
+import { inferredComponents, type ResolvedConfig } from "./resolved";
 import * as ops from "./yamlops";
 
 export class Actions {
@@ -194,7 +197,8 @@ export class Actions {
    */
   async createAgentFromPins(
     viewId: string | undefined,
-    pinIds: string[]
+    pinIds: string[],
+    preset?: string
   ): Promise<void> {
     const r = this.resolve(viewId);
     if (!r) {
@@ -235,7 +239,7 @@ export class Actions {
       return;
     }
 
-    const name = await this.askAgentName(suggestName(names));
+    const name = await this.agentName(preset, suggestName(names));
     if (!name) {
       return;
     }
@@ -470,7 +474,8 @@ export class Actions {
   /** Agent from the interface port: unfolds the DUT's modport (docs/03). */
   async createAgentFromIface(
     viewId: string | undefined,
-    portName: string
+    portName: string,
+    preset?: string
   ): Promise<void> {
     const model = this.getModel();
     const r = this.resolve(viewId);
@@ -487,7 +492,7 @@ export class Actions {
     }
 
     // the connected interface instance: through the parent's view, otherwise by type
-    const ifaceInst = this.connectedIface(model, inst, portName, ifp.interface);
+    const ifaceInst = connectedIface(model, inst, portName, ifp.interface);
     if (!ifaceInst?.iface) {
       void vscode.window.showWarningMessage(
         vscode.l10n.t(
@@ -547,7 +552,7 @@ export class Actions {
       return;
     }
 
-    const name = await this.askAgentName(portName);
+    const name = await this.agentName(preset, portName);
     if (!name) {
       return;
     }
@@ -2544,6 +2549,131 @@ export class Actions {
     return true;
   }
 
+  /** a preset name (docs/08 R12 proposals) is used when it is a free, valid
+   *  identifier; otherwise the input box asks, prefilled with the suggestion */
+  private async agentName(
+    preset: string | undefined,
+    suggestion: string
+  ): Promise<string | undefined> {
+    const cfg = this.config.current;
+    // the agent's name also names its interface and package in tb_top and the
+    // config DB: scoreboards, subenvs and probes share that namespace, and an SV
+    // keyword compiles nowhere — any hit goes through the input box instead
+    const taken = new Set<string | undefined>([
+      ...(cfg.agents ?? []).map((a) => a.name),
+      ...(cfg.analysis?.scoreboards ?? []).map((s) => s.name),
+      ...(cfg.subenvs ?? []).map((s) => s.name),
+      ...(cfg.probes ?? []).map((p) => p.name),
+    ]);
+    if (
+      preset &&
+      SV_IDENT_RE.test(preset) &&
+      !SV_KEYWORDS.has(preset) &&
+      !taken.has(preset)
+    ) {
+      return preset;
+    }
+    return this.askAgentName(preset ?? suggestion);
+  }
+
+  // ------------------------------------------ designer assistance (R12)
+
+  /**
+   * docs/08 R12 — applies the proposals the user CHECKED in the canvas strip,
+   * in order, each through the host flow a palette button would run (its
+   * questions included: an unpacked array still asks, a taken name still asks).
+   * The `materialize` item writes the `analysis:` block from the RESOLVED
+   * inferred set — the whole set, the unchecked members absent (docs/07).
+   */
+  async applyProposals(
+    viewId: string | undefined,
+    items: ProposalApply[],
+    resolved: ResolvedConfig | null,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    const str = (a: Record<string, unknown>, k: string): string =>
+      typeof a[k] === "string" ? (a[k] as string) : "";
+    for (const it of items) {
+      const args = it.args ?? {};
+      const target = typeof args.viewId === "string" ? args.viewId : viewId;
+      switch (it.kind) {
+        case "agent-iface":
+          await this.createAgentFromIface(target, str(args, "port"), str(args, "name") || undefined);
+          break;
+        case "agent-group":
+          await this.createAgentFromPins(
+            target,
+            Array.isArray(args.pins) ? (args.pins as string[]) : [],
+            str(args, "name") || undefined
+          );
+          break;
+        case "connections":
+          await this.wireConnections(target);
+          break;
+        case "materialize":
+          await this.materializeInferred(it.accept ?? [], resolved, cfg);
+          break;
+      }
+    }
+  }
+
+  /**
+   * Writes `analysis:` with the inferred components the user kept (docs/07's
+   * sharp edges): the generator leaves implicit mode, so what is not kept is no
+   * longer generated. The set comes from `quick-uvm resolve`, never re-derived.
+   */
+  async materializeInferred(
+    accept: string[],
+    resolved: ResolvedConfig | null,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri) {
+      return this.warnNoConfig();
+    }
+    if (!inferredComponents(resolved).length) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t("QuickUVM Architect: nothing is inferred on this bench — there is nothing to write.")
+      );
+      return;
+    }
+    const keep = new Set(accept);
+    const scoreboards = (resolved?.analysis.scoreboards ?? [])
+      .filter((sb) => sb.origin === "inferred" && keep.has(`ghost:sb:${sb.name}`))
+      .map((sb) => ({ name: sb.name, source: sb.source, monitor: sb.monitor, match: sb.match }));
+    const coverage = (resolved?.analysis.coverage ?? [])
+      .filter((c) => c.origin === "inferred" && keep.has(`ghost:cov:${c.agent}`))
+      .map((c) => c.agent);
+    // the resolved set describes the file on DISK; an agent renamed in the live
+    // config would leave a dangling endpoint — refuse, instead of writing it
+    const live = new Set((cfg.current.agents ?? []).map((a) => a.name));
+    const stale = [...new Set(
+      [...scoreboards.flatMap((sb) => [sb.source, sb.monitor]), ...coverage].filter(
+        (a): a is string => Boolean(a) && !live.has(a)
+      )
+    )];
+    if (stale.length) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: the inferred components reference agents the configuration no longer has ({0}) — save the file and let quick-uvm resolve it again.",
+          stale.join(", ")
+        )
+      );
+      return;
+    }
+    if (await cfg.apply((t) => ops.materializeAnalysis(t, { scoreboards, coverage }))) {
+      this.log.appendLine(
+        `[actions] materializeInferred: ${scoreboards.length} scoreboard(s), ${coverage.length} coverage`
+      );
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: analysis declared — {0} scoreboard(s) and {1} coverage collector(s) written; the unchecked inferred components will no longer be generated.",
+          scoreboards.length,
+          coverage.length
+        )
+      );
+    }
+  }
+
   private async askAgentName(suggestion: string): Promise<string | undefined> {
     const existing = new Set(
       (this.config.current.agents ?? []).map((a) => a.name)
@@ -2563,43 +2693,6 @@ export class Actions {
     });
   }
 
-  /** The interface instance connected to the given port, through the parent's view. */
-  private connectedIface(
-    model: ProjectModel,
-    inst: Instance,
-    portName: string,
-    ifaceModule: string
-  ): Instance | undefined {
-    // the parent = the longest instance path that is a proper prefix of the current path
-    let parent: Instance | undefined;
-    for (const i of model.instances) {
-      if (
-        inst.path.startsWith(i.path + ".") &&
-        (!parent || i.path.length > parent.path.length)
-      ) {
-        parent = i;
-      }
-    }
-    if (parent) {
-      const rel = inst.path.slice(parent.path.length + 1);
-      const view = model.views[parent.path];
-      const pin = view?.pins.find((p) => p.pin === `${rel}.${portName}`);
-      if (pin?.conn && pin.conn.kind === "iface") {
-        const base = pin.conn.ref.split(".")[0];
-        const found = model.instances.find(
-          (i) => i.path === `${parent.path}.${base}`
-        );
-        if (found?.iface) {
-          return found;
-        }
-      }
-    }
-    // fallback: the sole instance of that interface type in the design
-    const candidates = model.instances.filter(
-      (i) => i.module === ifaceModule && i.iface
-    );
-    return candidates.length === 1 ? candidates[0] : undefined;
-  }
 }
 
 /** `g_ch[0..2].u_ch` -> the member paths; an id without a fold stays as-is. */

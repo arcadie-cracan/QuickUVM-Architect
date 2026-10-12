@@ -1373,3 +1373,62 @@ text.split-sign {
   0%, 70% { opacity: 1; }
   100% { opacity: 0; }
 }
+
+/* ------------------------------------- designer assistance (docs/08 R12) */
+/* the proposal strip between the header and the canvas: checkboxes + Apply /
+   Dismiss; never automatic. Hidden = removed from the flow (display overrides). */
+#assist {
+  flex: none;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 14px;
+  padding: 5px 12px;
+  font-size: 12px;
+  border-bottom: 1px solid var(--vscode-panel-border);
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+#assist[hidden] { display: none; }
+.assist-title { font-weight: 600; }
+.assist-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+}
+.assist-note { opacity: 0.8; font-style: italic; }
+.assist-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 6px;
+}
+.assist-btn {
+  font-family: inherit;
+  font-size: 12px;
+  padding: 2px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  cursor: pointer;
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+}
+.assist-btn:hover { background: var(--vscode-button-hoverBackground); }
+.assist-btn.secondary {
+  background: var(--vscode-button-secondaryBackground);
+  color: var(--vscode-button-secondaryForeground);
+}
+.assist-btn.secondary:hover { background: var(--vscode-button-secondaryHoverBackground); }
+/* what an applied proposal created, lit once on the next render (1.8 s) */
+.flash .tb-box,
+.flash .stub {
+  stroke: var(--vscode-charts-green, #89d185) !important;
+  stroke-width: 2.5 !important;
+  animation: assist-flash 1.8s ease-out;
+}
+.flash text.pin-label,
+.flash .tb-name { fill: var(--vscode-charts-green, #89d185) !important; }
+@keyframes assist-flash {
+  0% { opacity: 0.2; }
+  30% { opacity: 1; }
+  100% { opacity: 1; }
+}

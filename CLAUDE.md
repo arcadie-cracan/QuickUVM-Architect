@@ -122,6 +122,7 @@ npm run test:navfind     # keyboard navigation (docs/08 R5): view history, Ctrl+
 npm run test:textedit    # the MINIMAL edit between two YAML texts + the span to highlight (docs/08 R4)
 npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (docs/08 R4)
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
+npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
 npm run test:e2e         # yamlops -> quick-uvm generate real (cere quick-uvm)
 ```
 
@@ -500,6 +501,34 @@ coliziunea de nume.
   events in the harness never produce a `click`, so `suppressClick` stays
   armed after a scripted drop — dispatch a `click` before testing the
   selection.
+- **Designer assistance (docs/08 R12)**: the proposals are computed on the HOST
+  (`src/proposals.ts`, pure) and shipped as `proposals/full`; the webview never
+  derives one — the connections proposal needs `deriveConnections` (compose.ts
+  pulls the `yaml` package) and the interface proposal needs `connectedIface`,
+  now shared from proposals.ts (the private copy in actions.ts is gone). The
+  strip is shown only while `viewId` matches the displayed view, and an APPLIED
+  set is recorded like a dismissed one: the config/overlay change re-renders
+  BEFORE the host's next `proposals/full` arrives, and without the record the
+  just-applied rows flashed back for a frame (caught in the harness). The
+  ghost rows travel as ONE `materialize` item with the ids to KEEP — writing
+  `analysis:` leaves implicit mode, so the unchecked members stop being
+  generated; never send the ghosts as separate add actions (that would
+  resurrect the others through `keepAnalysis`, or lose them). `createAgentFrom*`
+  take an optional preset name (`agentName`: used when free and valid, else the
+  input box asks with it prefilled) — the proposals name agents after the
+  interface port / the pin prefix. From the adversarial review: the strip
+  keeps its DOM while the same set is on screen (a rebuild on every render
+  re-checked every box, so an unchecked ghost got written anyway); the flash
+  snapshot is keyed by mode + layout key (the TB levels share `viewId`); the
+  prefix heuristic strips a trailing direction token FIRST — on PULP names the
+  last underscore separates `_i/_o`, which paired an input with its own output
+  (`valid`) and never found the real `src_*`/`dst_*` groups (reproduced on
+  common_cells, now a fixture in `test:proposals`); a connections proposal
+  needs the children's agents (`childAgents`) and no ambiguity; a preset agent
+  name falls back to the input box on an SV keyword or a scoreboard/subenv/
+  probe name; materialize refuses a resolved set that references agents the
+  live config no longer has (resolve reads the DISK); `analysis:` with no
+  value is implicit for the strip and the mutation, as it is for the scene.
 
 ## Faza curentă
 
@@ -773,4 +802,8 @@ gesture — creation from a port's hotspot into empty canvas, connection with
 legality before the drop — on the pure module `src/webview/wiring.ts`
 (`test:wiring`), the `addAgentPorts` mutation + `addPinsToAgent` action; see
 the pitfall above and docs/05.
+**R12 (docs/08) is implemented** (Oct 2026): designer assistance — the proposal
+strip over the canvas (interfaces and pin groups without an agent, unwired
+subsystems, the inferred ghosts materialised through `materializeAnalysis`);
+`src/proposals.ts` + `test:proposals`, the `applyProposals` action.
 Planul complet: `docs/06-plan-mvp.md`.

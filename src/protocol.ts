@@ -83,7 +83,43 @@ export type ActionKind =
   | "openConfigBeside"
   // docs/08 R10: a wire from a DUT pin dropped on a pin an agent already claims
   // — the dragged pins join that agent (`addAgentPorts`)
-  | "addPinsToAgent";
+  | "addPinsToAgent"
+  // docs/08 R12: the proposals the user CHECKED in the designer-assistance strip
+  // (`{items: ProposalApply[]}`), applied in order through the flows above
+  | "applyProposals";
+
+// ---------------------------------------------- designer assistance (R12)
+
+export type ProposalKind = "agent-iface" | "agent-group" | "connections" | "materialize";
+
+/** one proposal of src/proposals.ts: an existing host action with its arguments
+ *  filled in (`materialize` rows are applied together, see ProposalApply) */
+export interface Proposal {
+  /** stable: `iface:<port>`, `group:<prefix>`, `connections`, `ghost:<node id>` */
+  id: string;
+  kind: ProposalKind;
+  label: string;
+  detail?: string;
+  action: ActionKind;
+  args: Record<string, unknown>;
+}
+
+/** the proposals of ONE view (`proposals/full`): the webview shows the strip
+ *  only while it displays that view */
+export interface ProposalSet {
+  viewId: string;
+  mode: ViewMode;
+  items: Proposal[];
+}
+
+/** what the strip sends back: the checked proposals; the `materialize` item
+ *  carries the ghost ids to KEEP — the unchecked inferred components become
+ *  absent once `analysis:` is written (docs/07) */
+export interface ProposalApply {
+  kind: ProposalKind;
+  args: Record<string, unknown>;
+  accept?: string[];
+}
 
 // ---------------------------------------------------- the layout sidecar
 
@@ -245,6 +281,10 @@ export type HostMessage =
   | ({ v: 1; type: "overlay/config" } & OverlayConfig)
   | { v: 1; type: "view/show"; viewId: string; mode?: ViewMode }
   | ({ v: 1; type: "ui/config" } & UiConfig)
+  // docs/08 R12: the designer-assistance proposals of the view the host shows
+  // (src/proposals.ts); sent with the view, the model, the overlay and the
+  // config, so the strip follows every change; an empty list clears it
+  | ({ v: 1; type: "proposals/full" } & ProposalSet)
   | { v: 1; type: "select/reveal"; ids: string[] }
   // editor->diagram cross-probing (docs/05): the target under the cursor in the SV
   // source; the webview applies the .xprobe halo on the ids of the current view, without

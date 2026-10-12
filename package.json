@@ -457,7 +457,8 @@
     "test:navfind": "node scripts/test-navfind.mjs",
     "test:textedit": "node scripts/test-textedit.mjs",
     "test:yamlmap": "node scripts/test-yamlmap.mjs",
-    "test:wiring": "node scripts/test-wiring.mjs"
+    "test:wiring": "node scripts/test-wiring.mjs",
+    "test:proposals": "node scripts/test-proposals.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",
