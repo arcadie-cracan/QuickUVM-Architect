@@ -1,16 +1,25 @@
 // The diff preview of a gesture before it is applied (docs/08 R19) — the host
-// side: a TextDocumentContentProvider that serves the "after" text of each
-// file, one `vscode.diff` tab per file (the real document on the left, so an
-// unsaved buffer diffs against what the user sees), and the ONE confirmation
-// flow every previewed gesture goes through.
+// side: a TextDocumentContentProvider that serves two virtual snapshots per
+// file (the live buffer's text and the mutation's), one `vscode.diff` tab per
+// changed file, and the ONE confirmation flow every previewed gesture goes
+// through.
 //
 // The rule of the row: a step is added only where a confirmation already stood
 // (a destructive gesture's modal gains a "Preview changes" button) or where the
 // effect lands in files the user is not looking at (a multi-file gesture); a
 // single-file, non-destructive gesture is never previewed — immediacy wins.
 // `quickuvm.previewEdits` chooses: `ask` (the button), `always` (the preview
-// opens by itself and a notification confirms), `never` (the modal as before;
-// a multi-file gesture applies directly).
+// opens by itself and a QuickPick confirms), `never` (the modal as before; a
+// multi-file gesture applies directly).
+//
+// Two facts from the adversarial review shape the mechanics: (1) the custom
+// editor's `*.quickuvm.yaml` selector matches the BASENAME of a resource on
+// ANY scheme, and on VS Code before the diff-priority normalisation a diff
+// side with a matching name opened the TB webview instead of a text diff — so
+// both sides are virtual and their paths end in `.preview.yaml`; (2) a
+// notification toast with buttons is NOT sticky (a warning auto-hides after
+// 12 s with its promise pending) — so the question after the preview is a
+// QuickPick with `ignoreFocusOut`, which stays while the tabs are read.
 
 import * as vscode from "vscode";
 import { changedFiles, changesLabel, type FileChange } from "./preview";
@@ -24,11 +33,6 @@ export function previewSetting(): PreviewEdits {
   return v === "always" || v === "never" ? v : "ask";
 }
 
-/** a file of a gesture: the change plus the document it applies to (none for a created file) */
-export interface PreviewFile extends FileChange {
-  uri?: vscode.Uri;
-}
-
 export interface GestureConfirm {
   /** the question of the modal (`Delete agent "cmd"?`) */
   message: string;
@@ -38,10 +42,16 @@ export interface GestureConfirm {
   verb: string;
   /** the title of the preview tabs ("Delete agent cmd") */
   title: string;
-  changes: readonly PreviewFile[];
+  changes: readonly FileChange[];
   /** `destructive`: a modal in every mode; `multi-file`: a question only when
    *  more than one file changes, and none on `never` */
   kind: "destructive" | "multi-file";
+}
+
+/** an opened preview: whether any of its tabs is still open, and the closer */
+export interface OpenPreview {
+  isOpen(): boolean;
+  close(): Promise<void>;
 }
 
 export class PreviewProvider implements vscode.TextDocumentContentProvider, vscode.Disposable {
@@ -63,54 +73,110 @@ export class PreviewProvider implements vscode.TextDocumentContentProvider, vsco
   }
 
   /**
-   * Opens one diff tab per changed file (the first takes the focus, the rest
-   * open behind it, none as a preview tab — a preview tab would replace the
-   * previous one) and returns the closer: the tabs go when the question is
-   * answered, whichever way.
+   * Opens one diff tab per changed file and returns the opened preview. The
+   * tabs are opened in REVERSE order — the last opened tab is the visible one,
+   * so the first file ends on top — and never as preview tabs (a preview tab
+   * replaces the previous one: two files would show one tab). A tab that fails
+   * to open closes the ones already open before the error propagates.
    */
-  async show(changes: readonly PreviewFile[], title: string): Promise<() => Promise<void>> {
+  async show(changes: readonly FileChange[], title: string): Promise<OpenPreview> {
     const token = String(++this.seq);
-    const mine: string[] = [];
-    const virtual = (side: string, c: PreviewFile, text: string): vscode.Uri => {
-      // the label last: the tab is named after the file and the YAML language is picked
-      const uri = vscode.Uri.from({ scheme: PREVIEW_SCHEME, path: `/${token}/${side}/${c.label}` });
+    const keys: string[] = [];
+    const mine = new Set<string>();
+    const virtual = (i: number, side: string, c: FileChange, text: string): vscode.Uri => {
+      // never a name the custom editor's selector matches (see the header);
+      // `.yaml` keeps the colouring, the index keeps two children with the same
+      // basename apart (they collided on one uri — review finding)
+      const uri = vscode.Uri.from({
+        scheme: PREVIEW_SCHEME,
+        path: `/${token}/${i}/${side}/${c.label}.preview.yaml`,
+      });
       this.texts.set(uri.toString(), text);
-      mine.push(uri.toString());
+      keys.push(uri.toString());
       return uri;
     };
-    let first = true;
-    for (const c of changedFiles(changes)) {
-      const before = c.uri && !c.created ? c.uri : virtual("before", c, c.oldText);
-      const after = virtual("after", c, c.newText);
-      const label = c.created ? `${c.label} (${vscode.l10n.t("new file")})` : c.label;
-      await vscode.commands.executeCommand("vscode.diff", before, after, `${label} ↔ ${title}`, {
-        preview: false,
-        preserveFocus: !first,
-      });
-      first = false;
-    }
-    return async () => {
-      const tabs = vscode.window.tabGroups.all
+    const tabsOf = (): vscode.Tab[] =>
+      vscode.window.tabGroups.all
         .flatMap((g) => g.tabs)
         .filter((t) => {
           const input = t.input;
-          return input instanceof vscode.TabInputTextDiff && mine.includes(input.modified.toString());
+          return input instanceof vscode.TabInputTextDiff && mine.has(input.modified.toString());
         });
-      if (tabs.length) {
-        await vscode.window.tabGroups.close(tabs, true);
-      }
-      for (const k of mine) {
-        this.texts.delete(k);
-      }
+    const preview: OpenPreview = {
+      isOpen: () => tabsOf().length > 0,
+      close: async () => {
+        const tabs = tabsOf();
+        if (tabs.length) {
+          await vscode.window.tabGroups.close(tabs, true);
+        }
+        for (const k of keys) {
+          this.texts.delete(k);
+        }
+      },
     };
+    const list = changedFiles(changes);
+    try {
+      for (let i = list.length - 1; i >= 0; i--) {
+        const c = list[i];
+        const before = virtual(i, "before", c, c.oldText);
+        const after = virtual(i, "after", c, c.newText);
+        mine.add(after.toString());
+        const label = c.created ? `${c.label} (${vscode.l10n.t("new file")})` : c.label;
+        await vscode.commands.executeCommand("vscode.diff", before, after, `${label} ↔ ${title}`, {
+          preview: false,
+          preserveFocus: i !== 0,
+        });
+      }
+    } catch (e) {
+      await preview.close();
+      throw e;
+    }
+    return preview;
   }
+}
+
+/**
+ * The question over an open preview: a QuickPick that stays while the user
+ * reads the tabs (`ignoreFocusOut`). Closing every preview tab by hand is an
+ * answer too — a cancel.
+ */
+function askOverPreview(question: string, summary: string, verb: string, open: OpenPreview): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    const qp = vscode.window.createQuickPick();
+    const yes: vscode.QuickPickItem = { label: `$(check) ${verb}` };
+    const no: vscode.QuickPickItem = { label: `$(close) ${vscode.l10n.t("Cancel")}` };
+    qp.title = question;
+    qp.placeholder = summary;
+    qp.items = [yes, no];
+    qp.ignoreFocusOut = true;
+    let done = false;
+    let tabs: vscode.Disposable | undefined;
+    const finish = (v: boolean): void => {
+      if (done) {
+        return;
+      }
+      done = true;
+      tabs?.dispose();
+      qp.dispose();
+      resolve(v);
+    };
+    qp.onDidAccept(() => finish(qp.selectedItems[0]?.label === yes.label));
+    qp.onDidHide(() => finish(false));
+    tabs = vscode.window.tabGroups.onDidChangeTabs(() => {
+      if (!open.isOpen()) {
+        finish(false);
+      }
+    });
+    qp.show();
+  });
 }
 
 /**
  * The confirmation of a previewable gesture; true when it may be applied. The
  * texts are the gesture's own (old -> new through its mutation), so what is
  * shown is what will be written; the caller still applies through its usual
- * path (the minimal edit, the refresh).
+ * path (the minimal edit, the refresh) — after checking that the documents
+ * still hold the previewed texts.
  */
 export async function confirmGesture(provider: PreviewProvider, g: GestureConfirm): Promise<boolean> {
   const changed = changedFiles(g.changes);
@@ -145,17 +211,12 @@ export async function confirmGesture(provider: PreviewProvider, g: GestureConfir
       return pick === g.verb;
     }
   }
-  // `always`, or "Preview changes" picked: the diff tabs, then a NON-modal
-  // question — a modal would block the very tabs the user is reading
-  const close = await provider.show(changed, g.title);
+  // `always`, or "Preview changes" picked: the diff tabs, then the question
+  // over them (a modal would block the very tabs the user is reading)
+  const open = await provider.show(changed, g.title);
   try {
-    const pick = await vscode.window.showWarningMessage(
-      [g.message, g.detail, summary].filter(Boolean).join(" "),
-      g.verb,
-      vscode.l10n.t("Cancel")
-    );
-    return pick === g.verb;
+    return await askOverPreview([g.message, g.detail].filter(Boolean).join(" "), summary, g.verb, open);
   } finally {
-    await close();
+    await open.close();
   }
 }

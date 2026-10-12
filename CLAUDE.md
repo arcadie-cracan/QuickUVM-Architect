@@ -635,21 +635,36 @@ coliziunea de nume.
   the ONE confirmation flow of a previewable gesture — a destructive gesture
   goes through `Actions.confirmMutation` (the mutation on `cfg.readText()`,
   then the modal with "Preview changes"), a multi-file gesture builds its
-  `PreviewFile[]` from its plan. The preview texts are the gesture's own, but
+  `FileChange[]` from its plan. The preview texts are the gesture's own, but
   the APPLY still runs through the usual path (`cfg.apply(mutate)` re-runs the
-  mutation on the then-current text; `wireConnections` re-checks that the
-  documents still hold the texts its plan was computed on and refuses a stale
-  whole-document replace). The question after the preview is NON-modal
-  (`showWarningMessage` without `modal`): a modal blocks the diff tabs. The
-  tabs are opened with `preview: false` (a preview tab replaces the previous
-  one — two files would show one tab) and closed through `tabGroups.close` on
-  the `TabInputTextDiff` whose `modified` is ours. The rule of the row is
+  mutation on the then-current text) after a guard that the documents still
+  hold the previewed texts — `confirmMutation`, `createSubenv` and
+  `wireConnections` all refuse a stale apply (the user can edit the YAML
+  while the question waits). The question after the preview is a QuickPick
+  with `ignoreFocusOut` (`askOverPreview`): a modal blocks the diff tabs, and
+  a notification toast is NOT sticky — a warning with buttons auto-hides
+  after 12 s with its promise pending (read in the VS Code bundle at the
+  review), leaving the gesture armed in the bell; closing every preview tab
+  by hand cancels (`tabGroups.onDidChangeTabs`). BOTH diff sides are virtual
+  snapshots whose paths end in `.preview.yaml` and carry an index: the custom
+  editor's `*.quickuvm.yaml` selector matches the BASENAME on any scheme, and
+  on VS Code before the diff-priority normalisation (seen on 1.111) a
+  matching diff side opened two TB webviews instead of a text diff, with a
+  closer that found no `TabInputTextDiff` to close; two children with the
+  same basename collided on one uri. The tabs are opened in REVERSE order
+  (the last opened tab is the visible one, so the first file ends on top),
+  with `preview: false` (a preview tab replaces the previous one — two files
+  would show one tab), and closed through `tabGroups.close` on the
+  `TabInputTextDiff` whose `modified` is ours; a tab that fails to open
+  closes the ones already open. The rule of the row is
   encoded in `kind`: `destructive` asks in every mode, `multi-file` asks only
   when MORE than one file changes (a top-only wiring or composition stays
   immediate) and never on `previewEdits: never`. A no-op mutation (nothing to
-  change) is reported, not asked. The per-file `+a -r` summary is measured on
-  R4's minimal edit (`summarize` in `src/preview.ts`): a block deletion counts
-  its lines, an in-line change counts 1/1.
+  change) is reported, not asked. The per-file `+a -r` summary is counted
+  LINE-wise, the way the diff editor counts the hunk (`summarize` in
+  `src/preview.ts`): the character-level minimal edit of R4 over-counted a
+  deletion at the end of a file without a final newline and counted an
+  in-line insertion as +1 -0 (review finding; locked in `test:preview`).
 
 ## Faza curentă
 

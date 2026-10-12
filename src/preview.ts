@@ -7,8 +7,6 @@
 // which files actually change and how to describe the change in one line; the
 // diff tabs and the question are the host's part (src/previewdiff.ts).
 
-import { minimalEdit } from "./textedit";
-
 export interface FileChange {
   /** the display name (the file's basename) */
   label: string;
@@ -23,7 +21,7 @@ export interface ChangeSummary {
   removed: number;
 }
 
-/** the number of lines a text slice touches: a partial last line counts as one */
+/** the number of lines of a text: a partial last line counts as one */
 function lines(s: string): number {
   if (s.length === 0) {
     return 0;
@@ -38,17 +36,32 @@ function lines(s: string): number {
 }
 
 /**
- * The lines the MINIMAL edit (R4) removes from the old text and adds in the new
- * one — the same measure the editor highlights after the gesture, so the
- * summary in the confirmation and the flash in the YAML agree. Identical texts
- * are {0, 0}.
+ * The lines a change removes from the old text and adds in the new one, counted
+ * the way the diff editor counts the hunk: the lines before the first differing
+ * line and after the last one are common, the rest is removed / added. An
+ * in-line change is 1/1, a block deletion counts its lines and adds none, an
+ * insertion adds its lines and removes none. (The character-level minimal edit
+ * of R4 is the wrong measure here — review finding: it counted the newline a
+ * deletion takes from the previous line in a file without a final newline as a
+ * line, and an in-line insertion as +1 -0.) Identical texts are {0, 0}.
  */
 export function summarize(oldText: string, newText: string): ChangeSummary {
-  const e = minimalEdit(oldText, newText);
-  if (!e) {
+  if (oldText === newText) {
     return { added: 0, removed: 0 };
   }
-  return { removed: lines(oldText.slice(e.start, e.end)), added: lines(e.text) };
+  const a = oldText.split("\n");
+  const b = newText.split("\n");
+  const maxPrefix = Math.min(a.length, b.length);
+  let p = 0;
+  while (p < maxPrefix && a[p] === b[p]) {
+    p++;
+  }
+  const maxSuffix = maxPrefix - p;
+  let q = 0;
+  while (q < maxSuffix && a[a.length - 1 - q] === b[b.length - 1 - q]) {
+    q++;
+  }
+  return { removed: a.length - p - q, added: b.length - p - q };
 }
 
 /** the files the gesture actually changes, in the given order (a created file always counts) */

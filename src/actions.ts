@@ -18,7 +18,8 @@ import { kindBlockers, layoutBlockers } from "./benchid";
 import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
-import { confirmGesture, PreviewProvider, type PreviewFile } from "./previewdiff";
+import type { FileChange } from "./preview";
+import { confirmGesture, PreviewProvider } from "./previewdiff";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
 import { connectedIface } from "./proposals";
 import type { ProposalApply } from "./protocol";
@@ -782,13 +783,13 @@ export class Actions {
       );
       return;
     }
-    const changes: PreviewFile[] = scaffolds.map((s) => ({
+    const changes: FileChange[] = scaffolds.map((s) => ({
       label: path.basename(s.uri.fsPath),
       created: true,
       oldText: "",
       newText: s.text,
     }));
-    changes.push({ uri: topUri, label: path.basename(topUri.fsPath), oldText: topOld, newText: topNew });
+    changes.push({ label: path.basename(topUri.fsPath), oldText: topOld, newText: topNew });
     const go = await confirmGesture(this.preview, {
       kind: "multi-file",
       message: vscode.l10n.t(
@@ -802,6 +803,10 @@ export class Actions {
       changes,
     });
     if (!go) {
+      return;
+    }
+    if ((await this.config.readText()) !== topOld) {
+      this.warnStalePreview(); // the top was edited while the question waited
       return;
     }
 
@@ -1176,11 +1181,29 @@ export class Actions {
       );
       return false;
     }
-    return confirmGesture(this.preview, {
+    const go = await confirmGesture(this.preview, {
       ...ask,
       kind: "destructive",
-      changes: [{ uri, label: path.basename(uri.fsPath), oldText, newText }],
+      changes: [{ label: path.basename(uri.fsPath), oldText, newText }],
     });
+    if (!go) {
+      return false;
+    }
+    // the apply re-runs the mutation on the then-current text: a document edited
+    // while the question waited would get an edit the preview never showed
+    if ((await cfg.readText()) !== oldText) {
+      this.warnStalePreview();
+      return false;
+    }
+    return true;
+  }
+
+  private warnStalePreview(): void {
+    void vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        "QuickUVM Architect: the configuration changed while the preview was open — run the gesture again."
+      )
+    );
   }
 
   /**
@@ -2415,13 +2438,13 @@ export class Actions {
     // docs/08 R19: the effect lands in files the user is not looking at (the
     // children's agents go passive) — previewed / confirmed per `previewEdits`
     // when more than one file changes; a top-only wiring stays immediate
-    const changes: PreviewFile[] = [
-      { uri: topUri, label: path.basename(topUri.fsPath), oldText: topOld, newText: plan.topText },
+    const changes: FileChange[] = [
+      { label: path.basename(topUri.fsPath), oldText: topOld, newText: plan.topText },
     ];
     for (const [key, text] of plan.childTexts) {
       const doc = childDocs.get(key);
       if (doc) {
-        changes.push({ uri: doc.uri, label: path.basename(doc.uri.fsPath), oldText: doc.getText(), newText: text });
+        changes.push({ label: path.basename(doc.uri.fsPath), oldText: doc.getText(), newText: text });
       }
     }
     const notes: string[] = [];
@@ -2453,11 +2476,7 @@ export class Actions {
       topDoc.getText() !== topOld ||
       [...children.values()].some((c) => childDocs.get(c.key)?.getText() !== c.text);
     if (stale) {
-      void vscode.window.showWarningMessage(
-        vscode.l10n.t(
-          "QuickUVM Architect: the configuration changed while the preview was open — run the gesture again."
-        )
-      );
+      this.warnStalePreview();
       return;
     }
 

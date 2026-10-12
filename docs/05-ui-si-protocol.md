@@ -263,20 +263,24 @@ mesajele tot aici, la implementare.
   configs) can be previewed as a diff before they are applied. The mutation runs
   on the target's current text first (`TbEditTarget.readText`), so what the
   preview shows is byte-for-byte what the WorkspaceEdit would write; the host
-  opens one `vscode.diff` tab per changed file — the real document on the left
-  (an unsaved buffer diffs against what the user sees), a virtual
-  `quickuvm-preview:` document on the right, served by `PreviewProvider` in
-  `src/previewdiff.ts`; a created file diffs against an empty virtual "before"
-  —, then asks with a NON-modal notification (a modal would block the tabs)
-  and closes the tabs whichever way the question is answered. The setting
+  opens one `vscode.diff` tab per changed file between two virtual
+  `quickuvm-preview:` snapshots served by `PreviewProvider` in
+  `src/previewdiff.ts` — the live buffer's text (an unsaved buffer diffs
+  against what the user sees) and the mutation's; a created file diffs against
+  an empty "before" —, then asks with a QuickPick that stays open while the
+  tabs are read (`ignoreFocusOut`; a modal would block them, and a
+  notification toast auto-hides with its promise pending), closes the tabs
+  whichever way the question is answered, and treats every tab closed by hand
+  as a cancel. The apply is refused when the document changed meanwhile. The setting
   `quickuvm.previewEdits`: `ask` (default — the existing modal gains a "Preview
   changes" button; a multi-file gesture gets a modal with the per-file summary),
   `always` (the preview opens first), `never` (the modal as before; multi-file
   gestures apply directly). A single-file, non-destructive gesture is never
   previewed, and a multi-file gesture whose effect lands in ONE file stays
   immediate. The summary line (`top.quickuvm.yaml (+6 -0), chan.quickuvm.yaml
-  (+1 -1)`) comes from the pure `src/preview.ts` (`test:preview`), measured on
-  R4's minimal edit. No protocol change: the webview sends the same actions.
+  (+1 -1)`) comes from the pure `src/preview.ts` (`test:preview`), counted
+  line-wise the way the diff editor counts the hunk. No protocol change: the
+  webview sends the same actions.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
