@@ -575,6 +575,22 @@ coliziunea de nume.
   host and the panel refuse 0 now); the `match` cascade deletes `match_key`
   on the step to in_order, so the pill shows the key and its tooltip says so;
   a modifier click (Ctrl/Shift) must fall through to the selection.
+- **"What will this generate" card (docs/08 R15)**: the data is requested per
+  dwell (`card/request`) and answered from the config TEXT (`elementRange`,
+  the R4 map) plus the CACHED manifest (`GenStateService.filesFor` /
+  `hasManifest`) — never from a generator run; the webview caches `card/full`
+  per id and clears the cache on `config/full` and `status/decorations`, so a
+  card never shows a stale entry or a stale ●/U/M state. The card is a DOM
+  overlay (`.gencard`), not a `<foreignObject>`: the SVG export must stay
+  untouched and the card must sit above the R1 node-tools strip. It closes on
+  every `render()` (its box is redrawn), on a press (a drag/wire/selection is
+  not a dwell), on a wheel (a fixed overlay would detach), and leaves with the
+  pointer unless the pointer moved ONTO the card (its buttons) or `I` pinned
+  it. `manifest: false` is distinct from "no files": the card says "not
+  resolved" (quick-uvm < 1.1.0, an invalid config) instead of claiming the
+  element owns nothing. The per-file editor's card gets the manifest's files
+  only when its document IS the active config (the manifest is the active
+  config's).
 
 ## Faza curentă
 
@@ -860,4 +876,8 @@ action.
 (`active` on agents, `match`/`latency` on two-stream scoreboards) through the
 existing `editAgent`/`editScoreboard` actions; `TbNode.widgets` in
 `test:tbscene`.
+**R15 (docs/08) is implemented** (Oct 2026): the "what will this generate"
+hover card (YAML entry, owned files from the manifest, ●/U/M state, open
+generated code / YAML beside); `card/request` / `card/full`, the
+`openGeneratedCode` action, `ownedFilesFor` in `test:genstate`.
 Planul complet: `docs/06-plan-mvp.md`.
