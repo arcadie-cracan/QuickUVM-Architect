@@ -676,6 +676,186 @@ export function removeAgent(text: string, name: string): string {
   return doc.toString(TO_STRING);
 }
 
+// ------------------------------------------------ in-place rename (docs/08 R14)
+
+/**
+ * Renames an agent and every reference to it in THIS config: `analysis.coverage`
+ * (bare or rich), `analysis.scoreboards[].source/monitor` (bare names — a
+ * cross-block `<subenv>.<agent>` names a CHILD's agent and is left alone),
+ * `virtual_sequences[].body[].agent`, `register_model.bus_agent`, and the agent's
+ * own `interface` / `sequence_item` when they follow createAgent's `<name>_if` /
+ * `<name>_seq_item` convention (a hand-written name is the user's). The symmetric
+ * of `removeAgent`. A missing agent returns the ORIGINAL text; a taken name
+ * throws (the host validates first). References in a PARENT bench
+ * (`<subenv>.<old>`) live in another file and are not touched — the host warns
+ * when the config is composed.
+ */
+export function renameAgent(text: string, oldName: string, newName: string): string {
+  if (oldName === newName) {
+    return text;
+  }
+  const doc = parse(text);
+  const agents = doc.getIn(["agents"]);
+  if (!isSeq(agents)) {
+    return text;
+  }
+  let target: YAMLMap | null = null;
+  for (const a of agents.items) {
+    if (!isMap(a)) {
+      continue;
+    }
+    if (a.get("name") === newName) {
+      throw new Error(`agent "${newName}" already exists in the configuration`);
+    }
+    if (a.get("name") === oldName && !target) {
+      target = a;
+    }
+  }
+  if (!target) {
+    return text;
+  }
+  target.set("name", newName);
+  if (target.get("interface") === `${oldName}_if`) {
+    target.set("interface", `${newName}_if`);
+  }
+  if (target.get("sequence_item") === `${oldName}_seq_item`) {
+    target.set("sequence_item", `${newName}_seq_item`);
+  }
+  const cov = doc.getIn(["analysis", "coverage"]);
+  if (isSeq(cov)) {
+    cov.items.forEach((it, i) => {
+      if (isMap(it)) {
+        if (it.get("agent") === oldName) {
+          it.set("agent", newName);
+        }
+      } else if ((it as { value?: unknown })?.value === oldName) {
+        cov.set(i, newName);
+      }
+    });
+  }
+  const sbs = doc.getIn(["analysis", "scoreboards"]);
+  if (isSeq(sbs)) {
+    for (const it of sbs.items) {
+      if (isMap(it)) {
+        for (const f of ["source", "monitor"]) {
+          if (it.get(f) === oldName) {
+            it.set(f, newName);
+          }
+        }
+      }
+    }
+  }
+  const vseqs = doc.getIn(["virtual_sequences"]);
+  if (isSeq(vseqs)) {
+    for (const vs of vseqs.items) {
+      if (!isMap(vs)) {
+        continue;
+      }
+      const body = vs.get("body", true);
+      if (isSeq(body)) {
+        for (const st of body.items) {
+          if (isMap(st) && st.get("agent") === oldName) {
+            st.set("agent", newName);
+          }
+        }
+      }
+    }
+  }
+  if (doc.getIn(["register_model", "bus_agent"]) === oldName) {
+    doc.setIn(["register_model", "bus_agent"], newName);
+  }
+  return doc.toString(TO_STRING);
+}
+
+/** Renames a scoreboard (the FIRST entry of that name): a simple key, nothing
+ *  else refers to it. Missing = the original text; a taken name throws. */
+export function renameScoreboard(text: string, oldName: string, newName: string): string {
+  if (oldName === newName) {
+    return text;
+  }
+  const doc = parse(text);
+  const sbs = doc.getIn(["analysis", "scoreboards"]);
+  if (!isSeq(sbs)) {
+    return text;
+  }
+  let target: YAMLMap | null = null;
+  for (const it of sbs.items) {
+    if (!isMap(it)) {
+      continue;
+    }
+    if (it.get("name") === newName) {
+      throw new Error(`scoreboard "${newName}" already exists in the configuration`);
+    }
+    if (it.get("name") === oldName && !target) {
+      target = it;
+    }
+  }
+  if (!target) {
+    return text;
+  }
+  target.set("name", newName);
+  return doc.toString(TO_STRING);
+}
+
+/**
+ * Renames a subenv and the endpoints that carry its name as their first token:
+ * `connections[].from/to` (`<subenv>.<port>`) and the cross-block scoreboard
+ * endpoints (`<subenv>.<agent>`). The child's config file is untouched (its
+ * path, not its name, is the link). Missing = the original text; a taken name throws.
+ */
+export function renameSubenv(text: string, oldName: string, newName: string): string {
+  if (oldName === newName) {
+    return text;
+  }
+  const doc = parse(text);
+  const subs = doc.getIn(["subenvs"]);
+  if (!isSeq(subs)) {
+    return text;
+  }
+  let target: YAMLMap | null = null;
+  for (const s of subs.items) {
+    if (!isMap(s)) {
+      continue;
+    }
+    if (s.get("name") === newName) {
+      throw new Error(`subenv "${newName}" already exists in the configuration`);
+    }
+    if (s.get("name") === oldName && !target) {
+      target = s;
+    }
+  }
+  if (!target) {
+    return text;
+  }
+  target.set("name", newName);
+  const prefix = `${oldName}.`;
+  const retarget = (m: YAMLMap, field: string): void => {
+    const v = m.get(field);
+    if (typeof v === "string" && v.startsWith(prefix)) {
+      m.set(field, `${newName}.${v.slice(prefix.length)}`);
+    }
+  };
+  const conns = doc.getIn(["connections"]);
+  if (isSeq(conns)) {
+    for (const c of conns.items) {
+      if (isMap(c)) {
+        retarget(c, "from");
+        retarget(c, "to");
+      }
+    }
+  }
+  const sbs = doc.getIn(["analysis", "scoreboards"]);
+  if (isSeq(sbs)) {
+    for (const it of sbs.items) {
+      if (isMap(it)) {
+        retarget(it, "source");
+        retarget(it, "monitor");
+      }
+    }
+  }
+  return doc.toString(TO_STRING);
+}
+
 /** docs/07 line 3 (P1) — the agent fields the inspector edits. `active` is NOT here:
  *  it keeps its own op (`setAgentActive`), which the connection wiring also uses. */
 export type AgentField =

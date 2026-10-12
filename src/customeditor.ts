@@ -289,6 +289,9 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "deleteComponent":
         void this.actions.deleteComponent(s("kind"), s("name"), target);
         break;
+      case "renameComponent":
+        void this.actions.renameComponent(s("kind"), s("name"), s("newName"), target);
+        break;
       case "editScoreboard":
         void this.actions.editScoreboard(s("name"), s("field"), s("value"), target);
         break;

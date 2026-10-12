@@ -2674,6 +2674,105 @@ export class Actions {
     }
   }
 
+  // ------------------------------------------------ in-place rename (R14)
+
+  /**
+   * docs/08 R14 — renames an agent, a scoreboard or a subenv in place, with the
+   * cascade of `renameAgent` / `renameSubenv` (yamlops). The name must be a
+   * SystemVerilog identifier, not a keyword, and free across the names that share
+   * the generated namespace (agents, scoreboards, subenvs, probes). The references
+   * a PARENT bench holds (`<subenv>.<agent>`) live in another file: a composed
+   * config gets a warning, not a silent partial rename.
+   */
+  async renameComponent(
+    kind: string,
+    name: string,
+    newName: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri || !name) {
+      return;
+    }
+    const nn = newName.trim();
+    if (nn === name) {
+      return;
+    }
+    if (!SV_IDENT_RE.test(nn) || SV_KEYWORDS.has(nn)) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: \"{0}\" is not a valid SystemVerilog identifier.", nn)
+      );
+      return;
+    }
+    const c = cfg.current;
+    const taken = new Set<string | undefined>([
+      ...(c.agents ?? []).map((a) => a.name),
+      ...(c.analysis?.scoreboards ?? []).map((s) => s.name),
+      ...(c.subenvs ?? []).map((s) => s.name),
+      ...(c.probes ?? []).map((p) => p.name),
+    ]);
+    if (taken.has(nn)) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: the name \"{0}\" is already used in the configuration.", nn)
+      );
+      return;
+    }
+    let refs = 0;
+    let what: string;
+    let mutate: (t: string) => string;
+    switch (kind) {
+      case "agent":
+        refs =
+          (c.analysis?.coverage ?? []).filter((e) => coveredAgent(e) === name).length +
+          (c.analysis?.scoreboards ?? []).filter((s) => s.source === name || s.monitor === name).length +
+          (c.virtual_sequences ?? []).reduce(
+            (n, v) => n + (v.body ?? []).filter((st) => st.agent === name).length,
+            0
+          ) +
+          (c.register_model?.bus_agent === name ? 1 : 0);
+        what = vscode.l10n.t("agent");
+        mutate = (t) => ops.renameAgent(t, name, nn);
+        break;
+      case "scoreboard":
+        what = vscode.l10n.t("scoreboard");
+        mutate = (t) => ops.renameScoreboard(t, name, nn);
+        break;
+      case "subenv": {
+        const pre = `${name}.`;
+        refs =
+          (c.connections ?? []).filter((x) => x.from?.startsWith(pre) || x.to?.startsWith(pre)).length +
+          (c.analysis?.scoreboards ?? []).filter(
+            (s) => s.source?.startsWith(pre) || s.monitor?.startsWith(pre)
+          ).length;
+        what = vscode.l10n.t("subenv");
+        mutate = (t) => ops.renameSubenv(t, name, nn);
+        break;
+      }
+      default:
+        return;
+    }
+    try {
+      if (await cfg.apply(mutate)) {
+        this.log.appendLine(`[actions] rename ${kind} ${name} -> ${nn} (${refs} references)`);
+        const note = refs ? vscode.l10n.t(" ({0} references updated)", refs) : "";
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t("QuickUVM Architect: {0} \"{1}\" renamed to \"{2}\"{3}.", what, name, nn, note)
+        );
+        if (kind === "agent" && cfg === this.config && (await this.isComposedChild())) {
+          void vscode.window.showWarningMessage(
+            vscode.l10n.t(
+              "QuickUVM Architect: this configuration is composed as a subenv of another bench — the references there (<subenv>.{0}) are not updated; rename them in the parent config.",
+              name
+            )
+          );
+        }
+      }
+    } catch (e) {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t("QuickUVM Architect: rename failed: {0}", String(e instanceof Error ? e.message : e))
+      );
+    }
+  }
+
   private async askAgentName(suggestion: string): Promise<string | undefined> {
     const existing = new Set(
       (this.config.current.agents ?? []).map((a) => a.name)
