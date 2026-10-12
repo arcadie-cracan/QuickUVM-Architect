@@ -22,6 +22,8 @@ interface ElkLike {
 }
 
 const STUB = 10;
+/** the radius of a port's wire hotspot (docs/08 R10/R11): generous, the stub is thin */
+const PORT_HIT_R = 9;
 const BPORT_H = 16;
 const PIN_TOP = 40; // the first port below the title band (multiple of 8)
 const PIN_PITCH = 16;
@@ -474,6 +476,23 @@ function drawBox(p: TbPlaced): SVGGElement {
         )
       );
     }
+    if (port.glyph && !n.inferred) {
+      // docs/08 R10/R11 — the wire gesture's hotspot: a transparent disc at
+      // the stub's tip, ABOVE the glyph so it takes the press; `data-port` =
+      // the port id, `data-node` = the box. Only TLM ports (a glyph) get one:
+      // an interface or a sequencer reference starts no wire, and a ghost's
+      // ports are not editable (nothing in the YAML to wire)
+      const tip = west ? -STUB : p.w + STUB;
+      const hit = el("circle", {
+        class: "tb-porthit",
+        cx: String(tip + (west ? GLYPH_R : -GLYPH_R)),
+        cy: String(py),
+        r: String(PORT_HIT_R),
+      });
+      hit.dataset.port = port.id;
+      hit.dataset.node = n.id;
+      g.append(hit);
+    }
   }
   return g;
 }
@@ -570,7 +589,7 @@ interface Anchor {
   dir: 1 | -1;
 }
 
-function anchor(
+export function anchor(
   layout: TbLayout,
   nodeId: string,
   portId: string | null
