@@ -59,10 +59,10 @@ test("origin: an agent's ap and a named scoreboard's inputs start a wire; nothin
     kind: "agent-ap", nodeId: "agent:cmd", agent: "cmd",
   });
   assert.deepEqual(wireOriginOf(scene, CFG, "sb:sbd.monitor"), {
-    kind: "sb-port", nodeId: "sb:sbd", sbName: "sbd", named: true, field: "monitor",
+    kind: "sb-port", nodeId: "sb:sbd", sbName: "sbd", blocked: null, field: "monitor",
   });
   const unnamed = wireOriginOf(scene, CFG, "sb:sbd#2.source");
-  assert.equal(unnamed.named, false, "an unnamed entry is an origin, but every target will say why not");
+  assert.match(unnamed.blocked, /name the scoreboard first/, "an unnamed entry is an origin, but every target will say why not");
   assert.equal(wireOriginOf(scene, CFG, "agent:cmd.if"), null, "an interface is not a TLM endpoint");
   assert.equal(wireOriginOf(scene, CFG, "cov:cmd.ap"), null, "a collector's input cannot be retargeted");
   assert.equal(wireOriginOf(scene, CFG, "nope"), null);
@@ -99,6 +99,28 @@ test("agent origin on empty canvas: the two create gestures, each with its seed 
     { label: "Scoreboard fed by aux", action: "addScoreboard", args: { source: "aux" }, creates: "tbsb" },
     { label: "Coverage on aux", action: "addCoverage", args: { agent: "aux" }, creates: "tbcov" },
   ]);
+  // cmd already has a collector: the coverage choice is NOT offered (the host
+  // would cover another agent under this label — review finding)
+  const c = wireOriginOf(scene, CFG, "agent:cmd.ap");
+  assert.deepEqual(wireChoicesOnCanvas(scene, CFG, c).map((x) => x.label), ["Scoreboard fed by cmd"]);
+});
+
+test("duplicate-named scoreboards: the n-th entry is refused with the reason (edits land on the first)", () => {
+  const cfg = {
+    project: { name: "d" }, dut: { name: "d" },
+    agents: [{ name: "cmd", interface: "cmd_if" }, { name: "rsp", interface: "rsp_if" }, { name: "aux", interface: "aux_if" }],
+    analysis: { scoreboards: [{ name: "x", source: "cmd", monitor: "rsp" }, { name: "x", source: "aux" }] },
+  };
+  const s = buildTbScene(cfg, "env", null);
+  assert.ok(s.nodes.some((n) => n.id === "sb:x#2"), "the fixture draws the duplicate as sb:x#2");
+  const o = wireOriginOf(s, cfg, "sb:x#2.source");
+  assert.match(o.blocked, /another scoreboard has this name/);
+  assert.deepEqual(wireChoicesOnCanvas(s, cfg, o), []);
+  const t = wireTargets(s, cfg, wireOriginOf(s, cfg, "agent:rsp.ap"));
+  assert.match(t.get("sb:x#2"), /another scoreboard has this name/);
+  assert.match(t.get("sb:x#2.source"), /another scoreboard has this name/);
+  assert.deepEqual(wireChoices(s, cfg, wireOriginOf(s, cfg, "agent:rsp.ap"), "sb:x#2.source"), []);
+  assert.equal(t.get("sb:x.monitor"), "already the monitor", "the first entry keeps its own rules");
 });
 
 test("scoreboard origin: agents are legal unless already an endpoint; others are not agents", () => {

@@ -2134,9 +2134,12 @@ function undoPositions(redo: boolean): void {
 
 /** the snap radius, screen px (docs/08 R11: ~20 px, React Flow's connectionRadius) */
 const WIRE_SNAP = 20;
-/** a drop point outlives the host's questions (QuickPicks), not a session */
-const DROP_TTL = 30_000;
+/** a drop point outlives the host's chain of questions (a scoreboard asks up
+ *  to four QuickPicks), not a session */
+const DROP_TTL = 120_000;
 const ROLE_RE = /\brole-(clock|reset|ignored)\b/;
+/** the overlay's agent color on a pin = an agent already claims it */
+const CLAIMED_RE = /\bagent-c\d\b/;
 
 interface WireState {
   /** the TB origin; null in the RTL views, where `rtl` carries the pin */
@@ -2241,7 +2244,19 @@ function wireStartAt(e: PointerEvent): WireState | undefined {
     return undefined;
   }
   const owner = state.mode === "schematic" ? pin.dataset.inst : state.viewId;
-  if (!owner || ROLE_RE.test(pin.getAttribute("class") ?? "")) {
+  const cls = pin.getAttribute("class") ?? "";
+  if (!owner || ROLE_RE.test(cls)) {
+    return undefined;
+  }
+  // a pin an agent already claims starts no wire: it can neither join a second
+  // agent (port-claimed is an ERROR in checkConfig) nor seed a new one; the
+  // overlay colors it, so the press reads as "taken" (review finding)
+  if (CLAIMED_RE.test(cls)) {
+    return undefined;
+  }
+  // in the schematic the pin's label sits INSIDE the block: a press on it keeps
+  // dragging the block, as before — the stub outside the edge starts the wire
+  if (state.mode === "schematic" && t.closest(".pin-label")) {
     return undefined;
   }
   // the legal targets: the DUT pins an agent already claims (the overlay
@@ -2253,12 +2268,7 @@ function wireStartAt(e: PointerEvent): WireState | undefined {
     state.overlay.agents.forEach((a) => a.pins.forEach((p) => byPort.set(p, a.name)));
     canvas.querySelectorAll<SVGElement>(".pin[data-id]").forEach((p) => {
       const ag = p.dataset.port ? byPort.get(p.dataset.port) : undefined;
-      if (
-        ag &&
-        p !== pin &&
-        p.dataset.id &&
-        /\bagent-c\d\b/.test(p.getAttribute("class") ?? "")
-      ) {
+      if (ag && p !== pin && p.dataset.id && CLAIMED_RE.test(p.getAttribute("class") ?? "")) {
         agents.set(p.dataset.id, ag);
       }
     });
@@ -2419,13 +2429,9 @@ function selectedWirePorts(owner: string): string[] {
   for (const id of state.selection) {
     const p = canvas.querySelector<SVGElement>(`.pin[data-id="${CSS.escape(id)}"]`);
     const port = p?.dataset.port;
-    if (
-      !p ||
-      !port ||
-      p.classList.contains("iface") ||
-      ROLE_RE.test(p.getAttribute("class") ?? "")
-    ) {
-      continue;
+    const cls = p?.getAttribute("class") ?? "";
+    if (!p || !port || p.classList.contains("iface") || ROLE_RE.test(cls) || CLAIMED_RE.test(cls)) {
+      continue; // interfaces, clock/reset/ignored and claimed pins do not travel
     }
     const pOwner = state.mode === "schematic" ? p.dataset.inst : state.viewId;
     if (pOwner === owner) {
@@ -2443,7 +2449,9 @@ function runWireChoice(c: WireChoice, drop: { x: number; y: number }): void {
       kind: c.creates,
       x: drop.x,
       y: drop.y,
-      ids: new Set(currentTbScene.nodes.map((n) => n.id)),
+      // ghosts excluded: a declared scoreboard may take a ghost's id (`sb:sbd`)
+      // and must still count as NEW (review finding)
+      ids: new Set(currentTbScene.nodes.filter((n) => !n.inferred).map((n) => n.id)),
       at: Date.now(),
     };
   }
@@ -2525,8 +2533,14 @@ canvas.addEventListener("pointerdown", (e) => {
   // docs/08 R10/R11 — the temporary wire: in click-click mode this press is
   // the drop; otherwise a press on a port's hotspot starts a wire candidate
   // (the pointer is captured only past DRAG_MIN, like the node drag)
+  if (wire && e.button !== 0) {
+    wireEnd(); // a middle/right press cancels the wire: the pan must not start under it
+  }
   if (e.button === 0 && wire?.armed) {
     e.preventDefault();
+    // captured, so the release — and the click `suppressClick` swallows —
+    // reach the canvas even when the pointer is let go outside it
+    canvas.setPointerCapture(e.pointerId);
     wireDrop(e.clientX, e.clientY);
     suppressClick = true;
     return;
@@ -3327,7 +3341,12 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.key === "Escape") {
     if (wire) {
-      wireEnd(); // a wire in flight is cancelled first (docs/08 R10)
+      // a wire in flight is cancelled first (docs/08 R10); with the button still
+      // held, the release's click must not clear the selection
+      if (wire.moved && !wire.armed) {
+        suppressClick = true;
+      }
+      wireEnd();
       return;
     }
     if (ctxMenu) {
@@ -4239,6 +4258,10 @@ async function renderTb(refit: boolean): Promise<void> {
       const input = [...fresh.ports.values()].find((a) => a.side === "WEST");
       fresh.x = Math.round((pd.x + GRID) / GRID) * GRID;
       fresh.y = Math.round((pd.y - (input?.y ?? fresh.h / 2)) / GRID) * GRID;
+      // a stale seed under the same id (a deleted entry's, a dragged ghost's)
+      // must not win: dropped from `seeds`, the D21 loop below persists the
+      // drop position instead of skipping it (review finding)
+      seeds.delete(fresh.node.id);
       pendingDrop = undefined;
       dropped = true;
     }

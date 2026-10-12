@@ -398,11 +398,44 @@ export class Actions {
       );
       return;
     }
-    const specs = await this.agentPortSpecs(fresh);
+    // a port ANOTHER agent declares cannot be added here: checkConfig flags
+    // port-claimed as an error and the generator refuses two drivers
+    const claimedBy = new Map<string, string>();
+    for (const a of this.config.current?.agents ?? []) {
+      if (!a.name || a.name === agent) {
+        continue;
+      }
+      for (const p of [
+        ...(a.ports?.inputs ?? []),
+        ...(a.ports?.outputs ?? []),
+        ...(a.ports?.inouts ?? []),
+      ]) {
+        if (p.name) {
+          claimedBy.set(p.name, a.name);
+        }
+      }
+    }
+    const free = fresh.filter((p) => !claimedBy.has(p.name));
+    const takenNotes = fresh
+      .filter((p) => claimedBy.has(p.name))
+      .map((p) =>
+        vscode.l10n.t("{0} (claimed by agent {1})", p.name, claimedBy.get(p.name) ?? "")
+      );
+    if (free.length === 0) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: no usable pin in the selection ({0}).",
+          takenNotes.join("; ")
+        )
+      );
+      return;
+    }
+    const specs = await this.agentPortSpecs(free);
     if (!specs) {
       return;
     }
-    const { inputs, outputs, inouts, skipped } = specs;
+    const { inputs, outputs, inouts } = specs;
+    const skipped = [...takenNotes, ...specs.skipped];
     const count = inputs.length + outputs.length + inouts.length;
     if (count === 0) {
       void vscode.window.showWarningMessage(
@@ -828,6 +861,17 @@ export class Actions {
       (cfg.current.analysis?.coverage ?? []).map((c) => coveredAgent(c))
     );
     const choices = agents.filter((a) => !covered.has(a));
+    if (preselect && covered.has(preselect)) {
+      // the gesture named THIS agent: substituting another one silently (the
+      // single remaining candidate) would cover the wrong agent (review finding)
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: agent \"{0}\" already has a coverage collector.",
+          preselect
+        )
+      );
+      return;
+    }
     if (!choices.length) {
       void vscode.window.showInformationMessage(
         vscode.l10n.t("QuickUVM Architect: every agent already has a coverage collector.")

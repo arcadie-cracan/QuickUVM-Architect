@@ -135,12 +135,16 @@ mesajele tot aici, la implementare.
   the tip of every TLM port of a non-ghost box; in the RTL views the `.pin`
   groups (the symbol's pins, a child block's pins in the schematic — NOT the
   boundary flags: a drag on a flag moves it, docs/04; not clock/reset/ignored
-  pins). Drop on EMPTY canvas → a filtered menu at the drop point (R10): from an
-  agent's `<ap>` → "Scoreboard fed by X" / "Coverage on X" (`addScoreboard
-  {source}` / `addCoverage {agent}`; the webview keeps a `pendingDrop` and the
-  next `renderTb` of the same layout key places the first NEW node of that kind
-  at the drop point, then pins the whole view through `layout/snapshot` — total
-  seeds, D21); from a scoreboard's `source` / `monitor` → the legal agents
+  pins, nor pins an agent already claims — port-claimed is an error — and, in
+  the schematic, not the label inside the block, which keeps dragging the
+  block). Drop on EMPTY canvas → a filtered menu at the drop point (R10): from an
+  agent's `<ap>` → "Scoreboard fed by X" / "Coverage on X" — the latter only
+  while X has no collector — (`addScoreboard {source}` / `addCoverage {agent}`;
+  the webview keeps a `pendingDrop` and the next `renderTb` of the same layout
+  key places the first node of that kind that was NOT in the scene before
+  (ghosts excluded: a declared scoreboard may take a ghost's id) at the drop
+  point, over any stale seed under the same id, then pins the whole view
+  through `layout/snapshot` — total seeds, D21); from a scoreboard's `source` / `monitor` → the legal agents
   (`editScoreboard`); from a DUT pin → "Agent from pin X" / "Agent from the N
   selected pins" (`createAgentFromPins {pins, viewId}`; the selection travels
   only when the origin is part of it) / "Agent from interface X"
@@ -152,8 +156,8 @@ mesajele tot aici, la implementare.
   pins, viewId}`. Legality is computed ONCE at the press and shown before the
   drop (`.drop-ok` / `.drop-bad` on boxes and hotspots, the reason as a hint
   under the pointer and as the toast of an illegal drop): already an endpoint,
-  source ≠ monitor, an unnamed scoreboard (endpoints are set BY NAME), a
-  cross-block scoreboard (edit `<subenv>.<agent>` in Properties), a ghost
+  source ≠ monitor, an unnamed or duplicate-named scoreboard (endpoints are set
+  BY NAME — the first entry of that name), a cross-block scoreboard (edit `<subenv>.<agent>` in Properties), a ghost
   (nothing in the YAML), a coverage collector (one agent each). The nearest
   legal hotspot within 20 px snaps. Escape, the webview's `blur` and a press
   outside the canvas cancel. TB only: a plain click on a hotspot ARMS

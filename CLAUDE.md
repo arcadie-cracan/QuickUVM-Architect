@@ -483,12 +483,23 @@ coliziunea de nume.
   — its `data-port` is the bare NAME, and keying the agents map by it made a
   drop on a claimed pin fall through to "Agent from pin" (caught in the
   harness). The drop point of a create gesture is a `pendingDrop` consumed by
-  the next `renderTb` of the same layout key (30 s TTL): the first NEW node of
-  that kind lands there and the WHOLE view is pinned (D21 total seeds) even
-  when the view had none — pinning only the new node would leave partial
-  seeds. Synthetic pointer events in the harness never produce a `click`, so
-  `suppressClick` stays armed after a scripted drop — dispatch a `click` before
-  testing the selection.
+  the next `renderTb` of the same layout key (120 s TTL — a scoreboard asks up
+  to four QuickPicks): the first node of that kind NOT in the pre-gesture scene
+  (ghosts excluded: a declared scoreboard may take a ghost's id, `sb:sbd`)
+  lands there, its stale seed under the same id is dropped so the D21 loop
+  persists the new position, and the WHOLE view is pinned (D21 total seeds)
+  even when the view had none — pinning only the new node would leave partial
+  seeds. From the adversarial review: a pin an agent already claims is no
+  origin (port-claimed is an error), `addPinsToAgent` refuses ports another
+  agent declares, "Coverage on X" is offered only while X has none (the host's
+  `addCoverage` used to substitute the single remaining agent silently; it now
+  refuses a covered preselect), a duplicate-named scoreboard (`sb:x#2`) is
+  refused like an unnamed one (`setScoreboardField` edits the FIRST `x`), a
+  middle/right press cancels the wire before the pan starts, and the armed
+  drop captures the pointer so its click reaches the canvas. Synthetic pointer
+  events in the harness never produce a `click`, so `suppressClick` stays
+  armed after a scripted drop — dispatch a `click` before testing the
+  selection.
 
 ## Faza curentă
 

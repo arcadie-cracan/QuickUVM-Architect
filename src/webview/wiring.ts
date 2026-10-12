@@ -31,11 +31,12 @@ export type WireOrigin =
   | {
       kind: "sb-port";
       nodeId: string;
-      /** the entry's name as written; `sbd` when unnamed (see `named`) */
+      /** the entry's name as written; `sbd` when unnamed (see `blocked`) */
       sbName: string;
-      /** endpoints are set BY NAME (`setScoreboardField`): an unnamed entry
-       *  cannot be retargeted until it is named */
-      named: boolean;
+      /** endpoints are set BY NAME (`setScoreboardField` edits the FIRST entry
+       *  of that name): an unnamed or duplicate-named entry cannot be
+       *  retargeted — the reason, or null when it can */
+      blocked: string | null;
       field: "source" | "monitor";
     };
 
@@ -87,7 +88,7 @@ export function wireOriginOf(
       kind: "sb-port",
       nodeId,
       sbName: sb?.name ?? "sbd",
-      named: Boolean(sb?.name),
+      blocked: nameBlock(sb, nodeId),
       field: port,
     };
   }
@@ -95,15 +96,31 @@ export function wireOriginOf(
 }
 
 const NAME_FIRST = "name the scoreboard first — endpoints are set by name";
+const DUP_NAME =
+  "another scoreboard has this name — endpoints are set by name, rename it first";
+
+/** why a scoreboard entry cannot be addressed by name: unnamed, or a
+ *  duplicate (`sb:x#2` — `setScoreboardField` would edit the FIRST `x`) */
+function nameBlock(sb: QuvmScoreboard | undefined, nodeId: string): string | null {
+  if (!sb?.name) {
+    return NAME_FIRST;
+  }
+  return nodeId.includes("#") ? DUP_NAME : null;
+}
 
 /** per scoreboard port: null = legal for the agent, else why not */
 function sbPortReason(
   sb: QuvmScoreboard | undefined,
+  nodeId: string,
   field: "source" | "monitor",
   agent: string
 ): string | null {
-  if (!sb?.name) {
+  if (!sb) {
     return NAME_FIRST;
+  }
+  const block = nameBlock(sb, nodeId);
+  if (block) {
+    return block;
   }
   if (sb[field] === agent) {
     return `already the ${field}`;
@@ -143,8 +160,8 @@ export function wireTargets(
           continue;
         }
         const sb = scoreboardOf(config, n.id);
-        const rs = sbPortReason(sb, "source", origin.agent);
-        const rm = sbPortReason(sb, "monitor", origin.agent);
+        const rs = sbPortReason(sb, n.id, "source", origin.agent);
+        const rm = sbPortReason(sb, n.id, "monitor", origin.agent);
         out.set(`${n.id}.source`, rs);
         out.set(`${n.id}.monitor`, rm);
         out.set(n.id, rs === null || rm === null ? null : (rs ?? rm));
@@ -156,8 +173,8 @@ export function wireTargets(
         out.set(n.id, "not a scoreboard");
       }
     } else {
-      if (!origin.named) {
-        out.set(n.id, NAME_FIRST);
+      if (origin.blocked) {
+        out.set(n.id, origin.blocked);
         continue;
       }
       if (n.kind !== "tbagent") {
@@ -165,7 +182,7 @@ export function wireTargets(
         continue;
       }
       const sb = scoreboardOf(config, origin.nodeId);
-      out.set(n.id, sbPortReason(sb, origin.field, n.label));
+      out.set(n.id, sbPortReason(sb, origin.nodeId, origin.field, n.label));
     }
   }
   return out;
@@ -229,20 +246,29 @@ export function wireChoicesOnCanvas(
   origin: WireOrigin
 ): WireChoice[] {
   if (origin.kind === "agent-ap") {
-    return [
+    const out: WireChoice[] = [
       {
         label: `Scoreboard fed by ${origin.agent}`,
         action: "addScoreboard",
         args: { source: origin.agent },
         creates: "tbsb",
       },
-      {
+    ];
+    // one collector per agent: offered only while the agent has none — the
+    // host would otherwise cover ANOTHER agent (the single remaining
+    // candidate) under this label (review finding)
+    const covered = scene.nodes.some(
+      (n) => n.id === `cov:${origin.agent}` && !n.inferred
+    );
+    if (!covered) {
+      out.push({
         label: `Coverage on ${origin.agent}`,
         action: "addCoverage",
         args: { agent: origin.agent },
         creates: "tbcov",
-      },
-    ];
+      });
+    }
+    return out;
   }
   const legal = wireTargets(scene, config, origin);
   return scene.nodes
