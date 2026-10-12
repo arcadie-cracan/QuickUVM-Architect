@@ -13,7 +13,7 @@ import type {
   ViewMode,
   WebviewMessage,
 } from "../protocol";
-import type { ElementCard, GenerateStatus, Proposal, ProposalApply, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
+import type { ElementCard, GenerateStatus, Proposal, ProposalApply, ProposalSet, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
@@ -2868,6 +2868,23 @@ function applyFlash(): void {
   setTimeout(() => els.forEach((e) => e.classList.remove("flash")), 1800);
 }
 
+/** applies proposals of the set `p`: the strip's Apply and the palette's rows
+ *  share it, so both flash what was created and retire the set (docs/08 R12) */
+function applyProposalItems(p: ProposalSet, items: ProposalApply[]): void {
+  if (!items.length) {
+    return;
+  }
+  pendingFlash = { key: flashKey(), before: flashableIds(), at: Date.now() };
+  postAction("applyProposals", { items });
+  // this exact set was acted upon: a render before the host's next
+  // `proposals/full` (the config/overlay change arrives first) must not
+  // re-show it — the next, different set will
+  dismissedProposals.set(p.viewId, p.items.map((i) => i.id).join("\u0001"));
+  if (assist) {
+    assist.hidden = true;
+  }
+}
+
 function renderAssist(): void {
   if (!assist) {
     return;
@@ -2927,16 +2944,7 @@ function renderAssist(): void {
     const items: ProposalApply[] = ghosts
       ? [{ kind: "materialize", args: {}, accept: checked.map((i) => i.id) }]
       : checked.map((i) => ({ kind: i.kind, args: i.args }));
-    if (!items.length) {
-      return;
-    }
-    pendingFlash = { key: flashKey(), before: flashableIds(), at: Date.now() };
-    postAction("applyProposals", { items });
-    // this exact set was acted upon: a render before the host's next
-    // `proposals/full` (the config/overlay change arrives first) must not
-    // re-show it — the next, different set will
-    dismissedProposals.set(p.viewId, sig);
-    assist.hidden = true;
+    applyProposalItems(p, items);
   });
   const dismiss = h("button", "assist-btn secondary", "Dismiss");
   dismiss.addEventListener("click", () => {
@@ -4218,7 +4226,9 @@ function paletteItems(): PaletteItem[] {
       return;
     }
     seen.add(norm);
-    out.push({ key: `${group}|${label}`, label, group, run, danger });
+    // the recency key is the NORMALISED label: a count in the label ("Agent from
+    // selection (2)") must not make a new key per selection
+    out.push({ key: `${group}|${norm}`, label, group, run, danger });
   };
   const selId = state.selection.size === 1 ? [...state.selection][0] : null;
   if (selId) {
@@ -4230,9 +4240,8 @@ function paletteItems(): PaletteItem[] {
       }
     }
     if (state.mode === "tb") {
-      for (const t of nodeToolsFor(selId)) {
-        add("Selection", t.title, t.run);
-      }
+      // the "+" tools are NOT added: the panel's add buttons below carry the
+      // same preselected actions ("Scoreboard from cmd") — one row per action
       const node = currentTbScene?.nodes.find((n) => n.id === selId);
       for (const w of node?.widgets ?? []) {
         if (w.next === undefined) {
@@ -4271,7 +4280,13 @@ function paletteItems(): PaletteItem[] {
   if (state.mode !== "symbol") {
     add("View", "Re-arrange all (⟲)", relayoutAll);
   }
-  add("View", "Up one level (U)", goUp);
+  const hasParent =
+    state.mode === "tb"
+      ? state.tbFocus !== ""
+      : Boolean(state.viewId && rtlParentPath(state.viewId, (p) => Boolean(findInstance(p))));
+  if (hasParent) {
+    add("View", "Up one level (U)", goUp);
+  }
   if (navHistory.canBack) {
     add("View", "Back (Ctrl+[)", () => goHistory(true));
   }
@@ -4345,6 +4360,8 @@ function openPalette(): void {
       });
       list.append(row);
     });
+    // the list scrolls (up to LIMIT rows): the arrows must not walk off-screen
+    list.querySelector(".finditem.active")?.scrollIntoView({ block: "nearest" });
   };
   input.addEventListener("input", () => {
     matches = rankPalette(findable, paletteRecent, input.value, LIMIT);
@@ -4841,8 +4858,10 @@ function tbMenuItems(id: string): CtxItem[] {
         }
       }
     }
-  } else {
-    // boundary flag: only the LOCAL horizontal flip (V makes no sense)
+  } else if (currentTbScene?.boundary.some((b) => b.id === id)) {
+    // boundary flag: only the LOCAL horizontal flip (V makes no sense); an id
+    // the scene has NEITHER as a node nor as a flag gets nothing (a stale
+    // selection must not flip a dead id into the sidecar)
     items.push({
       label: "Flip horizontal (H)",
       action: () => toggleFlip(id, "h"),
@@ -4900,6 +4919,7 @@ async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
   closeCard(); // docs/08 R15: the card is anchored to a box that is about to be redrawn
+  closePalette(); // docs/08 R17: its rows close over the scene that is about to change
   renderAssist(); // docs/08 R12: the strip follows the view (hidden on a mismatch)
   if (state.mode === "tb") {
     return renderTb(refit);

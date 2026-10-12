@@ -615,10 +615,21 @@ coliziunea de nume.
   harmless in the diagram webview (it has no `#inspector`), but the sidebar
   webview (`properties.ts`) must never call it. A proposal row is offered one
   by one EXCEPT the ghost (`materialize`) rows — those are all-or-nothing in
-  the strip. Labels are de-duplicated across surfaces (trailing "(…)" hints
-  stripped), so "Add scoreboard" from the panel and "+ scoreboard" from the
-  tools do not both appear. Recency (`paletteRecent`) rides in the webview
-  state next to `openSections` — `persistState` must keep writing it.
+  the strip, and go through `applyProposalItems` like the strip's Apply (the
+  flash of what was created, the set retired) — a bare `applyProposals` left
+  the strip offering the applied row until the host's next set. Labels are
+  de-duplicated across surfaces (trailing "(…)" hints stripped, case-folded)
+  and the recency key is the NORMALISED label; the R1 "+" tools are NOT
+  rows — the panel's add buttons already carry the preselected agent
+  ("Scoreboard from cmd"), and the tools' titles would have doubled them.
+  Recency (`paletteRecent`) rides in the webview state next to
+  `openSections` — `persistState` must keep writing it, and
+  `persistSections` (inspector-view) spreads the existing state so it does
+  not drop it. The harness HAS an `#inspector`: a section head captures ITS
+  render context (`mine`), or a click after a detached render would re-render
+  into the detached root. `render()` closes the palette (its rows close over
+  the old scene); the active row is scrolled into view (the list holds up to
+  40 rows, the box shows ~10).
 
 ## Faza curentă
 
