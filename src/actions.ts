@@ -18,6 +18,7 @@ import { kindBlockers, layoutBlockers } from "./benchid";
 import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
+import { confirmGesture, PreviewProvider, type PreviewFile } from "./previewdiff";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
 import { connectedIface } from "./proposals";
 import type { ProposalApply } from "./protocol";
@@ -29,7 +30,8 @@ export class Actions {
   constructor(
     private readonly getModel: () => ProjectModel | undefined,
     private readonly config: ConfigService,
-    private readonly log: vscode.OutputChannel
+    private readonly log: vscode.OutputChannel,
+    private readonly preview: PreviewProvider
   ) {}
 
   private resolve(
@@ -756,15 +758,59 @@ export class Actions {
     const creations = [...newConfigs.entries()].filter(([m]) =>
       chosenModules.has(m)
     );
+    const scaffolds = creations.map(([module, c]) => ({
+      uri: c.uri,
+      text: ops.setDut(ops.newConfigText(module), c.spec),
+    }));
+    const specs: ops.SubenvSpec[] = picked.map((i) => ({
+      name: i.proposal.name,
+      config: i.proposal.configFile,
+      params: i.proposal.params,
+    }));
+
+    // docs/08 R19: a new block config is a file the user has not seen — with
+    // more than one file in play the gesture is previewed / confirmed per
+    // `previewEdits` (a top-only composition stays immediate: the QuickPick
+    // already confirmed it)
+    const topOld = await this.config.readText();
+    let topNew: string;
+    try {
+      topNew = ops.createSubenvs(topOld, specs);
+    } catch (e) {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", String(e instanceof Error ? e.message : e))
+      );
+      return;
+    }
+    const changes: PreviewFile[] = scaffolds.map((s) => ({
+      label: path.basename(s.uri.fsPath),
+      created: true,
+      oldText: "",
+      newText: s.text,
+    }));
+    changes.push({ uri: topUri, label: path.basename(topUri.fsPath), oldText: topOld, newText: topNew });
+    const go = await confirmGesture(this.preview, {
+      kind: "multi-file",
+      message: vscode.l10n.t(
+        "Create {0} subenv(s) in {1}, with {2} new block config(s)?",
+        specs.length,
+        path.basename(topUri.fsPath),
+        creations.length
+      ),
+      verb: vscode.l10n.t("Create"),
+      title: vscode.l10n.t("Create subenvs in {0}", inst.module),
+      changes,
+    });
+    if (!go) {
+      return;
+    }
+
     if (creations.length) {
       const edit = new vscode.WorkspaceEdit();
-      for (const [module, c] of creations) {
-        edit.createFile(c.uri, {
+      for (const s of scaffolds) {
+        edit.createFile(s.uri, {
           ignoreIfExists: true,
-          contents: Buffer.from(
-            ops.setDut(ops.newConfigText(module), c.spec),
-            "utf8"
-          ),
+          contents: Buffer.from(s.text, "utf8"),
         });
       }
       await vscode.workspace.applyEdit(edit);
@@ -780,11 +826,6 @@ export class Actions {
     // rejection to guard against: we compose directly, no blocking modal.
 
     // 2. the subenvs entries into the top config (a single WorkspaceEdit)
-    const specs: ops.SubenvSpec[] = picked.map((i) => ({
-      name: i.proposal.name,
-      config: i.proposal.configFile,
-      params: i.proposal.params,
-    }));
     if (await this.config.apply((t) => ops.createSubenvs(t, specs))) {
       const notes: string[] = [];
       if (creations.length) {
@@ -1111,6 +1152,38 @@ export class Actions {
   }
 
   /**
+   * docs/08 R19 — the confirmation of a DESTRUCTIVE single-file gesture, with
+   * the diff preview: the mutation runs on the target's current text first (what
+   * the preview shows is what will be written), then `confirmGesture` asks per
+   * `quickuvm.previewEdits`. The caller still applies through `cfg.apply`.
+   */
+  private async confirmMutation(
+    cfg: TbEditTarget,
+    mutate: (t: string) => string,
+    ask: { message: string; detail?: string; verb: string; title: string }
+  ): Promise<boolean> {
+    const uri = cfg.configUri;
+    if (!uri) {
+      return false;
+    }
+    const oldText = await cfg.readText();
+    let newText: string;
+    try {
+      newText = mutate(oldText);
+    } catch (e) {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", String(e instanceof Error ? e.message : e))
+      );
+      return false;
+    }
+    return confirmGesture(this.preview, {
+      ...ask,
+      kind: "destructive",
+      changes: [{ uri, label: path.basename(uri.fsPath), oldText, newText }],
+    });
+  }
+
+  /**
    * Deletes a component of the verification environment (slice 2), with a MODAL
    * confirmation. Scoreboard/coverage/vseq are leaves (no one references them). For
    * an AGENT, the confirmation summarizes the cascade (its coverage, the scoreboards with
@@ -1159,13 +1232,14 @@ export class Actions {
       default:
         return;
     }
-    const DELETE = vscode.l10n.t("Delete");
-    const pick = await vscode.window.showWarningMessage(
-      vscode.l10n.t("Delete {0}?", label),
-      { modal: true, detail },
-      DELETE
-    );
-    if (pick !== DELETE) {
+    // docs/08 R19: the modal gains "Preview changes" — the cascade as a diff
+    const go = await this.confirmMutation(cfg, mutate, {
+      message: vscode.l10n.t("Delete {0}?", label),
+      detail,
+      verb: vscode.l10n.t("Delete"),
+      title: vscode.l10n.t("Delete {0}", label),
+    });
+    if (!go) {
       return;
     }
     if (await cfg.apply(mutate)) {
@@ -1564,18 +1638,19 @@ export class Actions {
           done = await cfg.apply((t) => ops.upgradeCoverage(t, agent, field));
           break;
         case "downgrade": {
-          const go = await vscode.window.showWarningMessage(
-            vscode.l10n.t(
+          const mutate = (t: string): string => ops.downgradeCoverage(t, agent);
+          const go = await this.confirmMutation(cfg, mutate, {
+            message: vscode.l10n.t(
               "Drop the covergroup content for {0}? The agent keeps its coverage collector, but the coverpoints, bins and crosses go.",
               agent
             ),
-            { modal: true },
-            vscode.l10n.t("Drop")
-          );
+            verb: vscode.l10n.t("Drop"),
+            title: vscode.l10n.t("Drop the covergroup content for {0}", agent),
+          });
           if (!go) {
             return;
           }
-          done = await cfg.apply((t) => ops.downgradeCoverage(t, agent));
+          done = await cfg.apply(mutate);
           break;
         }
         case "addCoverpoint":
@@ -1665,20 +1740,21 @@ export class Actions {
       return;
     }
     const last = (cfg.current.tests ?? []).length <= 1;
-    const go = await vscode.window.showWarningMessage(
-      last
+    const mutate = (t: string): string => ops.removeTest(t, name);
+    const go = await this.confirmMutation(cfg, mutate, {
+      message: last
         ? vscode.l10n.t(
             "Remove the last test ({0})? The bench falls back to QuickUVM's default test1 — it is never left without a test.",
             name
           )
         : vscode.l10n.t("Remove the test {0}?", name),
-      { modal: true },
-      vscode.l10n.t("Remove")
-    );
+      verb: vscode.l10n.t("Remove"),
+      title: vscode.l10n.t("Remove the test {0}", name),
+    });
     if (!go) {
       return;
     }
-    if (await cfg.apply((t) => ops.removeTest(t, name))) {
+    if (await cfg.apply(mutate)) {
       this.log.appendLine(`[actions] removeTest ${name}${last ? " (last)" : ""}`);
     }
   }
@@ -1862,17 +1938,18 @@ export class Actions {
     if (!cfg.configUri || !cfg.current.register_model) {
       return;
     }
-    const go = await vscode.window.showWarningMessage(
-      vscode.l10n.t(
+    const mutate = (t: string): string => ops.removeRegisterModel(t);
+    const go = await this.confirmMutation(cfg, mutate, {
+      message: vscode.l10n.t(
         "Remove the register model? The generated adapter, the CSR tests and their env wiring go with it."
       ),
-      { modal: true },
-      vscode.l10n.t("Remove")
-    );
+      verb: vscode.l10n.t("Remove"),
+      title: vscode.l10n.t("Remove the register model"),
+    });
     if (!go) {
       return;
     }
-    if (await cfg.apply((t) => ops.removeRegisterModel(t))) {
+    if (await cfg.apply(mutate)) {
       this.log.appendLine("[actions] removeRegisterModel");
     }
   }
@@ -1941,20 +2018,21 @@ export class Actions {
     const seeded = (cfg.current.tests ?? []).filter(
       (t) => (t as { seeds?: number }).seeds !== undefined
     ).length;
+    const mutate = (t: string): string => ops.removeRegress(t);
     if (seeded > 0) {
-      const go = await vscode.window.showWarningMessage(
-        vscode.l10n.t(
+      const go = await this.confirmMutation(cfg, mutate, {
+        message: vscode.l10n.t(
           "Remove the regression block? {0} test(s) set `seeds`, which QuickUVM refuses without it — those seed counts are removed too.",
           seeded
         ),
-        { modal: true },
-        vscode.l10n.t("Remove")
-      );
+        verb: vscode.l10n.t("Remove"),
+        title: vscode.l10n.t("Remove the regression block"),
+      });
       if (!go) {
         return;
       }
     }
-    if (await cfg.apply((t) => ops.removeRegress(t))) {
+    if (await cfg.apply(mutate)) {
       this.log.appendLine(`[actions] removeRegress (+${seeded} seeds)`);
     }
   }
@@ -2333,6 +2411,55 @@ export class Actions {
     }
     const plan = planWireEdits(topOld, subenvs, derived, children);
     const { passivated, manual } = plan;
+
+    // docs/08 R19: the effect lands in files the user is not looking at (the
+    // children's agents go passive) — previewed / confirmed per `previewEdits`
+    // when more than one file changes; a top-only wiring stays immediate
+    const changes: PreviewFile[] = [
+      { uri: topUri, label: path.basename(topUri.fsPath), oldText: topOld, newText: plan.topText },
+    ];
+    for (const [key, text] of plan.childTexts) {
+      const doc = childDocs.get(key);
+      if (doc) {
+        changes.push({ uri: doc.uri, label: path.basename(doc.uri.fsPath), oldText: doc.getText(), newText: text });
+      }
+    }
+    const notes: string[] = [];
+    if (passivated.length) {
+      notes.push(vscode.l10n.t("agents set passive: {0}", passivated.join(", ")));
+    }
+    if (manual.length) {
+      notes.push(vscode.l10n.t("configure and passivate the agent for: {0}", manual.join(", ")));
+    }
+    notes.push(...derived.warnings);
+    const go = await confirmGesture(this.preview, {
+      kind: "multi-file",
+      message: vscode.l10n.t(
+        "Wire {0} connection(s) into {1}?",
+        derived.connections.length,
+        path.basename(topUri.fsPath)
+      ),
+      detail: notes.join("\n") || undefined,
+      verb: vscode.l10n.t("Wire"),
+      title: vscode.l10n.t("Wire connections from design"),
+      changes,
+    });
+    if (!go) {
+      return;
+    }
+    // the plan was computed on the texts the preview showed: a file edited
+    // meanwhile would get a whole-document replace of stale content
+    const stale =
+      topDoc.getText() !== topOld ||
+      [...children.values()].some((c) => childDocs.get(c.key)?.getText() !== c.text);
+    if (stale) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: the configuration changed while the preview was open — run the gesture again."
+        )
+      );
+      return;
+    }
 
     const edit = new vscode.WorkspaceEdit();
     if (plan.topText !== topOld) {

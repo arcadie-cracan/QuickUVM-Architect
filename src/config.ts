@@ -100,6 +100,9 @@ export function autoSaveConfig(): boolean {
 export interface TbEditTarget {
   readonly current: QuvmConfig;
   readonly configUri: vscode.Uri | undefined;
+  /** the current TEXT — docs/08 R19: a gesture runs its mutation on it to be
+   *  previewed BEFORE `apply` (which runs the mutation again on the then-current text) */
+  readText(): Promise<string>;
   apply(mutate: (text: string) => string): Promise<boolean>;
 }
 
@@ -306,6 +309,13 @@ export class ConfigService implements vscode.Disposable {
       "**/node_modules/**"
     );
     return found.sort((a, b) => a.fsPath.localeCompare(b.fsPath));
+  }
+
+  async readText(): Promise<string> {
+    if (!this.uri) {
+      return "";
+    }
+    return (await vscode.workspace.openTextDocument(this.uri)).getText();
   }
 
   /**

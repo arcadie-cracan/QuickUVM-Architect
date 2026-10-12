@@ -6,6 +6,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { Actions } from "./actions";
+import { PreviewProvider } from "./previewdiff";
 import { proposalsFor } from "./proposals";
 import type { ProposalApply } from "./protocol";
 import { Backend } from "./backend";
@@ -53,7 +54,10 @@ export function activate(context: vscode.ExtensionContext): void {
   );
   const backend = new Backend(context, log, slangDiags);
   const config = new ConfigService(log, configDiags);
-  const actions = new Actions(() => model, config, log);
+  // docs/08 R19: the diff tabs of a previewed gesture (the virtual "after" texts)
+  const preview = new PreviewProvider();
+  context.subscriptions.push(preview);
+  const actions = new Actions(() => model, config, log, preview);
   const generator = new Generator(config, log, generateDiags);
   const layout = new LayoutStore(log);
   // docs/07 line 1 — the "not generated" star on the verification tree, driven by
