@@ -16,6 +16,7 @@ import { YamlLink } from "./yamllink";
 import { elementAtOffset, elementRange, entryText } from "./yamlmap";
 import { DirtyConfigStatus } from "./dirtystatus";
 import { QuvmConfigEditor } from "./customeditor";
+import { codeFollowSetting, TraceService } from "./trace-service";
 import { Generator } from "./generate";
 import { resolveLocPath } from "./filelistops";
 import { buildLocIndex, LocEntry, resolveLoc } from "./locmap";
@@ -93,11 +94,26 @@ export function activate(context: vscode.ExtensionContext): void {
   genState.onDidChange(() => {
     genDeco.refresh();
     vtree.refresh(); // re-render rows: contextValue carries the state
+    trace.refresh(); // docs/08 R20: the lenses and the lit lines follow the manifest
     DiagramPanel.current?.postStatus();
   });
+  // docs/08 R20 — the generated code next to the diagram: the selection lights
+  // the element's lines in the visible generated editors (and opens its primary
+  // file beside, when the setting says so), the CodeLenses lead back to the
+  // verification view, the report lists what traces where
+  const trace = new TraceService({
+    manifest: () => genState.currentManifest,
+    outDir: () => genState.outDir,
+    present: () => genState.presentFiles,
+    primaryFile: (id) => genState.primaryFilePath(id),
+    resolved: () => resolve.current,
+    config: () => config.current,
+    configPath: () => config.configUri?.fsPath,
+  });
+  context.subscriptions.push(resolve.onDidChange(() => trace.refresh()));
   context.subscriptions.push(
     log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
-    layout, genState, genDeco, resolve, findDeco, yamlLink,
+    layout, genState, genDeco, resolve, findDeco, yamlLink, trace,
     onGestureApplied((e) => void yamlLink.afterGesture(e.uri, e.span, e.version)),
     vscode.window.registerFileDecorationProvider(genDeco),
     vscode.window.registerFileDecorationProvider(findDeco)
@@ -131,7 +147,13 @@ export function activate(context: vscode.ExtensionContext): void {
               primary: genState.primaryFilePath(id),
               manifest: genState.hasManifest ? ("ok" as const) : ("unavailable" as const),
             }
-          : { files: [], primary: null, manifest: "inactive" as const }
+          : { files: [], primary: null, manifest: "inactive" as const },
+        (uri, ids) => {
+          // docs/08 R20 — only the active config's diagram drives the trace
+          if (uri.toString() === config.configUri?.toString()) {
+            trace.select(ids, true);
+          }
+        }
       ),
       {
         webviewOptions: { retainContextWhenHidden: true },
@@ -419,6 +441,12 @@ export function activate(context: vscode.ExtensionContext): void {
             beside: true,
           });
           break;
+        case "toggleCodeFollow":
+          void vscode.commands.executeCommand("quickuvm.toggleCodeFollow");
+          break;
+        case "traceabilityReport":
+          void vscode.commands.executeCommand("quickuvm.traceabilityReport");
+          break;
         case "openSource":
           break; // handled directly in the panel (it needs the model); does not reach here
         default: {
@@ -608,6 +636,7 @@ export function activate(context: vscode.ExtensionContext): void {
     onSelection: (ids, viewId, mode) => {
       if (viewId?.startsWith("tb:")) {
         revealTbNode(ids); // the verification (TB) view -> the verification tree
+        trace.select(ids, true); // docs/08 R20: the generated code follows the selection
         // docs/08 R4 — diagram -> text: the selected box reveals its YAML entry in
         // the text editors that already show the file (never opens one)
         const cfgUri = config.configUri;
@@ -618,6 +647,7 @@ export function activate(context: vscode.ExtensionContext): void {
         }
       } else {
         revealInstance(ids, viewId, mode); // the RTL views -> the design hierarchy
+        trace.select([], false);
       }
       // ... and to the sidebar inspector, so both surfaces agree on what is selected.
       // The VIEW goes with it: the sidebar's RTL half (Set as DUT, Agent from
@@ -1121,6 +1151,26 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     ),
 
+    // docs/08 R20 — the code view follows the selection (HDL Coder's Code view):
+    // a setting, so it is a choice, not a surprise; the palette row toggles it.
+    // The settings listener re-posts ui/config to the panel (the row's label).
+    vscode.commands.registerCommand("quickuvm.toggleCodeFollow", async () => {
+      const on = !codeFollowSetting();
+      await vscode.workspace
+        .getConfiguration("quickuvm")
+        .update("codeFollowsSelection", on, vscode.ConfigurationTarget.Global);
+      if (on) {
+        trace.followNow();
+      }
+      vscode.window.setStatusBarMessage(
+        on
+          ? vscode.l10n.t("QuickUVM Architect: the code view follows the selection")
+          : vscode.l10n.t("QuickUVM Architect: the code view no longer follows the selection"),
+        3000
+      );
+    }),
+    vscode.commands.registerCommand("quickuvm.traceabilityReport", () => trace.report()),
+
     vscode.commands.registerCommand(
       "quickuvm.revealTbComponent",
       (focus?: string, selectId?: string | null) => {
@@ -1244,7 +1294,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.workspace.onDidChangeConfiguration((e) => {
       if (
         e.affectsConfiguration("quickuvm.lassoMode") ||
-        e.affectsConfiguration("quickuvm.schematicDecorations")
+        e.affectsConfiguration("quickuvm.schematicDecorations") ||
+        e.affectsConfiguration("quickuvm.codeFollowsSelection")
       ) {
         // purely UI settings: they are resent to the webview, without re-elaboration
         DiagramPanel.current?.postUiConfig();

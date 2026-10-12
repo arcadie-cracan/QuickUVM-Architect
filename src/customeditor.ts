@@ -99,7 +99,11 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       files: { file: string; exists: boolean }[];
       primary: string | null;
       manifest: "ok" | "unavailable" | "inactive";
-    }
+    },
+    /** docs/08 R20 — the diagram's selection, for the generated-code trace
+     *  (the host applies it only when THIS document is the active config:
+     *  the manifest is the active config's) */
+    private readonly traceSelect?: (uri: vscode.Uri, ids: string[]) => void
   ) {}
 
   resolveCustomTextEditor(
@@ -230,7 +234,8 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
               ? "intersect"
               : "contain";
           const decorations = quvm.get<boolean>("schematicDecorations", true);
-          void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations });
+          const codeFollow = quvm.get<boolean>("codeFollowsSelection", false);
+          void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
           postConfig();
           // The inferred components need a subprocess, so the first paint cannot
           // wait for them: post the config now; `onDidChange` above re-posts once
@@ -274,6 +279,7 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           if (m.ids.length === 1) {
             this.yamlLink?.revealElement(document.uri, document.getText(), m.ids[0]);
           }
+          this.traceSelect?.(document.uri, m.ids);
           break;
         case "card/request": {
           // docs/08 R15 — the YAML entry from THIS document, the files from the
@@ -435,6 +441,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           label: s("label") || "item",
           beside: true,
         });
+        break;
+      case "toggleCodeFollow":
+        void vscode.commands.executeCommand("quickuvm.toggleCodeFollow");
+        break;
+      case "traceabilityReport":
+        void vscode.commands.executeCommand("quickuvm.traceabilityReport");
         break;
       default:
         this.log.appendLine(
