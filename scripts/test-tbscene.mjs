@@ -470,4 +470,25 @@ test("review: the scene's scoreboard ids are exactly scoreboardNodeIds (local + 
   assert.deepEqual(ids, ["sb:sbd", "xsb:x", "sb:sbd#2", null, "xsb:x#2"]);
 });
 
+test("docs/08 R13: the inline widgets — active on agents, match/latency on a two-stream named scoreboard, none on ghosts or single-stream", () => {
+  const s = buildTbScene(CFG, "env", "demo.quickuvm.yaml");
+  assert.deepEqual(nodeById(s, "agent:cmd").widgets, [
+    { field: "active", kind: "toggle", label: "active", value: "true", next: "false", action: "editAgent", name: "cmd" },
+  ]);
+  assert.deepEqual(nodeById(s, "agent:rsp").widgets.map((w) => [w.label, w.next]), [["passive", "true"]]);
+  assert.deepEqual(nodeById(s, "sb:sbd").widgets, [
+    { field: "match", kind: "cycle", label: "match: out_of_order", value: "out_of_order", next: "in_order", action: "editScoreboard", name: "sbd" },
+    { field: "max_latency", kind: "number", label: "latency: —", value: "", action: "editScoreboard", name: "sbd" },
+  ]);
+  const single = { ...CFG, analysis: { scoreboards: [{ name: "one", source: "cmd", max_latency: 4 }, { source: "rsp", monitor: "cmd" }] } };
+  const s2 = buildTbScene(single, "env", "demo.quickuvm.yaml");
+  assert.deepEqual(nodeById(s2, "sb:one").widgets, [], "single-stream: match/latency are two-stream facts");
+  assert.deepEqual(nodeById(s2, "sb:sbd").widgets, [], "unnamed: cannot be edited by name");
+  const implicit = { project: { name: "y" }, dut: { name: "d" }, agents: [{ name: "pkt", interface: "pkt_if" }] };
+  const resolved = { version: "1.1.0", dut: "d", analysis: { mode: "implicit", scoreboards: [{ name: "sbd", source: "pkt", monitor: "pkt", origin: "inferred" }], coverage: [] }, tests: [], virtual_sequences: [], agents: [], guards: [] };
+  const s3 = buildTbScene(implicit, "env", null, resolved);
+  assert.ok(nodeById(s3, "sb:sbd").inferred);
+  assert.ok(!nodeById(s3, "sb:sbd").widgets?.length, "a ghost has nothing to edit");
+});
+
 console.log(`\ntest-tbscene: ${passed} tests passed.`);

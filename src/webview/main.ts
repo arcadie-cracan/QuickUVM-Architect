@@ -1697,6 +1697,18 @@ canvas.addEventListener("click", (e) => {
     suppressClick = false;
     return;
   }
+  // docs/08 R13 — an inline widget on a SELECTED box: toggle/cycle sends the host
+  // action, a number opens a small editor. The CSS already lets the first click
+  // through to the box (the widget takes no pointer events until selected), and
+  // the second click of a double-click (e.detail > 1) is ignored — otherwise a
+  // double-click toggled twice and drilled
+  const widget = (e.target as Element).closest<SVGElement>(".tb-widget");
+  if (widget && state.mode === "tb" && state.selection.has(widget.dataset.node ?? "")) {
+    if (e.detail <= 1) {
+      activateWidget(widget);
+    }
+    return;
+  }
   const target = (e.target as Element).closest<SVGElement>("[data-id]");
   if (!target) {
     // Shift+click on the background / element without data-id (e.g. iface edge): cone
@@ -1785,6 +1797,9 @@ canvas.addEventListener("pointerleave", () => {
 // the module source, anywhere.
 canvas.addEventListener("dblclick", (e) => {
   if (state.mode === "tb") {
+    if ((e.target as Element).closest(".tb-widget")) {
+      return; // docs/08 R13 — a double-click on a widget is not a drill
+    }
     // docs/08 R14 — a double-click on the TITLE renames in place (the title
     // takes pointer events for this); anywhere else on a block with structure
     // drills, as before
@@ -2234,6 +2249,77 @@ function startRename(nodeId: string): void {
     const p = renameProblem(target.name, box.value);
     box.classList.toggle("invalid", Boolean(p));
     box.title = p ?? "";
+  });
+  box.addEventListener("blur", () => finish(true));
+  document.body.append(box);
+  renameBox = box;
+  box.focus();
+  box.select();
+}
+
+// ------------------------------------ inline widgets on boxes (docs/08 R13)
+
+/** a click on a widget of a selected box: the host action the Properties panel
+ *  would send (`editAgent` / `editScoreboard {name, field, value}`) */
+function activateWidget(w: SVGElement): void {
+  const action: ActionKind = w.dataset.action === "editAgent" ? "editAgent" : "editScoreboard";
+  const name = w.dataset.name ?? "";
+  const field = w.dataset.field ?? "";
+  if (!name || !field) {
+    return;
+  }
+  if (w.dataset.kind === "number") {
+    startNumberEdit(w, w.dataset.value ?? "", (value) => postAction(action, { name, field, value }));
+    return;
+  }
+  const next = w.dataset.next;
+  if (next !== undefined) {
+    postAction(action, { name, field, value: next });
+  }
+}
+
+/** a small number editor over a widget's pill (the rename editor's mechanics):
+ *  Enter commits — empty = reset to the default —, Escape cancels, leaving the
+ *  field with a change commits */
+function startNumberEdit(anchor: SVGElement, current: string, commit: (v: string) => void): void {
+  cancelRename();
+  const pill = anchor.querySelector(".tb-widget-pill") ?? anchor;
+  const r = pill.getBoundingClientRect();
+  const box = h("input", "rename number");
+  box.type = "number";
+  box.min = "0";
+  box.value = current;
+  box.placeholder = "unbounded";
+  box.style.left = `${r.left}px`;
+  box.style.top = `${r.top}px`;
+  box.style.width = `${Math.max(r.width, 72)}px`;
+  box.style.height = `${Math.max(r.height, 18)}px`;
+  box.style.fontSize = `${Math.max(10, Math.round(10.5 * state.k))}px`;
+  let done = false;
+  const finish = (ok: boolean): void => {
+    if (done) {
+      return;
+    }
+    done = true;
+    const value = box.value.trim();
+    cancelRename();
+    if (!ok || value === current) {
+      return;
+    }
+    if (value !== "" && !/^\d+$/.test(value)) {
+      return; // the host would refuse a non-integer anyway
+    }
+    commit(value);
+  };
+  box.addEventListener("keydown", (e) => {
+    e.stopPropagation();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      finish(false);
+    }
   });
   box.addEventListener("blur", () => finish(true));
   document.body.append(box);
