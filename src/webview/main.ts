@@ -2140,8 +2140,17 @@ function undoPositions(redo: boolean): void {
 const assist = document.getElementById("assist");
 /** dismissed sets per view id: the signature of the set the user waved away */
 const dismissedProposals = new Map<string, string>();
-/** the ids drawn BEFORE an apply, to flash what it created on the next render */
-let pendingFlash: { viewId: string; before: Set<string>; at: number } | undefined;
+/** the ids drawn BEFORE an apply, to flash what it created on the next render;
+ *  keyed by mode + layout key: the TB levels share `viewId`, and a root-level
+ *  apply must not light every box of the Env level on the next drill */
+let pendingFlash: { key: string; before: Set<string>; at: number } | undefined;
+/** the set the strip shows (view + signature): kept as is while it stays the
+ *  same, so a re-render does not reset the user's checkboxes */
+let renderedAssist = "";
+
+function flashKey(): string {
+  return `${state.mode}|${layoutKey() ?? ""}`;
+}
 
 /** what an apply can create in the current view: claimed pins (RTL), boxes (TB) */
 function flashableIds(): Set<string> {
@@ -2167,7 +2176,7 @@ function applyFlash(): void {
   if (!pf) {
     return;
   }
-  if (pf.viewId !== state.viewId || Date.now() - pf.at > 60_000) {
+  if (pf.key !== flashKey() || Date.now() - pf.at > 60_000) {
     pendingFlash = undefined;
     return;
   }
@@ -2192,13 +2201,22 @@ function renderAssist(): void {
   if (!p || p.viewId !== state.viewId || (p.mode === "tb") !== tb || !p.items.length) {
     assist.hidden = true;
     assist.replaceChildren();
+    renderedAssist = "";
     return;
   }
   const sig = p.items.map((i) => i.id).join("\u0001");
   if (dismissedProposals.get(p.viewId) === sig) {
     assist.hidden = true;
+    renderedAssist = "";
     return;
   }
+  const shown = `${p.viewId}\u0001${sig}`;
+  if (!assist.hidden && renderedAssist === shown) {
+    // the same set is on screen: a rebuild would re-check every box, and an
+    // unchecked ghost would be written anyway on "Write analysis" (review finding)
+    return;
+  }
+  renderedAssist = shown;
   assist.replaceChildren();
   const ghosts = p.items.every((i) => i.kind === "materialize");
   assist.append(
@@ -2236,7 +2254,7 @@ function renderAssist(): void {
     if (!items.length) {
       return;
     }
-    pendingFlash = { viewId: state.viewId ?? "", before: flashableIds(), at: Date.now() };
+    pendingFlash = { key: flashKey(), before: flashableIds(), at: Date.now() };
     postAction("applyProposals", { items });
     // this exact set was acted upon: a render before the host's next
     // `proposals/full` (the config/overlay change arrives first) must not

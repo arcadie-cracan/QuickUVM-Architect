@@ -473,8 +473,9 @@ export interface MaterializeSpec {
  */
 export function materializeAnalysis(text: string, spec: MaterializeSpec): string {
   const doc = parse(text);
-  if (doc.getIn(["analysis"]) !== undefined) {
-    return text;
+  const current = doc.getIn(["analysis"]);
+  if (current !== undefined && current !== null) {
+    return text; // declared already; `analysis:` with no value counts as implicit (the scene agrees)
   }
   const analysis = doc.createNode({}) as YAMLMap;
   if (spec.scoreboards.length) {

@@ -528,7 +528,14 @@ export function activate(context: vscode.ExtensionContext): void {
     getStatus: () => statusSnapshot(),
     // docs/08 R12 — the designer-assistance proposals of the view the panel shows
     getProposals: (viewId, mode) =>
-      proposalsFor(model, viewId, mode, config.configUri ? config.current : null, resolve.current),
+      proposalsFor(
+        model,
+        viewId,
+        mode,
+        config.configUri ? config.current : null,
+        resolve.current,
+        config.childAgents
+      ),
     layout: {
       get: () => layout.sidecar,
       positionsSnapshotted: (v, nodes) => layout.positionsSnapshotted(v, nodes),

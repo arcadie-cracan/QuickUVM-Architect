@@ -516,7 +516,19 @@ coliziunea de nume.
   resurrect the others through `keepAnalysis`, or lose them). `createAgentFrom*`
   take an optional preset name (`agentName`: used when free and valid, else the
   input box asks with it prefilled) — the proposals name agents after the
-  interface port / the pin prefix.
+  interface port / the pin prefix. From the adversarial review: the strip
+  keeps its DOM while the same set is on screen (a rebuild on every render
+  re-checked every box, so an unchecked ghost got written anyway); the flash
+  snapshot is keyed by mode + layout key (the TB levels share `viewId`); the
+  prefix heuristic strips a trailing direction token FIRST — on PULP names the
+  last underscore separates `_i/_o`, which paired an input with its own output
+  (`valid`) and never found the real `src_*`/`dst_*` groups (reproduced on
+  common_cells, now a fixture in `test:proposals`); a connections proposal
+  needs the children's agents (`childAgents`) and no ambiguity; a preset agent
+  name falls back to the input box on an SV keyword or a scoreboard/subenv/
+  probe name; materialize refuses a resolved set that references agents the
+  live config no longer has (resolve reads the DISK); `analysis:` with no
+  value is implicit for the strip and the mutation, as it is for the scene.
 
 ## Faza curentă
 

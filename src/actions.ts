@@ -16,7 +16,7 @@ import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
 import { kindBlockers, layoutBlockers } from "./benchid";
 import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
-import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE } from "./heuristics";
+import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
 import { connectedIface } from "./proposals";
@@ -2555,10 +2555,22 @@ export class Actions {
     preset: string | undefined,
     suggestion: string
   ): Promise<string | undefined> {
-    const existing = new Set(
-      (this.config.current.agents ?? []).map((a) => a.name)
-    );
-    if (preset && SV_IDENT_RE.test(preset) && !existing.has(preset)) {
+    const cfg = this.config.current;
+    // the agent's name also names its interface and package in tb_top and the
+    // config DB: scoreboards, subenvs and probes share that namespace, and an SV
+    // keyword compiles nowhere — any hit goes through the input box instead
+    const taken = new Set<string | undefined>([
+      ...(cfg.agents ?? []).map((a) => a.name),
+      ...(cfg.analysis?.scoreboards ?? []).map((s) => s.name),
+      ...(cfg.subenvs ?? []).map((s) => s.name),
+      ...(cfg.probes ?? []).map((p) => p.name),
+    ]);
+    if (
+      preset &&
+      SV_IDENT_RE.test(preset) &&
+      !SV_KEYWORDS.has(preset) &&
+      !taken.has(preset)
+    ) {
       return preset;
     }
     return this.askAgentName(preset ?? suggestion);
@@ -2631,6 +2643,23 @@ export class Actions {
     const coverage = (resolved?.analysis.coverage ?? [])
       .filter((c) => c.origin === "inferred" && keep.has(`ghost:cov:${c.agent}`))
       .map((c) => c.agent);
+    // the resolved set describes the file on DISK; an agent renamed in the live
+    // config would leave a dangling endpoint — refuse, instead of writing it
+    const live = new Set((cfg.current.agents ?? []).map((a) => a.name));
+    const stale = [...new Set(
+      [...scoreboards.flatMap((sb) => [sb.source, sb.monitor]), ...coverage].filter(
+        (a): a is string => Boolean(a) && !live.has(a)
+      )
+    )];
+    if (stale.length) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: the inferred components reference agents the configuration no longer has ({0}) — save the file and let quick-uvm resolve it again.",
+          stale.join(", ")
+        )
+      );
+      return;
+    }
     if (await cfg.apply((t) => ops.materializeAnalysis(t, { scoreboards, coverage }))) {
       this.log.appendLine(
         `[actions] materializeInferred: ${scoreboards.length} scoreboard(s), ${coverage.length} coverage`

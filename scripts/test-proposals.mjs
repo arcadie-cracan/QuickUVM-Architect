@@ -27,6 +27,7 @@ await esbuild.build({
 const { agentProposals, connectionsProposal, ghostProposals, proposalsFor } = await import(
   pathToFileURL(outFile)
 );
+const CDC = JSON.parse(readFileSync("examples-bender/model-cdc.json", "utf8"));
 
 let passed = 0;
 function test(name, fn) {
@@ -125,6 +126,34 @@ test("claimed pins leave their group; a waived pin too; an agent of the prefix's
   );
 });
 
+test("PULP names (common_cells): the direction suffix is stripped first — src_*/dst_* are the groups, X_i/X_o pairs are none", () => {
+  const items = agentProposals(CDC, "cdc_fifo_gray", { dut: { name: "cdc_fifo_gray" }, agents: [] });
+  assert.deepEqual(items.map((i) => i.id), ["group:src", "group:dst"]);
+  assert.deepEqual(items[0].args.pins, ["<port>.src_data_i", "<port>.src_valid_i", "<port>.src_ready_o"], "clk/rst by name stay out");
+  assert.deepEqual(items[1].args.pins, ["<port>.dst_data_o", "<port>.dst_valid_o", "<port>.dst_ready_i"]);
+  // a spill register: valid_i/valid_o, ready_o/ready_i, data_i/data_o — an input paired
+  // with its own output is never one interface (the review's reproduction)
+  const spill = CDC.instances.find((i) => i.module === "cc_spill_register");
+  assert.ok(spill, "the fixture has a spill register");
+  assert.deepEqual(agentProposals(CDC, spill.path, { dut: { name: "cc_spill_register" }, agents: [] }), []);
+  const sync = CDC.instances.find((i) => i.module === "tc_sync");
+  assert.deepEqual(agentProposals(CDC, sync.path, { dut: { name: "tc_sync" }, agents: [] }), [], "serial_i/serial_o: no group");
+});
+
+test("data_in/data_out share only a direction token: no group; a pin agent whose names coincide with modport signals does not cover the interface", () => {
+  const m = {
+    schema_version: 1, tops: ["x"],
+    modules: { x: { ports: [port("data_in", "in", 8), port("data_out", "out", 8), port("q_a", "in", 1), port("q_b", "in", 1)], iface_ports: [], loc: null } },
+    instances: [{ path: "x", module: "x", params: {}, loc: null }], views: {},
+  };
+  assert.deepEqual(agentProposals(m, "x", { dut: { name: "x" }, agents: [] }).map((i) => i.id), ["group:q"]);
+  // soc_top: an agent on DUT pins named like the modport's `we` would NOT cover `bus`
+  // (its ports are all DUT ports) — only an agent made of modport signals does
+  const dut = { name: "soc_top", clock: "clk", reset: "rst_n" };
+  const pinAgent = { name: "p", ports: { inputs: [{ name: "din", width: 8 }] } };
+  assert.deepEqual(agentProposals(MODEL, SOC, { dut, agents: [pinAgent] }).map((i) => i.id), ["iface:bus"]);
+});
+
 // the composition fixture of test-compose: a producer wired to a consumer
 function mkModel(view) {
   const modules = {};
@@ -147,16 +176,20 @@ const PIPE = mkModel({
 test("an unwired subsystem proposes the derived connections; a wired one, or a single subenv, does not", () => {
   const dut = { name: "sys" };
   const subenvs = [{ name: "u_prod", config: "a.yaml" }, { name: "u_cons", config: "b.yaml" }];
-  const items = connectionsProposal(PIPE, "top", { dut, subenvs });
+  const kids = { u_prod: ["p_a"], u_cons: ["c_a"] };
+  const items = connectionsProposal(PIPE, "top", { dut, subenvs }, kids);
   assert.equal(items.length, 1);
   assert.equal(items[0].kind, "connections");
   assert.equal(items[0].action, "wireConnections");
   assert.deepEqual(items[0].args, { viewId: "top" });
   assert.equal(items[0].label, "Wire 1 connection between the composed blocks");
   assert.equal(items[0].detail, "u_prod.dout → u_cons.din");
-  assert.deepEqual(connectionsProposal(PIPE, "top", { dut, subenvs, connections: [{ from: "u_prod.dout", to: "u_cons.din" }] }), []);
-  assert.deepEqual(connectionsProposal(PIPE, "top", { dut, subenvs: [subenvs[0]] }), []);
-  assert.deepEqual(connectionsProposal(PIPE, "top", { dut: { name: "other" }, subenvs }), [], "not the DUT's view");
+  assert.deepEqual(connectionsProposal(PIPE, "top", { dut, subenvs, connections: [{ from: "u_prod.dout", to: "u_cons.din" }] }, kids), []);
+  assert.deepEqual(connectionsProposal(PIPE, "top", { dut, subenvs: [subenvs[0]] }, kids), []);
+  assert.deepEqual(connectionsProposal(PIPE, "top", { dut: { name: "other" }, subenvs }, kids), [], "not the DUT's view");
+  // the children must have agents BEFORE wiring (the wire cables agent ports)
+  assert.deepEqual(connectionsProposal(PIPE, "top", { dut, subenvs }, {}), [], "no child agents known: no proposal");
+  assert.deepEqual(connectionsProposal(PIPE, "top", { dut, subenvs }, { u_prod: ["p_a"] }), [], "the sink has no agent yet");
 });
 
 const RESOLVED = {
@@ -180,6 +213,7 @@ test("an implicit-mode bench proposes its inferred components; a declared one pr
   assert.equal(items[0].label, 'Scoreboard "sbd" fed by pkt');
   assert.equal(items[1].label, "Coverage on pkt");
   assert.deepEqual(ghostProposals({ ...cfg, analysis: {} }, RESOLVED), [], "declared mode: nothing inferred");
+  assert.equal(ghostProposals({ ...cfg, analysis: null }, RESOLVED).length, 2, "`analysis:` with no value is implicit, as the scene draws it");
   assert.deepEqual(ghostProposals(cfg, null), [], "nothing resolved: nothing to propose");
 });
 

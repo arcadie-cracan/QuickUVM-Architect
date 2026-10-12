@@ -226,6 +226,12 @@ export class DiagramPanel {
       const c = this.deps.getConfig?.();
       if (c) {
         this.post({ v: 1, type: "config/full", ...c });
+        // the verification view is keyed by the ACTIVE config: a rediscovery
+        // re-keys the webview's view on config/full (main.ts), so the proposals
+        // must follow the same key — or the strip hides on a mismatch for good
+        if (this.currentMode === "tb" && c.configPath) {
+          this.currentView = `tb:${c.configPath}`;
+        }
       }
       this.postProposals();
     }

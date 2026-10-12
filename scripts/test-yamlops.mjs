@@ -1274,6 +1274,9 @@ test("materializeAnalysis: writes the kept inferred set, {} when nothing is kept
   assert.deepEqual(sbOnly.analysis, { scoreboards: [{ name: "sbd", source: "pkt", monitor: "rsp", match: "out_of_order" }] });
   // declared already: byte-identical, no phantom edit
   assert.equal(ops.materializeAnalysis(both, { scoreboards: [], coverage: [] }), both);
+  // `analysis:` with no value is implicit (the scene draws ghosts): it is written
+  const nullKey = ops.materializeAnalysis(t + "analysis:\n", { scoreboards: [], coverage: ["pkt"] });
+  assert.deepEqual(ops.parseQuvm(nullKey).analysis, { coverage: ["pkt"] });
 });
 if (failures) {
   console.error(`\n${failures} teste esuate`);

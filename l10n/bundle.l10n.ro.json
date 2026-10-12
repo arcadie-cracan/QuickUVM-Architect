@@ -170,5 +170,6 @@
   "{0} (claimed by agent {1})": "{0} (revendicat de agentul {1})",
   "QuickUVM Architect: agent \"{0}\" already has a coverage collector.": "QuickUVM Architect: agentul „{0}\" are deja un colector de coverage.",
   "QuickUVM Architect: nothing is inferred on this bench — there is nothing to write.": "QuickUVM Architect: nimic nu e inferat pe acest bench — nu e nimic de scris.",
-  "QuickUVM Architect: analysis declared — {0} scoreboard(s) and {1} coverage collector(s) written; the unchecked inferred components will no longer be generated.": "QuickUVM Architect: analysis declarat — {0} scoreboard(uri) și {1} colector(oare) de coverage scrise; componentele inferate nebifate nu vor mai fi generate."
+  "QuickUVM Architect: analysis declared — {0} scoreboard(s) and {1} coverage collector(s) written; the unchecked inferred components will no longer be generated.": "QuickUVM Architect: analysis declarat — {0} scoreboard(uri) și {1} colector(oare) de coverage scrise; componentele inferate nebifate nu vor mai fi generate.",
+  "QuickUVM Architect: the inferred components reference agents the configuration no longer has ({0}) — save the file and let quick-uvm resolve it again.": "QuickUVM Architect: componentele inferate referă agenți pe care configurația nu-i mai are ({0}) — salvează fișierul și lasă quick-uvm să rezolve din nou."
 }
