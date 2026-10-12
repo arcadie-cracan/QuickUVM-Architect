@@ -163,5 +163,8 @@
   "QuickUVM Architect: could not resolve the files for this element (run Generate Testbench once, or check quick-uvm >= 1.1.0).": "QuickUVM Architect: nu s-au putut rezolva fișierele acestui element (rulează o dată Generate Testbench, sau verifică quick-uvm >= 1.1.0).",
   "QuickUVM Architect: {0} has not been generated yet. Generate it now?": "QuickUVM Architect: {0} nu a fost încă generat. Îl generezi acum?",
   "QuickUVM Architect: no generated file for {0} yet — run Generate Testbench.": "QuickUVM Architect: încă nu există un fișier generat pentru {0} — rulează Generate Testbench.",
-  "QuickUVM Architect: could not open the generated file for {0} — run Generate Testbench.": "QuickUVM Architect: nu s-a putut deschide fișierul generat pentru {0} — rulează Generate Testbench."
+  "QuickUVM Architect: could not open the generated file for {0} — run Generate Testbench.": "QuickUVM Architect: nu s-a putut deschide fișierul generat pentru {0} — rulează Generate Testbench.",
+  "QuickUVM Architect: agent \"{0}\" does not exist in the configuration.": "QuickUVM Architect: agentul „{0}\" nu există în configurație.",
+  "QuickUVM Architect: {0} already belongs to agent \"{1}\".": "QuickUVM Architect: {0} aparține deja agentului „{1}\".",
+  "QuickUVM Architect: {0} port(s) added to agent \"{1}\"{2}.": "QuickUVM Architect: {0} port(uri) adăugate agentului „{1}\"{2}."
 }

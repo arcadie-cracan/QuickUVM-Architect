@@ -80,7 +80,10 @@ export type ActionKind =
   | "openSubenvConfig"
   // docs/08 R4: the "YAML" header button — the configuration as text, beside
   // the diagram, focus kept on the diagram
-  | "openConfigBeside";
+  | "openConfigBeside"
+  // docs/08 R10: a wire from a DUT pin dropped on a pin an agent already claims
+  // — the dragged pins join that agent (`addAgentPorts`)
+  | "addPinsToAgent";
 
 // ---------------------------------------------------- the layout sidecar
 

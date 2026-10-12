@@ -158,6 +158,77 @@ export function createAgent(text: string, spec: AgentSpec): string {
   return doc.toString(TO_STRING);
 }
 
+/**
+ * Adds ports to an EXISTING agent (docs/08 R10, "Add pins to this agent"): the
+ * shape of `createAgent` — `{name, width>1, randomize: false}` on outputs, flow
+ * maps — appended to `ports.inputs/outputs/inouts`. A port the agent already
+ * declares (on any side) is skipped, so the gesture is idempotent; when nothing
+ * is added the ORIGINAL text comes back byte-identical (no phantom
+ * WorkspaceEdit — the invariant of the delete mutations). Throws when the agent
+ * does not exist.
+ */
+export function addAgentPorts(
+  text: string,
+  agent: string,
+  spec: {
+    inputs: AgentPortSpec[];
+    outputs: AgentPortSpec[];
+    inouts?: AgentPortSpec[];
+  }
+): string {
+  const doc = parse(text);
+  const agents = doc.getIn(["agents"]);
+  const idx = isSeq(agents)
+    ? agents.items.findIndex((a) => isMap(a) && a.get("name") === agent)
+    : -1;
+  if (idx < 0) {
+    throw new Error(`agentul „${agent}" nu exista in configuratie`);
+  }
+  const existing = new Set<string>();
+  for (const side of ["inputs", "outputs", "inouts"] as const) {
+    const list = doc.getIn(["agents", idx, "ports", side]);
+    if (isSeq(list)) {
+      for (const p of list.items) {
+        if (isMap(p) && typeof p.get("name") === "string") {
+          existing.add(p.get("name") as string);
+        }
+      }
+    }
+  }
+  let added = 0;
+  const append = (
+    side: "inputs" | "outputs" | "inouts",
+    ports: AgentPortSpec[],
+    out: boolean
+  ): void => {
+    for (const p of ports) {
+      if (existing.has(p.name)) {
+        continue;
+      }
+      const node = doc.createNode({
+        name: p.name,
+        ...(p.width > 1 ? { width: p.width } : {}),
+        ...(out ? { randomize: false } : {}),
+      }) as YAMLMap;
+      node.flow = true;
+      const list = doc.getIn(["agents", idx, "ports", side]);
+      if (isSeq(list)) {
+        list.add(node);
+      } else {
+        const seq = doc.createNode([]) as YAMLSeq;
+        seq.add(node);
+        doc.setIn(["agents", idx, "ports", side], seq);
+      }
+      existing.add(p.name);
+      added += 1;
+    }
+  };
+  append("inputs", spec.inputs, false);
+  append("outputs", spec.outputs, true);
+  append("inouts", spec.inouts ?? [], false);
+  return added ? doc.toString(TO_STRING) : text;
+}
+
 export interface SubenvSpec {
   /** SV identifier (the sanitized relative path, docs/03) */
   name: string;

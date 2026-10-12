@@ -219,58 +219,11 @@ export class Actions {
       return;
     }
 
-    const roles = this.config.lastOverlay?.roles ?? {};
-    const inputs: ops.AgentPortSpec[] = [];
-    const outputs: ops.AgentPortSpec[] = [];
-    const inouts: ops.AgentPortSpec[] = [];
-    const skipped: string[] = [];
-
-    for (const p of ports) {
-      if (roles[p.name] === "clock" || roles[p.name] === "reset") {
-        skipped.push(vscode.l10n.t("{0} (role {1})", p.name, roles[p.name]));
-        continue;
-      }
-      // SV `ref` ports have no QuickUVM equivalent (the schema's port kinds are
-      // inputs/outputs/inouts) — still skipped. `inout`, by contrast, maps to
-      // `ports.inouts[]` (schema §1.5) and is routed below, not dropped.
-      if (p.dir === "ref") {
-        skipped.push(
-          vscode.l10n.t("{0} (ref port — not a QuickUVM port concept)", p.name)
-        );
-        continue;
-      }
-      if (p.width === null) {
-        skipped.push(vscode.l10n.t("{0} (no fixed size)", p.name));
-        continue;
-      }
-      let width = p.width;
-      if (p.unpacked_dims) {
-        // unpacked array: explicit decision per port (docs/03)
-        const flat = vscode.l10n.t("Flatten (width={0})", p.width);
-        const choice = await vscode.window.showQuickPick(
-          [flat, vscode.l10n.t("Exclude the port")],
-          {
-            title: vscode.l10n.t(
-              "\"{0}\" is an unpacked array {1} × {2} bits — QuickUVM has no such notion",
-              p.name,
-              JSON.stringify(p.unpacked_dims),
-              String(p.elem_width)
-            ),
-          }
-        );
-        if (!choice) {
-          return;
-        }
-        if (choice !== flat) {
-          skipped.push(vscode.l10n.t("{0} (unpacked array excluded)", p.name));
-          continue;
-        }
-        width = p.width;
-      }
-      const bucket =
-        p.dir === "in" ? inputs : p.dir === "inout" ? inouts : outputs;
-      bucket.push({ name: p.name, width });
+    const specs = await this.agentPortSpecs(ports);
+    if (!specs) {
+      return;
     }
+    const { inputs, outputs, inouts, skipped } = specs;
 
     if (inputs.length + outputs.length + inouts.length === 0) {
       void vscode.window.showWarningMessage(
@@ -311,6 +264,168 @@ export class Actions {
           name,
           inputs.length,
           outputs.length,
+          note
+        )
+      );
+    }
+  }
+
+  /**
+   * The QuickUVM port specs of DUT pins (docs/03), shared by "Agent from
+   * selection" and "Add pins to this agent" (docs/08 R10): clock/reset roles,
+   * `ref` ports and unsized ports are skipped with a reason; an unpacked array
+   * asks (flatten / exclude). null = the user cancelled a question.
+   */
+  private async agentPortSpecs(ports: Port[]): Promise<{
+    inputs: ops.AgentPortSpec[];
+    outputs: ops.AgentPortSpec[];
+    inouts: ops.AgentPortSpec[];
+    skipped: string[];
+  } | null> {
+    const roles = this.config.lastOverlay?.roles ?? {};
+    const inputs: ops.AgentPortSpec[] = [];
+    const outputs: ops.AgentPortSpec[] = [];
+    const inouts: ops.AgentPortSpec[] = [];
+    const skipped: string[] = [];
+
+    for (const p of ports) {
+      if (roles[p.name] === "clock" || roles[p.name] === "reset") {
+        skipped.push(vscode.l10n.t("{0} (role {1})", p.name, roles[p.name]));
+        continue;
+      }
+      // SV `ref` ports have no QuickUVM equivalent (the schema's port kinds are
+      // inputs/outputs/inouts) — still skipped. `inout`, by contrast, maps to
+      // `ports.inouts[]` (schema §1.5) and is routed below, not dropped.
+      if (p.dir === "ref") {
+        skipped.push(
+          vscode.l10n.t("{0} (ref port — not a QuickUVM port concept)", p.name)
+        );
+        continue;
+      }
+      if (p.width === null) {
+        skipped.push(vscode.l10n.t("{0} (no fixed size)", p.name));
+        continue;
+      }
+      let width = p.width;
+      if (p.unpacked_dims) {
+        // unpacked array: explicit decision per port (docs/03)
+        const flat = vscode.l10n.t("Flatten (width={0})", p.width);
+        const choice = await vscode.window.showQuickPick(
+          [flat, vscode.l10n.t("Exclude the port")],
+          {
+            title: vscode.l10n.t(
+              "\"{0}\" is an unpacked array {1} × {2} bits — QuickUVM has no such notion",
+              p.name,
+              JSON.stringify(p.unpacked_dims),
+              String(p.elem_width)
+            ),
+          }
+        );
+        if (!choice) {
+          return null;
+        }
+        if (choice !== flat) {
+          skipped.push(vscode.l10n.t("{0} (unpacked array excluded)", p.name));
+          continue;
+        }
+        width = p.width;
+      }
+      const bucket =
+        p.dir === "in" ? inputs : p.dir === "inout" ? inouts : outputs;
+      bucket.push({ name: p.name, width });
+    }
+    return { inputs, outputs, inouts, skipped };
+  }
+
+  /**
+   * docs/08 R10 — a wire from a DUT pin dropped on a pin an agent already
+   * claims: the dragged pins JOIN that agent (`addAgentPorts`), through the same
+   * port derivation as "Agent from selection". Pins the agent already declares
+   * are left alone (nothing to add = no edit).
+   */
+  async addPinsToAgent(
+    viewId: string | undefined,
+    agent: string,
+    pinIds: string[]
+  ): Promise<void> {
+    const r = this.resolve(viewId);
+    if (!r) {
+      return;
+    }
+    const { inst, def } = r;
+    if (!(await this.ensureDutForView(inst))) {
+      return;
+    }
+    const decl = (this.config.current?.agents ?? []).find((a) => a.name === agent);
+    if (!decl) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: agent \"{0}\" does not exist in the configuration.",
+          agent
+        )
+      );
+      return;
+    }
+    const names = pinIds
+      .map((id) => id.replace(/^<port>\./, ""))
+      .filter((n, i, all) => all.indexOf(n) === i);
+    const ports = names
+      .map((n) => def.ports.find((p) => p.name === n))
+      .filter((p): p is Port => Boolean(p));
+    if (ports.length === 0) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: select the DUT pins for the agent first."
+        )
+      );
+      return;
+    }
+    const have = new Set(
+      [
+        ...(decl.ports?.inputs ?? []),
+        ...(decl.ports?.outputs ?? []),
+        ...(decl.ports?.inouts ?? []),
+      ].map((p) => p.name)
+    );
+    const fresh = ports.filter((p) => !have.has(p.name));
+    if (fresh.length === 0) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: {0} already belongs to agent \"{1}\".",
+          names.join(", "),
+          agent
+        )
+      );
+      return;
+    }
+    const specs = await this.agentPortSpecs(fresh);
+    if (!specs) {
+      return;
+    }
+    const { inputs, outputs, inouts, skipped } = specs;
+    const count = inputs.length + outputs.length + inouts.length;
+    if (count === 0) {
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: no usable pin in the selection ({0}).",
+          skipped.join("; ")
+        )
+      );
+      return;
+    }
+    if (
+      await this.config.apply((t) =>
+        ops.addAgentPorts(t, agent, { inputs, outputs, inouts })
+      )
+    ) {
+      const note = skipped.length
+        ? ` (${vscode.l10n.t("excluded: {0}", skipped.join("; "))})`
+        : "";
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: {0} port(s) added to agent \"{1}\"{2}.",
+          count,
+          agent,
           note
         )
       );
