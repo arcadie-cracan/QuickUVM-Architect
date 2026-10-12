@@ -2,7 +2,7 @@
 // (inspector-view.ts) so both can be rendered from the same messages.
 
 import type { ProjectModel } from "../model";
-import type { OverlayConfig, StatusDeco, ViewMode } from "../protocol";
+import type { OverlayConfig, ProposalSet, StatusDeco, ViewMode } from "../protocol";
 import type { QuvmConfig } from "../quickuvm";
 import type { ResolvedConfig } from "../resolved";
 
@@ -29,6 +29,9 @@ export interface State {
   statusDecos: StatusDeco[];
   /** the current level of the verification (TB) view (D24): "", "env", "agent:X" */
   tbFocus: string;
+  /** docs/08 R12 — the designer-assistance proposals of the view the host shows
+   *  (`proposals/full`); the strip renders them while the view matches */
+  proposals: ProposalSet | null;
   // the pan/zoom transform of the view
   tx: number;
   ty: number;

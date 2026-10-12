@@ -52,6 +52,7 @@ const state: State = {
   childAgents: {},
   resolved: null,
   statusDecos: [],
+  proposals: null,
   tbFocus: "",
   tx: 0,
   ty: 0,

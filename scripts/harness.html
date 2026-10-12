@@ -49,6 +49,7 @@
 <body>
 <div id="banner" hidden></div>
 <header id="head"></header>
+<div id="assist" hidden></div>
 <div id="main">
   <svg id="canvas" xmlns="http://www.w3.org/2000/svg"></svg>
   <aside id="inspector"></aside>
@@ -187,6 +188,26 @@
             if (focus !== null) {
               window.postMessage(
                 { v: 1, type: "tb/navigate", focus, select: null },
+                "*"
+              );
+            }
+            // ?proposals=1 — docs/08 R12: the designer-assistance strip, fed with a
+            // fixture the way the host's `proposals/full` would (symbol/schematic:
+            // an interface + a pin group; tb: the inferred ghosts to materialise)
+            if (params.has("proposals")) {
+              const v = harnessState.viewId;
+              const items =
+                harnessState.mode === "tb"
+                  ? [
+                      { id: "ghost:sb:sbd", kind: "materialize", label: 'Scoreboard "sbd" fed by cmd', detail: "inferred by quick-uvm (implicit mode) — not in the YAML", action: "applyProposals", args: {} },
+                      { id: "ghost:cov:cmd", kind: "materialize", label: "Coverage on cmd", detail: "inferred by quick-uvm (implicit mode) — not in the YAML", action: "applyProposals", args: {} },
+                    ]
+                  : [
+                      { id: "iface:bus", kind: "agent-iface", label: 'Agent "bus" from interface reg_bus.slave', detail: "3 signals: addr, wdata, we", action: "createAgentFromIface", args: { viewId: v, port: "bus", name: "bus" } },
+                      { id: "group:ch", kind: "agent-group", label: 'Agent "ch" from 2 pins ch_*', detail: "ch_out, ch_in", action: "createAgentFromPins", args: { viewId: v, pins: ["<port>.ch_out", "<port>.ch_in"], name: "ch" } },
+                    ];
+              window.postMessage(
+                { v: 1, type: "proposals/full", viewId: v, mode: harnessState.mode, items },
                 "*"
               );
             }
