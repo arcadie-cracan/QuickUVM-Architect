@@ -4263,12 +4263,14 @@ function paletteItems(): PaletteItem[] {
     add(b.group, b.label, b.run);
   }
   const p = state.proposals;
-  if (p && p.viewId === state.viewId) {
+  if (p && p.viewId === state.viewId && (p.mode === "tb") === (state.mode === "tb")) {
     for (const it of p.items) {
       if (it.kind !== "materialize") {
         // the ghosts are all-or-nothing in the strip: not one by one here
+        // (through the shared apply: the flash of what was created + the set
+        // retired - a bare post left the strip offering the applied row)
         add("Proposals", `Apply: ${it.label}`, () =>
-          postAction("applyProposals", { items: [{ kind: it.kind, args: it.args }] })
+          applyProposalItems(p, [{ kind: it.kind, args: it.args }])
         );
       }
     }
