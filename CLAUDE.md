@@ -545,6 +545,16 @@ coliziunea de nume.
   scoreboards, subenvs, probes + SV keywords); a PARENT bench's
   `<subenv>.<agent>` references live in another file and are NOT updated — a
   composed config gets a warning, never a silent partial rename.
+- **Inline widgets (docs/08 R13)**: pills in the SVG box, keyed by `data-*`
+  and handled by delegation in the canvas `click` handler of `main.ts` AFTER
+  the `suppressClick` check — a drag that starts on a widget must not toggle
+  it on release. A widget has `pointer-events: none` until its box is
+  `.selected` (CSS) AND the handler re-checks the selection; the second click
+  of a double-click (`e.detail > 1`) is ignored and the `dblclick` handler
+  returns on a widget — without both, a double-click toggled twice (two YAML
+  edits) and then drilled. `boxSize` must count the widget rows
+  (`WIDGET_H`), or the pills overflow the box. Widgets exist only where the
+  by-name action can land: named two-stream scoreboards, non-ghost agents.
 
 ## Faza curentă
 
@@ -826,4 +836,8 @@ subsystems, the inferred ghosts materialised through `materializeAnalysis`);
 double-click / context menu) with the cascading mutations `renameAgent` /
 `renameScoreboard` / `renameSubenv` (`test:yamlops`) and the `renameComponent`
 action.
+**R13 (docs/08) is implemented** (Oct 2026): inline widgets on the TB boxes
+(`active` on agents, `match`/`latency` on two-stream scoreboards) through the
+existing `editAgent`/`editScoreboard` actions; `TbNode.widgets` in
+`test:tbscene`.
 Planul complet: `docs/06-plan-mvp.md`.

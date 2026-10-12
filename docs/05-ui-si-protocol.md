@@ -196,6 +196,20 @@ mesajele tot aici, la implementare.
   endpoints, vseq steps, `register_model.bus_agent`, the agent's own
   `<name>_if` / `<name>_seq_item` when conventional; `renameSubenv`:
   `connections` and cross-block endpoints) and reports the references updated.
+- **Inline widgets on the boxes** (docs/08 R13, Oct 2026): the two or three
+  facts a bench is tuned by sit ON the box, under its compartments, as pills
+  (`TbNode.widgets`, built in `buildTbScene`; sized and drawn in
+  `tbschematic.ts`): `active` / `passive` on an agent (a toggle), `match: …`
+  (a cycle in_order ↔ out_of_order) and `latency: …` (a small number editor,
+  empty = unbounded) on a NAMED two-stream scoreboard — a single-stream entry
+  has neither fact, an unnamed one cannot be edited by name, a ghost has nothing
+  in the YAML. A click sends the SAME host action the Properties panel would
+  (`editAgent {name, field: active, value}` / `editScoreboard {name, field,
+  value}`), so the panel and the box stay in sync through the YAML. The
+  accidental-edit rule of the research: a widget takes pointer events only
+  while its box is SELECTED (the first click selects, the second acts), the
+  second click of a double-click is ignored (`e.detail > 1`) and a double-click
+  on a widget does not drill. No protocol change.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
