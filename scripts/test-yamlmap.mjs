@@ -64,8 +64,8 @@ test("caret -> element: every drawn block, including nested positions", () => {
     "a port inside the agent still means the agent");
   assert.deepEqual(elementAtOffset(TEXT, at("active: false")), { id: "agent:rsp", focus: "env" });
   assert.deepEqual(elementAtOffset(TEXT, at("monitor: rsp")), { id: "sb:sbd", focus: "env" });
-  assert.deepEqual(elementAtOffset(TEXT, at("{ source: cmd }") + 3), { id: "sb:sbd", focus: "env" },
-    "an unnamed scoreboard is drawn as `sbd`, like the scene does");
+  assert.deepEqual(elementAtOffset(TEXT, at("{ source: cmd }") + 3), { id: "sb:sbd#2", focus: "env" },
+    "an unnamed scoreboard is drawn as `sbd`, de-duplicated like the scene does");
   assert.deepEqual(elementAtOffset(TEXT, at("coverpoints")), { id: "cov:rsp", focus: "env" });
   assert.deepEqual(elementAtOffset(TEXT, at("[ cmd,") + 2), { id: "cov:cmd", focus: "env" });
   assert.deepEqual(elementAtOffset(TEXT, at("name: smoke")), { id: "vsqr", focus: "env" });
@@ -98,7 +98,11 @@ test("element -> span: the entry itself, on the user's own formatting", () => {
 test("element -> span: internals, de-duplicated ids and absent elements", () => {
   assert.deepEqual(elementRange(TEXT, "agent:cmd:u.driver"), elementRange(TEXT, "agent:cmd"),
     "an agent-internal leaf belongs to the agent");
-  assert.deepEqual(elementRange(TEXT, "sb:sbd#2"), elementRange(TEXT, "sb:sbd"));
+  // TEXT has two unnamed scoreboards: the scene draws them as sb:sbd and sb:sbd#2
+  assert.equal(slice(elementRange(TEXT, "sb:sbd#2")), "{ source: cmd }");
+  assert.equal(elementAtOffset(TEXT, at("{ source: cmd }") + 3).id, "sb:sbd#2",
+    "the caret in the second unnamed scoreboard names the second node");
+  assert.equal(elementRange(TEXT, "sb:sbd#3"), null, "no third one");
   assert.equal(elementRange(TEXT, "agent:ghost"), null);
   assert.equal(elementRange(TEXT, "env"), null, "a level node has no YAML of its own");
   assert.equal(elementRange(TEXT, "cov:nobody"), null);

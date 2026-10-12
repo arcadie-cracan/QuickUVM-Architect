@@ -127,9 +127,14 @@ export function elementAtOffset(text: string, offset: number): YamlElement | nul
             continue;
           }
           if (k === "scoreboards") {
+            // the scene de-duplicates repeated names: `sb:sbd`, `sb:sbd#2`, …
+            const seen = new Map<string, number>();
             for (const it of seqItems(q.value)) {
+              const name = nameOf(it.node) ?? "sbd";
+              const n = (seen.get(name) ?? 0) + 1;
+              seen.set(name, n);
               if (contains(it.span, offset)) {
-                return { id: `sb:${nameOf(it.node) ?? "sbd"}`, focus: "env" };
+                return { id: n === 1 ? `sb:${name}` : `sb:${name}#${n}`, focus: "env" };
               }
             }
           } else if (k === "coverage") {
@@ -175,12 +180,21 @@ export function elementRange(text: string, id: string): YamlSpan | null {
   }
   const top = (key: string): Pair | undefined =>
     root.items.find((p) => scalar(p.key) === key);
+  /** the n-th (1-based) item whose name is `name` — `#n` ids count duplicates */
   const itemNamed = (
     seq: unknown,
     pick: (node: unknown) => string | undefined,
-    name: string
-  ): YamlSpan | null =>
-    trimSpan(text, seqItems(seq).find((it) => pick(it.node) === name)?.span ?? null);
+    name: string,
+    nth = 1
+  ): YamlSpan | null => {
+    let k = 0;
+    for (const it of seqItems(seq)) {
+      if (pick(it.node) === name && ++k === nth) {
+        return trimSpan(text, it.span);
+      }
+    }
+    return null;
+  };
 
   if (id === "dut" || id === "vsqr" || id === "probes") {
     const p = top(id === "dut" ? "dut" : id === "vsqr" ? "virtual_sequences" : "probes");
@@ -191,8 +205,11 @@ export function elementRange(text: string, id: string): YamlSpan | null {
     return null;
   }
   const kind = id.slice(0, colon);
-  // `sb:<name>#2` (a de-duplicated node id) still means the entry named <name>
-  const name = id.slice(colon + 1).replace(/#\d+$/, "");
+  // `sb:<name>#2` (a de-duplicated node id) is the SECOND entry named <name>
+  const rest = id.slice(colon + 1);
+  const dup = /#(\d+)$/.exec(rest);
+  const name = dup ? rest.slice(0, dup.index) : rest;
+  const nth = dup ? Number(dup[1]) : 1;
   if (kind === "agent") {
     // `agent:<name>:u.driver` (an agent-internal leaf) belongs to the agent
     return itemNamed(top("agents")?.value, nameOf, name.split(":")[0]);
@@ -208,7 +225,8 @@ export function elementRange(text: string, id: string): YamlSpan | null {
     return itemNamed(
       analysis.get("scoreboards", true),
       (n) => nameOf(n) ?? "sbd",
-      name
+      name,
+      nth
     );
   }
   if (kind === "cov") {
