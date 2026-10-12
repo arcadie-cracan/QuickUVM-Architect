@@ -124,6 +124,7 @@ npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (do
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
 npm run test:preview     # the diff preview (docs/08 R19): the +/- line summary of a gesture, the files that change
+npm run test:trace       # diagram <-> generated code (docs/08 R20): file owner, identifier pattern, lit lines, lenses, report
 npm run test:e2e         # yamlops -> quick-uvm generate real (cere quick-uvm)
 ```
 
@@ -665,6 +666,31 @@ coliziunea de nume.
   `src/preview.ts`): the character-level minimal edit of R4 over-counted a
   deletion at the end of a file without a final newline and counted an
   in-line insertion as +1 -0 (review finding; locked in `test:preview`).
+- **Generated-code traceability (docs/08 R20)**: probed on quick-uvm 1.1.0 —
+  the generated files carry NO element anchor (header only), so do not look
+  for one: element ↔ owned file comes from the manifest (`ownerOfFile`, exact,
+  inferred elements included), element ↔ lines of an aggregate file from
+  `tracePattern` (the name + the stems of the owned files, word-bounded, with
+  the `_<suffix>` handles the generator derives; `cov:<a>` is `<a>_cov` only,
+  `agent:<a>:u.<part>` is `<a>_<part>` + the `drv/mon/sqr` abbreviation, an
+  id with an unknown shape is `null` — `agent:cmd:nope` once fell on the
+  agent branch, caught by the suite). Comment-only lines never match (the
+  header names the file; `// This File: x_virtual_sequencer.svh` would light
+  for `vsqr`). The lit lines are drawn ONLY in aggregate files — in an owned
+  file every line is the element — and only in the VISIBLE editors of the
+  ACTIVE bench (under `GenStateService.outDir`, listed by the manifest); the
+  per-file editor drives the trace only when its document is the active
+  config. The follow mode (`quickuvm.codeFollowsSelection`) opens the primary
+  file as a PREVIEW tab beside with `preserveFocus` — the next selection
+  replaces it; it is OFF by default (nothing opens a tab without the user's
+  say-so), and the palette row's label comes from `ui/config.codeFollow`,
+  re-posted by the settings listener to the PANEL only (a custom editor's
+  label refreshes at its next `ready`). The CodeLens provider is registered
+  by PATTERN (`**/*.{sv,svh}`), not by language: without a SystemVerilog
+  extension `.sv/.svh` have no language id; the provider itself checks the
+  output dir and the manifest. The lenses refresh on `genState.onDidChange`
+  AND `resolve.onDidChange` (the inferred flag comes from resolve).
+
 
 ## Faza curentă
 
@@ -961,4 +987,10 @@ selection, recent first; `rankPalette` / `pushRecent` in `test:navfind`.
 destructive or multi-file gesture (`quickuvm.previewEdits` = ask / always /
 never; `src/preview.ts` + `test:preview`, `src/previewdiff.ts`,
 `TbEditTarget.readText`).
+**R20 (docs/08) is implemented** (Oct 2026): the generated code next to the
+diagram — the selection lights the element's lines in the visible generated
+editors, `quickuvm.codeFollowsSelection` docks its primary file beside, a
+CodeLens per generated file leads back to the verification view (inferred
+elements flagged), `quickuvm.traceabilityReport`; `src/trace.ts` +
+`test:trace`, `src/trace-service.ts`.
 Planul complet: `docs/06-plan-mvp.md`.
