@@ -937,6 +937,17 @@ text.split-sign {
   stroke-width: 3.5;
 }
 
+/* R2 (docs/08): the canonical UVM TLM glyphs — square = port, circle = export,
+   diamond = analysis port. Hollow; the background fill masks the stub under them.
+   Shape alone carries the distinction (the vocabulary of the UVM User's Guide). */
+.tb-glyph {
+  stroke: var(--vscode-foreground);
+  stroke-width: 1.3;
+  fill: var(--vscode-editor-background, #1e1e1e);
+}
+.tbnode.selected .tb-glyph,
+.tb-bport.selected .tb-glyph { stroke: var(--vscode-focusBorder); }
+
 .tbnode.leaf.selected .tb-box {
   stroke: var(--vscode-focusBorder);
   stroke-width: 2.5;

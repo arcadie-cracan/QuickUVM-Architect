@@ -381,4 +381,38 @@ test("ghost: ghosts live at the Env level only, not at the testbench root", () =
   assert.deepEqual(s.nodes.map((n) => n.id).sort(), ["dut", "env"]);
 });
 
+// --- R2 (docs/08): the canonical UVM TLM glyphs on the ports ---------------
+// square = port (producer), circle = export/imp (consumer), diamond = analysis
+// port — the shape carries the distinction, the label no longer has a "◆" suffix.
+
+test("R2: at the Env level the agent's ap is a diamond, sb/cov inputs are circles", () => {
+  const s = buildTbScene(CFG, "env", null);
+  const ap = nodeById(s, "agent:cmd").ports.find((p) => p.port === "ap");
+  assert.equal(ap.glyph, "analysis");
+  assert.equal(ap.label, "ap", "no text suffix: the glyph IS the vocabulary");
+  const sb = nodeById(s, "sb:sbd");
+  assert.equal(sb.ports.find((p) => p.port === "source").glyph, "export");
+  assert.equal(sb.ports.find((p) => p.port === "monitor").glyph, "export");
+  assert.equal(nodeById(s, "cov:cmd").ports.find((p) => p.port === "ap").glyph, "export");
+});
+
+test("R2: inside the agent, sequencer export / driver port / monitor analysis", () => {
+  const s = buildTbScene(CFG, "agent:cmd", null);
+  assert.equal(nodeById(s, "u.sequencer").ports.find((p) => p.port === "seq").glyph, "export");
+  assert.equal(nodeById(s, "u.driver").ports.find((p) => p.port === "seq").glyph, "port");
+  assert.equal(nodeById(s, "u.monitor").ports.find((p) => p.port === "ap").glyph, "analysis");
+  // interfaces and sequencer references are NOT TLM ports: no glyph
+  assert.equal(nodeById(s, "u.driver").ports.find((p) => p.port === "if").glyph, null);
+  const ap = s.boundary.find((b) => b.id === "<ap>");
+  assert.equal(ap.glyph, "analysis");
+  assert.equal(ap.label, "ap");
+  assert.equal(s.boundary.find((b) => b.id === "<if>").glyph ?? null, null);
+});
+
+test("R2: a ghost's input carries the same export circle as a declared one", () => {
+  const s = buildTbScene(IMPLICIT, "env", null, RESOLVED_IMPLICIT);
+  assert.equal(nodeById(s, "sb:sbd").ports[0].glyph, "export");
+  assert.equal(nodeById(s, "cov:pkt").ports[0].glyph, "export");
+});
+
 console.log(`\ntest-tbscene: ${passed} tests passed.`);
