@@ -83,6 +83,9 @@ export interface TbPort {
   note: string | null;
   /** the canonical TLM glyph drawn at the stub's tip (R2); null = none */
   glyph: PortGlyph | null;
+  /** docs/08 R3 — the input points at an agent that does not exist: drawn as a
+   *  broken stub (dashed, red X), the box keeps its badge and its repairs */
+  broken?: boolean;
 }
 
 /** a level's block: UML box with compartments; `drill` = the descent's focus */
@@ -146,7 +149,7 @@ function port(
   p: string,
   side: "WEST" | "EAST",
   label: string,
-  opts?: { iface?: boolean; note?: string | null; glyph?: PortGlyph }
+  opts?: { iface?: boolean; note?: string | null; glyph?: PortGlyph; broken?: boolean }
 ): TbPort {
   return {
     id: `${nodeId}.${p}`,
@@ -156,6 +159,7 @@ function port(
     iface: opts?.iface ?? false,
     note: opts?.note ?? null,
     glyph: opts?.glyph ?? null,
+    ...(opts?.broken ? { broken: true } : {}),
   };
 }
 
@@ -506,11 +510,22 @@ function levelEnv(
       id = `sb:${sb.name ?? "sbd"}#${n}`;
     }
     usedSb.add(id);
+    // docs/08 R3 — an endpoint naming no agent is drawn as a BROKEN input: the
+    // same fact checkConfig reports (sb-unknown-agent), seen on the wire's end
+    const known = (a: string | undefined): boolean => Boolean(a && agentNames.has(a));
     const ports: TbPort[] = [
-      port(id, "source", "WEST", "source", { glyph: "export" }),
+      port(id, "source", "WEST", "source", {
+        glyph: "export",
+        broken: !known(sb.source),
+      }),
     ];
     if (sb.monitor) {
-      ports.push(port(id, "monitor", "WEST", "monitor", { glyph: "export" }));
+      ports.push(
+        port(id, "monitor", "WEST", "monitor", {
+          glyph: "export",
+          broken: !known(sb.monitor),
+        })
+      );
     }
     nodes.push({
       id,
@@ -548,7 +563,12 @@ function levelEnv(
       label: `${agent}_cov`,
       stereotype: "«coverage»",
       compartments: [],
-      ports: [port(id, "ap", "WEST", "ap", { glyph: "export" })],
+      ports: [
+        port(id, "ap", "WEST", "ap", {
+          glyph: "export",
+          broken: !agentNames.has(agent), // docs/08 R3: cov-unknown-agent
+        }),
+      ],
       drill: null,
       tooltip: `functional coverage for ${agent}`,
     });

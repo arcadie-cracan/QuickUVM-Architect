@@ -421,13 +421,30 @@ function drawBox(p: TbPlaced): SVGGElement {
     const py = a.y; // port relative to the node's origin (the group already has translate)
     g.append(
       el("line", {
-        class: `tb-stub${port.iface ? " iface" : ""}`,
+        class: `tb-stub${port.iface ? " iface" : ""}${port.broken ? " broken" : ""}`,
         x1: String(west ? 0 : p.w),
         y1: String(py),
         x2: String(west ? -STUB : p.w + STUB),
         y2: String(py),
       })
     );
+    if (port.broken) {
+      // docs/08 R3 — LabVIEW's broken wire: a red X past the tip, where the wire
+      // that cannot be drawn would have arrived
+      const tip = west ? -STUB : p.w + STUB;
+      g.append(
+        el(
+          "text",
+          {
+            class: "tb-broken-x",
+            x: String(tip + (west ? -8 : 8)),
+            y: String(py + 3.5),
+            "text-anchor": "middle",
+          },
+          "✕"
+        )
+      );
+    }
     if (port.glyph) {
       // R2 — the canonical TLM glyph sits ON the stub, its outer edge at the tip:
       // the wire (routed above the nodes) ends exactly where the glyph begins,

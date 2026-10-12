@@ -1283,3 +1283,35 @@ text.split-sign {
   color: var(--vscode-button-foreground);
   background: var(--vscode-button-background);
 }
+
+/* docs/08 R3 — a BROKEN input: the endpoint names an agent that does not exist.
+   LabVIEW's broken wire, on the stub: dashed in the error color + a red X past
+   the tip. The box keeps its ✕ badge; the repairs are one click away on it. */
+.tb-stub.broken {
+  stroke: var(--vscode-editorError-foreground, #f14c4c);
+  stroke-dasharray: 3 2;
+}
+.tb-broken-x {
+  fill: var(--vscode-editorError-foreground, #f14c4c);
+  font-size: 10px;
+  font-weight: bold;
+  pointer-events: none;
+}
+/* the badge is now a control: click = the problems and their repairs */
+.status-badge { cursor: pointer; }
+.status-badge circle.hit { fill: transparent; stroke: none; pointer-events: all; }
+.ctxitem.info {
+  opacity: 0.85;
+  cursor: default;
+  font-style: italic;
+  white-space: normal;
+  max-width: 320px;
+}
+.ctxitem.info:hover { background: transparent; }
+#inspector .problem {
+  margin: 2px 0 4px;
+  font-size: 11px;
+  line-height: 1.4;
+}
+#inspector .problem.sev-error { color: var(--vscode-editorError-foreground, #f14c4c); }
+#inspector .problem.sev-warning { color: var(--vscode-editorWarning-foreground, #cca700); }

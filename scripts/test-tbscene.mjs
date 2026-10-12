@@ -415,4 +415,26 @@ test("R2: a ghost's input carries the same export circle as a declared one", () 
   assert.equal(nodeById(s, "cov:pkt").ports[0].glyph, "export");
 });
 
+// --- R3 (docs/08): an endpoint naming no agent is a BROKEN input --------------
+test("R3: a scoreboard/coverage endpoint naming an unknown agent gets a broken port", () => {
+  const cfg = {
+    ...CFG,
+    analysis: {
+      coverage: ["cmd", "nobody"],
+      scoreboards: [{ name: "sbd", source: "cmd", monitor: "ghost" }],
+    },
+  };
+  const s = buildTbScene(cfg, "env", null);
+  const sb = nodeById(s, "sb:sbd");
+  assert.ok(!sb.ports.find((p) => p.port === "source").broken, "the known source is whole");
+  assert.equal(sb.ports.find((p) => p.port === "monitor").broken, true);
+  assert.ok(!s.edges.some((e) => e.target === "sb:sbd" && e.targetPort === "sb:sbd.monitor"),
+    "no wire can be drawn to a missing agent — the stub says so instead");
+  assert.equal(nodeById(s, "cov:nobody").ports[0].broken, true);
+  assert.ok(!nodeById(s, "cov:cmd").ports[0].broken);
+  // the healthy fixture has no broken port anywhere
+  const ok = buildTbScene(CFG, "env", null);
+  assert.ok(ok.nodes.every((n) => n.ports.every((p) => !p.broken)));
+});
+
 console.log(`\ntest-tbscene: ${passed} tests passed.`);

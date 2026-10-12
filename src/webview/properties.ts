@@ -51,6 +51,7 @@ const state: State = {
   configPath: null,
   childAgents: {},
   resolved: null,
+  statusDecos: [],
   tbFocus: "",
   tx: 0,
   ty: 0,
@@ -164,6 +165,9 @@ window.addEventListener("message", (event: MessageEvent<HostMessage>) => {
       break;
     case "overlay/config":
       state.overlay = m;
+      break;
+    case "status/decorations":
+      state.statusDecos = m.decos; // docs/08 R3: the problems list of a selection
       break;
     case "tb/navigate":
       state.tbFocus = m.focus;

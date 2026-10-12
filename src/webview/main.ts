@@ -70,6 +70,7 @@ const state: State = {
   configPath: null,
   childAgents: {},
   resolved: null,
+  statusDecos: [],
   tbFocus: "",
   tx: 0,
   ty: 0,
@@ -369,6 +370,7 @@ window.addEventListener("message", (e: MessageEvent) => {
     case "status/decorations":
       // the quick-uvm status decorations (docs/05): badges + generate chip
       statusDecos = m.decos;
+      state.statusDecos = m.decos; // the Properties panel lists them too (R3)
       genStatus = m.generate;
       genUnsaved = new Set(m.genUnsaved);
       genMissing = new Set(m.genMissing);
@@ -1442,10 +1444,15 @@ let genStatus: GenerateStatus | null = null;
 /** ⚠/✕ badge in the top-right corner of each targeted element, with the messages in
  *  the tooltip; idempotent (removes the old badges), run after each render
  *  and at status/decorations */
+/** docs/08 R3 — the current view's element statuses (badge, context menu and
+ *  the problems list read the SAME map, so none of them can disagree) */
+let statusByElement: Map<string, ElementStatus> = new Map();
+
 function applyStatusBadges(): void {
   renderNodeTools(); // docs/08 R1: every render rebuilds the DOM the strip is anchored to
   canvas.querySelectorAll(".status-badge").forEach((b) => b.remove());
   if (!statusDecos.length) {
+    statusByElement = new Map();
     return;
   }
   let map: Map<string, ElementStatus>;
@@ -1471,6 +1478,7 @@ function applyStatusBadges(): void {
           : [],
     });
   }
+  statusByElement = map;
   canvas.querySelectorAll<SVGGraphicsElement>("[data-id]").forEach((g) => {
     const st = map.get(g.dataset.id ?? "");
     if (!st) {
@@ -1486,6 +1494,9 @@ function applyStatusBadges(): void {
     const cy = bb.y;
     const badge = el("g", { class: `status-badge sev-${st.severity}` });
     badge.append(
+      // docs/08 R3 — an invisible, larger hit area: a 14px badge is a hard target
+      // for a click (Figma's hit-area lesson); the visible circle stays small
+      el("circle", { class: "hit", cx: String(cx), cy: String(cy), r: "12" }),
       el("circle", { cx: String(cx), cy: String(cy), r: "7" }),
       el(
         "text",
@@ -1494,6 +1505,15 @@ function applyStatusBadges(): void {
       ),
       el("title", {}, st.messages.join("\n"))
     );
+    // docs/08 R3 — the badge is the wrench: click = the problems + their repairs
+    // (Cameo's yellow element with a solver on its toolbar). stopPropagation so the
+    // press is not a drag start / selection click on the node underneath.
+    const eid = g.dataset.id ?? "";
+    badge.addEventListener("pointerdown", (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      openCtxMenu(ev.clientX, ev.clientY, problemItems(eid));
+    });
     g.append(badge);
   });
 }
@@ -2978,6 +2998,8 @@ interface CtxItem {
   action: () => void;
   /** destructive action (deletion): it is colored as such */
   danger?: boolean;
+  /** docs/08 R3 — a message, not an action (a problem listed above its repairs) */
+  info?: boolean;
 }
 
 let ctxMenu: HTMLElement | null = null;
@@ -2988,6 +3010,28 @@ function closeCtxMenu(): void {
 }
 
 /** opens the menu at (x,y) — `fixed` position, fitted into the window */
+/** docs/08 R3 — the problems of an element and their repairs, as menu items: the
+ *  messages first (information), then one "Fix: …" per repair, each sending the
+ *  host action a palette button would (the host keeps its confirmations) */
+function problemItems(id: string): CtxItem[] {
+  const st = statusByElement.get(id);
+  if (!st) {
+    return [];
+  }
+  const items: CtxItem[] = st.messages.map((m) => ({
+    label: m,
+    info: true,
+    action: () => undefined,
+  }));
+  for (const f of st.fixes) {
+    items.push({
+      label: `Fix: ${f.label}`,
+      action: () => postAction(f.action, f.args),
+    });
+  }
+  return items;
+}
+
 function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
   closeCtxMenu();
   if (!items.length) {
@@ -2995,6 +3039,10 @@ function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
   }
   const m = h("div", "ctxmenu");
   for (const it of items) {
+    if (it.info) {
+      m.append(h("div", "ctxitem info", it.label)); // a message, not an action
+      continue;
+    }
     const b = h("button", `ctxitem${it.danger ? " danger" : ""}`, it.label);
     b.addEventListener("click", () => {
       closeCtxMenu();
@@ -3138,6 +3186,7 @@ canvas.addEventListener("contextmenu", (e) => {
       { label: "Flip horizontal (H)", action: () => toggleFlip(id, "h") },
       { label: "Flip vertical (V)", action: () => toggleFlip(id, "v") }
     );
+    items.push(...problemItems(id)); // docs/08 R3: the problems + repairs
     const dt = tbDeleteTarget(node);
     if (dt) {
       items.push({

@@ -542,5 +542,17 @@ function findingMessage(f: Finding): string {
         String(p.port),
         String(p.agent)
       );
+    case "sb-unknown-agent":
+      return vscode.l10n.t(
+        'Scoreboard "{0}": {1} names agent "{2}", which does not exist in this configuration',
+        String(p.sb),
+        String(p.field),
+        String(p.agent)
+      );
+    case "cov-unknown-agent":
+      return vscode.l10n.t(
+        'Coverage names agent "{0}", which does not exist in this configuration',
+        String(p.agent)
+      );
   }
 }

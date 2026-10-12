@@ -181,4 +181,46 @@ test("dut inexistent in model: warning; fara model, tacere", () => {
   assert.deepEqual(kinds(noModel), []);
 });
 
+// --- docs/08 R3: analysis endpoints that name no agent --------------------------
+test("R3: scoreboard source/monitor and coverage naming an unknown agent are errors", () => {
+  const r = check(
+    `dut: { name: soc_top }
+agents:
+  - name: a
+    ports:
+      inputs: [ { name: din, width: 8 } ]
+analysis:
+  scoreboards:
+    - { name: sbd, source: a, monitor: ghost }
+    - { name: x, source: blk.p, monitor: blk.q }
+  coverage: [ a, { agent: nobody, coverpoints: [] } ]
+subenvs: [ { name: blk, config: blk.quickuvm.yaml } ]
+`,
+    MODEL
+  );
+  const sb = r.findings.filter((f) => f.kind === "sb-unknown-agent");
+  assert.equal(sb.length, 1, "the cross-block scoreboard (blk.p / blk.q) is NOT checked here");
+  assert.equal(sb[0].severity, "error");
+  assert.deepEqual(sb[0].params, { sb: "sbd", field: "monitor", agent: "ghost" });
+  assert.ok(sb[0].span, "the span points at the offending entry");
+  const cov = r.findings.filter((f) => f.kind === "cov-unknown-agent");
+  assert.equal(cov.length, 1, "the plain `a` entry is fine, the rich `nobody` one is not");
+  assert.deepEqual(cov[0].params, { agent: "nobody" });
+  assert.equal(cov[0].severity, "error");
+});
+
+test("R3: no finding when every endpoint names a declared agent; works without a model", () => {
+  const text = `dut: { name: soc_top }
+agents:
+  - { name: a, ports: { inputs: [ { name: din, width: 8 } ] } }
+  - { name: b, ports: { outputs: [ { name: sum, width: 8 } ] } }
+analysis:
+  scoreboards: [ { name: sbd, source: a, monitor: b } ]
+  coverage: [ b ]
+`;
+  assert.deepEqual(kinds(check(text, MODEL)).filter((k) => /unknown/.test(k)), []);
+  const noModel = check(text.replace("monitor: b", "monitor: zz"), undefined);
+  assert.deepEqual(kinds(noModel), ["sb-unknown-agent"], "a YAML-internal rule, model or not");
+});
+
 console.log(`\ntest-configcheck: ${passed} teste au trecut.`);

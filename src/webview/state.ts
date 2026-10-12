@@ -2,7 +2,7 @@
 // (inspector-view.ts) so both can be rendered from the same messages.
 
 import type { ProjectModel } from "../model";
-import type { OverlayConfig, ViewMode } from "../protocol";
+import type { OverlayConfig, StatusDeco, ViewMode } from "../protocol";
 import type { QuvmConfig } from "../quickuvm";
 import type { ResolvedConfig } from "../resolved";
 
@@ -24,6 +24,9 @@ export interface State {
    *  supplies that the config never mentions, drawn as GHOSTS (src/resolved.ts).
    *  null when quick-uvm is older than 1.1.0 or the config does not resolve. */
   resolved: ResolvedConfig | null;
+  /** docs/08 R3 — the quick-uvm status decorations (status/decorations), so the
+   *  Properties panel can list a selected component's problems and repairs */
+  statusDecos: StatusDeco[];
   /** the current level of the verification (TB) view (D24): "", "env", "agent:X" */
   tbFocus: string;
   // the pan/zoom transform of the view

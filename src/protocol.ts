@@ -176,10 +176,23 @@ export type XprobeTarget =
 /** the SEMANTIC target of a status decoration (docs/05, phase 4): the webview
  *  maps it onto the ids of the current view (statusIdsRtl/statusIdsTb, src/status.ts).
  *  The messages are in English — the webview is monolingual in the MVP (D19). */
+/** docs/08 R3 — a repair the webview can offer for a finding: the SAME host
+ *  action a palette button would send, with its args already filled in. The
+ *  host confirms destructive ones (deleteComponent) exactly as it does today. */
+export interface StatusFix {
+  label: string;
+  action: ActionKind;
+  args: Record<string, unknown>;
+}
+
 export type StatusDeco =
-  | { scope: "port"; port: string; severity: StatusSeverity; message: string }
-  | { scope: "agent"; agent: string; severity: StatusSeverity; message: string }
-  | { scope: "env"; severity: StatusSeverity; message: string };
+  | { scope: "port"; port: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  | { scope: "agent"; agent: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  // docs/08 R3 — an analysis endpoint that names no agent of the config: the
+  // scoreboard / coverage box gets a broken input and an error badge
+  | { scope: "scoreboard"; name: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  | { scope: "coverage"; agent: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  | { scope: "env"; severity: StatusSeverity; message: string; fixes?: StatusFix[] };
 
 export type StatusSeverity = "error" | "warning";
 

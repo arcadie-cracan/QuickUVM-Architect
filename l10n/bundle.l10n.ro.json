@@ -34,6 +34,8 @@
   "Out of order (keyed pool — a reordering DUT)": "În neordine (pool pe cheie — DUT care reordonează)",
   "Parallel (fork…join)": "Paralel (fork…join)",
   "Port \"{0}\" already belongs to agent \"{1}\" — a pin belongs to a single agent": "portul „{0}\" aparține deja agentului „{1}\" — un pin aparține unui singur agent",
+  "Scoreboard \"{0}\": {1} names agent \"{2}\", which does not exist in this configuration": "scoreboard-ul „{0}\": {1} numește agentul „{2}\", care nu există în această configurație",
+  "Coverage names agent \"{0}\", which does not exist in this configuration": "coverage-ul numește agentul „{0}\", care nu există în această configurație",
   "Port \"{0}\" is both ignored and in agent \"{1}\"": "portul „{0}\" e și ignorat, și în agentul „{1}\"",
   "Port \"{0}\" no longer exists on module \"{1}\" — marked orphan, not deleted automatically": "portul „{0}\" nu (mai) există pe modulul „{1}\" — marcat orfan, nu se șterge automat",
   "Probe name": "Numele probei",

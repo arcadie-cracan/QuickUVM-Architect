@@ -5,7 +5,7 @@
 // the MVP (D19) — the localized diagnostics stay on the YAML file (config.ts).
 
 import type { Finding } from "./configcheck";
-import type { StatusDeco, StatusSeverity } from "./protocol";
+import type { StatusDeco, StatusFix, StatusSeverity } from "./protocol";
 
 /**
  * Translates the structured findings of the model<->YAML validation (checkConfig)
@@ -47,9 +47,17 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
         break;
       case "width-mismatch": {
         const msg = `port "${port}": width ${String(f.params.declared)} in YAML, ${String(f.params.expected)} in the design`;
-        out.push({ scope: "port", port, severity: f.severity, message: msg });
+        // docs/08 R3 — the repair the YAML quick-fix offers, reachable from the diagram
+        const fixes: StatusFix[] = [
+          {
+            label: `Set width of "${port}" to ${String(f.params.expected)}`,
+            action: "editAgentPort",
+            args: { agent, port, field: "width", value: String(f.params.expected) },
+          },
+        ];
+        out.push({ scope: "port", port, severity: f.severity, message: msg, fixes });
         if (agent) {
-          out.push({ scope: "agent", agent, severity: f.severity, message: msg });
+          out.push({ scope: "agent", agent, severity: f.severity, message: msg, fixes });
         }
         break;
       }
@@ -59,6 +67,48 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
           port,
           severity: f.severity,
           message: `port "${port}" is both ignored and mapped to agent "${agent}"`,
+          fixes: [
+            {
+              label: `Stop ignoring "${port}"`,
+              action: "unignorePort",
+              args: { pins: [port] },
+            },
+          ],
+        });
+        break;
+      case "sb-unknown-agent": {
+        // docs/08 R3 — the box exists, its input points at nobody: a broken stub on
+        // the diagram, and the repair is to retarget it (the scoreboard editor in
+        // the Properties panel) or to delete it; the host confirms the deletion
+        const sb = String(f.params.sb ?? "sbd");
+        out.push({
+          scope: "scoreboard",
+          name: sb,
+          severity: f.severity,
+          message: `scoreboard "${sb}": ${String(f.params.field)} names agent "${agent}", which does not exist`,
+          fixes: [
+            {
+              label: `Delete scoreboard "${sb}"`,
+              action: "deleteComponent",
+              args: { kind: "scoreboard", name: sb },
+            },
+          ],
+        });
+        break;
+      }
+      case "cov-unknown-agent":
+        out.push({
+          scope: "coverage",
+          agent,
+          severity: f.severity,
+          message: `coverage names agent "${agent}", which does not exist`,
+          fixes: [
+            {
+              label: `Delete coverage for "${agent}"`,
+              action: "deleteComponent",
+              args: { kind: "coverage", name: agent },
+            },
+          ],
         });
         break;
     }
@@ -66,17 +116,20 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
   return out;
 }
 
-/** the aggregated status of a decorated element: the maximum severity + the messages */
+/** the aggregated status of a decorated element: the maximum severity + the
+ *  messages + the repairs on offer (docs/08 R3), de-duplicated by label+action */
 export interface ElementStatus {
   severity: StatusSeverity;
   messages: string[];
+  fixes: StatusFix[];
 }
 
 function addTo(
   map: Map<string, ElementStatus>,
   id: string,
   severity: StatusSeverity,
-  message: string
+  message: string,
+  fixes: StatusFix[] = []
 ): void {
   const cur = map.get(id);
   if (cur) {
@@ -84,8 +137,13 @@ function addTo(
     if (severity === "error") {
       cur.severity = "error"; // the error beats the warning
     }
+    for (const f of fixes) {
+      if (!cur.fixes.some((g) => g.label === f.label && g.action === f.action)) {
+        cur.fixes.push(f);
+      }
+    }
   } else {
-    map.set(id, { severity, messages: [message] });
+    map.set(id, { severity, messages: [message], fixes: [...fixes] });
   }
 }
 
@@ -146,16 +204,51 @@ export function statusIdsTb(
     }
     if (d.scope === "env") {
       if (presentIds.has("env")) {
-        addTo(out, "env", d.severity, d.message);
+        addTo(out, "env", d.severity, d.message, d.fixes);
       }
       continue;
     }
-    const id = `agent:${d.agent}`;
+    // docs/08 R3 — scoreboard / coverage boxes are decorated like agents; at the
+    // root level their problems bubble up onto Env, prefixed with the name
+    const [id, owner] =
+      d.scope === "scoreboard"
+        ? [`sb:${d.name}`, d.name]
+        : d.scope === "coverage"
+          ? [`cov:${d.agent}`, `${d.agent}_cov`]
+          : [`agent:${d.agent}`, d.agent];
     if (presentIds.has(id)) {
-      addTo(out, id, d.severity, d.message);
+      addTo(out, id, d.severity, d.message, d.fixes);
     } else if (presentIds.has("env")) {
-      addTo(out, "env", d.severity, `${d.agent}: ${d.message}`);
+      addTo(out, "env", d.severity, `${owner}: ${d.message}`, d.fixes);
     }
+  }
+  return out;
+}
+
+/**
+ * docs/08 R3 — the mapping of decorations onto the ids of the VERIFICATION TREE
+ * (the same element ids as the diagram, minus the `v:` prefix): agents,
+ * scoreboards and coverage rows, plus a bubble-up onto `env` so the parent row
+ * never looks clean with broken children underneath. Ports have no row.
+ */
+export function statusIdsTree(decos: StatusDeco[]): Map<string, ElementStatus> {
+  const out = new Map<string, ElementStatus>();
+  for (const d of decos) {
+    if (d.scope === "port") {
+      continue;
+    }
+    if (d.scope === "env") {
+      addTo(out, "env", d.severity, d.message, d.fixes);
+      continue;
+    }
+    const [id, owner] =
+      d.scope === "scoreboard"
+        ? [`sb:${d.name}`, d.name]
+        : d.scope === "coverage"
+          ? [`cov:${d.agent}`, `${d.agent}_cov`]
+          : [`agent:${d.agent}`, d.agent];
+    addTo(out, id, d.severity, d.message, d.fixes);
+    addTo(out, "env", d.severity, `${owner}: ${d.message}`);
   }
   return out;
 }

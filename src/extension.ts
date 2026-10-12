@@ -27,7 +27,8 @@ import { LayoutStore } from "./sidecar";
 import { VerificationProvider } from "./tbtree";
 import { GenStateService } from "./genstate-service";
 import { ResolveService } from "./resolve-service";
-import { GenDecorationProvider } from "./tbdecorations";
+import { FindingDecorationProvider, GenDecorationProvider } from "./tbdecorations";
+import { statusIdsTree } from "./status";
 import { HierarchyProvider, InstanceNode } from "./tree";
 
 let model: ProjectModel | undefined;
@@ -62,6 +63,20 @@ export function activate(context: vscode.ExtensionContext): void {
   // docs/07 — the GHOST components in the verification view, driven by
   // `quick-uvm resolve` (what the generator supplies that the config never mentions).
   const resolve = new ResolveService(log);
+  // docs/08 R3 — the validation findings on the verification tree (✕ / !), the
+  // same findings the diagram badges show, bubbled up onto Env
+  const findDeco = new FindingDecorationProvider(() =>
+    statusIdsTree(config.decorations)
+  );
+  /** the status payload shared by the panel (getStatus), the sidebar replay and
+   *  the live pushes — one shape, so the surfaces cannot disagree */
+  const statusSnapshot = () => ({
+    decos: config.decorations,
+    generate: generator.status,
+    genUnsaved: [...genState.unsaved],
+    genMissing: [...genState.missing],
+    genStale: [...genState.stale],
+  });
   // the tree star (FileDecoration), the row actions (Generate/Regenerate) and the
   // diagram badges all refresh when the generation state changes
   genState.onDidChange(() => {
@@ -71,8 +86,9 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(
     log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
-    layout, genState, genDeco, resolve,
-    vscode.window.registerFileDecorationProvider(genDeco)
+    layout, genState, genDeco, resolve, findDeco,
+    vscode.window.registerFileDecorationProvider(genDeco),
+    vscode.window.registerFileDecorationProvider(findDeco)
   );
 
   const treeView = vscode.window.createTreeView("quickuvm.hierarchy", {
@@ -394,6 +410,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (overlay) {
         out.push({ v: 1, type: "overlay/config", ...overlay });
       }
+      // docs/08 R3 — the Properties panel lists a selection's problems + repairs
+      out.push({ v: 1, type: "status/decorations", ...statusSnapshot() });
       return out;
     },
     (m: WebviewMessage) => {
@@ -484,13 +502,7 @@ export function activate(context: vscode.ExtensionContext): void {
       resolved: resolve.current,
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
-    getStatus: () => ({
-      decos: config.decorations,
-      generate: generator.status,
-      genUnsaved: [...genState.unsaved],
-      genMissing: [...genState.missing],
-      genStale: [...genState.stale],
-    }),
+    getStatus: () => statusSnapshot(),
     layout: {
       get: () => layout.sidecar,
       positionsSnapshotted: (v, nodes) => layout.positionsSnapshotted(v, nodes),
@@ -576,6 +588,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     generator.onStatus(() => {
       DiagramPanel.current?.postStatus();
+      propsView.post({ v: 1, type: "status/decorations", ...statusSnapshot() });
       void genState.refresh(config.configUri, config.current);
       void resolve.refresh(config.configUri);
     })
@@ -623,6 +636,10 @@ export function activate(context: vscode.ExtensionContext): void {
     if (overlay) {
       propsView.post({ v: 1, type: "overlay/config", ...overlay });
     }
+    // docs/08 R3 — the findings changed with the overlay: the tree rows and the
+    // Properties panel follow (the panel gets them through postStatus below)
+    findDeco.refresh();
+    propsView.post({ v: 1, type: "status/decorations", ...statusSnapshot() });
     if (config.configUri) {
       propsView.post({
         v: 1,
