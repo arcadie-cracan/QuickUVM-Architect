@@ -276,7 +276,9 @@ export function activate(context: vscode.ExtensionContext): void {
           void actions.renameComponent(
             typeof args.kind === "string" ? args.kind : "",
             typeof args.name === "string" ? args.name : "",
-            typeof args.newName === "string" ? args.newName : ""
+            typeof args.newName === "string" ? args.newName : "",
+            undefined,
+            typeof args.id === "string" ? args.id : undefined
           );
           break;
         case "editScoreboard":
