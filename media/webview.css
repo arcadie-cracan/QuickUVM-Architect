@@ -1252,3 +1252,34 @@ text.split-sign {
   background: var(--vscode-list-activeSelectionBackground);
   color: var(--vscode-list-activeSelectionForeground);
 }
+
+/* docs/08 R1 — the "+" strip above a hovered/selected TB node: the same add
+   actions as the sidebar palette, with the node already filled in. Fixed, like
+   the context menu, re-positioned on every camera change. */
+.nodetools {
+  position: fixed;
+  z-index: 90;
+  transform: translateX(-100%);
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.3);
+  white-space: nowrap;
+}
+.ntbtn {
+  border: none;
+  padding: 2px 8px;
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  border-radius: 2px;
+  color: var(--vscode-foreground);
+  background: transparent;
+}
+.ntbtn:hover {
+  color: var(--vscode-button-foreground);
+  background: var(--vscode-button-background);
+}

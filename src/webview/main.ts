@@ -241,6 +241,7 @@ function selectPins(names: string[]): void {
  * exactly these functions.
  */
 function renderInspectorHere(): void {
+  renderNodeTools(); // docs/08 R1: a (de)selection changes which node gets the "+" strip
   if (!inspector) {
     return;
   }
@@ -1061,6 +1062,7 @@ function applyTransform(): void {
     `translate(${state.tx},${state.ty}) scale(${state.k})`
   );
   updateMinimap();
+  positionNodeTools(); // docs/08 R1: the "+" strip rides along with its node
 }
 
 interface Bounds {
@@ -1441,6 +1443,7 @@ let genStatus: GenerateStatus | null = null;
  *  the tooltip; idempotent (removes the old badges), run after each render
  *  and at status/decorations */
 function applyStatusBadges(): void {
+  renderNodeTools(); // docs/08 R1: every render rebuilds the DOM the strip is anchored to
   canvas.querySelectorAll(".status-badge").forEach((b) => b.remove());
   if (!statusDecos.length) {
     return;
@@ -2369,6 +2372,172 @@ new ResizeObserver(onViewportResize).observe(
   document.getElementById("main") as HTMLElement
 );
 window.addEventListener("resize", onViewportResize);
+
+// ------------------------------------------ "+" affordances (docs/08 R1)
+//
+// Creation at the point of attention: hovering (or selecting) an agent shows a
+// small strip above its box — "+ scoreboard", "+ coverage" — that runs the SAME
+// add actions as the sidebar palette, with this agent already filled in; the Env
+// box at the root offers the three bench-level adds. The YAML mutation does not
+// move, only the trigger does (Kaoto's hover "+", draw.io's hover arrows, Visual
+// Paradigm's resource catalog). A ghost gets no strip: there is nothing in the
+// YAML to add to. "+ probe" is not here on purpose — a probe is born from a NET
+// in the schematic view (createProbe), the TB view has no net to point at.
+
+let nodeTools: HTMLElement | null = null;
+/** the node under the pointer (hover wins over the selection) */
+let hoverToolsId: string | null = null;
+let toolsHideTimer: ReturnType<typeof setTimeout> | undefined;
+
+interface NodeTool {
+  label: string;
+  title: string;
+  run: () => void;
+}
+
+function nodeToolsFor(id: string): NodeTool[] {
+  const n = currentTbScene?.nodes.find((x) => x.id === id);
+  if (!n || n.inferred) {
+    return [];
+  }
+  if (n.kind === "tbagent") {
+    const agent = n.label;
+    return [
+      {
+        label: "+ scoreboard",
+        title: `Add a scoreboard fed by ${agent}`,
+        run: () => postAction("addScoreboard", { source: agent }),
+      },
+      {
+        label: "+ coverage",
+        title: `Add a coverage collector on ${agent}`,
+        run: () => postAction("addCoverage", { agent }),
+      },
+    ];
+  }
+  if (n.id === "env") {
+    return [
+      {
+        label: "+ scoreboard",
+        title: "Add a scoreboard",
+        run: () => postAction("addScoreboard", {}),
+      },
+      {
+        label: "+ coverage",
+        title: "Add a coverage collector",
+        run: () => postAction("addCoverage", {}),
+      },
+      {
+        label: "+ sequence",
+        title: "Add a virtual sequence",
+        run: () => postAction("addVirtualSequence", {}),
+      },
+    ];
+  }
+  return [];
+}
+
+/** the node the strip belongs to: the hovered one, else a lone selected one */
+function nodeToolsTarget(): string | null {
+  if (state.mode !== "tb" || drag?.moved) {
+    return null;
+  }
+  if (hoverToolsId) {
+    return hoverToolsId;
+  }
+  return state.selection.size === 1 ? [...state.selection][0] : null;
+}
+
+function removeNodeTools(): void {
+  nodeTools?.remove();
+  nodeTools = null;
+}
+
+function renderNodeTools(): void {
+  const id = nodeToolsTarget();
+  const tools = id ? nodeToolsFor(id) : [];
+  if (!tools.length) {
+    removeNodeTools();
+    return;
+  }
+  if (nodeTools?.dataset.id === id) {
+    positionNodeTools();
+    return; // same node: keep the strip (and the hover inside it)
+  }
+  removeNodeTools();
+  const strip = h("div", "nodetools");
+  strip.dataset.id = id ?? "";
+  for (const t of tools) {
+    const b = h("button", "ntbtn", t.label);
+    b.title = t.title;
+    b.addEventListener("pointerdown", (ev) => ev.stopPropagation()); // not a canvas press
+    b.addEventListener("click", () => {
+      t.run();
+      removeNodeTools();
+    });
+    strip.append(b);
+  }
+  // moving onto the strip must not count as leaving the node
+  strip.addEventListener("pointerenter", () => clearTimeout(toolsHideTimer));
+  strip.addEventListener("pointerleave", () => scheduleToolsHide());
+  document.body.append(strip);
+  nodeTools = strip;
+  positionNodeTools();
+}
+
+/** above the node's top-right corner; below it when there is no room above */
+function positionNodeTools(): void {
+  if (!nodeTools) {
+    return;
+  }
+  const g = canvas.querySelector<SVGGraphicsElement>(
+    `.tbnode[data-id="${CSS.escape(nodeTools.dataset.id ?? "")}"]`
+  );
+  if (!g) {
+    removeNodeTools();
+    return;
+  }
+  const r = g.getBoundingClientRect();
+  const cb = canvas.getBoundingClientRect();
+  const top = r.top - 26 >= cb.top ? r.top - 26 : r.bottom + 4;
+  nodeTools.style.left = `${r.right}px`;
+  nodeTools.style.top = `${top}px`;
+}
+
+function scheduleToolsHide(): void {
+  clearTimeout(toolsHideTimer);
+  toolsHideTimer = setTimeout(() => {
+    hoverToolsId = null;
+    renderNodeTools(); // falls back to the selected node, if any
+  }, 180);
+}
+
+canvas.addEventListener("pointerover", (e) => {
+  if (state.mode !== "tb") {
+    return;
+  }
+  const id =
+    (e.target as Element).closest<SVGElement>(".tbnode")?.dataset.id ?? null;
+  if (id) {
+    clearTimeout(toolsHideTimer);
+    if (id !== hoverToolsId) {
+      hoverToolsId = id;
+      renderNodeTools();
+    }
+  }
+});
+canvas.addEventListener("pointerout", (e) => {
+  if (!hoverToolsId) {
+    return;
+  }
+  const to = e.relatedTarget as Element | null;
+  const stillOnNode =
+    to?.closest?.<SVGElement>(".tbnode")?.dataset.id === hoverToolsId;
+  if (!stillOnNode && !to?.closest?.(".nodetools")) {
+    scheduleToolsHide();
+  }
+});
+canvas.addEventListener("wheel", () => removeNodeTools(), { passive: true });
 
 // ------------------------------------- keyboard navigation (docs/08 R5)
 //
