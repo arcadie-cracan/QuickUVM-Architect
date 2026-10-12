@@ -13,7 +13,7 @@ import type {
   ViewMode,
   WebviewMessage,
 } from "../protocol";
-import type { GenerateStatus, Proposal, ProposalApply, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
+import type { ElementCard, GenerateStatus, Proposal, ProposalApply, SidecarData, SidecarNode, StatusDeco, UiConfig, XprobeTarget } from "../protocol";
 import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
@@ -27,7 +27,7 @@ import {
 } from "./inspector-view";
 import { SV_KEYWORDS } from "../heuristics";
 import type { State } from "./state";
-import type { TbScene } from "./tbscene";
+import type { TbNode, TbScene } from "./tbscene";
 import { buildTbScene } from "./tbscene";
 import { anchor, drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
 import {
@@ -380,8 +380,19 @@ window.addEventListener("message", (e: MessageEvent) => {
       probeTargets = m.targets;
       applySelectionClasses();
       break;
+    case "card/full": {
+      // docs/08 R15 — the answer to the hover card's request: cached until the
+      // config or the generation state changes; drawn if the card still shows it
+      const { v: _v, type: _t, ...c } = m;
+      cardCache.set(c.id, c);
+      if (card && cardId === c.id) {
+        openCard(c.id, cardPinned);
+      }
+      break;
+    }
     case "status/decorations":
       // the quick-uvm status decorations (docs/05): badges + generate chip
+      cardCache.clear(); // the generation state changed: the cards say so
       statusDecos = m.decos;
       state.statusDecos = m.decos; // the Properties panel lists them too (R3)
       genStatus = m.generate;
@@ -414,6 +425,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       }
       break;
     case "config/full":
+      cardCache.clear(); // docs/08 R15 — the YAML changed: the cards are stale
       state.config = m.config;
       state.configPath = m.configPath;
       state.childAgents = m.childAgents ?? {};
@@ -2165,6 +2177,199 @@ function undoPositions(redo: boolean): void {
   applyPositions(key, snap);
 }
 
+// ------------------------------- "what will this generate" card (docs/08 R15)
+//
+// A dwell on a TB box (or `I` on the selected one, which pins it) opens a card
+// beside it: the YAML entry the box stands for (the R4 map, from the host), the
+// files it owns in the generated bench (the CACHED manifest — never a generator
+// run) with their on-disk state, the ●/U/M generation state, and two actions:
+// the generated code beside the diagram, the YAML entry beside the diagram.
+// Figma's Code panel, MPS's preview of the generated text. The data comes on
+// demand (`card/request` -> `card/full`) and is cached until the config or the
+// generation state changes.
+
+const cardCache = new Map<string, ElementCard>();
+let card: HTMLElement | null = null;
+let cardId: string | null = null;
+/** pinned (the I key): stays until Escape / I / a render; hover cards leave with the pointer */
+let cardPinned = false;
+let cardTimer: ReturnType<typeof setTimeout> | undefined;
+let cardHideTimer: ReturnType<typeof setTimeout> | undefined;
+
+function closeCard(): void {
+  clearTimeout(cardTimer);
+  clearTimeout(cardHideTimer);
+  card?.remove();
+  card = null;
+  cardId = null;
+  cardPinned = false;
+}
+
+/** the generation state of an element, as the badges say it (docs/07 line 1) */
+function genStateOf(id: string): { text: string; cls: string } {
+  if (genUnsaved.has(id)) {
+    return { text: "● new — not saved to the configuration yet", cls: "unsaved" };
+  }
+  if (genMissing.has(id)) {
+    return { text: "U not generated — run Generate Testbench", cls: "missing" };
+  }
+  if (genStale.has(id)) {
+    return { text: "M modified — the config changed since Generate Testbench", cls: "stale" };
+  }
+  return { text: "✓ generated from this configuration", cls: "ok" };
+}
+
+function openCard(id: string, pinned: boolean): void {
+  const node = currentTbScene?.nodes.find((n) => n.id === id);
+  const g = canvas.querySelector<SVGGraphicsElement>(`.tbnode[data-id="${CSS.escape(id)}"]`);
+  if (!node || !g || state.mode !== "tb") {
+    return;
+  }
+  clearTimeout(cardTimer);
+  clearTimeout(cardHideTimer);
+  if (cardId !== id) {
+    card?.remove();
+    card = null;
+  }
+  cardId = id;
+  cardPinned = pinned;
+  if (!card) {
+    card = h("div", "gencard");
+    card.addEventListener("pointerenter", () => clearTimeout(cardHideTimer));
+    card.addEventListener("pointerleave", () => {
+      if (!cardPinned) {
+        scheduleCardHide();
+      }
+    });
+    document.body.append(card);
+  }
+  renderCard(node, cardCache.get(id) ?? null);
+  positionCard(g);
+  if (!cardCache.has(id) && !node.inferred) {
+    post({ v: 1, type: "card/request", id });
+  }
+}
+
+function renderCard(node: TbNode, data: ElementCard | null): void {
+  if (!card) {
+    return;
+  }
+  card.replaceChildren();
+  const head = h("div", "gencard-head");
+  head.append(h("span", "gencard-name", node.label));
+  if (node.stereotype) {
+    head.append(h("span", "gencard-stereo", node.stereotype));
+  }
+  card.append(head);
+  if (node.inferred) {
+    card.append(
+      h("div", "gencard-note", "inferred by quick-uvm (implicit mode) — nothing in the YAML; the generator wires it on its own")
+    );
+    return;
+  }
+  const st = genStateOf(node.id);
+  card.append(h("div", `gencard-state ${st.cls}`, st.text));
+  card.append(h("div", "gencard-title", "YAML"));
+  card.append(h("pre", "gencard-yaml", data ? (data.yaml ?? "(no entry of its own in the YAML)") : "…"));
+  card.append(h("div", "gencard-title", "Generated files"));
+  if (!data) {
+    card.append(h("div", "gencard-note", "…"));
+  } else if (!data.manifest) {
+    card.append(h("div", "gencard-note", "not resolved — needs quick-uvm ≥ 1.1.0 and a valid configuration"));
+  } else if (!data.files.length) {
+    card.append(h("div", "gencard-note", "no file of its own (it lives in the env / package files)"));
+  } else {
+    const ul = h("ul", "gencard-files");
+    for (const f of data.files) {
+      ul.append(h("li", f.exists ? "ok" : "missing", `${f.exists ? "✓" : "○"} ${f.file}`));
+    }
+    card.append(ul);
+  }
+  const actions = h("div", "gencard-actions");
+  const open = h("button", "assist-btn", "Open generated code beside");
+  open.disabled = !data || !data.manifest || !data.files.length;
+  open.addEventListener("click", () => {
+    postAction("openGeneratedCode", { id: node.id, label: node.label });
+  });
+  const yamlBtn = h("button", "assist-btn secondary", "Show YAML beside");
+  yamlBtn.addEventListener("click", () => postAction("openConfigBeside", { id: node.id }));
+  actions.append(open, yamlBtn);
+  card.append(actions);
+}
+
+/** beside the box: to its right, or to its left when the window ends; kept on screen */
+function positionCard(g: SVGGraphicsElement): void {
+  if (!card) {
+    return;
+  }
+  const r = g.getBoundingClientRect();
+  const cw = card.offsetWidth || 320;
+  const ch = card.offsetHeight || 200;
+  let left = r.right + 8;
+  if (left + cw > window.innerWidth - 4) {
+    left = r.left - cw - 8; // to the left of the box when the window ends
+  }
+  left = Math.max(4, Math.min(left, window.innerWidth - cw - 4)); // never off-screen
+  const top = Math.max(4, Math.min(r.top, window.innerHeight - ch - 4));
+  card.style.left = `${left}px`;
+  card.style.top = `${top}px`;
+}
+
+function scheduleCardHide(): void {
+  clearTimeout(cardHideTimer);
+  cardHideTimer = setTimeout(() => {
+    if (!cardPinned) {
+      closeCard();
+    }
+  }, 220);
+}
+
+canvas.addEventListener("pointerover", (e) => {
+  if (state.mode !== "tb" || e.buttons !== 0 || wire || drag) {
+    return; // a press in progress is a drag or a wire, not a dwell
+  }
+  const id = (e.target as Element).closest<SVGElement>(".tbnode")?.dataset.id;
+  if (!id) {
+    return;
+  }
+  clearTimeout(cardHideTimer);
+  if (cardPinned || id === cardId) {
+    return;
+  }
+  clearTimeout(cardTimer);
+  cardTimer = setTimeout(() => openCard(id, false), 450);
+});
+canvas.addEventListener("pointerout", (e) => {
+  const from = (e.target as Element).closest<SVGElement>(".tbnode")?.dataset.id;
+  if (!from) {
+    return;
+  }
+  const to = e.relatedTarget as Element | null;
+  const stillOn = to?.closest?.<SVGElement>(".tbnode")?.dataset.id === from;
+  if (stillOn || to?.closest?.(".gencard")) {
+    return; // onto the card itself: it stays, for its buttons
+  }
+  clearTimeout(cardTimer);
+  if (!cardPinned) {
+    scheduleCardHide();
+  }
+});
+canvas.addEventListener("pointerdown", () => {
+  clearTimeout(cardTimer);
+  if (!cardPinned) {
+    closeCard(); // a press is a gesture (drag, wire, selection), not a dwell
+  }
+});
+canvas.addEventListener(
+  "wheel",
+  () => {
+    if (!cardPinned) {
+      closeCard(); // a fixed card would detach from its box
+    }
+  },
+  { passive: true }
+);
+
 // --------------------------------------------- in-place rename (docs/08 R14)
 //
 // F2, a double-click on the title or "Rename…" in the context menu opens an
@@ -3868,6 +4073,10 @@ window.addEventListener("keydown", (e) => {
       closeCtxMenu(); // Escape closes the context menu first, not the selection
       return;
     }
+    if (card) {
+      closeCard(); // docs/08 R15 — then the card, then the selection
+      return;
+    }
     if (state.selection.size) {
       state.selection.clear();
       applySelectionClasses();
@@ -3911,6 +4120,21 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.ctrlKey || e.metaKey || e.altKey) {
+    return;
+  }
+  // I: pins the "what will this generate" card of the selected TB box (docs/08
+  // R15); again, or Escape, closes it
+  if (key === "i" && state.mode === "tb" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    const node =
+      state.selection.size === 1
+        ? currentTbScene?.nodes.find((n) => state.selection.has(n.id))
+        : undefined;
+    if (card && cardPinned) {
+      closeCard();
+    } else if (node) {
+      e.preventDefault();
+      openCard(node.id, true);
+    }
     return;
   }
   // F2: renames the selected TB component in place (docs/08 R14) — one selected
@@ -4312,6 +4536,7 @@ function hideBanner(): void {
 async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
+  closeCard(); // docs/08 R15: the card is anchored to a box that is about to be redrawn
   renderAssist(); // docs/08 R12: the strip follows the view (hidden on a mismatch)
   if (state.mode === "tb") {
     return renderTb(refit);

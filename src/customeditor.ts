@@ -23,6 +23,7 @@ import {
 import type { ActionKind, HostMessage, LassoMode, ProposalApply, WebviewMessage } from "./protocol";
 import { ghostProposals } from "./proposals";
 import type { QuvmConfig } from "./quickuvm";
+import { elementRange } from "./yamlmap";
 import { parseQuvm } from "./yamlops";
 import type { LayoutStore } from "./sidecar";
 
@@ -84,7 +85,13 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
      *  per document: this editor can hold a config that is NOT the active one. */
     private readonly resolve?: ResolveService,
     /** docs/08 R4 — the diagram <-> YAML link (open beside, reveal the entry) */
-    private readonly yamlLink?: YamlLink
+    private readonly yamlLink?: YamlLink,
+    /** docs/08 R15 — the owned files of an element, for THIS document's uri
+     *  (the manifest belongs to the active config; another document gets none) */
+    private readonly cardInfo?: (
+      uri: vscode.Uri,
+      id: string
+    ) => { files: { file: string; exists: boolean }[]; primary: string | null; manifest: boolean }
   ) {}
 
   resolveCustomTextEditor(
@@ -260,6 +267,25 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
             this.yamlLink?.revealElement(document.uri, document.getText(), m.ids[0]);
           }
           break;
+        case "card/request": {
+          // docs/08 R15 — the YAML entry from THIS document, the files from the
+          // manifest when the document is the active config
+          const text = document.getText();
+          const span = elementRange(text, m.id);
+          const info = this.cardInfo?.(document.uri, m.id) ?? {
+            files: [],
+            primary: null,
+            manifest: false,
+          };
+          void webview.postMessage({
+            v: 1,
+            type: "card/full",
+            id: m.id,
+            yaml: span ? text.slice(span.start, span.end) : null,
+            ...info,
+          });
+          break;
+        }
         // tb/focus (local drill) has no tree synchronization in the per-file
         // editor — it is ignored
         default:
@@ -381,10 +407,26 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         );
         break;
       case "openConfigBeside":
-        // docs/08 R4 — THIS document as text, beside its diagram
+        // docs/08 R4 — THIS document as text, beside its diagram; with an id
+        // (the R15 card) the element's entry is revealed too
         if (target.configUri) {
-          void this.yamlLink?.openBeside(target.configUri);
+          const uri = target.configUri;
+          void this.yamlLink?.openBeside(uri).then(async () => {
+            if (s("id") && this.yamlLink) {
+              const text = (await vscode.workspace.openTextDocument(uri)).getText();
+              this.yamlLink.revealElement(uri, text, s("id"));
+            }
+          });
         }
+        break;
+      case "openGeneratedCode":
+        // docs/08 R15 — the generated code beside; the command reads the ACTIVE
+        // config's manifest, so another document's element may not resolve
+        void vscode.commands.executeCommand("quickuvm.openGeneratedCode", {
+          id: s("id"),
+          label: s("label") || "item",
+          beside: true,
+        });
         break;
       default:
         this.log.appendLine(

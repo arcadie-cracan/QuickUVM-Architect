@@ -8,7 +8,7 @@ import { resolveLocPath } from "./filelistops";
 import { Loc, ProjectModel } from "./model";
 import type { QuvmConfig } from "./quickuvm";
 import type { ResolvedConfig } from "./resolved";
-import type { ProposalSet } from "./protocol";
+import type { ElementCard, ProposalSet } from "./protocol";
 import {
   ActionKind,
   GenerateStatus,
@@ -63,6 +63,9 @@ export interface PanelDeps {
   };
   /** docs/08 R12 — the designer-assistance proposals of a view (src/proposals.ts) */
   getProposals?: (viewId: string, mode: ViewMode | undefined) => ProposalSet | null;
+  /** docs/08 R15 — what a TB element will generate (the YAML entry, the owned
+   *  files from the cached manifest); null without a configuration */
+  getCard?: (id: string) => Promise<ElementCard | null>;
   /** the layout sidecar; absent only in tests */
   layout?: LayoutDeps;
   /** the configuration actions; openSource stays handled in the panel */
@@ -422,6 +425,15 @@ export class DiagramPanel {
         this.postProposals(); // the strip follows the drill
         this.panel.title = `QuickUVM Architect — ${m.instancePath}`;
         this.deps.onSelection?.([], m.instancePath, m.mode);
+        break;
+      case "card/request":
+        // docs/08 R15 — the hover card; answered from the config text + the cached
+        // manifest, never a generator run; dropped if the panel went away meanwhile
+        void this.deps.getCard?.(m.id).then((c) => {
+          if (c && this.ready) {
+            this.post({ v: 1, type: "card/full", ...c });
+          }
+        });
         break;
       case "action/request":
         if (m.action === "openSource") {

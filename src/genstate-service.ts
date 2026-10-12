@@ -22,6 +22,7 @@ import {
   primaryFile,
   scopedFilesFor,
 } from "./genstate";
+import { ownedFilesFor } from "./genstate";
 import type { QuvmConfig } from "./quickuvm";
 
 /** workspaceState key holding, per config uri, the element → config-hash records */
@@ -67,6 +68,16 @@ export class GenStateService implements vscode.Disposable {
    *  if the manifest is unavailable or the element is unknown. */
   scopedFiles(nodeId: string): string[] | null {
     return this.manifest ? scopedFilesFor(this.manifest, nodeId) : null;
+  }
+
+  /** docs/08 R15 — the files an element owns, with their on-disk flags; null when
+   *  the manifest is unavailable (the card then says so, instead of "none") */
+  filesFor(nodeId: string): { file: string; exists: boolean }[] | null {
+    return this.manifest ? ownedFilesFor(this.manifest, nodeId) : null;
+  }
+
+  get hasManifest(): boolean {
+    return Boolean(this.manifest);
   }
 
   /** The absolute path of the representative file to OPEN for an element (2.3),

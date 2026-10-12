@@ -27,6 +27,7 @@ const {
   declaredElements,
   scopedFilesFor,
   primaryFile,
+  ownedFilesFor,
 } = await import(
   pathToFileURL(outFile)
 );
@@ -230,6 +231,23 @@ test("primaryFile: no suffix match -> first own file; unknown -> null", () => {
   const m = manifest([el("agent:cmd", ["cmd_if.sv", "cmd_cfg.svh"])]);
   assert.equal(primaryFile(m, "agent:cmd"), "cmd_if.sv"); // no _agent.svh -> first
   assert.equal(primaryFile(m, "sb:nope"), null);
+});
+
+test("docs/08 R15: ownedFilesFor lists an element's own files with their flags, never the aggregates", () => {
+  const manifest = {
+    version: "1.1.0", layout: "flat", kind: "bench", output_dir: "tb",
+    elements: [
+      { owner: "agent:cmd", files: [{ file: "cmd_agent.svh", exists: true }, { file: "cmd_driver.svh", exists: false }] },
+      { owner: "scoreboard:sbd", files: [{ file: "soc_scoreboard.svh", exists: true }] },
+      { owner: "aggregate", files: [{ file: "env_pkg.sv", exists: true }] },
+    ],
+  };
+  assert.deepEqual(ownedFilesFor(manifest, "agent:cmd"), [
+    { file: "cmd_agent.svh", exists: true }, { file: "cmd_driver.svh", exists: false },
+  ]);
+  assert.deepEqual(ownedFilesFor(manifest, "sb:sbd"), [{ file: "soc_scoreboard.svh", exists: true }]);
+  assert.deepEqual(ownedFilesFor(manifest, "cov:cmd"), [], "coverage owns nothing of its own (docs/07)");
+  assert.deepEqual(ownedFilesFor(manifest, "env"), [], "the aggregates belong to no box");
 });
 
 console.log(`\ntest-genstate: ${passed} tests passed.`);

@@ -89,7 +89,26 @@ export type ActionKind =
   | "applyProposals"
   // docs/08 R14: in-place rename `{kind: agent|scoreboard|subenv, name, newName}`
   // — the host validates the identifier and renames with the cascade
-  | "renameComponent";
+  | "renameComponent"
+  // docs/08 R15: the element's generated code, BESIDE the diagram (`{id, label}`;
+  // the host offers to generate it first when it is missing)
+  | "openGeneratedCode";
+
+// ------------------------------------------- "what will this generate" (R15)
+
+/** the card of one TB element (`card/request` -> `card/full`): the YAML entry it
+ *  stands for (the R4 map), the files it owns in the generated bench (the cached
+ *  manifest — never a generator run) and the representative file to open */
+export interface ElementCard {
+  id: string;
+  /** the element's own YAML entry, verbatim; null = no entry of its own */
+  yaml: string | null;
+  files: { file: string; exists: boolean }[];
+  /** absolute path of the file "Open generated code" opens; null = none yet */
+  primary: string | null;
+  /** false when the manifest is unavailable (quick-uvm < 1.1.0, an invalid config) */
+  manifest: boolean;
+}
 
 // ---------------------------------------------- designer assistance (R12)
 
@@ -293,6 +312,8 @@ export type HostMessage =
   // source; the webview applies the .xprobe halo on the ids of the current view, without
   // touching the selection; empty list = turn off
   | { v: 1; type: "probe/highlight"; targets: XprobeTarget[] }
+  // docs/08 R15 — the answer to `card/request`: what this element will generate
+  | ({ v: 1; type: "card/full" } & ElementCard)
   // the quick-uvm status decorations (docs/05): the model<->YAML validations as
   // badges on elements + the result of the last generate as a chip in the header;
   // empty decos = clear, generate null = never run
@@ -364,6 +385,9 @@ export type WebviewMessage =
     }
   | { v: 1; type: "edge/override"; viewId: string; edgeId: string; patch: unknown }
   | { v: 1; type: "net/render"; viewId: string; net: string; render: "wire" | "label" }
+  // docs/08 R15 — the hover card asks what a TB element will generate; the host
+  // answers with `card/full` from the config text and the cached manifest
+  | { v: 1; type: "card/request"; id: string }
   // the SELF-CONTAINED SVG of the view (phase 4): inlined styles, viewBox on
   // the content; the host shows a save dialog and writes the file
   | { v: 1; type: "export/result"; viewId: string; svg: string }

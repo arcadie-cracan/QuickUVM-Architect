@@ -209,6 +209,24 @@ export function scopedFilesFor(manifest: Manifest, nodeId: string): string[] | n
 }
 
 /**
+ * docs/08 R15 — the files an element OWNS in the generated bench (not the
+ * aggregates), with their on-disk flags: what the "what will this generate"
+ * card lists. Empty when the element maps to no owner.
+ */
+export function ownedFilesFor(
+  manifest: Manifest,
+  nodeId: string
+): { file: string; exists: boolean }[] {
+  const out: { file: string; exists: boolean }[] = [];
+  for (const el of manifest.elements) {
+    if (el.owner !== "aggregate" && ownerToNodeId(el.owner) === nodeId) {
+      out.push(...el.files.map((f) => ({ file: f.file, exists: f.exists })));
+    }
+  }
+  return out;
+}
+
+/**
  * docs/07 line 2 (2.3) — the representative source file to OPEN for an element:
  * the agent class / scoreboard / probe interface / virtual sequencer, chosen by
  * suffix from the element's own files (falling back to the first). `null` if the

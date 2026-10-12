@@ -136,6 +136,35 @@
           window.__sidecar = sc;
           sessionStorage.setItem("__sidecar", JSON.stringify(sc));
         }
+        if (m.type === "card/request") {
+          // docs/08 R15 — the host's answer: the YAML entry (R4 map) + the owned
+          // files from the manifest; a fixture, after the host's typical latency
+          const name = m.id.split(":")[1] ?? m.id;
+          setTimeout(() => {
+            window.postMessage(
+              {
+                v: 1,
+                type: "card/full",
+                id: m.id,
+                yaml: m.id.startsWith("agent:")
+                  ? `- name: ${name}\n  interface: ${name}_if\n  sequence_item: ${name}_seq_item`
+                  : m.id.startsWith("sb:")
+                    ? `- { name: ${name}, source: cmd, monitor: rsp }`
+                    : null,
+                files: m.id.startsWith("agent:")
+                  ? [
+                      { file: `${name}_agent.svh`, exists: true },
+                      { file: `${name}_driver.svh`, exists: true },
+                      { file: `${name}_monitor.svh`, exists: false },
+                    ]
+                  : [],
+                primary: m.id.startsWith("agent:") ? `tb/${name}_agent.svh` : null,
+                manifest: true,
+              },
+              "*"
+            );
+          }, 60);
+        }
         if (m.type === "node/flipped") {
           const sc = loadSidecar();
           const nodes = ((sc.views[m.viewId] ??= {}).nodes ??= {});
