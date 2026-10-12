@@ -86,7 +86,10 @@ export type ActionKind =
   | "addPinsToAgent"
   // docs/08 R12: the proposals the user CHECKED in the designer-assistance strip
   // (`{items: ProposalApply[]}`), applied in order through the flows above
-  | "applyProposals";
+  | "applyProposals"
+  // docs/08 R14: in-place rename `{kind: agent|scoreboard|subenv, name, newName}`
+  // — the host validates the identifier and renames with the cascade
+  | "renameComponent";
 
 // ---------------------------------------------- designer assistance (R12)
 

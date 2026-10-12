@@ -271,6 +271,14 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.name === "string" ? args.name : ""
           );
           break;
+        case "renameComponent":
+          // docs/08 R14 — in-place rename, validated and cascaded on the host
+          void actions.renameComponent(
+            typeof args.kind === "string" ? args.kind : "",
+            typeof args.name === "string" ? args.name : "",
+            typeof args.newName === "string" ? args.newName : ""
+          );
+          break;
         case "editScoreboard":
           void actions.editScoreboard(
             typeof args.name === "string" ? args.name : "",

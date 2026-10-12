@@ -1432,3 +1432,28 @@ text.split-sign {
   30% { opacity: 1; }
   100% { opacity: 1; }
 }
+
+/* --------------------------------------------- in-place rename (docs/08 R14) */
+/* the title takes pointer events (a double-click on it renames; the click
+   still bubbles to the box for selection and drag) */
+.tb-name {
+  pointer-events: auto;
+  cursor: text;
+}
+.rename {
+  position: fixed;
+  z-index: 102;
+  box-sizing: border-box;
+  padding: 1px 4px;
+  font-family: inherit;
+  font-weight: 600;
+  text-align: center;
+  color: var(--vscode-input-foreground);
+  background: var(--vscode-input-background);
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 2px;
+  outline: none;
+}
+.rename.invalid {
+  border-color: var(--vscode-inputValidation-errorBorder, var(--vscode-errorForeground, #f14c4c));
+}

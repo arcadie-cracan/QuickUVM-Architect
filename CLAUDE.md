@@ -529,6 +529,22 @@ coliziunea de nume.
   probe name; materialize refuses a resolved set that references agents the
   live config no longer has (resolve reads the DISK); `analysis:` with no
   value is implicit for the strip and the mutation, as it is for the scene.
+- **In-place rename (docs/08 R14)**: `.tb-name` takes pointer events (the
+  title's double-click renames; everywhere else the node labels stay
+  `pointer-events: none` — the ghost hit-testing note above); the click still
+  bubbles to the box, so selection and drag are unchanged. `tbRenameTarget` in
+  `inspector-view.ts` is the ONE resolver for F2, the double-click and the
+  menu (ghost, unnamed scoreboard, derived names → null), like `tbDeleteTarget`.
+  The webview carries the sidecar positions to the new ids BEFORE posting the
+  action (`agent:` + its `cov:`, and the agent's own level key
+  `tb:<config>|agent:<name>`): the renamed box has no seed otherwise and lands
+  wherever interactive ELK puts a new node (D21 total seeds pin it there).
+  Enter on a bad name keeps the editor (the first cut closed it, losing the
+  typed text — caught in the harness); `render()` cancels an open editor (the
+  DOM is rebuilt under it). The host checks the generated namespace (agents,
+  scoreboards, subenvs, probes + SV keywords); a PARENT bench's
+  `<subenv>.<agent>` references live in another file and are NOT updated — a
+  composed config gets a warning, never a silent partial rename.
 
 ## Faza curentă
 
@@ -806,4 +822,8 @@ the pitfall above and docs/05.
 strip over the canvas (interfaces and pin groups without an agent, unwired
 subsystems, the inferred ghosts materialised through `materializeAnalysis`);
 `src/proposals.ts` + `test:proposals`, the `applyProposals` action.
+**R14 (docs/08) is implemented** (Oct 2026): in-place rename (F2 / title
+double-click / context menu) with the cascading mutations `renameAgent` /
+`renameScoreboard` / `renameSubenv` (`test:yamlops`) and the `renameComponent`
+action.
 Planul complet: `docs/06-plan-mvp.md`.

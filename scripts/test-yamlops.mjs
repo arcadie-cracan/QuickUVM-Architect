@@ -1278,6 +1278,58 @@ test("materializeAnalysis: writes the kept inferred set, {} when nothing is kept
   const nullKey = ops.materializeAnalysis(t + "analysis:\n", { scoreboards: [], coverage: ["pkt"] });
   assert.deepEqual(ops.parseQuvm(nullKey).analysis, { coverage: ["pkt"] });
 });
+test("renameAgent: the name, its conventional interface/seq_item and every reference follow; cross-block endpoints, hand-written names and a missing agent do not", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, { name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [] });
+  text = ops.createAgent(text, { name: "rsp", inputs: [], outputs: [{ name: "dout", width: 8 }] });
+  text = ops.addCoverage(text, "cmd");
+  text = ops.addScoreboard(text, { name: "sbd", source: "cmd", monitor: "rsp" });
+  text = ops.addScoreboard(text, { name: "x", source: "u_a.cmd" }); // a CHILD's agent (cross-block)
+  text = ops.addVirtualSequence(text, {
+    name: "smoke", mode: "parallel",
+    steps: [{ agent: "cmd", sequence: "cmd_seq" }, { agent: "rsp", sequence: "rsp_seq" }],
+  });
+  const out = ops.renameAgent(text, "cmd", "req");
+  const cfg = ops.parseQuvm(out);
+  assert.deepEqual(cfg.agents.map((a) => a.name), ["req", "rsp"]);
+  assert.equal(cfg.agents[0].interface, "req_if", "the conventional interface name follows");
+  assert.equal(cfg.agents[0].sequence_item, "req_seq_item");
+  assert.deepEqual(cfg.analysis.coverage, ["req"]);
+  assert.deepEqual(cfg.analysis.scoreboards.map((s) => [s.source, s.monitor]), [["req", "rsp"], ["u_a.cmd", undefined]]);
+  assert.deepEqual(cfg.virtual_sequences[0].body.map((s) => s.agent), ["req", "rsp"]);
+  assert.deepEqual(cfg.virtual_sequences[0].body.map((s) => s.sequence), ["cmd_seq", "rsp_seq"], "sequence names are the user's");
+  // a rich coverage entry and the RAL bus agent follow too
+  const rich = text.replace("coverage: [ cmd ]", "coverage:\n    - { agent: cmd, coverpoints: [] }") + "register_model:\n  package: p\n  block: b\n  bus_agent: cmd\n";
+  const rcfg = ops.parseQuvm(ops.renameAgent(rich, "cmd", "req"));
+  assert.equal(rcfg.analysis.coverage[0].agent, "req");
+  assert.equal(rcfg.register_model.bus_agent, "req");
+  // a hand-written interface name is not the convention: left alone
+  const custom = text.replace("interface: cmd_if", "interface: my_if");
+  assert.equal(ops.parseQuvm(ops.renameAgent(custom, "cmd", "req")).agents[0].interface, "my_if");
+  assert.equal(ops.renameAgent(text, "nope", "x"), text, "missing agent: byte-identical");
+  assert.equal(ops.renameAgent(text, "cmd", "cmd"), text, "same name: byte-identical");
+  assert.throws(() => ops.renameAgent(text, "cmd", "rsp"), /already exists/);
+});
+
+test("renameScoreboard / renameSubenv: the key, and for a subenv the endpoints that carry its name", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, { name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [] });
+  text = ops.addScoreboard(text, { name: "sbd", source: "cmd" });
+  text = ops.addScoreboard(text, { name: "sb2", source: "cmd" });
+  assert.deepEqual(ops.parseQuvm(ops.renameScoreboard(text, "sbd", "main")).analysis.scoreboards.map((s) => s.name), ["main", "sb2"]);
+  assert.equal(ops.renameScoreboard(text, "zz", "q"), text);
+  assert.throws(() => ops.renameScoreboard(text, "sbd", "sb2"), /already exists/);
+  const y = ops.newConfigText("s") +
+    "layout: packaged\nsubenvs:\n  - { name: u_a, config: a.yaml }\n  - { name: u_b, config: b.yaml }\n" +
+    "connections:\n  - { from: u_a.dout, to: u_b.din }\n" +
+    "analysis:\n  scoreboards:\n    - { name: x, source: u_a.cmd, monitor: u_b.cmd }\n";
+  const r = ops.parseQuvm(ops.renameSubenv(y, "u_a", "prod"));
+  assert.deepEqual(r.subenvs.map((s) => s.name), ["prod", "u_b"]);
+  assert.deepEqual(r.connections, [{ from: "prod.dout", to: "u_b.din" }]);
+  assert.deepEqual([r.analysis.scoreboards[0].source, r.analysis.scoreboards[0].monitor], ["prod.cmd", "u_b.cmd"]);
+  assert.equal(ops.renameSubenv(y, "u_zz", "q"), y);
+  assert.throws(() => ops.renameSubenv(y, "u_a", "u_b"), /already exists/);
+});
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

@@ -23,7 +23,9 @@ import {
   h,
   renderInspector as renderInspectorInto,
   tbDeleteTarget,
+  tbRenameTarget,
 } from "./inspector-view";
+import { SV_KEYWORDS } from "../heuristics";
 import type { State } from "./state";
 import type { TbScene } from "./tbscene";
 import { buildTbScene } from "./tbscene";
@@ -1783,6 +1785,19 @@ canvas.addEventListener("pointerleave", () => {
 // the module source, anywhere.
 canvas.addEventListener("dblclick", (e) => {
   if (state.mode === "tb") {
+    // docs/08 R14 — a double-click on the TITLE renames in place (the title
+    // takes pointer events for this); anywhere else on a block with structure
+    // drills, as before
+    const titleBox = (e.target as Element)
+      .closest<SVGElement>(".tb-name")
+      ?.closest<SVGElement>(".tbnode[data-id]");
+    const titled = titleBox?.dataset.id
+      ? currentTbScene?.nodes.find((n) => n.id === titleBox.dataset.id)
+      : undefined;
+    if (titled && tbRenameTarget(titled)) {
+      startRename(titled.id);
+      return;
+    }
     // drill on a block with structure (D24): descends to its level;
     // on a subenv (`config:`), opens the config of the composed block
     const box = (e.target as Element).closest<SVGElement>(".tbnode.drill");
@@ -2125,6 +2140,171 @@ function undoPositions(redo: boolean): void {
     (redo ? h.undo : h.redo).push(now);
   }
   applyPositions(key, snap);
+}
+
+// --------------------------------------------- in-place rename (docs/08 R14)
+//
+// F2, a double-click on the title or "Rename…" in the context menu opens an
+// <input> over the box's title (StarUML's Quick Edit, Blueprints' F2); Enter —
+// or leaving the field with a change — sends `renameComponent`, Escape cancels.
+// The host validates and renames with the cascade (src/yamlops.ts renameAgent /
+// renameScoreboard / renameSubenv); the webview only carries the positions of
+// the renamed ids in the sidecar (the box must not jump to an ELK slot) and
+// moves the selection and the focus to the new id.
+
+let renameBox: HTMLInputElement | null = null;
+
+/** why a name cannot be used, as the host will judge it: an SV identifier, no
+ *  keyword, free across agents/scoreboards/subenvs/probes; null = fine */
+function renameProblem(oldName: string, value: string): string | null {
+  const v = value.trim();
+  if (v === oldName) {
+    return null;
+  }
+  if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(v)) {
+    return "not a SystemVerilog identifier";
+  }
+  if (SV_KEYWORDS.has(v)) {
+    return "a SystemVerilog keyword";
+  }
+  const c = state.config;
+  const taken = new Set<string | undefined>([
+    ...(c?.agents ?? []).map((a) => a.name),
+    ...(c?.analysis?.scoreboards ?? []).map((s) => s.name),
+    ...(c?.subenvs ?? []).map((s) => s.name),
+    ...(c?.probes ?? []).map((p) => p.name),
+  ]);
+  return taken.has(v) ? "this name is already used" : null;
+}
+
+function cancelRename(): void {
+  renameBox?.remove();
+  renameBox = null;
+}
+
+/** opens the editor over the title of the TB node `nodeId` (a renameable one) */
+function startRename(nodeId: string): void {
+  cancelRename();
+  const node = currentTbScene?.nodes.find((n) => n.id === nodeId);
+  const target = node ? tbRenameTarget(node) : null;
+  const title = canvas.querySelector<SVGGraphicsElement>(
+    `.tbnode[data-id="${CSS.escape(nodeId)}"] .tb-name`
+  );
+  if (!node || !target || !title) {
+    return;
+  }
+  const r = title.getBoundingClientRect();
+  const box = h("input", "rename");
+  box.type = "text";
+  box.value = target.name;
+  box.spellcheck = false;
+  const width = Math.max(r.width + 32, 120);
+  box.style.left = `${r.left + r.width / 2 - width / 2}px`;
+  box.style.top = `${r.top - 3}px`;
+  box.style.width = `${width}px`;
+  box.style.fontSize = `${Math.max(10, Math.round(12 * state.k))}px`;
+  let done = false;
+  const finish = (commit: boolean): void => {
+    if (done) {
+      return;
+    }
+    done = true;
+    const value = box.value.trim();
+    cancelRename();
+    if (!commit || value === target.name || renameProblem(target.name, value)) {
+      return;
+    }
+    commitRename(nodeId, target, value);
+  };
+  box.addEventListener("keydown", (e) => {
+    e.stopPropagation(); // the diagram's shortcuts stay out of the field
+    if (e.key === "Enter") {
+      e.preventDefault();
+      if (renameProblem(target.name, box.value)) {
+        box.classList.add("invalid"); // Enter on a bad name keeps the editor: fix it or Escape
+        return;
+      }
+      finish(true);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
+      finish(false);
+    }
+  });
+  box.addEventListener("input", () => {
+    const p = renameProblem(target.name, box.value);
+    box.classList.toggle("invalid", Boolean(p));
+    box.title = p ?? "";
+  });
+  box.addEventListener("blur", () => finish(true));
+  document.body.append(box);
+  renameBox = box;
+  box.focus();
+  box.select();
+}
+
+/** the new id of a renamed node, plus the ids that follow it (the agent's coverage) */
+function renamedIds(
+  nodeId: string,
+  kind: "agent" | "scoreboard" | "subenv",
+  newName: string
+): [string, string][] {
+  if (kind === "agent") {
+    const old = nodeId.slice("agent:".length);
+    return [
+      [nodeId, `agent:${newName}`],
+      [`cov:${old}`, `cov:${newName}`],
+    ];
+  }
+  return [[nodeId, `${kind === "scoreboard" ? "sb" : "sub"}:${newName}`]];
+}
+
+function commitRename(
+  nodeId: string,
+  target: { kind: "agent" | "scoreboard" | "subenv"; name: string },
+  newName: string
+): void {
+  const key = layoutKey();
+  const pairs = renamedIds(nodeId, target.kind, newName);
+  if (key) {
+    // the positions follow the new ids: without this the renamed box has no
+    // seed and lands wherever interactive ELK puts a new node
+    const nodes = sidecar.views[key]?.nodes ?? {};
+    const moved: Record<string, { x: number; y: number }> = {};
+    for (const [oldId, newId] of pairs) {
+      const o = nodes[oldId];
+      if (o && o.x !== undefined && o.y !== undefined) {
+        Object.assign(sidecarNode(key, newId), o);
+        moved[newId] = { x: o.x, y: o.y };
+      }
+    }
+    if (Object.keys(moved).length) {
+      post({ v: 1, type: "layout/snapshot", viewId: key, nodes: moved });
+    }
+    // an agent's own level is keyed by its name: the arrangement follows too
+    if (target.kind === "agent" && state.viewId) {
+      const oldLevel = sidecar.views[`${state.viewId}|agent:${target.name}`];
+      if (oldLevel?.nodes) {
+        const levelKey = `${state.viewId}|agent:${newName}`;
+        const all: Record<string, { x: number; y: number }> = {};
+        for (const [id, o] of Object.entries(oldLevel.nodes)) {
+          Object.assign(sidecarNode(levelKey, id), o);
+          if (o.x !== undefined && o.y !== undefined) {
+            all[id] = { x: o.x, y: o.y };
+          }
+        }
+        if (Object.keys(all).length) {
+          post({ v: 1, type: "layout/snapshot", viewId: levelKey, nodes: all });
+        }
+      }
+    }
+  }
+  postAction("renameComponent", { kind: target.kind, name: target.name, newName });
+  // the selection and the focus follow the new name (the old id goes with config/full)
+  state.selection = new Set([pairs[0][1]]);
+  if (target.kind === "agent" && state.tbFocus === `agent:${target.name}`) {
+    state.tbFocus = `agent:${newName}`;
+    post({ v: 1, type: "tb/focus", focus: state.tbFocus, select: null });
+  }
 }
 
 // ------------------------------------------- designer assistance (docs/08 R12)
@@ -3214,7 +3394,7 @@ canvas.addEventListener("wheel", () => removeNodeTools(), { passive: true });
 // arrows keep scrolling the viewport, a gesture the user asked for), and five
 // camera quick marks per level (Shift+1..5 stores, 1..5 jumps). The rules that
 // can be wrong on their own are pure in navfind.ts (test:navfind); this block is
-// the DOM glue. F2 (rename) waits for the rename mutation (docs/08 R14).
+// the DOM glue. F2 renames in place (docs/08 R14 — the rename block above).
 
 const navHistory = new NavHistory();
 /** true while a history entry is being applied: its render must not record */
@@ -3553,6 +3733,19 @@ window.addEventListener("keydown", (e) => {
   if (e.ctrlKey || e.metaKey || e.altKey) {
     return;
   }
+  // F2: renames the selected TB component in place (docs/08 R14) — one selected
+  // agent / named scoreboard / subenv; RTL names come from the design
+  if (key === "f2" && state.mode === "tb") {
+    const node =
+      state.selection.size === 1
+        ? currentTbScene?.nodes.find((n) => state.selection.has(n.id))
+        : undefined;
+    if (node && tbRenameTarget(node)) {
+      e.preventDefault();
+      startRename(node.id);
+    }
+    return;
+  }
   // Delete/Backspace: deletes the selected TB component — the same gesture as the
   // Delete button in the inspector (host: modal confirmation + cascade to the agent). Only in
   // the TB view; RTL has no deletion (the nodes come from the design, not from the config)
@@ -3842,6 +4035,9 @@ canvas.addEventListener("contextmenu", (e) => {
       { label: "Flip vertical (V)", action: () => toggleFlip(id, "v") }
     );
     items.push(...problemItems(id)); // docs/08 R3: the problems + repairs
+    if (tbRenameTarget(node)) {
+      items.push({ label: "Rename… (F2)", action: () => startRename(id) });
+    }
     const dt = tbDeleteTarget(node);
     if (dt) {
       items.push({
@@ -3935,6 +4131,7 @@ function hideBanner(): void {
 
 async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
+  cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
   renderAssist(); // docs/08 R12: the strip follows the view (hidden on a mismatch)
   if (state.mode === "tb") {
     return renderTb(refit);

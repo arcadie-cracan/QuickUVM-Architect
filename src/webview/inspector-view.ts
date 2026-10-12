@@ -1689,6 +1689,32 @@ export function tbDeleteTarget(
   return null;
 }
 
+/** docs/08 R14 — the component an in-place rename addresses: agents, named
+ *  scoreboards and subenvs. A ghost (nothing in the YAML), an unnamed scoreboard
+ *  and the derived names (coverage `<agent>_cov`, the vsqr/probes aggregates) have
+ *  nothing to rename. The ONE resolver for F2, the title's double-click and the
+ *  context menu — like `tbDeleteTarget` for deletion. */
+export function tbRenameTarget(
+  node: TbScene["nodes"][number]
+): { kind: "agent" | "scoreboard" | "subenv"; name: string } | null {
+  if (node.inferred) {
+    return null;
+  }
+  if (node.kind === "tbagent") {
+    return { kind: "agent", name: node.label };
+  }
+  if (node.kind === "tbsb" && node.id.startsWith("sb:")) {
+    const sb = ctx.state.config?.analysis?.scoreboards?.find(
+      (s) => (s.name ?? "sbd") === node.label
+    );
+    return sb?.name ? { kind: "scoreboard", name: sb.name } : null;
+  }
+  if (node.id.startsWith("sub:")) {
+    return { kind: "subenv", name: node.id.slice("sub:".length) };
+  }
+  return null;
+}
+
 /** The side inspector: configuration, DUT, agents, coverage, actions.
  *  Without own state: everything is derived from the model + overlay (invariant 2). */
 export function renderInspector(c: InspectorCtx): void {
