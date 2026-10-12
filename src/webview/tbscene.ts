@@ -17,7 +17,7 @@
 // drawn as much as possible; the authoritative validation stays in ConfigService.
 
 import { coveredAgent } from "../coverage";
-import { isCrossBlockSb } from "../quickuvm";
+import { isCrossBlockSb, scoreboardNodeIds } from "../quickuvm";
 import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
 import { inferredComponents } from "../resolved";
 import type { ResolvedConfig } from "../resolved";
@@ -502,14 +502,15 @@ function levelEnv(
     });
   }
 
-  // scoreboards
-  const usedSb = new Set<string>();
-  for (const sb of localSbs(config)) {
-    let id = `sb:${sb.name ?? "sbd"}`;
-    for (let n = 2; usedSb.has(id); n++) {
-      id = `sb:${sb.name ?? "sbd"}#${n}`;
+  // scoreboards — ids from the ONE scheme (scoreboardNodeIds: the same ids the
+  // tree, checkConfig and the YAML map use); the local entries are drawn here
+  const sbIds = scoreboardNodeIds(config);
+  (config.analysis?.scoreboards ?? []).forEach((sb, sbIndex) => {
+    const sbNode = sbIds[sbIndex];
+    if (!sbNode || sbNode.cross) {
+      return;
     }
-    usedSb.add(id);
+    const id = sbNode.id;
     // docs/08 R3 — an endpoint naming no agent is drawn as a BROKEN input: the
     // same fact checkConfig reports (sb-unknown-agent), seen on the wire's end
     const known = (a: string | undefined): boolean => Boolean(a && agentNames.has(a));
@@ -552,7 +553,7 @@ function levelEnv(
     };
     connect(sb.source, "source");
     connect(sb.monitor ?? undefined, "monitor");
-  }
+  });
 
   // coverage
   for (const agent of coveredAgents(config)) {
@@ -926,13 +927,14 @@ function addSubenvs(
       });
     }
   });
-  const usedXsb = new Set<string>();
-  xsbs.forEach((sb, i) => {
-    let id = `xsb:${sb.name ?? i}`;
-    for (let n = 2; usedXsb.has(id); n++) {
-      id = `xsb:${sb.name ?? i}#${n}`;
+  // the cross-block boxes, with the ids of the ONE scheme (scoreboardNodeIds)
+  const xsbIds = scoreboardNodeIds(config);
+  (config.analysis?.scoreboards ?? []).forEach((sb, xi) => {
+    const xsbNode = xsbIds[xi];
+    if (!xsbNode || !xsbNode.cross) {
+      return;
     }
-    usedXsb.add(id);
+    const id = xsbNode.id;
     const ports: TbPort[] = [
       port(id, "source", "WEST", "source", { glyph: "export" }),
     ];

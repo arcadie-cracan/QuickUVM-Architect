@@ -197,7 +197,9 @@ export type StatusDeco =
   | { scope: "agent"; agent: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
   // docs/08 R3 — an analysis endpoint that names no agent of the config: the
   // scoreboard / coverage box gets a broken input and an error badge
-  | { scope: "scoreboard"; name: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  // `name` is the entry as written (`sbd` when unnamed); `key` is the diagram id
+  // suffix (`sbd#2` on a repeated name), absent when the entry is not drawn
+  | { scope: "scoreboard"; name: string; key?: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
   | { scope: "coverage"; agent: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
   | { scope: "env"; severity: StatusSeverity; message: string; fixes?: StatusFix[] };
 

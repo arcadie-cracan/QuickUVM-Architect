@@ -9,7 +9,7 @@
 import { Document, isMap, isSeq } from "yaml";
 import type { ProjectModel } from "./model";
 import { coveredAgent } from "./coverage";
-import { isCrossBlockSb } from "./quickuvm";
+import { isCrossBlockSb, scoreboardNodeIds } from "./quickuvm";
 import type { QuvmConfig } from "./quickuvm";
 
 /** the prefix of the diagnostic code that carries the width quick-fix */
@@ -175,6 +175,7 @@ export function checkConfig(
     (cfg.subenvs ?? []).map((s) => s.name).filter((n): n is string => Boolean(n))
   );
   const sbsNode = ydoc.getIn(["analysis", "scoreboards"]);
+  const sbIds = scoreboardNodeIds(cfg);
   (cfg.analysis?.scoreboards ?? []).forEach((sb, i) => {
     if (isCrossBlockSb(sb, subenvNames)) {
       return;
@@ -183,11 +184,21 @@ export function checkConfig(
     for (const field of ["source", "monitor"] as const) {
       const agent = sb[field];
       if (agent && !agentNames.has(agent)) {
+        const drawn = sbIds[i];
         findings.push({
           kind: "sb-unknown-agent",
           span: spanOf(isMap(node) ? node.get(field, true) : undefined) ?? spanOf(node),
           severity: "error",
-          params: { sb: sb.name ?? "sbd", field, agent },
+          // `sb` names the entry for the message; `node` is the diagram id of the
+          // box (the ONE scheme, `#n` on repeated names; absent when the entry is
+          // not drawn); `named` says whether a by-name repair can target it
+          params: {
+            sb: sb.name ?? "sbd",
+            field,
+            agent,
+            named: sb.name ? 1 : 0,
+            ...(drawn ? { node: drawn.id.slice("sb:".length) } : {}),
+          },
         });
       }
     }

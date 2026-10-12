@@ -18,6 +18,7 @@
 
 import { isMap, isSeq, parseDocument, type Document, type Node, type Pair } from "yaml";
 import { coveredAgent } from "./coverage";
+import { scoreboardNodeIds, type QuvmConfig } from "./quickuvm";
 
 export interface YamlElement {
   /** the TB node id (buildTbScene / buildTbTree, minus the tree's `v:` prefix) */
@@ -127,14 +128,15 @@ export function elementAtOffset(text: string, offset: number): YamlElement | nul
             continue;
           }
           if (k === "scoreboards") {
-            // the scene de-duplicates repeated names: `sb:sbd`, `sb:sbd#2`, …
-            const seen = new Map<string, number>();
-            for (const it of seqItems(q.value)) {
-              const name = nameOf(it.node) ?? "sbd";
-              const n = (seen.get(name) ?? 0) + 1;
-              seen.set(name, n);
-              if (contains(it.span, offset)) {
-                return { id: n === 1 ? `sb:${name}` : `sb:${name}#${n}`, focus: "env" };
+            // the ONE id scheme (scoreboardNodeIds): local `sb:` and cross-block
+            // `xsb:` (both drawn in Env), `#n` on repeated names, null when the
+            // entry is not drawn at all
+            const ids = scoreboardNodeIds(doc.toJS() as QuvmConfig);
+            const items = seqItems(q.value);
+            for (let i = 0; i < items.length; i++) {
+              if (contains(items[i].span, offset)) {
+                const node = ids[i];
+                return node ? { id: node.id, focus: "env" } : null;
               }
             }
           } else if (k === "coverage") {
@@ -180,21 +182,13 @@ export function elementRange(text: string, id: string): YamlSpan | null {
   }
   const top = (key: string): Pair | undefined =>
     root.items.find((p) => scalar(p.key) === key);
-  /** the n-th (1-based) item whose name is `name` — `#n` ids count duplicates */
+  /** the first item whose name is `name` */
   const itemNamed = (
     seq: unknown,
     pick: (node: unknown) => string | undefined,
-    name: string,
-    nth = 1
-  ): YamlSpan | null => {
-    let k = 0;
-    for (const it of seqItems(seq)) {
-      if (pick(it.node) === name && ++k === nth) {
-        return trimSpan(text, it.span);
-      }
-    }
-    return null;
-  };
+    name: string
+  ): YamlSpan | null =>
+    trimSpan(text, seqItems(seq).find((it) => pick(it.node) === name)?.span ?? null);
 
   if (id === "dut" || id === "vsqr" || id === "probes") {
     const p = top(id === "dut" ? "dut" : id === "vsqr" ? "virtual_sequences" : "probes");
@@ -205,11 +199,7 @@ export function elementRange(text: string, id: string): YamlSpan | null {
     return null;
   }
   const kind = id.slice(0, colon);
-  // `sb:<name>#2` (a de-duplicated node id) is the SECOND entry named <name>
-  const rest = id.slice(colon + 1);
-  const dup = /#(\d+)$/.exec(rest);
-  const name = dup ? rest.slice(0, dup.index) : rest;
-  const nth = dup ? Number(dup[1]) : 1;
+  const name = id.slice(colon + 1);
   if (kind === "agent") {
     // `agent:<name>:u.driver` (an agent-internal leaf) belongs to the agent
     return itemNamed(top("agents")?.value, nameOf, name.split(":")[0]);
@@ -222,12 +212,13 @@ export function elementRange(text: string, id: string): YamlSpan | null {
     return null;
   }
   if (kind === "sb" || kind === "xsb") {
-    return itemNamed(
-      analysis.get("scoreboards", true),
-      (n) => nameOf(n) ?? "sbd",
-      name,
-      nth
-    );
+    // the ONE id scheme: the entry whose scene id is exactly `id`
+    const ids = scoreboardNodeIds(doc.toJS() as QuvmConfig);
+    const i = ids.findIndex((n) => n?.id === id);
+    if (i < 0) {
+      return null;
+    }
+    return trimSpan(text, seqItems(analysis.get("scoreboards", true))[i]?.span ?? null);
   }
   if (kind === "cov") {
     return itemNamed(analysis.get("coverage", true), (n) => covAgentOf(doc, n), name);

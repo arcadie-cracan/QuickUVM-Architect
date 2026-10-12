@@ -31,7 +31,6 @@ import { VerificationProvider } from "./tbtree";
 import { GenStateService } from "./genstate-service";
 import { ResolveService } from "./resolve-service";
 import { FindingDecorationProvider, GenDecorationProvider } from "./tbdecorations";
-import { statusIdsTree } from "./status";
 import { HierarchyProvider, InstanceNode } from "./tree";
 
 let model: ProjectModel | undefined;
@@ -68,9 +67,7 @@ export function activate(context: vscode.ExtensionContext): void {
   const resolve = new ResolveService(log);
   // docs/08 R3 — the validation findings on the verification tree (✕ / !), the
   // same findings the diagram badges show, bubbled up onto Env
-  const findDeco = new FindingDecorationProvider(() =>
-    statusIdsTree(config.decorations)
-  );
+  const findDeco = new FindingDecorationProvider(() => config.treeStatus);
   // docs/08 R4 — the diagram <-> YAML link: a gesture flashes the lines it
   // changed in the visible text editors (or opens the file beside, per the
   // `openYamlBeside` setting), a selected box reveals its entry, and the caret
@@ -95,7 +92,7 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
     layout, genState, genDeco, resolve, findDeco, yamlLink,
-    onGestureApplied((e) => void yamlLink.afterGesture(e.uri, e.span)),
+    onGestureApplied((e) => void yamlLink.afterGesture(e.uri, e.span, e.version)),
     vscode.window.registerFileDecorationProvider(genDeco),
     vscode.window.registerFileDecorationProvider(findDeco)
   );

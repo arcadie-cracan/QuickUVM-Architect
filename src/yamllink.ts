@@ -54,11 +54,19 @@ export class YamlLink implements vscode.Disposable {
    * file is visible as text; otherwise, per the setting, open the file to the
    * side first. Never steals the focus — the user is still on the diagram.
    */
-  async afterGesture(uri: vscode.Uri, span: YamlSpan): Promise<void> {
+  async afterGesture(uri: vscode.Uri, span: YamlSpan, version?: number): Promise<void> {
     let editors = this.editorsOf(uri);
     if (!editors.length) {
       const mode = setting();
       if (mode === "never" || (mode === "ask" && !(await this.askOnce()))) {
+        return;
+      }
+      // the question may have waited while more gestures landed: the span belongs
+      // to the document version that produced it — open beside regardless, but
+      // flash only if nothing moved since (the merge review)
+      const doc = await vscode.workspace.openTextDocument(uri);
+      if (version !== undefined && doc.version !== version) {
+        await this.openBeside(uri);
         return;
       }
       const opened = await this.openBeside(uri, span);

@@ -66,6 +66,21 @@ test("caret -> element: every drawn block, including nested positions", () => {
   assert.deepEqual(elementAtOffset(TEXT, at("monitor: rsp")), { id: "sb:sbd", focus: "env" });
   assert.deepEqual(elementAtOffset(TEXT, at("{ source: cmd }") + 3), { id: "sb:sbd#2", focus: "env" },
     "an unnamed scoreboard is drawn as `sbd`, de-duplicated like the scene does");
+  const mixed = `subenvs: [ { name: blk, config: b.yaml }, { name: b2, config: c.yaml } ]
+analysis:
+  scoreboards:
+    - { source: cmd }
+    - { name: x, source: blk.a, monitor: b2.b }
+    - { source: rsp }
+    - { monitor: cmd }
+`;
+  const m = (needle) => elementAtOffset(mixed, mixed.indexOf(needle));
+  assert.deepEqual(m("source: cmd"), { id: "sb:sbd", focus: "env" });
+  assert.deepEqual(m("blk.a"), { id: "xsb:x", focus: "env" }, "a cross-block scoreboard is an xsb: box in Env");
+  assert.deepEqual(m("source: rsp"), { id: "sb:sbd#2", focus: "env" }, "numbered among the LOCAL ones only");
+  assert.equal(m("monitor: cmd"), null, "an entry without a source is not drawn");
+  assert.equal(mixed.slice(...Object.values(elementRange(mixed, "xsb:x"))), "{ name: x, source: blk.a, monitor: b2.b }");
+  assert.equal(mixed.slice(...Object.values(elementRange(mixed, "sb:sbd#2"))), "{ source: rsp }");
   assert.deepEqual(elementAtOffset(TEXT, at("coverpoints")), { id: "cov:rsp", focus: "env" });
   assert.deepEqual(elementAtOffset(TEXT, at("[ cmd,") + 2), { id: "cov:cmd", focus: "env" });
   assert.deepEqual(elementAtOffset(TEXT, at("name: smoke")), { id: "vsqr", focus: "env" });

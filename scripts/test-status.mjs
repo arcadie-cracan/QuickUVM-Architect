@@ -133,7 +133,7 @@ test("statusIdsTb: porturile nu decoreaza TB; decos gol -> nimic", () => {
 // --- docs/08 R3: the new scopes, the repairs, the tree mapping ---------------
 test("R3: the unknown-agent findings target the scoreboard/coverage box with a repair", () => {
   const decos = decosFromFindings([
-    F("sb-unknown-agent", "error", { sb: "sbd", field: "monitor", agent: "ghost" }),
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "monitor", agent: "ghost", named: 1, node: "sbd" }),
     F("cov-unknown-agent", "error", { agent: "nobody" }),
   ]);
   const sb = decos.find((d) => d.scope === "scoreboard");
@@ -170,7 +170,7 @@ test("R3: the width repair rides on both the pin and the agent; ignored gets un-
 
 test("R3: statusIdsTb lands on sb:/cov: when present, bubbles onto Env otherwise, keeps fixes", () => {
   const decos = decosFromFindings([
-    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost" }),
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost", named: 1, node: "sbd" }),
     F("cov-unknown-agent", "error", { agent: "nobody" }),
     F("width-mismatch", "warning", { port: "din", declared: 8, expected: 16, agent: "cmd" }),
   ]);
@@ -193,7 +193,7 @@ test("R3: statusIdsTb lands on sb:/cov: when present, bubbles onto Env otherwise
 
 test("R3: statusIdsTree decorates the rows AND Env; ports have no row", () => {
   const decos = decosFromFindings([
-    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost" }),
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost", named: 1, node: "sbd" }),
     F("ignored-and-mapped", "error", { port: "x", agent: "cmd" }),
     F("port-orphan", "warning", { port: "gone", dut: "chan", agent: "cmd" }),
   ]);
@@ -202,6 +202,28 @@ test("R3: statusIdsTree decorates the rows AND Env; ports have no row", () => {
   assert.equal(tree.get("agent:cmd").severity, "warning");
   assert.equal(tree.get("env").severity, "error", "the error child wins on Env");
   assert.equal(tree.get("env").messages.length, 2);
+});
+
+test("R3 (review): no delete repair on an unnamed scoreboard; the `#n` key lands on the right box", () => {
+  const decos = decosFromFindings([
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost", named: 0, node: "sbd#2" }),
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "monitor", agent: "ghost", named: 0 }),
+  ]);
+  assert.deepEqual(decos.map((d) => d.fixes.length), [0, 0], "a by-name delete would hit nothing or the WRONG entry");
+  const m = statusIdsTb(decos, new Set(["sb:sbd", "sb:sbd#2", "env"]));
+  assert.ok(m.has("sb:sbd#2"), "the badge sits on the second box, like its broken stub");
+  assert.ok(!m.has("sb:sbd"), "the valid first box is untouched");
+  assert.ok(m.has("env"), "the undrawn entry bubbles onto Env");
+  assert.equal(statusIdsTree(decos).has("sb:sbd#2"), true);
+});
+
+test("R3 (review, D19): the message override feeds the tree with localized text", () => {
+  const decos = decosFromFindings(
+    [F("width-mismatch", "warning", { port: "din", declared: 8, expected: 16, agent: "cmd" })],
+    (f) => `LOCALIZED ${f.kind}`
+  );
+  assert.ok(decos.every((d) => d.message === "LOCALIZED width-mismatch"));
+  assert.equal(decos[0].fixes.length, 1, "the repairs are untouched by the override");
 });
 
 console.log(`\ntest-status: ${passed} teste au trecut.`);

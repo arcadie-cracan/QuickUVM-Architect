@@ -19,6 +19,17 @@ await esbuild.build({
   logLevel: "silent",
 });
 const { buildTbScene } = await import(pathToFileURL(outFile));
+// the ONE scoreboard id scheme lives in the pure quickuvm module
+const outQ = join(outDir, "quickuvm.mjs");
+await esbuild.build({
+  entryPoints: ["src/quickuvm.ts"],
+  outfile: outQ,
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  logLevel: "silent",
+});
+const { scoreboardNodeIds } = await import(pathToFileURL(outQ));
 
 let passed = 0;
 function test(name, fn) {
@@ -435,6 +446,28 @@ test("R3: a scoreboard/coverage endpoint naming an unknown agent gets a broken p
   // the healthy fixture has no broken port anywhere
   const ok = buildTbScene(CFG, "env", null);
   assert.ok(ok.nodes.every((n) => n.ports.every((p) => !p.broken)));
+});
+
+// --- review: ONE scoreboard id scheme, shared with the tree, checkConfig, yamlmap
+test("review: the scene's scoreboard ids are exactly scoreboardNodeIds (local + cross, duplicates)", () => {
+  const cfg = {
+    ...CFG,
+    subenvs: [{ name: "blk", config: "blk.quickuvm.yaml" }, { name: "blk2", config: "b2.quickuvm.yaml" }],
+    analysis: {
+      scoreboards: [
+        { source: "cmd" },
+        { name: "x", source: "blk.a", monitor: "blk2.b" },
+        { source: "rsp" },
+        { monitor: "cmd" },
+        { name: "x", source: "blk2.b", monitor: "blk.a" },
+      ],
+    },
+  };
+  const env = buildTbScene(cfg, "env", null).nodes.filter((n) => n.kind === "tbsb").map((n) => n.id);
+  assert.deepEqual(env, ["sb:sbd", "sb:sbd#2", "xsb:x", "xsb:x#2"],
+    "local then cross-block, each numbered on repeats; the source-less entry is not drawn");
+  const ids = scoreboardNodeIds(cfg).map((n) => n && n.id);
+  assert.deepEqual(ids, ["sb:sbd", "xsb:x", "sb:sbd#2", null, "xsb:x#2"]);
 });
 
 console.log(`\ntest-tbscene: ${passed} tests passed.`);

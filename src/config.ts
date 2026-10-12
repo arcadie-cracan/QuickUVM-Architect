@@ -10,7 +10,7 @@ import { parseDocument } from "yaml";
 import { checkConfig, Finding, WIDTH_CODE } from "./configcheck";
 import { ProjectModel } from "./model";
 import { AGENT_PALETTE, OverlayConfig, PortRole, StatusDeco } from "./protocol";
-import { decosFromFindings } from "./status";
+import { decosFromFindings, statusIdsTree, type ElementStatus } from "./status";
 import { changedSpan, minimalEdit, wholeLines } from "./textedit";
 import { agentPorts, QuvmConfig } from "./quickuvm";
 import { parseQuvm } from "./yamlops";
@@ -40,6 +40,8 @@ async function fileExists(uri: vscode.Uri): Promise<boolean> {
 export interface GestureEdit {
   uri: vscode.Uri;
   span: { start: number; end: number };
+  /** the document version the span belongs to (a deferred flash checks it) */
+  version: number;
 }
 const gestureEmitter = new vscode.EventEmitter<GestureEdit>();
 export const onGestureApplied = gestureEmitter.event;
@@ -73,7 +75,11 @@ export async function applyTextChange(
   if (autoSaveConfig()) {
     await doc.save();
   }
-  gestureEmitter.fire({ uri: doc.uri, span: wholeLines(newText, changedSpan(e)) });
+  gestureEmitter.fire({
+    uri: doc.uri,
+    span: wholeLines(newText, changedSpan(e)),
+    version: doc.version,
+  });
   return true;
 }
 
@@ -113,6 +119,9 @@ export class ConfigService implements vscode.Disposable {
   lastOverlay: OverlayConfig | null = null;
   /** the status decorations derived from the last validations (docs/05) */
   decorations: StatusDeco[] = [];
+  /** docs/08 R3 — the same findings for the verification TREE rows, with the
+   *  LOCALIZED messages (D19: host UI speaks l10n; the webview stays English) */
+  treeStatus: Map<string, ElementStatus> = new Map();
   /** the last parsed configuration (for commands and validations) */
   current: QuvmConfig = {};
   /** docs/07 P3c — the agents of each composed child block, keyed by subenv name.
@@ -377,6 +386,7 @@ export class ConfigService implements vscode.Disposable {
     // the status decorations for the diagram (docs/05): pure derivation from
     // the same findings; extension.ts posts them at onOverlay
     this.decorations = decosFromFindings(res.findings);
+    this.treeStatus = statusIdsTree(decosFromFindings(res.findings, findingMessage));
     for (const f of res.findings) {
       const range = f.span
         ? new vscode.Range(doc.positionAt(f.span[0]), doc.positionAt(f.span[1]))

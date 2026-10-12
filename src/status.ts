@@ -14,9 +14,15 @@ import type { StatusDeco, StatusFix, StatusSeverity } from "./protocol";
  * TB block); `port-orphan` does NOT target the port (it disappeared from the model —
  * there is no pin to decorate), only the agent.
  */
-export function decosFromFindings(findings: Finding[]): StatusDeco[] {
+export function decosFromFindings(
+  findings: Finding[],
+  /** docs/08 R3 (D19) — an override for the message text: the host passes its
+   *  localized `findingMessage` for the tree tooltips; the webview keeps English */
+  message?: (f: Finding) => string
+): StatusDeco[] {
   const out: StatusDeco[] = [];
   for (const f of findings) {
+    const text = (fallback: string): string => message?.(f) ?? fallback;
     const port = String(f.params.port ?? "");
     const agent = String(f.params.agent ?? "");
     switch (f.kind) {
@@ -24,11 +30,11 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
         out.push({
           scope: "env",
           severity: f.severity,
-          message: `DUT module "${String(f.params.module)}" does not exist in the current design`,
+          message: text(`DUT module "${String(f.params.module)}" does not exist in the current design`),
         });
         break;
       case "port-claimed": {
-        const msg = `port "${port}" is already claimed by agent "${agent}"`;
+        const msg = text(`port "${port}" is already claimed by agent "${agent}"`);
         out.push({ scope: "port", port, severity: f.severity, message: msg });
         out.push({ scope: "agent", agent, severity: f.severity, message: msg });
         break;
@@ -41,12 +47,12 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
             scope: "agent",
             agent,
             severity: f.severity,
-            message: `port "${port}" no longer exists in the DUT`,
+            message: text(`port "${port}" no longer exists in the DUT`),
           });
         }
         break;
       case "width-mismatch": {
-        const msg = `port "${port}": width ${String(f.params.declared)} in YAML, ${String(f.params.expected)} in the design`;
+        const msg = text(`port "${port}": width ${String(f.params.declared)} in YAML, ${String(f.params.expected)} in the design`);
         // docs/08 R3 — the repair the YAML quick-fix offers, reachable from the diagram
         const fixes: StatusFix[] = [
           {
@@ -66,7 +72,7 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
           scope: "port",
           port,
           severity: f.severity,
-          message: `port "${port}" is both ignored and mapped to agent "${agent}"`,
+          message: text(`port "${port}" is both ignored and mapped to agent "${agent}"`),
           fixes: [
             {
               label: `Stop ignoring "${port}"`,
@@ -81,18 +87,27 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
         // the diagram, and the repair is to retarget it (the scoreboard editor in
         // the Properties panel) or to delete it; the host confirms the deletion
         const sb = String(f.params.sb ?? "sbd");
+        // a by-name deletion can only target a NAMED entry: `removeScoreboard`
+        // matches `name:`, so on an unnamed one it deleted nothing — or, with a
+        // named `sbd` elsewhere, the WRONG one (the merge review). Unnamed: the
+        // repair is the editor in the Properties panel, no delete offered.
+        const named = Number(f.params.named ?? 1) === 1;
+        const key = typeof f.params.node === "string" ? f.params.node : undefined;
         out.push({
           scope: "scoreboard",
           name: sb,
+          ...(key ? { key } : {}),
           severity: f.severity,
-          message: `scoreboard "${sb}": ${String(f.params.field)} names agent "${agent}", which does not exist`,
-          fixes: [
-            {
-              label: `Delete scoreboard "${sb}"`,
-              action: "deleteComponent",
-              args: { kind: "scoreboard", name: sb },
-            },
-          ],
+          message: text(`scoreboard "${sb}": ${String(f.params.field)} names agent "${agent}", which does not exist`),
+          fixes: named
+            ? [
+                {
+                  label: `Delete scoreboard "${sb}"`,
+                  action: "deleteComponent",
+                  args: { kind: "scoreboard", name: sb },
+                },
+              ]
+            : [],
         });
         break;
       }
@@ -101,7 +116,7 @@ export function decosFromFindings(findings: Finding[]): StatusDeco[] {
           scope: "coverage",
           agent,
           severity: f.severity,
-          message: `coverage names agent "${agent}", which does not exist`,
+          message: text(`coverage names agent "${agent}", which does not exist`),
           fixes: [
             {
               label: `Delete coverage for "${agent}"`,
@@ -210,13 +225,16 @@ export function statusIdsTb(
     }
     // docs/08 R3 — scoreboard / coverage boxes are decorated like agents; at the
     // root level their problems bubble up onto Env, prefixed with the name
+    // a scoreboard carries the diagram id in `key` (the ONE scheme, `#n` on
+    // repeats); an entry the diagram does not draw has none and must NOT land on
+    // the first box of that name — it bubbles onto Env instead
     const [id, owner] =
       d.scope === "scoreboard"
-        ? [`sb:${d.name}`, d.name]
+        ? [d.key ? `sb:${d.key}` : null, d.name]
         : d.scope === "coverage"
           ? [`cov:${d.agent}`, `${d.agent}_cov`]
           : [`agent:${d.agent}`, d.agent];
-    if (presentIds.has(id)) {
+    if (id && presentIds.has(id)) {
       addTo(out, id, d.severity, d.message, d.fixes);
     } else if (presentIds.has("env")) {
       addTo(out, "env", d.severity, `${owner}: ${d.message}`, d.fixes);
@@ -243,11 +261,13 @@ export function statusIdsTree(decos: StatusDeco[]): Map<string, ElementStatus> {
     }
     const [id, owner] =
       d.scope === "scoreboard"
-        ? [`sb:${d.name}`, d.name]
+        ? [d.key ? `sb:${d.key}` : null, d.name] // undrawn: no row, Env only
         : d.scope === "coverage"
           ? [`cov:${d.agent}`, `${d.agent}_cov`]
           : [`agent:${d.agent}`, d.agent];
-    addTo(out, id, d.severity, d.message, d.fixes);
+    if (id) {
+      addTo(out, id, d.severity, d.message, d.fixes);
+    }
     addTo(out, "env", d.severity, `${owner}: ${d.message}`);
   }
   return out;

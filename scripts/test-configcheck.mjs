@@ -201,7 +201,7 @@ subenvs: [ { name: blk, config: blk.quickuvm.yaml } ]
   const sb = r.findings.filter((f) => f.kind === "sb-unknown-agent");
   assert.equal(sb.length, 1, "the cross-block scoreboard (blk.p / blk.q) is NOT checked here");
   assert.equal(sb[0].severity, "error");
-  assert.deepEqual(sb[0].params, { sb: "sbd", field: "monitor", agent: "ghost" });
+  assert.deepEqual(sb[0].params, { sb: "sbd", field: "monitor", agent: "ghost", named: 1, node: "sbd" });
   assert.ok(sb[0].span, "the span points at the offending entry");
   const cov = r.findings.filter((f) => f.kind === "cov-unknown-agent");
   assert.equal(cov.length, 1, "the plain `a` entry is fine, the rich `nobody` one is not");
@@ -221,6 +221,27 @@ analysis:
   assert.deepEqual(kinds(check(text, MODEL)).filter((k) => /unknown/.test(k)), []);
   const noModel = check(text.replace("monitor: b", "monitor: zz"), undefined);
   assert.deepEqual(kinds(noModel), ["sb-unknown-agent"], "a YAML-internal rule, model or not");
+});
+
+test("R3 (review): an UNNAMED scoreboard is reported as un-named, with the diagram id of its box", () => {
+  const r = check(
+    `dut: { name: soc_top }
+agents:
+  - { name: a, ports: { inputs: [ { name: din, width: 8 } ] } }
+analysis:
+  scoreboards:
+    - { name: sbd, source: a }
+    - { source: ghost }
+    - { monitor: ghost }
+`,
+    MODEL
+  );
+  const f = r.findings.filter((x) => x.kind === "sb-unknown-agent");
+  assert.equal(f.length, 2);
+  // #2 is unnamed: drawn as the SECOND `sbd` -> `sb:sbd#2`; a by-name delete must not be offered
+  assert.deepEqual(f[0].params, { sb: "sbd", field: "source", agent: "ghost", named: 0, node: "sbd#2" });
+  // #3 has no source: not drawn at all (no `node`), still reported
+  assert.deepEqual(f[1].params, { sb: "sbd", field: "monitor", agent: "ghost", named: 0 });
 });
 
 console.log(`\ntest-configcheck: ${passed} teste au trecut.`);
