@@ -535,10 +535,22 @@ coliziunea de nume.
   bubbles to the box, so selection and drag are unchanged. `tbRenameTarget` in
   `inspector-view.ts` is the ONE resolver for F2, the double-click and the
   menu (ghost, unnamed scoreboard, derived names → null), like `tbDeleteTarget`.
-  The webview carries the sidecar positions to the new ids BEFORE posting the
-  action (`agent:` + its `cov:`, and the agent's own level key
-  `tb:<config>|agent:<name>`): the renamed box has no seed otherwise and lands
-  wherever interactive ELK puts a new node (D21 total seeds pin it there).
+  The webview carries the sidecar positions to the new ids (`agent:` + its
+  `cov:` and `<if>.` flag, and the agent's own level key
+  `tb:<config>|agent:<name>`) on the RENDER that shows the new id
+  (`pendingRename` / `applyPendingRename`, before the seeds are read), then
+  moves the selection and posts it — not before posting the action: a refused
+  rename would leave orphan entries no invalidation cleans (`tb:` keys), and
+  the host's copy of the selection would point at an id that never appears.
+  Without a seed the renamed box lands wherever interactive ELK puts a new
+  node. Scoreboards are addressed by ORDINAL (`id: sb:x#2` →
+  `renameScoreboardAt`): resolving by label renamed the FIRST entry of that
+  name and swapped the seats (review finding). A VIP reference (`from_vip`)
+  is never offered: quick-uvm resolves it by entry name against the manifest.
+  The cascade also follows `tests[].sequence.agent` and a boundary agent's
+  `<agent>.<port>` endpoints (connections, cross-block scoreboards) — both
+  quick-uvm walls at generate. `cancelRename` runs the editor's cancel hook
+  BEFORE removing the input: a `blur` fired by the removal must not commit.
   Enter on a bad name keeps the editor (the first cut closed it, losing the
   typed text — caught in the harness); `render()` cancels an open editor (the
   DOM is rebuilt under it). The host checks the generated namespace (agents,

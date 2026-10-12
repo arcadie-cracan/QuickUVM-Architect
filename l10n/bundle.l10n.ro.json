@@ -180,5 +180,6 @@
   " ({0} references updated)": " ({0} referințe actualizate)",
   "QuickUVM Architect: {0} \"{1}\" renamed to \"{2}\"{3}.": "QuickUVM Architect: {0} „{1}\" redenumit în „{2}\"{3}.",
   "QuickUVM Architect: this configuration is composed as a subenv of another bench — the references there (<subenv>.{0}) are not updated; rename them in the parent config.": "QuickUVM Architect: această configurație e compusă ca subenv al altui bench — referințele de acolo (<subenv>.{0}) nu sunt actualizate; redenumește-le în config-ul părinte.",
-  "QuickUVM Architect: rename failed: {0}": "QuickUVM Architect: redenumirea a eșuat: {0}"
+  "QuickUVM Architect: rename failed: {0}": "QuickUVM Architect: redenumirea a eșuat: {0}",
+  "QuickUVM Architect: \"{0}\" is a VIP reference — its name is the manifest's; rename it in the VIP.": "QuickUVM Architect: „{0}\" e o referință VIP — numele e al manifestului; redenumește-l în VIP."
 }

@@ -690,6 +690,16 @@ export function removeAgent(text: string, name: string): string {
  * (`<subenv>.<old>`) live in another file and are not touched — the host warns
  * when the config is composed.
  */
+/** `<old>.<rest>` -> `<new>.<rest>` on one field: a prefixed endpoint
+ *  (`connections[].from/to`, a cross-block or boundary-agent scoreboard endpoint) */
+function retargetPrefix(m: YAMLMap, field: string, oldName: string, newName: string): void {
+  const v = m.get(field);
+  const prefix = `${oldName}.`;
+  if (typeof v === "string" && v.startsWith(prefix)) {
+    m.set(field, `${newName}.${v.slice(prefix.length)}`);
+  }
+}
+
 export function renameAgent(text: string, oldName: string, newName: string): string {
   if (oldName === newName) {
     return text;
@@ -713,6 +723,13 @@ export function renameAgent(text: string, oldName: string, newName: string): str
   }
   if (!target) {
     return text;
+  }
+  if (target.get("from_vip") !== undefined) {
+    // a VIP reference is resolved by its ENTRY name against the manifest's agents
+    // (`agent 'x': no agent 'x' in manifest`): its name is the VIP's, not ours
+    throw new Error(
+      `agent "${oldName}" is a VIP reference (from_vip): its name is the manifest's — rename it in the VIP`
+    );
   }
   target.set("name", newName);
   if (target.get("interface") === `${oldName}_if`) {
@@ -740,6 +757,10 @@ export function renameAgent(text: string, oldName: string, newName: string): str
         for (const f of ["source", "monitor"]) {
           if (it.get(f) === oldName) {
             it.set(f, newName);
+          } else {
+            // a BOUNDARY agent of a hybrid bench (quick-uvm >= 1.0) is addressed
+            // as `<agent>.<port>` in cross-block endpoints, like a subenv
+            retargetPrefix(it, f, oldName, newName);
           }
         }
       }
@@ -761,40 +782,69 @@ export function renameAgent(text: string, oldName: string, newName: string): str
       }
     }
   }
+  // tests[].sequence.agent (quick-uvm's TestSeqSel) names an agent too
+  const tests = doc.getIn(["tests"]);
+  if (isSeq(tests)) {
+    for (const t of tests.items) {
+      if (isMap(t)) {
+        const sel = t.get("sequence", true);
+        if (isMap(sel) && sel.get("agent") === oldName) {
+          sel.set("agent", newName);
+        }
+      }
+    }
+  }
+  // the boundary agent's ports as `connections` endpoints (`<agent>.<port>`)
+  const conns = doc.getIn(["connections"]);
+  if (isSeq(conns)) {
+    for (const c of conns.items) {
+      if (isMap(c)) {
+        retargetPrefix(c, "from", oldName, newName);
+        retargetPrefix(c, "to", oldName, newName);
+      }
+    }
+  }
   if (doc.getIn(["register_model", "bus_agent"]) === oldName) {
     doc.setIn(["register_model", "bus_agent"], newName);
   }
   return doc.toString(TO_STRING);
 }
 
-/** Renames a scoreboard (the FIRST entry of that name): a simple key, nothing
- *  else refers to it. Missing = the original text; a taken name throws. */
-export function renameScoreboard(text: string, oldName: string, newName: string): string {
-  if (oldName === newName) {
-    return text;
-  }
+/**
+ * Renames the scoreboard at `index` in `analysis.scoreboards`: a simple key,
+ * nothing else refers to it. By INDEX because the diagram addresses duplicate
+ * names by ordinal (`sb:x#2` is the second entry named `x`, and the one the
+ * user clicked). Out of range or the same name = the original text; a taken
+ * name throws.
+ */
+export function renameScoreboardAt(text: string, index: number, newName: string): string {
   const doc = parse(text);
   const sbs = doc.getIn(["analysis", "scoreboards"]);
   if (!isSeq(sbs)) {
     return text;
   }
-  let target: YAMLMap | null = null;
+  const target = sbs.items[index];
+  if (!isMap(target) || target.get("name") === newName) {
+    return text;
+  }
   for (const it of sbs.items) {
-    if (!isMap(it)) {
-      continue;
-    }
-    if (it.get("name") === newName) {
+    if (isMap(it) && it.get("name") === newName) {
       throw new Error(`scoreboard "${newName}" already exists in the configuration`);
     }
-    if (it.get("name") === oldName && !target) {
-      target = it;
-    }
-  }
-  if (!target) {
-    return text;
   }
   target.set("name", newName);
   return doc.toString(TO_STRING);
+}
+
+/** Renames the FIRST scoreboard named `oldName` (see `renameScoreboardAt`). */
+export function renameScoreboard(text: string, oldName: string, newName: string): string {
+  if (oldName === newName) {
+    return text;
+  }
+  const index = (parseQuvm(text).analysis?.scoreboards ?? []).findIndex(
+    (s) => s.name === oldName
+  );
+  return index < 0 ? text : renameScoreboardAt(text, index, newName);
 }
 
 /**
@@ -828,19 +878,12 @@ export function renameSubenv(text: string, oldName: string, newName: string): st
     return text;
   }
   target.set("name", newName);
-  const prefix = `${oldName}.`;
-  const retarget = (m: YAMLMap, field: string): void => {
-    const v = m.get(field);
-    if (typeof v === "string" && v.startsWith(prefix)) {
-      m.set(field, `${newName}.${v.slice(prefix.length)}`);
-    }
-  };
   const conns = doc.getIn(["connections"]);
   if (isSeq(conns)) {
     for (const c of conns.items) {
       if (isMap(c)) {
-        retarget(c, "from");
-        retarget(c, "to");
+        retargetPrefix(c, "from", oldName, newName);
+        retargetPrefix(c, "to", oldName, newName);
       }
     }
   }
@@ -848,8 +891,8 @@ export function renameSubenv(text: string, oldName: string, newName: string): st
   if (isSeq(sbs)) {
     for (const it of sbs.items) {
       if (isMap(it)) {
-        retarget(it, "source");
-        retarget(it, "monitor");
+        retargetPrefix(it, "source", oldName, newName);
+        retargetPrefix(it, "monitor", oldName, newName);
       }
     }
   }

@@ -187,15 +187,22 @@ mesajele tot aici, la implementare.
   editor; Escape cancels; leaving the field with a change applies. One resolver
   (`tbRenameTarget`, next to `tbDeleteTarget`) decides what can be renamed:
   agents, named scoreboards, subenvs — a ghost, an unnamed scoreboard and the
-  derived names (coverage `<agent>_cov`, the aggregates) cannot. The webview
-  sends `renameComponent {kind, name, newName}`, carries the sidecar positions
-  of the renamed ids (`agent:` + its `cov:`, `sb:`, `sub:`) and an agent's own
-  level (`tb:<config>|agent:<name>`) to the new ids through `layout/snapshot` —
-  the box keeps its seat — and moves the selection and the focus. The host
-  renames with the cascade (`renameAgent`: coverage bare or rich, scoreboard
-  endpoints, vseq steps, `register_model.bus_agent`, the agent's own
-  `<name>_if` / `<name>_seq_item` when conventional; `renameSubenv`:
-  `connections` and cross-block endpoints) and reports the references updated.
+  derived names (coverage `<agent>_cov`, the aggregates) cannot; nor can a VIP
+  reference (`from_vip` — its name is the manifest's) or a duplicate subenv
+  name. A scoreboard is addressed by ORDINAL (`id: sb:x#2` travels with the
+  action), so a duplicate renames its own entry. The webview sends
+  `renameComponent {kind, name, newName, id?}` and, on the render that shows
+  the new id, carries the sidecar positions of the renamed ids (`agent:` + its
+  `cov:` and `<if>.` flag, `sb:`, `sub:`) and an agent's own level
+  (`tb:<config>|agent:<name>`) to the new ids through `layout/snapshot` — the
+  box keeps its seat — and moves the selection (deferred on purpose: a refused
+  rename leaves no orphan entries). The host renames with the cascade
+  (`renameAgent`: coverage bare or rich, scoreboard endpoints bare and
+  `<agent>.<port>`, vseq steps, `tests[].sequence.agent`, `connections`
+  endpoints of a boundary agent, `register_model.bus_agent`, the agent's own
+  `<name>_if` / `<name>_seq_item` when conventional; `renameScoreboardAt`;
+  `renameSubenv`: `connections` and cross-block endpoints) and reports the
+  references updated.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
