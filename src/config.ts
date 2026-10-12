@@ -11,6 +11,7 @@ import { checkConfig, Finding, WIDTH_CODE } from "./configcheck";
 import { ProjectModel } from "./model";
 import { AGENT_PALETTE, OverlayConfig, PortRole, StatusDeco } from "./protocol";
 import { decosFromFindings } from "./status";
+import { changedSpan, minimalEdit, wholeLines } from "./textedit";
 import { agentPorts, QuvmConfig } from "./quickuvm";
 import { parseQuvm } from "./yamlops";
 import { newConfigText, topConfigPaths } from "./yamlops";
@@ -32,6 +33,48 @@ async function fileExists(uri: vscode.Uri): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** docs/08 R4 — a gesture's edit landed: the file and the span it changed
+ *  (offsets in the NEW text, widened to whole lines); the YAML link flashes it */
+export interface GestureEdit {
+  uri: vscode.Uri;
+  span: { start: number; end: number };
+}
+const gestureEmitter = new vscode.EventEmitter<GestureEdit>();
+export const onGestureApplied = gestureEmitter.event;
+
+/**
+ * Applies `newText` to `doc` as the MINIMAL edit (src/textedit.ts): only the
+ * changed span goes into the WorkspaceEdit, so the undo entry, the editor's
+ * view and the highlight all describe exactly what the gesture did. Shared by
+ * the active-config target (ConfigService) and the per-document target (the
+ * custom editor), so the two cannot disagree. Honors `quickuvm.autoSaveConfig`.
+ */
+export async function applyTextChange(
+  doc: vscode.TextDocument,
+  oldText: string,
+  newText: string
+): Promise<boolean> {
+  const e = minimalEdit(oldText, newText);
+  if (!e) {
+    return false; // a no-op text is no WorkspaceEdit at all
+  }
+  const edit = new vscode.WorkspaceEdit();
+  edit.replace(
+    doc.uri,
+    new vscode.Range(doc.positionAt(e.start), doc.positionAt(e.end)),
+    e.text
+  );
+  const ok = await vscode.workspace.applyEdit(edit);
+  if (!ok) {
+    return false;
+  }
+  if (autoSaveConfig()) {
+    await doc.save();
+  }
+  gestureEmitter.fire({ uri: doc.uri, span: wholeLines(newText, changedSpan(e)) });
+  return true;
 }
 
 export function autoSaveConfig(): boolean {
@@ -273,26 +316,15 @@ export class ConfigService implements vscode.Disposable {
       void vscode.window.showErrorMessage(vscode.l10n.t("QuickUVM Architect: {0}", String(e instanceof Error ? e.message : e)));
       return false;
     }
-    if (newText === oldText) {
-      return false;
-    }
-    const edit = new vscode.WorkspaceEdit();
-    edit.replace(
-      this.uri,
-      new vscode.Range(doc.positionAt(0), doc.positionAt(oldText.length)),
-      newText
-    );
-    const ok = await vscode.workspace.applyEdit(edit);
+    // docs/08 R4 — the MINIMAL edit (only the changed span) through the shared
+    // helper, so the undo entry and the highlight describe exactly what the
+    // gesture did. Opt-in `quickuvm.autoSaveConfig` lives in the helper: every
+    // gesture leaves the document dirty by default (the user decides), but the
+    // manifest, the U/M badges and quick-uvm itself all read the file from disk,
+    // so a forgotten save makes the tool disagree with the screen — saving on
+    // the user's behalf is a change of their editing contract, not a bug fix.
+    const ok = await applyTextChange(doc, oldText, newText);
     if (ok) {
-      // Opt-in `quickuvm.autoSaveConfig`: keep the DISK in step with the diagram.
-      // Every gesture leaves the document dirty by default (see the doc comment
-      // above — the user decides), but the manifest, the U/M badges and quick-uvm
-      // itself all read the file from disk, so a forgotten save makes the tool
-      // disagree with the screen. Off by default: saving on the user's behalf is
-      // a change of their editing contract, not a bug fix.
-      if (autoSaveConfig()) {
-        await doc.save();
-      }
       // synchronous, not debounced: callers read `current` right after apply
       // (checkDut after "Set this module as DUT" silently aborted on stale state —
       // a real regression caught during validation on common_cells)

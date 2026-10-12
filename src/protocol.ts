@@ -77,7 +77,10 @@ export type ActionKind =
   | "composeIntoParent"
   // drill into the composed block: opens the subenv's config with the default
   // editor (per-file TB diagram, slice 4)
-  | "openSubenvConfig";
+  | "openSubenvConfig"
+  // docs/08 R4: the "YAML" header button — the configuration as text, beside
+  // the diagram, focus kept on the diagram
+  | "openConfigBeside";
 
 // ---------------------------------------------------- the layout sidecar
 
@@ -169,7 +172,11 @@ export interface OverlayConfig {
 export type XprobeTarget =
   | { kind: "instance"; path: string }
   | { kind: "port"; module: string; port: string }
-  | { kind: "module"; module: string };
+  | { kind: "module"; module: string }
+  // docs/08 R4 — the caret in a `*.quickuvm.yaml` text editor: the TB element
+  // whose entry contains it (src/yamlmap.ts), lit on the verification view when
+  // its node is on the current level — a halo, never a navigation
+  | { kind: "tb"; id: string; focus: string };
 
 // ------------------------------------------------ the quick-uvm status decorations
 

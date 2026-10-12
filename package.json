@@ -179,6 +179,11 @@
         "category": "QuickUVM Architect"
       },
       {
+        "command": "quickuvm.openConfigBeside",
+        "title": "%cmd.openConfigBeside%",
+        "category": "QuickUVM Architect"
+      },
+      {
         "command": "quickuvm.openVerificationView",
         "title": "%cmd.openVerificationView%",
         "category": "QuickUVM Architect"
@@ -398,6 +403,17 @@
           "default": "manual",
           "description": "%config.seqItemStyle%"
         },
+        "quickuvm.openYamlBeside": {
+          "type": "string",
+          "enum": ["ask", "always", "never"],
+          "default": "ask",
+          "description": "%config.openYamlBeside%",
+          "enumDescriptions": [
+            "%config.openYamlBeside.ask%",
+            "%config.openYamlBeside.always%",
+            "%config.openYamlBeside.never%"
+          ]
+        },
         "quickuvm.hoverCrossProbe": {
           "type": "boolean",
           "default": true,
@@ -438,7 +454,9 @@
     "test:e2e": "node scripts/e2e-quickuvm.mjs",
     "vscode:prepublish": "npm run build",
     "test:tbtree": "node scripts/test-tbtree.mjs",
-    "test:navfind": "node scripts/test-navfind.mjs"
+    "test:navfind": "node scripts/test-navfind.mjs",
+    "test:textedit": "node scripts/test-textedit.mjs",
+    "test:yamlmap": "node scripts/test-yamlmap.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -7,7 +7,10 @@ import * as path from "path";
 import * as vscode from "vscode";
 import { Actions } from "./actions";
 import { Backend } from "./backend";
-import { ConfigService, WidthFixProvider } from "./config";
+import { ConfigService, onGestureApplied, WidthFixProvider } from "./config";
+import { postToConfigEditors } from "./customeditor";
+import { YamlLink } from "./yamllink";
+import { elementAtOffset } from "./yamlmap";
 import { DirtyConfigStatus } from "./dirtystatus";
 import { QuvmConfigEditor } from "./customeditor";
 import { Generator } from "./generate";
@@ -68,6 +71,11 @@ export function activate(context: vscode.ExtensionContext): void {
   const findDeco = new FindingDecorationProvider(() =>
     statusIdsTree(config.decorations)
   );
+  // docs/08 R4 — the diagram <-> YAML link: a gesture flashes the lines it
+  // changed in the visible text editors (or opens the file beside, per the
+  // `openYamlBeside` setting), a selected box reveals its entry, and the caret
+  // in the YAML lights the matching box
+  const yamlLink = new YamlLink();
   /** the status payload shared by the panel (getStatus), the sidebar replay and
    *  the live pushes — one shape, so the surfaces cannot disagree */
   const statusSnapshot = () => ({
@@ -86,7 +94,8 @@ export function activate(context: vscode.ExtensionContext): void {
   });
   context.subscriptions.push(
     log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
-    layout, genState, genDeco, resolve, findDeco,
+    layout, genState, genDeco, resolve, findDeco, yamlLink,
+    onGestureApplied((e) => void yamlLink.afterGesture(e.uri, e.span)),
     vscode.window.registerFileDecorationProvider(genDeco),
     vscode.window.registerFileDecorationProvider(findDeco)
   );
@@ -110,7 +119,7 @@ export function activate(context: vscode.ExtensionContext): void {
     // the editing gestures apply on the DOCUMENT (via TbEditTarget)
     vscode.window.registerCustomEditorProvider(
       QuvmConfigEditor.viewType,
-      new QuvmConfigEditor(context, layout, actions, log, resolve),
+      new QuvmConfigEditor(context, layout, actions, log, resolve, yamlLink),
       {
         webviewOptions: { retainContextWhenHidden: true },
         supportsMultipleEditorsPerDocument: false,
@@ -360,6 +369,10 @@ export function activate(context: vscode.ExtensionContext): void {
         case "generate":
           void generator.generate();
           break;
+        case "openConfigBeside":
+          // docs/08 R4 — the active configuration as text, beside the diagram
+          void vscode.commands.executeCommand("quickuvm.openConfigBeside");
+          break;
         case "openSource":
           break; // handled directly in the panel (it needs the model); does not reach here
         default: {
@@ -521,6 +534,14 @@ export function activate(context: vscode.ExtensionContext): void {
     onSelection: (ids, viewId, mode) => {
       if (viewId?.startsWith("tb:")) {
         revealTbNode(ids); // the verification (TB) view -> the verification tree
+        // docs/08 R4 — diagram -> text: the selected box reveals its YAML entry in
+        // the text editors that already show the file (never opens one)
+        const cfgUri = config.configUri;
+        if (cfgUri && ids.length === 1) {
+          void vscode.workspace
+            .openTextDocument(cfgUri)
+            .then((d) => yamlLink.revealElement(cfgUri, d.getText(), ids[0]));
+        }
       } else {
         revealInstance(ids, viewId, mode); // the RTL views -> the design hierarchy
       }
@@ -689,13 +710,33 @@ export function activate(context: vscode.ExtensionContext): void {
   let probeTimer: ReturnType<typeof setTimeout> | undefined;
   context.subscriptions.push(
     vscode.window.onDidChangeTextEditorSelection((e) => {
-      if (!DiagramPanel.current || e.textEditor.document.uri.scheme !== "file") {
+      const doc = e.textEditor.document;
+      if (doc.uri.scheme !== "file") {
+        return;
+      }
+      // docs/08 R4 — the caret in a QuickUVM YAML lights the matching box in the
+      // verification view (the panel AND the per-file editors): the same
+      // non-invasive halo as the SV cross-probing — no navigation, no selection
+      if (/\.quickuvm\.yaml$/i.test(doc.uri.fsPath)) {
+        clearTimeout(probeTimer);
+        probeTimer = setTimeout(() => {
+          const pos = e.selections[0]?.active ?? new vscode.Position(0, 0);
+          const el = elementAtOffset(doc.getText(), doc.offsetAt(pos));
+          const targets: XprobeTarget[] = el
+            ? [{ kind: "tb", id: el.id, focus: el.focus }]
+            : [];
+          DiagramPanel.current?.postProbe(targets);
+          postToConfigEditors(doc.uri, { v: 1, type: "probe/highlight", targets });
+        }, 150);
+        return;
+      }
+      if (!DiagramPanel.current) {
         return;
       }
       clearTimeout(probeTimer);
       probeTimer = setTimeout(() => {
         DiagramPanel.current?.postProbe(
-          targetsAt(e.textEditor.document, e.selections[0]?.active.line ?? 0)
+          targetsAt(doc, e.selections[0]?.active.line ?? 0)
         );
       }, 150);
     })
@@ -824,6 +865,9 @@ export function activate(context: vscode.ExtensionContext): void {
           DiagramPanel.show(context, panelDeps, t.path, mode);
         }
         return;
+      }
+      if (t.kind === "tb") {
+        return; // the YAML caret target (docs/08 R4) never reaches this command
       }
       const inst = instanceOf(t.module);
       if (!inst) {
@@ -962,6 +1006,16 @@ export function activate(context: vscode.ExtensionContext): void {
       }
     ),
 
+    vscode.commands.registerCommand("quickuvm.openConfigBeside", async () => {
+      // docs/08 R4 — the "YAML" header button: the configuration as TEXT beside
+      // the diagram, focus kept on the diagram; without a config, say why
+      const uri = config.configUri;
+      if (uri) {
+        await yamlLink.openBeside(uri);
+      } else {
+        await vscode.commands.executeCommand("quickuvm.openConfig");
+      }
+    }),
     vscode.commands.registerCommand("quickuvm.openConfig", async () => {
       const uri = config.configUri;
       if (uri) {

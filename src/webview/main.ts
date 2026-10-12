@@ -675,6 +675,12 @@ function renderHeader(inst: Instance, leafInside = false): void {
   ex.title = "Export view as SVG";
   ex.addEventListener("click", exportSvg);
   tgl.append(ex);
+  // docs/08 R4 — the configuration as TEXT beside the diagram (Android's
+  // "Split" view): the lines a gesture changes are highlighted there
+  const yml = h("button", "mbtn", "YAML");
+  yml.title = "Open the QuickUVM configuration beside the diagram";
+  yml.addEventListener("click", () => postAction("openConfigBeside", {}));
+  tgl.append(yml);
   head.append(tgl);
   updateGenChip(); // the generate status chip (docs/05)
 }
@@ -1646,9 +1652,19 @@ function probeCtx(): ProbeViewCtx {
 function applySelectionClasses(): void {
   // the halo is recomputed here (no cached Set is kept): the function runs
   // after each render/navigation, so the mapping always follows the current scene
-  const probe = new Set(
-    probeTargets.length ? probeIds(probeTargets, probeCtx()) : []
-  );
+  // docs/08 R4 — the YAML caret's target (`kind: "tb"`) maps straight onto the
+  // TB node id when that node is on the current level; the SV targets go
+  // through probeIds as before (they never touch the TB view)
+  const tbTargets = probeTargets.filter((t) => t.kind === "tb");
+  const svTargets = probeTargets.filter((t) => t.kind !== "tb");
+  const probe = new Set(svTargets.length ? probeIds(svTargets, probeCtx()) : []);
+  if (state.mode === "tb") {
+    for (const t of tbTargets) {
+      if (t.kind === "tb") {
+        probe.add(t.id);
+      }
+    }
+  }
   canvas.querySelectorAll<SVGElement>("[data-id]").forEach((g) => {
     g.classList.toggle("selected", state.selection.has(g.dataset.id ?? ""));
     g.classList.toggle("xprobe", probe.has(g.dataset.id ?? ""));
@@ -3844,6 +3860,12 @@ function renderTbHeader(scene: TbScene | null): void {
   ex.title = "Export view as SVG";
   ex.addEventListener("click", exportSvg);
   tgl.append(ex);
+  // docs/08 R4 — the configuration as TEXT beside the diagram (Android's
+  // "Split" view): the lines a gesture changes are highlighted there
+  const yml = h("button", "mbtn", "YAML");
+  yml.title = "Open the QuickUVM configuration beside the diagram";
+  yml.addEventListener("click", () => postAction("openConfigBeside", {}));
+  tgl.append(yml);
   head.append(tgl);
   updateGenChip(); // the generate status chip (docs/05)
 }
