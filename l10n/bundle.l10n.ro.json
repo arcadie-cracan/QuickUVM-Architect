@@ -181,5 +181,21 @@
   "QuickUVM Architect: {0} \"{1}\" renamed to \"{2}\"{3}.": "QuickUVM Architect: {0} „{1}\" redenumit în „{2}\"{3}.",
   "QuickUVM Architect: this configuration is composed as a subenv of another bench — the references there (<subenv>.{0}) are not updated; rename them in the parent config.": "QuickUVM Architect: această configurație e compusă ca subenv al altui bench — referințele de acolo (<subenv>.{0}) nu sunt actualizate; redenumește-le în config-ul părinte.",
   "QuickUVM Architect: rename failed: {0}": "QuickUVM Architect: redenumirea a eșuat: {0}",
-  "QuickUVM Architect: \"{0}\" is a VIP reference — its name is the manifest's; rename it in the VIP.": "QuickUVM Architect: „{0}\" e o referință VIP — numele e al manifestului; redenumește-l în VIP."
+  "QuickUVM Architect: \"{0}\" is a VIP reference — its name is the manifest's; rename it in the VIP.": "QuickUVM Architect: „{0}\" e o referință VIP — numele e al manifestului; redenumește-l în VIP.",
+  "new file": "fișier nou",
+  "QuickUVM Architect: nothing to change — {0}.": "QuickUVM Architect: nimic de schimbat — {0}.",
+  "Changes: {0}": "Schimbări: {0}",
+  "Preview changes": "Previzualizează schimbările",
+  "Cancel": "Renunță",
+  "Delete {0}": "Șterge {0}",
+  "Drop the covergroup content for {0}": "Golește conținutul covergroup-ului pentru {0}",
+  "Remove the test {0}": "Scoate testul {0}",
+  "Remove the register model": "Scoate modelul de registre",
+  "Remove the regression block": "Scoate blocul de regresie",
+  "Wire {0} connection(s) into {1}?": "Cablez {0} conexiune/conexiuni în {1}?",
+  "Wire": "Cablează",
+  "Wire connections from design": "Cablează conexiunile din design",
+  "QuickUVM Architect: the configuration changed while the preview was open — run the gesture again.": "QuickUVM Architect: configurația s-a schimbat cât timp previzualizarea era deschisă — reia gestul.",
+  "Create {0} subenv(s) in {1}, with {2} new block config(s)?": "Creez {0} subenv-uri în {1}, cu {2} config-uri de bloc noi?",
+  "Create": "Creează"
 }

@@ -41,6 +41,10 @@ class DocumentEditTarget implements TbEditTarget {
     return this.doc.uri;
   }
 
+  async readText(): Promise<string> {
+    return this.doc.getText();
+  }
+
   async apply(mutate: (text: string) => string): Promise<boolean> {
     const oldText = this.doc.getText();
     let newText: string;
