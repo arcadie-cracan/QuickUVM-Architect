@@ -238,6 +238,23 @@ mesajele tot aici, la implementare.
   CACHED manifest — the generator is never run for a card. The card leaves with
   the pointer (onto the card itself it stays, for its buttons), on a press, on a
   wheel and on every render (it is anchored to a box that is redrawn).
+- **Action palette** (docs/08 R17, Oct 2026): Ctrl+Space / Ctrl+/ (or the
+  "Actions" header button) opens a palette — the find box's UI, `.findbox.palette`
+  — of the actions that are LEGAL right now, recent ones first (GLSP's command
+  palette, Figma's quick actions): the selected element's own actions (the
+  context menu's items — `tbMenuItems` / `rtlMenuItemsFor`, the ONE list behind
+  both surfaces —, the R1 "+" tools, the R13 widgets' steps, the R15 card), the
+  Properties panel's ENABLED buttons (the panel is rendered into a detached
+  element with every section open — `InspectorCtx.allOpen` — and its `button.btn`
+  rows are collected under their heading, so the enabling rules stay in one
+  place), the applicable assistance proposals (not the ghosts: those are
+  all-or-nothing in the strip), and the view / config commands. Every row runs
+  exactly what its surface would — the same host action, the same confirmations
+  —; the palette adds no gesture of its own, and shows display names, never ids.
+  Typing filters with the Ctrl+F ranking (`findMatches`); with no query the
+  recent actions come first (`rankPalette` / `pushRecent` in `navfind.ts`,
+  recency persisted in the webview state as `paletteRecent`). Enter runs,
+  Escape closes, the arrows move. No protocol change.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU

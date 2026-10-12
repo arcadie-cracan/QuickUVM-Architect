@@ -605,6 +605,20 @@ coliziunea de nume.
   orphaned after the pointer had gone); a pinned card follows pan/zoom/drag
   (`repositionCard` in `applyTransform` and `dragReroute`); the dwell restarts
   only when the hovered BOX changes, not on every compartment crossing.
+- **Action palette (docs/08 R17)**: the palette owns NO legality rule — it
+  collects: `tbMenuItems(id)` / `rtlMenuItemsFor(el)` (the context menus,
+  refactored into builders so right-click and the palette cannot diverge),
+  `nodeToolsFor`, the node's `widgets`, and the Properties panel's enabled
+  `button.btn` rows from a DETACHED render (`inspectorCtx(root, allOpen=true)`
+  — `InspectorCtx.allOpen` opens every section; never set it for the visible
+  panel). That render sets the inspector module's `ctx` to the detached root;
+  harmless in the diagram webview (it has no `#inspector`), but the sidebar
+  webview (`properties.ts`) must never call it. A proposal row is offered one
+  by one EXCEPT the ghost (`materialize`) rows — those are all-or-nothing in
+  the strip. Labels are de-duplicated across surfaces (trailing "(…)" hints
+  stripped), so "Add scoreboard" from the panel and "+ scoreboard" from the
+  tools do not both appear. Recency (`paletteRecent`) rides in the webview
+  state next to `openSections` — `persistState` must keep writing it.
 
 ## Faza curentă
 
@@ -894,4 +908,7 @@ existing `editAgent`/`editScoreboard` actions; `TbNode.widgets` in
 hover card (YAML entry, owned files from the manifest, ●/U/M state, open
 generated code / YAML beside); `card/request` / `card/full`, the
 `openGeneratedCode` action, `ownedFilesFor` in `test:genstate`.
+**R17 (docs/08) is implemented** (Oct 2026): the contextual action palette
+(Ctrl+Space / Ctrl+/ / the "Actions" header button) — the legal actions for the
+selection, recent first; `rankPalette` / `pushRecent` in `test:navfind`.
 Planul complet: `docs/06-plan-mvp.md`.
