@@ -20,7 +20,8 @@ import {
   saveExportedSvg,
   setActiveExporter,
 } from "./panel";
-import type { ActionKind, HostMessage, LassoMode, WebviewMessage } from "./protocol";
+import type { ActionKind, HostMessage, LassoMode, ProposalApply, WebviewMessage } from "./protocol";
+import { ghostProposals } from "./proposals";
 import type { QuvmConfig } from "./quickuvm";
 import { parseQuvm } from "./yamlops";
 import type { LayoutStore } from "./sidecar";
@@ -114,12 +115,17 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
 
     const postConfig = (): void => {
       if (ready) {
+        const config = parseQuvm(document.getText());
+        const resolved = this.resolve?.resolvedFor(document.uri) ?? null;
+        void webview.postMessage({ v: 1, type: "config/full", configPath, config, resolved });
+        // docs/08 R12 — the per-file editor has no model: only the inferred
+        // components can be proposed here (materialise them into THIS document)
         void webview.postMessage({
           v: 1,
-          type: "config/full",
-          configPath,
-          config: parseQuvm(document.getText()),
-          resolved: this.resolve?.resolvedFor(document.uri) ?? null,
+          type: "proposals/full",
+          viewId,
+          mode: "tb",
+          items: ghostProposals(config, resolved),
         });
       }
     };
@@ -353,6 +359,17 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         // drill into subenv from the per-file editor: the config path relative
         // to the DOCUMENT (the H1 nesting descends level by level through files)
         void this.actions.openSubenvConfig(s("config"), target);
+        break;
+      case "applyProposals":
+        // docs/08 R12 — only the materialize rows exist in this editor (no model)
+        void this.actions.applyProposals(
+          undefined,
+          (Array.isArray(args.items) ? (args.items as ProposalApply[]) : []).filter(
+            (i) => i.kind === "materialize"
+          ),
+          target.configUri ? this.resolve?.resolvedFor(target.configUri) ?? null : null,
+          target
+        );
         break;
       case "openConfigBeside":
         // docs/08 R4 — THIS document as text, beside its diagram

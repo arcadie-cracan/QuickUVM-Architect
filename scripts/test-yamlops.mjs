@@ -1255,6 +1255,26 @@ test("addAgentPorts: appends on each side, skips what the agent has, no-op stays
   assert.equal(ops.addAgentPorts(t2, "drv", { inputs: [{ name: "en", width: 1 }], outputs: [] }), t2);
   assert.throws(() => ops.addAgentPorts(t2, "nope", { inputs: [{ name: "x", width: 1 }], outputs: [] }), /nope/);
 });
+test("materializeAnalysis: writes the kept inferred set, {} when nothing is kept, no-op on a declared bench", () => {
+  const t = ops.createAgent(ops.newConfigText("demo"), {
+    name: "pkt", inputs: [{ name: "din", width: 8 }], outputs: [],
+  });
+  const both = ops.materializeAnalysis(t, { scoreboards: [{ name: "sbd", source: "pkt" }], coverage: ["pkt"] });
+  const cfg = ops.parseQuvm(both);
+  assert.deepEqual(cfg.analysis.scoreboards, [{ name: "sbd", source: "pkt" }]);
+  assert.deepEqual(cfg.analysis.coverage, ["pkt"]);
+  assert.match(both, /- \{ name: sbd, source: pkt \}/, "flow style, like addScoreboard");
+  assert.match(both, /coverage: \[ pkt \]/, "flow style, like addCoverage");
+  // the sharp edge of docs/07: nothing kept = declared mode with nothing wired
+  const none = ops.materializeAnalysis(t, { scoreboards: [], coverage: [] });
+  assert.match(none, /analysis: \{\}/);
+  assert.deepEqual(ops.parseQuvm(none).analysis, {});
+  // the other member of a pair stays absent (it is no longer generated)
+  const sbOnly = ops.parseQuvm(ops.materializeAnalysis(t, { scoreboards: [{ name: "sbd", source: "pkt", monitor: "rsp", match: "out_of_order" }], coverage: [] }));
+  assert.deepEqual(sbOnly.analysis, { scoreboards: [{ name: "sbd", source: "pkt", monitor: "rsp", match: "out_of_order" }] });
+  // declared already: byte-identical, no phantom edit
+  assert.equal(ops.materializeAnalysis(both, { scoreboards: [], coverage: [] }), both);
+});
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

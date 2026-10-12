@@ -6,6 +6,8 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { Actions } from "./actions";
+import { proposalsFor } from "./proposals";
+import type { ProposalApply } from "./protocol";
 import { Backend } from "./backend";
 import { ConfigService, onGestureApplied, WidthFixProvider } from "./config";
 import { postToConfigEditors } from "./customeditor";
@@ -226,6 +228,14 @@ export function activate(context: vscode.ExtensionContext): void {
           break;
         case "addPinsToAgent":
           void actions.addPinsToAgent(target, String(args.agent ?? ""), pins);
+          break;
+        case "applyProposals":
+          // docs/08 R12 — the checked proposals, in order, through the flows above
+          void actions.applyProposals(
+            target,
+            Array.isArray(args.items) ? (args.items as ProposalApply[]) : [],
+            resolve.current
+          );
           break;
         case "createAgentFromIface":
           void actions.createAgentFromIface(target, String(args.port ?? ""));
@@ -516,6 +526,9 @@ export function activate(context: vscode.ExtensionContext): void {
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
     getStatus: () => statusSnapshot(),
+    // docs/08 R12 — the designer-assistance proposals of the view the panel shows
+    getProposals: (viewId, mode) =>
+      proposalsFor(model, viewId, mode, config.configUri ? config.current : null, resolve.current),
     layout: {
       get: () => layout.sidecar,
       positionsSnapshotted: (v, nodes) => layout.positionsSnapshotted(v, nodes),

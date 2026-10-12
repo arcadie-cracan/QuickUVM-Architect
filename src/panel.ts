@@ -8,6 +8,7 @@ import { resolveLocPath } from "./filelistops";
 import { Loc, ProjectModel } from "./model";
 import type { QuvmConfig } from "./quickuvm";
 import type { ResolvedConfig } from "./resolved";
+import type { ProposalSet } from "./protocol";
 import {
   ActionKind,
   GenerateStatus,
@@ -60,6 +61,8 @@ export interface PanelDeps {
     genMissing: string[];
     genStale: string[];
   };
+  /** docs/08 R12 — the designer-assistance proposals of a view (src/proposals.ts) */
+  getProposals?: (viewId: string, mode: ViewMode | undefined) => ProposalSet | null;
   /** the layout sidecar; absent only in tests */
   layout?: LayoutDeps;
   /** the configuration actions; openSource stays handled in the panel */
@@ -193,6 +196,7 @@ export class DiagramPanel {
   postModel(model: ProjectModel): void {
     if (this.ready) {
       this.post({ v: 1, type: "model/full", model });
+      this.postProposals();
     }
   }
 
@@ -211,6 +215,7 @@ export class DiagramPanel {
   postOverlay(overlay: OverlayConfig | null): void {
     if (this.ready) {
       this.post({ v: 1, type: "overlay/config", ...(overlay ?? EMPTY_OVERLAY) });
+      this.postProposals();
     }
   }
 
@@ -221,6 +226,19 @@ export class DiagramPanel {
       const c = this.deps.getConfig?.();
       if (c) {
         this.post({ v: 1, type: "config/full", ...c });
+      }
+      this.postProposals();
+    }
+  }
+
+  /** docs/08 R12 — the designer-assistance strip follows the view the panel
+   *  shows: recomputed on the host after every model/overlay/config change and
+   *  on every view change (an empty set clears the strip) */
+  postProposals(): void {
+    if (this.ready && this.currentView && this.deps.getProposals) {
+      const p = this.deps.getProposals(this.currentView, this.currentMode);
+      if (p) {
+        this.post({ v: 1, type: "proposals/full", ...p });
       }
     }
   }
@@ -314,6 +332,7 @@ export class DiagramPanel {
     this.panel.title = `QuickUVM Architect — ${viewId}`;
     if (this.ready) {
       this.post({ v: 1, type: "view/show", viewId, mode });
+      this.postProposals();
       if (select?.length) {
         // reveal from the tree: the selection is applied after view/show — the render
         // triggered by view/show draws it (state.selection persists)
@@ -354,6 +373,7 @@ export class DiagramPanel {
           }
           this.pendingView = undefined;
         }
+        this.postProposals();
         if (this.pendingTbNav) {
           this.post({ v: 1, type: "tb/navigate", ...this.pendingTbNav });
           this.pendingTbNav = undefined;
@@ -393,6 +413,7 @@ export class DiagramPanel {
         // the top's symbol (root) from its schematic (the instance node)
         this.currentView = m.instancePath;
         this.currentMode = m.mode;
+        this.postProposals(); // the strip follows the drill
         this.panel.title = `QuickUVM Architect — ${m.instancePath}`;
         this.deps.onSelection?.([], m.instancePath, m.mode);
         break;
@@ -479,6 +500,7 @@ export function diagramHtml(
 <body>
 <div id="banner" hidden></div>
 <header id="head"></header>
+<div id="assist" hidden></div>
 <!-- No inspector aside: the ONE inspector is the sidebar "Properties" view, so the
      canvas gets the full width of the editor. The webview's renderInspectorHere is
      a no-op without #inspector (guarded, and covered by test:webview-load). -->
