@@ -77,7 +77,10 @@ export type ActionKind =
   | "composeIntoParent"
   // drill into the composed block: opens the subenv's config with the default
   // editor (per-file TB diagram, slice 4)
-  | "openSubenvConfig";
+  | "openSubenvConfig"
+  // docs/08 R4: the "YAML" header button — the configuration as text, beside
+  // the diagram, focus kept on the diagram
+  | "openConfigBeside";
 
 // ---------------------------------------------------- the layout sidecar
 
@@ -169,17 +172,36 @@ export interface OverlayConfig {
 export type XprobeTarget =
   | { kind: "instance"; path: string }
   | { kind: "port"; module: string; port: string }
-  | { kind: "module"; module: string };
+  | { kind: "module"; module: string }
+  // docs/08 R4 — the caret in a `*.quickuvm.yaml` text editor: the TB element
+  // whose entry contains it (src/yamlmap.ts), lit on the verification view when
+  // its node is on the current level — a halo, never a navigation
+  | { kind: "tb"; id: string; focus: string };
 
 // ------------------------------------------------ the quick-uvm status decorations
 
 /** the SEMANTIC target of a status decoration (docs/05, phase 4): the webview
  *  maps it onto the ids of the current view (statusIdsRtl/statusIdsTb, src/status.ts).
  *  The messages are in English — the webview is monolingual in the MVP (D19). */
+/** docs/08 R3 — a repair the webview can offer for a finding: the SAME host
+ *  action a palette button would send, with its args already filled in. The
+ *  host confirms destructive ones (deleteComponent) exactly as it does today. */
+export interface StatusFix {
+  label: string;
+  action: ActionKind;
+  args: Record<string, unknown>;
+}
+
 export type StatusDeco =
-  | { scope: "port"; port: string; severity: StatusSeverity; message: string }
-  | { scope: "agent"; agent: string; severity: StatusSeverity; message: string }
-  | { scope: "env"; severity: StatusSeverity; message: string };
+  | { scope: "port"; port: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  | { scope: "agent"; agent: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  // docs/08 R3 — an analysis endpoint that names no agent of the config: the
+  // scoreboard / coverage box gets a broken input and an error badge
+  // `name` is the entry as written (`sbd` when unnamed); `key` is the diagram id
+  // suffix (`sbd#2` on a repeated name), absent when the entry is not drawn
+  | { scope: "scoreboard"; name: string; key?: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  | { scope: "coverage"; agent: string; severity: StatusSeverity; message: string; fixes?: StatusFix[] }
+  | { scope: "env"; severity: StatusSeverity; message: string; fixes?: StatusFix[] };
 
 export type StatusSeverity = "error" | "warning";
 

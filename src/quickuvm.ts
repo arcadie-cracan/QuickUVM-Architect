@@ -234,3 +234,50 @@ export function agentPorts(agent: QuvmAgent): Map<string, number> {
   }
   return out;
 }
+
+/** the verification-view identity of one `analysis.scoreboards` entry */
+export interface ScoreboardNode {
+  /** `sb:<name|sbd>` (local, drawn in Env) or `xsb:<name>` (cross-block, drawn at
+   *  the testbench level); repeated names get `#2`, `#3`, … in order */
+  id: string;
+  cross: boolean;
+}
+
+/**
+ * docs/08 — the node id of EACH `analysis.scoreboards` entry, by index, or null
+ * when the entry is not drawn (no `source`; a cross-block one without a name).
+ * The single scheme behind buildTbScene, buildTbTree, checkConfig, the status
+ * mapping and the YAML map: four places used to re-derive it and disagreed
+ * (the badge on one box, the broken stub on another — the merge review of the
+ * R1–R5 sprint). Local = has a `source` and is not cross-block.
+ */
+export function scoreboardNodeIds(config: QuvmConfig): (ScoreboardNode | null)[] {
+  const subenvs = new Set(
+    (config.subenvs ?? []).map((s) => s.name).filter((n): n is string => Boolean(n))
+  );
+  const usedSb = new Set<string>();
+  const usedXsb = new Set<string>();
+  return (config.analysis?.scoreboards ?? []).map((sb) => {
+    if (isCrossBlockSb(sb, subenvs)) {
+      if (!sb.name) {
+        return null;
+      }
+      let id = `xsb:${sb.name}`;
+      for (let n = 2; usedXsb.has(id); n++) {
+        id = `xsb:${sb.name}#${n}`;
+      }
+      usedXsb.add(id);
+      return { id, cross: true };
+    }
+    if (!sb.source) {
+      return null;
+    }
+    const base = `sb:${sb.name ?? "sbd"}`;
+    let id = base;
+    for (let n = 2; usedSb.has(id); n++) {
+      id = `${base}#${n}`;
+    }
+    usedSb.add(id);
+    return { id, cross: false };
+  });
+}

@@ -8,6 +8,8 @@
 
 import { Document, isMap, isSeq } from "yaml";
 import type { ProjectModel } from "./model";
+import { coveredAgent } from "./coverage";
+import { isCrossBlockSb, scoreboardNodeIds } from "./quickuvm";
 import type { QuvmConfig } from "./quickuvm";
 
 /** the prefix of the diagnostic code that carries the width quick-fix */
@@ -24,7 +26,12 @@ export type FindingKind =
   | "width-mismatch"
   /** port both waived (dut.unverified_ports) and mapped to an agent — {port, agent};
    *  quick-uvm 1.0 rejects the combination at generate, so the severity is error */
-  | "ignored-and-mapped";
+  | "ignored-and-mapped"
+  /** analysis.scoreboards[i].{source|monitor} names no agent of this config —
+   *  {sb, field, agent}; quick-uvm refuses it only at generate (docs/08 R3) */
+  | "sb-unknown-agent"
+  /** an analysis.coverage entry names no agent of this config — {agent} */
+  | "cov-unknown-agent";
 
 export interface Finding {
   kind: FindingKind;
@@ -157,5 +164,56 @@ export function checkConfig(
       });
     }
   }
+  // docs/08 R3 — analysis endpoints that name no agent of THIS config. quick-uvm
+  // refuses them, but only at generate; here the scoreboard / coverage box gets a
+  // broken input stub and an error badge, with the repair one click away. The
+  // cross-block endpoints (`<subenv>.<agent>`) live in other files — not checked.
+  const agentNames = new Set(
+    agents.map((a) => a.name).filter((n): n is string => Boolean(n))
+  );
+  const subenvNames = new Set(
+    (cfg.subenvs ?? []).map((s) => s.name).filter((n): n is string => Boolean(n))
+  );
+  const sbsNode = ydoc.getIn(["analysis", "scoreboards"]);
+  const sbIds = scoreboardNodeIds(cfg);
+  (cfg.analysis?.scoreboards ?? []).forEach((sb, i) => {
+    if (isCrossBlockSb(sb, subenvNames)) {
+      return;
+    }
+    const node = isSeq(sbsNode) ? sbsNode.items[i] : undefined;
+    for (const field of ["source", "monitor"] as const) {
+      const agent = sb[field];
+      if (agent && !agentNames.has(agent)) {
+        const drawn = sbIds[i];
+        findings.push({
+          kind: "sb-unknown-agent",
+          span: spanOf(isMap(node) ? node.get(field, true) : undefined) ?? spanOf(node),
+          severity: "error",
+          // `sb` names the entry for the message; `node` is the diagram id of the
+          // box (the ONE scheme, `#n` on repeated names; absent when the entry is
+          // not drawn); `named` says whether a by-name repair can target it
+          params: {
+            sb: sb.name ?? "sbd",
+            field,
+            agent,
+            named: sb.name ? 1 : 0,
+            ...(drawn ? { node: drawn.id.slice("sb:".length) } : {}),
+          },
+        });
+      }
+    }
+  });
+  const covNode = ydoc.getIn(["analysis", "coverage"]);
+  (cfg.analysis?.coverage ?? []).forEach((entry, i) => {
+    const agent = coveredAgent(entry);
+    if (agent && !agentNames.has(agent)) {
+      findings.push({
+        kind: "cov-unknown-agent",
+        span: spanOf(isSeq(covNode) ? covNode.items[i] : undefined),
+        severity: "error",
+        params: { agent },
+      });
+    }
+  });
   return { findings, orphans };
 }

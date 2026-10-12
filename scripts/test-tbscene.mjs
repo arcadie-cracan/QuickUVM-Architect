@@ -19,6 +19,17 @@ await esbuild.build({
   logLevel: "silent",
 });
 const { buildTbScene } = await import(pathToFileURL(outFile));
+// the ONE scoreboard id scheme lives in the pure quickuvm module
+const outQ = join(outDir, "quickuvm.mjs");
+await esbuild.build({
+  entryPoints: ["src/quickuvm.ts"],
+  outfile: outQ,
+  bundle: true,
+  format: "esm",
+  platform: "node",
+  logLevel: "silent",
+});
+const { scoreboardNodeIds } = await import(pathToFileURL(outQ));
 
 let passed = 0;
 function test(name, fn) {
@@ -379,6 +390,84 @@ test("ghost: a live `analysis:` key kills the ghosts even if resolve is stale", 
 test("ghost: ghosts live at the Env level only, not at the testbench root", () => {
   const s = buildTbScene(IMPLICIT, "", null, RESOLVED_IMPLICIT);
   assert.deepEqual(s.nodes.map((n) => n.id).sort(), ["dut", "env"]);
+});
+
+// --- R2 (docs/08): the canonical UVM TLM glyphs on the ports ---------------
+// square = port (producer), circle = export/imp (consumer), diamond = analysis
+// port — the shape carries the distinction, the label no longer has a "◆" suffix.
+
+test("R2: at the Env level the agent's ap is a diamond, sb/cov inputs are circles", () => {
+  const s = buildTbScene(CFG, "env", null);
+  const ap = nodeById(s, "agent:cmd").ports.find((p) => p.port === "ap");
+  assert.equal(ap.glyph, "analysis");
+  assert.equal(ap.label, "ap", "no text suffix: the glyph IS the vocabulary");
+  const sb = nodeById(s, "sb:sbd");
+  assert.equal(sb.ports.find((p) => p.port === "source").glyph, "export");
+  assert.equal(sb.ports.find((p) => p.port === "monitor").glyph, "export");
+  assert.equal(nodeById(s, "cov:cmd").ports.find((p) => p.port === "ap").glyph, "export");
+});
+
+test("R2: inside the agent, sequencer export / driver port / monitor analysis", () => {
+  const s = buildTbScene(CFG, "agent:cmd", null);
+  assert.equal(nodeById(s, "u.sequencer").ports.find((p) => p.port === "seq").glyph, "export");
+  assert.equal(nodeById(s, "u.driver").ports.find((p) => p.port === "seq").glyph, "port");
+  assert.equal(nodeById(s, "u.monitor").ports.find((p) => p.port === "ap").glyph, "analysis");
+  // interfaces and sequencer references are NOT TLM ports: no glyph
+  assert.equal(nodeById(s, "u.driver").ports.find((p) => p.port === "if").glyph, null);
+  const ap = s.boundary.find((b) => b.id === "<ap>");
+  assert.equal(ap.glyph, "analysis");
+  assert.equal(ap.label, "ap");
+  assert.equal(s.boundary.find((b) => b.id === "<if>").glyph ?? null, null);
+});
+
+test("R2: a ghost's input carries the same export circle as a declared one", () => {
+  const s = buildTbScene(IMPLICIT, "env", null, RESOLVED_IMPLICIT);
+  assert.equal(nodeById(s, "sb:sbd").ports[0].glyph, "export");
+  assert.equal(nodeById(s, "cov:pkt").ports[0].glyph, "export");
+});
+
+// --- R3 (docs/08): an endpoint naming no agent is a BROKEN input --------------
+test("R3: a scoreboard/coverage endpoint naming an unknown agent gets a broken port", () => {
+  const cfg = {
+    ...CFG,
+    analysis: {
+      coverage: ["cmd", "nobody"],
+      scoreboards: [{ name: "sbd", source: "cmd", monitor: "ghost" }],
+    },
+  };
+  const s = buildTbScene(cfg, "env", null);
+  const sb = nodeById(s, "sb:sbd");
+  assert.ok(!sb.ports.find((p) => p.port === "source").broken, "the known source is whole");
+  assert.equal(sb.ports.find((p) => p.port === "monitor").broken, true);
+  assert.ok(!s.edges.some((e) => e.target === "sb:sbd" && e.targetPort === "sb:sbd.monitor"),
+    "no wire can be drawn to a missing agent — the stub says so instead");
+  assert.equal(nodeById(s, "cov:nobody").ports[0].broken, true);
+  assert.ok(!nodeById(s, "cov:cmd").ports[0].broken);
+  // the healthy fixture has no broken port anywhere
+  const ok = buildTbScene(CFG, "env", null);
+  assert.ok(ok.nodes.every((n) => n.ports.every((p) => !p.broken)));
+});
+
+// --- review: ONE scoreboard id scheme, shared with the tree, checkConfig, yamlmap
+test("review: the scene's scoreboard ids are exactly scoreboardNodeIds (local + cross, duplicates)", () => {
+  const cfg = {
+    ...CFG,
+    subenvs: [{ name: "blk", config: "blk.quickuvm.yaml" }, { name: "blk2", config: "b2.quickuvm.yaml" }],
+    analysis: {
+      scoreboards: [
+        { source: "cmd" },
+        { name: "x", source: "blk.a", monitor: "blk2.b" },
+        { source: "rsp" },
+        { monitor: "cmd" },
+        { name: "x", source: "blk2.b", monitor: "blk.a" },
+      ],
+    },
+  };
+  const env = buildTbScene(cfg, "env", null).nodes.filter((n) => n.kind === "tbsb").map((n) => n.id);
+  assert.deepEqual(env, ["sb:sbd", "sb:sbd#2", "xsb:x", "xsb:x#2"],
+    "local then cross-block, each numbered on repeats; the source-less entry is not drawn");
+  const ids = scoreboardNodeIds(cfg).map((n) => n && n.id);
+  assert.deepEqual(ids, ["sb:sbd", "xsb:x", "sb:sbd#2", null, "xsb:x#2"]);
 });
 
 console.log(`\ntest-tbscene: ${passed} tests passed.`);

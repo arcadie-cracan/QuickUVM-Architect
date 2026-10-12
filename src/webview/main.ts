@@ -29,6 +29,16 @@ import type { TbScene } from "./tbscene";
 import { buildTbScene } from "./tbscene";
 import { drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
 import { el, measurer, SVG_NS } from "./svg";
+import {
+  findMatches,
+  NavHistory,
+  QuickMarks,
+  rtlParentPath,
+  tbParentFocus,
+  unionBounds,
+  type FindItem,
+  type Rect,
+} from "./navfind";
 
 declare function acquireVsCodeApi(): {
   postMessage(message: unknown): void;
@@ -60,6 +70,7 @@ const state: State = {
   configPath: null,
   childAgents: {},
   resolved: null,
+  statusDecos: [],
   tbFocus: "",
   tx: 0,
   ty: 0,
@@ -231,6 +242,7 @@ function selectPins(names: string[]): void {
  * exactly these functions.
  */
 function renderInspectorHere(): void {
+  renderNodeTools(); // docs/08 R1: a (de)selection changes which node gets the "+" strip
   if (!inspector) {
     return;
   }
@@ -358,6 +370,7 @@ window.addEventListener("message", (e: MessageEvent) => {
     case "status/decorations":
       // the quick-uvm status decorations (docs/05): badges + generate chip
       statusDecos = m.decos;
+      state.statusDecos = m.decos; // the Properties panel lists them too (R3)
       genStatus = m.generate;
       genUnsaved = new Set(m.genUnsaved);
       genMissing = new Set(m.genMissing);
@@ -649,7 +662,7 @@ function renderHeader(inst: Instance, leafInside = false): void {
     tgl.append(tb);
   }
   const fitBtn = h("button", "mbtn", "⛶");
-  fitBtn.title = "Fit to window (F)";
+  fitBtn.title = "Fit to window (F / Home) — G fits the selection";
   fitBtn.addEventListener("click", fitView);
   tgl.append(fitBtn);
   if (state.mode === "schematic") {
@@ -662,6 +675,12 @@ function renderHeader(inst: Instance, leafInside = false): void {
   ex.title = "Export view as SVG";
   ex.addEventListener("click", exportSvg);
   tgl.append(ex);
+  // docs/08 R4 — the configuration as TEXT beside the diagram (Android's
+  // "Split" view): the lines a gesture changes are highlighted there
+  const yml = h("button", "mbtn", "YAML");
+  yml.title = "Open the QuickUVM configuration beside the diagram";
+  yml.addEventListener("click", () => postAction("openConfigBeside", {}));
+  tgl.append(yml);
   head.append(tgl);
   updateGenChip(); // the generate status chip (docs/05)
 }
@@ -1051,6 +1070,7 @@ function applyTransform(): void {
     `translate(${state.tx},${state.ty}) scale(${state.k})`
   );
   updateMinimap();
+  positionNodeTools(); // docs/08 R1: the "+" strip rides along with its node
 }
 
 interface Bounds {
@@ -1430,9 +1450,15 @@ let genStatus: GenerateStatus | null = null;
 /** ⚠/✕ badge in the top-right corner of each targeted element, with the messages in
  *  the tooltip; idempotent (removes the old badges), run after each render
  *  and at status/decorations */
+/** docs/08 R3 — the current view's element statuses (badge, context menu and
+ *  the problems list read the SAME map, so none of them can disagree) */
+let statusByElement: Map<string, ElementStatus> = new Map();
+
 function applyStatusBadges(): void {
+  renderNodeTools(); // docs/08 R1: every render rebuilds the DOM the strip is anchored to
   canvas.querySelectorAll(".status-badge").forEach((b) => b.remove());
   if (!statusDecos.length) {
+    statusByElement = new Map();
     return;
   }
   let map: Map<string, ElementStatus>;
@@ -1458,6 +1484,7 @@ function applyStatusBadges(): void {
           : [],
     });
   }
+  statusByElement = map;
   canvas.querySelectorAll<SVGGraphicsElement>("[data-id]").forEach((g) => {
     const st = map.get(g.dataset.id ?? "");
     if (!st) {
@@ -1473,6 +1500,9 @@ function applyStatusBadges(): void {
     const cy = bb.y;
     const badge = el("g", { class: `status-badge sev-${st.severity}` });
     badge.append(
+      // docs/08 R3 — an invisible, larger hit area: a 14px badge is a hard target
+      // for a click (Figma's hit-area lesson); the visible circle stays small
+      el("circle", { class: "hit", cx: String(cx), cy: String(cy), r: "12" }),
       el("circle", { cx: String(cx), cy: String(cy), r: "7" }),
       el(
         "text",
@@ -1481,6 +1511,15 @@ function applyStatusBadges(): void {
       ),
       el("title", {}, st.messages.join("\n"))
     );
+    // docs/08 R3 — the badge is the wrench: click = the problems + their repairs
+    // (Cameo's yellow element with a solver on its toolbar). stopPropagation so the
+    // press is not a drag start / selection click on the node underneath.
+    const eid = g.dataset.id ?? "";
+    badge.addEventListener("pointerdown", (ev) => {
+      ev.stopPropagation();
+      ev.preventDefault();
+      openCtxMenu(ev.clientX, ev.clientY, problemItems(eid));
+    });
     g.append(badge);
   });
 }
@@ -1613,9 +1652,19 @@ function probeCtx(): ProbeViewCtx {
 function applySelectionClasses(): void {
   // the halo is recomputed here (no cached Set is kept): the function runs
   // after each render/navigation, so the mapping always follows the current scene
-  const probe = new Set(
-    probeTargets.length ? probeIds(probeTargets, probeCtx()) : []
-  );
+  // docs/08 R4 — the YAML caret's target (`kind: "tb"`) maps straight onto the
+  // TB node id when that node is on the current level; the SV targets go
+  // through probeIds as before (they never touch the TB view)
+  const tbTargets = probeTargets.filter((t) => t.kind === "tb");
+  const svTargets = probeTargets.filter((t) => t.kind !== "tb");
+  const probe = new Set(svTargets.length ? probeIds(svTargets, probeCtx()) : []);
+  if (state.mode === "tb") {
+    for (const t of tbTargets) {
+      if (t.kind === "tb") {
+        probe.add(t.id);
+      }
+    }
+  }
   canvas.querySelectorAll<SVGElement>("[data-id]").forEach((g) => {
     g.classList.toggle("selected", state.selection.has(g.dataset.id ?? ""));
     g.classList.toggle("xprobe", probe.has(g.dataset.id ?? ""));
@@ -2360,6 +2409,447 @@ new ResizeObserver(onViewportResize).observe(
 );
 window.addEventListener("resize", onViewportResize);
 
+// ------------------------------------------ "+" affordances (docs/08 R1)
+//
+// Creation at the point of attention: hovering (or selecting) an agent shows a
+// small strip above its box — "+ scoreboard", "+ coverage" — that runs the SAME
+// add actions as the sidebar palette, with this agent already filled in; the Env
+// box at the root offers the three bench-level adds. The YAML mutation does not
+// move, only the trigger does (Kaoto's hover "+", draw.io's hover arrows, Visual
+// Paradigm's resource catalog). A ghost gets no strip: there is nothing in the
+// YAML to add to. "+ probe" is not here on purpose — a probe is born from a NET
+// in the schematic view (createProbe), the TB view has no net to point at.
+
+let nodeTools: HTMLElement | null = null;
+/** the node under the pointer (hover wins over the selection) */
+let hoverToolsId: string | null = null;
+let toolsHideTimer: ReturnType<typeof setTimeout> | undefined;
+
+interface NodeTool {
+  label: string;
+  title: string;
+  run: () => void;
+}
+
+function nodeToolsFor(id: string): NodeTool[] {
+  const n = currentTbScene?.nodes.find((x) => x.id === id);
+  if (!n || n.inferred) {
+    return [];
+  }
+  if (n.kind === "tbagent") {
+    const agent = n.label;
+    return [
+      {
+        label: "+ scoreboard",
+        title: `Add a scoreboard fed by ${agent}`,
+        run: () => postAction("addScoreboard", { source: agent }),
+      },
+      {
+        label: "+ coverage",
+        title: `Add a coverage collector on ${agent}`,
+        run: () => postAction("addCoverage", { agent }),
+      },
+    ];
+  }
+  if (n.id === "env") {
+    return [
+      {
+        label: "+ scoreboard",
+        title: "Add a scoreboard",
+        run: () => postAction("addScoreboard", {}),
+      },
+      {
+        label: "+ coverage",
+        title: "Add a coverage collector",
+        run: () => postAction("addCoverage", {}),
+      },
+      {
+        label: "+ sequence",
+        title: "Add a virtual sequence",
+        run: () => postAction("addVirtualSequence", {}),
+      },
+    ];
+  }
+  return [];
+}
+
+/** the node the strip belongs to: the hovered one, else a lone selected one */
+function nodeToolsTarget(): string | null {
+  if (state.mode !== "tb" || drag?.moved) {
+    return null;
+  }
+  if (hoverToolsId) {
+    return hoverToolsId;
+  }
+  return state.selection.size === 1 ? [...state.selection][0] : null;
+}
+
+function removeNodeTools(): void {
+  nodeTools?.remove();
+  nodeTools = null;
+}
+
+function renderNodeTools(): void {
+  const id = nodeToolsTarget();
+  const tools = id ? nodeToolsFor(id) : [];
+  if (!tools.length) {
+    removeNodeTools();
+    return;
+  }
+  if (nodeTools?.dataset.id === id) {
+    positionNodeTools();
+    return; // same node: keep the strip (and the hover inside it)
+  }
+  removeNodeTools();
+  const strip = h("div", "nodetools");
+  strip.dataset.id = id ?? "";
+  for (const t of tools) {
+    const b = h("button", "ntbtn", t.label);
+    b.title = t.title;
+    b.addEventListener("pointerdown", (ev) => ev.stopPropagation()); // not a canvas press
+    b.addEventListener("click", () => {
+      t.run();
+      removeNodeTools();
+    });
+    strip.append(b);
+  }
+  // moving onto the strip must not count as leaving the node
+  strip.addEventListener("pointerenter", () => clearTimeout(toolsHideTimer));
+  strip.addEventListener("pointerleave", () => scheduleToolsHide());
+  document.body.append(strip);
+  nodeTools = strip;
+  positionNodeTools();
+}
+
+/** above the node's top-right corner; below it when there is no room above */
+function positionNodeTools(): void {
+  if (!nodeTools) {
+    return;
+  }
+  const g = canvas.querySelector<SVGGraphicsElement>(
+    `.tbnode[data-id="${CSS.escape(nodeTools.dataset.id ?? "")}"]`
+  );
+  if (!g) {
+    removeNodeTools();
+    return;
+  }
+  const r = g.getBoundingClientRect();
+  const cb = canvas.getBoundingClientRect();
+  const top = r.top - 26 >= cb.top ? r.top - 26 : r.bottom + 4;
+  nodeTools.style.left = `${r.right}px`;
+  nodeTools.style.top = `${top}px`;
+}
+
+function scheduleToolsHide(): void {
+  clearTimeout(toolsHideTimer);
+  toolsHideTimer = setTimeout(() => {
+    hoverToolsId = null;
+    renderNodeTools(); // falls back to the selected node, if any
+  }, 180);
+}
+
+canvas.addEventListener("pointerover", (e) => {
+  if (state.mode !== "tb") {
+    return;
+  }
+  const id =
+    (e.target as Element).closest<SVGElement>(".tbnode")?.dataset.id ?? null;
+  if (id) {
+    clearTimeout(toolsHideTimer);
+    if (id !== hoverToolsId) {
+      hoverToolsId = id;
+      renderNodeTools();
+    }
+  }
+});
+canvas.addEventListener("pointerout", (e) => {
+  if (!hoverToolsId) {
+    return;
+  }
+  const to = e.relatedTarget as Element | null;
+  const stillOnNode =
+    to?.closest?.<SVGElement>(".tbnode")?.dataset.id === hoverToolsId;
+  if (!stillOnNode && !to?.closest?.(".nodetools")) {
+    scheduleToolsHide();
+  }
+});
+canvas.addEventListener("wheel", () => removeNodeTools(), { passive: true });
+
+// ------------------------------------- keyboard navigation (docs/08 R5)
+//
+// The vocabulary node editors converge on (Houdini, Blueprints, Simulink): fit
+// all (Home/F), fit the selection (G), up one level (U/PageUp), back/forward
+// through the views visited (Ctrl+[ / Ctrl+]), find in the diagram (Ctrl+F),
+// nudge the selection by a grid step (Alt+arrows, ×5 with Shift — the plain
+// arrows keep scrolling the viewport, a gesture the user asked for), and five
+// camera quick marks per level (Shift+1..5 stores, 1..5 jumps). The rules that
+// can be wrong on their own are pure in navfind.ts (test:navfind); this block is
+// the DOM glue. F2 (rename) waits for the rename mutation (docs/08 R14).
+
+const navHistory = new NavHistory();
+/** true while a history entry is being applied: its render must not record */
+let navApplying = false;
+const quickMarks = new QuickMarks();
+
+function recordVisit(): void {
+  if (navApplying || !state.viewId) {
+    return;
+  }
+  navHistory.visit({
+    mode: state.mode,
+    viewId: state.viewId,
+    focus: state.mode === "tb" ? state.tbFocus : "",
+  });
+}
+
+/** Ctrl+[ (back) / Ctrl+] (forward): re-opens a visited view, without recording */
+function goHistory(back: boolean): void {
+  const entry = back ? navHistory.back() : navHistory.forward();
+  if (!entry) {
+    return;
+  }
+  navApplying = true;
+  try {
+    if (entry.mode === "tb") {
+      state.viewId = entry.viewId;
+      state.mode = "tb";
+      persistState();
+      tbNavigate(entry.focus); // tb/focus keeps the host's level in step
+    } else {
+      navigateTo(entry.viewId, entry.mode as ViewMode); // nav/drill does the same
+    }
+  } finally {
+    navApplying = false;
+  }
+}
+
+/** U / PageUp: the level above — TB: agent -> env -> root; RTL: the parent view
+ *  (generate blocks skipped), and the top's schematic climbs to its symbol */
+function goUp(): void {
+  if (state.mode === "tb") {
+    const parent = tbParentFocus(state.tbFocus);
+    if (parent !== null) {
+      tbNavigate(parent);
+    }
+    return;
+  }
+  if (!state.viewId) {
+    return;
+  }
+  const parent = rtlParentPath(state.viewId, (p) => Boolean(findInstance(p)));
+  if (parent) {
+    navigateTo(parent, "schematic");
+  } else if (state.mode === "schematic") {
+    navigateTo(state.viewId, "symbol");
+  }
+}
+
+/** the rectangle of a node/flag in diagram coordinates, if it is a draggable thing */
+function rectOf(id: string): Rect | null {
+  if (state.mode === "tb") {
+    const n = currentTbLayout?.nodes.get(id);
+    if (n) {
+      return { x: n.x, y: n.y, w: n.w, h: n.h };
+    }
+    const b = currentTbLayout?.boundary.get(id);
+    return b ? { x: b.x, y: b.y, w: b.w, h: 16 } : null;
+  }
+  const c = currentLayout?.children?.find((k) => k.id === id);
+  return c
+    ? { x: c.x ?? 0, y: c.y ?? 0, w: c.width ?? 0, h: c.height ?? 0 }
+    : null;
+}
+
+/** G: fits the selected blocks/flags; with nothing (or only pins) selected, fits all */
+function fitSelection(): void {
+  const rects: Rect[] = [];
+  for (const id of state.selection) {
+    const r = rectOf(id);
+    if (r) {
+      rects.push(r);
+    }
+  }
+  const b = unionBounds(rects);
+  if (!b) {
+    fitView();
+    return;
+  }
+  fit(b);
+  autoCam = false; // a chosen frame, not the automatic fit (resize keeps it)
+  scheduleCameraSave();
+}
+
+/** centers the camera on a rectangle, keeping the zoom (find, quick jumps) */
+function centerOnRect(r: Rect): void {
+  const vw = canvas.clientWidth || 800;
+  const vh = canvas.clientHeight || 600;
+  state.tx = vw / 2 - (r.x + r.w / 2) * state.k;
+  state.ty = vh / 2 - (r.y + r.h / 2) * state.k;
+  autoCam = false;
+  applyTransform();
+  scheduleCameraSave();
+}
+
+/** Alt+arrows: moves the selected blocks/flags by (dx, dy) on the grid — the same
+ *  path as a drag end (undo entry + total snapshot, D21) */
+function nudgeSelection(dx: number, dy: number): void {
+  const key = layoutKey();
+  const before = capturePositions();
+  if (!key || !before) {
+    return;
+  }
+  const next: PosMap = { ...before };
+  let moved = 0;
+  for (const id of state.selection) {
+    const p = before[id];
+    if (p) {
+      next[id] = { x: p.x + dx, y: p.y + dy };
+      moved++;
+    }
+  }
+  if (!moved) {
+    return;
+  }
+  pushPosUndo(before);
+  applyPositions(key, next);
+}
+
+function setQuickMark(slot: number): void {
+  const key = layoutKey();
+  if (key) {
+    quickMarks.set(key, slot, { tx: state.tx, ty: state.ty, k: state.k });
+  }
+}
+
+function jumpQuickMark(slot: number): void {
+  const key = layoutKey();
+  const cam = key ? quickMarks.get(key, slot) : null;
+  if (!cam) {
+    return; // an empty slot never moves the camera
+  }
+  state.tx = cam.tx;
+  state.ty = cam.ty;
+  state.k = cam.k;
+  autoCam = false;
+  applyTransform();
+  scheduleCameraSave();
+}
+
+// --- Ctrl+F: find in the diagram -----------------------------------------
+
+let findBox: HTMLElement | null = null;
+
+/** what the find box can land on in the current view */
+function findItems(): FindItem[] {
+  if (state.mode === "tb") {
+    const s = currentTbScene;
+    if (!s) {
+      return [];
+    }
+    return [
+      ...s.nodes.map((n) => ({ id: n.id, label: n.label })),
+      ...s.boundary.map((b) => ({ id: b.id, label: b.label })),
+    ];
+  }
+  const s = currentScene;
+  if (s) {
+    return [
+      ...s.nodes.map((n) => ({ id: n.id, label: n.name })),
+      ...s.boundary.map((b) => ({ id: b.id, label: b.name })),
+    ];
+  }
+  return currentPins.map((p) => ({ id: p.id, label: p.name }));
+}
+
+function closeFind(): void {
+  findBox?.remove();
+  findBox = null;
+}
+
+function selectAndCenter(id: string): void {
+  state.selection = new Set([id]);
+  applySelectionClasses();
+  postSelection();
+  renderInspectorHere();
+  const r = rectOf(id);
+  if (r) {
+    centerOnRect(r);
+  }
+}
+
+function openFind(): void {
+  if (findBox) {
+    findBox.querySelector("input")?.focus();
+    return;
+  }
+  const items = findItems();
+  const box = h("div", "findbox");
+  const input = document.createElement("input");
+  input.className = "findinput";
+  input.placeholder = "Find in diagram…";
+  input.setAttribute("aria-label", "Find in diagram");
+  const list = h("div", "findlist");
+  box.append(input, list);
+  let matches: FindItem[] = [];
+  let active = 0;
+  const renderList = (): void => {
+    list.replaceChildren();
+    matches.forEach((m, i) => {
+      const row = h("div", `finditem${i === active ? " active" : ""}`, m.label);
+      if (m.id !== m.label) {
+        row.append(h("span", "dim", ` ${m.id}`));
+      }
+      row.addEventListener("pointerdown", (ev) => {
+        ev.preventDefault(); // keep the input's focus until the selection lands
+        selectAndCenter(m.id);
+        closeFind();
+      });
+      list.append(row);
+    });
+  };
+  input.addEventListener("input", () => {
+    matches = findMatches(items, input.value, 8);
+    active = 0;
+    renderList();
+  });
+  input.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      closeFind();
+      canvas.focus();
+    } else if (ev.key === "Enter") {
+      ev.preventDefault();
+      const m = matches[active];
+      if (m) {
+        selectAndCenter(m.id);
+        closeFind();
+      }
+    } else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      ev.preventDefault();
+      if (matches.length) {
+        active = (active + (ev.key === "ArrowDown" ? 1 : matches.length - 1)) % matches.length;
+        renderList();
+      }
+    }
+    ev.stopPropagation(); // the diagram's own keys must not fire while typing
+  });
+  input.addEventListener("blur", () => {
+    // closed when the focus leaves it (click elsewhere); deferred so a click on
+    // a row runs first (its pointerdown prevented the blur anyway)
+    setTimeout(() => {
+      if (findBox === box && document.activeElement !== input) {
+        closeFind();
+      }
+    }, 120);
+  });
+  const cb = canvas.getBoundingClientRect();
+  box.style.left = `${cb.left + cb.width / 2}px`;
+  box.style.top = `${cb.top + 8}px`;
+  document.body.append(box);
+  findBox = box;
+  input.focus();
+}
+
 window.addEventListener("keydown", (e) => {
   // the keys command the diagram only when you are NOT editing a field in the inspector
   // (match_key/max_latency/selects) — otherwise "f"/"h"/"Delete" would trigger
@@ -2397,6 +2887,30 @@ window.addEventListener("keydown", (e) => {
       return;
     }
   }
+  // docs/08 R5: Ctrl+F find, Ctrl+[ / Ctrl+] history (view back/forward)
+  if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+    if (key === "f") {
+      e.preventDefault();
+      openFind();
+      return;
+    }
+    if (e.key === "[" || e.key === "]") {
+      e.preventDefault();
+      goHistory(e.key === "[");
+      return;
+    }
+  }
+  // docs/08 R5: Alt+arrows nudge the selection by a grid step (×5 with Shift);
+  // the plain arrows keep scrolling the viewport (below)
+  if (e.altKey && !e.ctrlKey && !e.metaKey && key.startsWith("arrow")) {
+    e.preventDefault();
+    const step = e.shiftKey ? 5 * GRID : GRID;
+    nudgeSelection(
+      key === "arrowleft" ? -step : key === "arrowright" ? step : 0,
+      key === "arrowup" ? -step : key === "arrowdown" ? step : 0
+    );
+    return;
+  }
   if (e.ctrlKey || e.metaKey || e.altKey) {
     return;
   }
@@ -2412,9 +2926,30 @@ window.addEventListener("keydown", (e) => {
     }
     return;
   }
-  // F: fits the diagram into the window
-  if (key === "f") {
+  // F / Home: fits the diagram into the window; G: fits the selection (docs/08 R5)
+  if (key === "f" || key === "home") {
+    e.preventDefault();
     fitView();
+    return;
+  }
+  if (key === "g") {
+    fitSelection();
+    return;
+  }
+  // U / PageUp: up one level — TB: agent -> env -> root; RTL: the parent view
+  if (key === "u" || key === "pageup") {
+    e.preventDefault();
+    goUp();
+    return;
+  }
+  // 1..5 jump to a camera quick mark of this level, Shift+1..5 store one
+  if (/^Digit[1-5]$/.test(e.code)) {
+    const slot = Number(e.code.slice(5));
+    if (e.shiftKey) {
+      setQuickMark(slot);
+    } else {
+      jumpQuickMark(slot);
+    }
     return;
   }
   // M: toggles the minimap (the overview navigator, docs/04)
@@ -2479,6 +3014,8 @@ interface CtxItem {
   action: () => void;
   /** destructive action (deletion): it is colored as such */
   danger?: boolean;
+  /** docs/08 R3 — a message, not an action (a problem listed above its repairs) */
+  info?: boolean;
 }
 
 let ctxMenu: HTMLElement | null = null;
@@ -2489,6 +3026,28 @@ function closeCtxMenu(): void {
 }
 
 /** opens the menu at (x,y) — `fixed` position, fitted into the window */
+/** docs/08 R3 — the problems of an element and their repairs, as menu items: the
+ *  messages first (information), then one "Fix: …" per repair, each sending the
+ *  host action a palette button would (the host keeps its confirmations) */
+function problemItems(id: string): CtxItem[] {
+  const st = statusByElement.get(id);
+  if (!st) {
+    return [];
+  }
+  const items: CtxItem[] = st.messages.map((m) => ({
+    label: m,
+    info: true,
+    action: () => undefined,
+  }));
+  for (const f of st.fixes) {
+    items.push({
+      label: `Fix: ${f.label}`,
+      action: () => postAction(f.action, f.args),
+    });
+  }
+  return items;
+}
+
 function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
   closeCtxMenu();
   if (!items.length) {
@@ -2496,6 +3055,10 @@ function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
   }
   const m = h("div", "ctxmenu");
   for (const it of items) {
+    if (it.info) {
+      m.append(h("div", "ctxitem info", it.label)); // a message, not an action
+      continue;
+    }
     const b = h("button", `ctxitem${it.danger ? " danger" : ""}`, it.label);
     b.addEventListener("click", () => {
       closeCtxMenu();
@@ -2639,6 +3202,7 @@ canvas.addEventListener("contextmenu", (e) => {
       { label: "Flip horizontal (H)", action: () => toggleFlip(id, "h") },
       { label: "Flip vertical (V)", action: () => toggleFlip(id, "v") }
     );
+    items.push(...problemItems(id)); // docs/08 R3: the problems + repairs
     const dt = tbDeleteTarget(node);
     if (dt) {
       items.push({
@@ -2728,6 +3292,7 @@ function hideBanner(): void {
 }
 
 async function render(refit = false): Promise<void> {
+  recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   if (state.mode === "tb") {
     return renderTb(refit);
   }
@@ -3283,7 +3848,7 @@ function renderTbHeader(scene: TbScene | null): void {
   const tb = h("button", "mbtn active", "Testbench");
   tgl.append(tb);
   const fitBtn = h("button", "mbtn", "⛶");
-  fitBtn.title = "Fit to window (F)";
+  fitBtn.title = "Fit to window (F / Home) — G fits the selection";
   fitBtn.addEventListener("click", fitView);
   tgl.append(fitBtn);
   // Re-arrange all (docs/04): deletes the level's positions and returns to ELK
@@ -3295,6 +3860,12 @@ function renderTbHeader(scene: TbScene | null): void {
   ex.title = "Export view as SVG";
   ex.addEventListener("click", exportSvg);
   tgl.append(ex);
+  // docs/08 R4 — the configuration as TEXT beside the diagram (Android's
+  // "Split" view): the lines a gesture changes are highlighted there
+  const yml = h("button", "mbtn", "YAML");
+  yml.title = "Open the QuickUVM configuration beside the diagram";
+  yml.addEventListener("click", () => postAction("openConfigBeside", {}));
+  tgl.append(yml);
   head.append(tgl);
   updateGenChip(); // the generate status chip (docs/05)
 }

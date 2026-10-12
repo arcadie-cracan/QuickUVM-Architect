@@ -12,14 +12,15 @@
 import * as vscode from "vscode";
 import type { Actions } from "./actions";
 import type { ResolveService } from "./resolve-service";
-import { autoSaveConfig, type TbEditTarget } from "./config";
+import { applyTextChange, type TbEditTarget } from "./config";
+import type { YamlLink } from "./yamllink";
 import {
   clearActiveExporter,
   diagramHtml,
   saveExportedSvg,
   setActiveExporter,
 } from "./panel";
-import type { ActionKind, LassoMode, WebviewMessage } from "./protocol";
+import type { ActionKind, HostMessage, LassoMode, WebviewMessage } from "./protocol";
 import type { QuvmConfig } from "./quickuvm";
 import { parseQuvm } from "./yamlops";
 import type { LayoutStore } from "./sidecar";
@@ -52,25 +53,21 @@ class DocumentEditTarget implements TbEditTarget {
       );
       return false;
     }
-    if (newText === oldText) {
-      return false; // no-op: no WorkspaceEdit (like ConfigService.apply)
-    }
-    const edit = new vscode.WorkspaceEdit();
-    edit.replace(
-      this.doc.uri,
-      new vscode.Range(
-        this.doc.positionAt(0),
-        this.doc.positionAt(oldText.length)
-      ),
-      newText
-    );
-    const ok = await vscode.workspace.applyEdit(edit);
-    // the same opt-in as ConfigService.apply — one helper, so the two editing
-    // surfaces cannot disagree about whether a gesture leaves the file dirty
-    if (ok && autoSaveConfig()) {
-      await this.doc.save();
-    }
-    return ok;
+    // docs/08 R4 — the same MINIMAL edit as ConfigService.apply, through one
+    // helper (autosave included), so the two editing surfaces cannot disagree
+    // about what a gesture writes or whether it leaves the file dirty
+    return applyTextChange(this.doc, oldText, newText);
+  }
+}
+
+/** docs/08 R4 — the live per-file editors by document uri, so the host can
+ *  light a box in them from the YAML caret (`probe/highlight`) the way it does
+ *  in the panel; registered at resolve, forgotten at dispose */
+const liveEditors = new Map<string, Set<vscode.Webview>>();
+
+export function postToConfigEditors(uri: vscode.Uri, message: HostMessage): void {
+  for (const w of liveEditors.get(uri.toString()) ?? []) {
+    void w.postMessage(message);
   }
 }
 
@@ -84,7 +81,9 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
     private readonly log: vscode.OutputChannel,
     /** docs/07 — the effective topology, for the inferred (ghost) components. Keyed
      *  per document: this editor can hold a config that is NOT the active one. */
-    private readonly resolve?: ResolveService
+    private readonly resolve?: ResolveService,
+    /** docs/08 R4 — the diagram <-> YAML link (open beside, reveal the entry) */
+    private readonly yamlLink?: YamlLink
   ) {}
 
   resolveCustomTextEditor(
@@ -92,6 +91,13 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
     webviewPanel: vscode.WebviewPanel
   ): void {
     const webview = webviewPanel.webview;
+    const liveKey = document.uri.toString();
+    let live = liveEditors.get(liveKey);
+    if (!live) {
+      live = new Set();
+      liveEditors.set(liveKey, live);
+    }
+    live.add(webview);
     webview.options = {
       enableScripts: true,
       localResourceRoots: [
@@ -181,6 +187,7 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       })
     );
     webviewPanel.onDidDispose(() => {
+      liveEditors.get(liveKey)?.delete(webview);
       clearActiveExporter(exporter);
       for (const d of disposables) {
         d.dispose();
@@ -240,8 +247,15 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         case "action/request":
           this.onAction(m.action, m.args, target);
           break;
-        // tb/focus (local drill) and select/changed have no tree synchronization
-        // in the per-file editor — they are ignored
+        case "select/changed":
+          // docs/08 R4 — diagram -> text: the selected box reveals its YAML entry
+          // in the text editors that already show THIS document (never opens one)
+          if (m.ids.length === 1) {
+            this.yamlLink?.revealElement(document.uri, document.getText(), m.ids[0]);
+          }
+          break;
+        // tb/focus (local drill) has no tree synchronization in the per-file
+        // editor — it is ignored
         default:
           break;
       }
@@ -339,6 +353,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         // drill into subenv from the per-file editor: the config path relative
         // to the DOCUMENT (the H1 nesting descends level by level through files)
         void this.actions.openSubenvConfig(s("config"), target);
+        break;
+      case "openConfigBeside":
+        // docs/08 R4 — THIS document as text, beside its diagram
+        if (target.configUri) {
+          void this.yamlLink?.openBeside(target.configUri);
+        }
         break;
       default:
         this.log.appendLine(

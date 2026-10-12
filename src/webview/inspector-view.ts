@@ -19,6 +19,7 @@ import {
   scoreboardEndpoints,
 } from "../coverage";
 import { agentRows, isBenchScope, portRows, scoreboardRows } from "../inspector";
+import { statusIdsTb } from "../status";
 import type { ActionKind, WebviewMessage } from "../protocol";
 import type {
   QuvmAgent,
@@ -1895,6 +1896,24 @@ export function renderInspector(c: InspectorCtx): void {
       const dt = tbDeleteTarget(selNode);
       if (dt) {
         ctx.root.append(button(dt.label, true, () => del(dt.kind, dt.name), true));
+      }
+      // docs/08 R3 — the problems of the selected component and their repairs: the
+      // SAME findings as the diagram badge and the tree row (one source,
+      // checkConfig); a Fix button sends the host action a palette button would
+      const st = statusIdsTb(
+        ctx.state.statusDecos ?? [],
+        new Set((ctx.tbScene?.nodes ?? []).map((n) => n.id))
+      ).get(selNode.id);
+      if (st) {
+        ctx.root.append(h("h3", "", "Problems"));
+        for (const msg of st.messages) {
+          ctx.root.append(h("div", `problem sev-${st.severity}`, msg));
+        }
+        for (const f of st.fixes) {
+          ctx.root.append(
+            button(`Fix: ${f.label}`, true, () => ctx.postAction(f.action, f.args), true)
+          );
+        }
       }
       // vsqr / probes aggregate ALL their entries: deletion is per-entry (the Delete
       // key on them has no single target, so the buttons remain the only way here)

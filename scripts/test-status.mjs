@@ -17,7 +17,7 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { decosFromFindings, statusIdsRtl, statusIdsTb } = await import(
+const { decosFromFindings, statusIdsRtl, statusIdsTb, statusIdsTree } = await import(
   pathToFileURL(outFile)
 );
 
@@ -128,6 +128,102 @@ test("statusIdsTb: porturile nu decoreaza TB; decos gol -> nimic", () => {
   // the only target is port -> nothing in TB (the agent is NOT targeted by ignored)
   assert.equal(statusIdsTb(decos, new Set(["agent:rsp", "env"])).size, 0);
   assert.equal(statusIdsTb([], new Set(["env"])).size, 0);
+});
+
+// --- docs/08 R3: the new scopes, the repairs, the tree mapping ---------------
+test("R3: the unknown-agent findings target the scoreboard/coverage box with a repair", () => {
+  const decos = decosFromFindings([
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "monitor", agent: "ghost", named: 1, node: "sbd" }),
+    F("cov-unknown-agent", "error", { agent: "nobody" }),
+  ]);
+  const sb = decos.find((d) => d.scope === "scoreboard");
+  assert.equal(sb.name, "sbd");
+  assert.equal(sb.severity, "error");
+  assert.match(sb.message, /monitor names agent "ghost"/);
+  assert.deepEqual(sb.fixes.map((f) => [f.action, f.args]), [
+    ["deleteComponent", { kind: "scoreboard", name: "sbd" }],
+  ]);
+  const cov = decos.find((d) => d.scope === "coverage");
+  assert.equal(cov.agent, "nobody");
+  assert.deepEqual(cov.fixes[0], {
+    label: 'Delete coverage for "nobody"',
+    action: "deleteComponent",
+    args: { kind: "coverage", name: "nobody" },
+  });
+});
+
+test("R3: the width repair rides on both the pin and the agent; ignored gets un-ignore", () => {
+  const decos = decosFromFindings([
+    F("width-mismatch", "warning", { port: "din", declared: 8, expected: 16, agent: "cmd" }),
+    F("ignored-and-mapped", "error", { port: "x", agent: "cmd" }),
+  ]);
+  const fix = { action: "editAgentPort", args: { agent: "cmd", port: "din", field: "width", value: "16" } };
+  for (const d of decos.filter((d) => /din/.test(d.message))) {
+    assert.equal(d.fixes.length, 1);
+    assert.equal(d.fixes[0].action, fix.action);
+    assert.deepEqual(d.fixes[0].args, fix.args);
+  }
+  const ign = decos.find((d) => d.scope === "port" && d.port === "x");
+  assert.deepEqual(ign.fixes[0].args, { pins: ["x"] });
+  assert.equal(ign.fixes[0].action, "unignorePort");
+});
+
+test("R3: statusIdsTb lands on sb:/cov: when present, bubbles onto Env otherwise, keeps fixes", () => {
+  const decos = decosFromFindings([
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost", named: 1, node: "sbd" }),
+    F("cov-unknown-agent", "error", { agent: "nobody" }),
+    F("width-mismatch", "warning", { port: "din", declared: 8, expected: 16, agent: "cmd" }),
+  ]);
+  const env = statusIdsTb(decos, new Set(["sb:sbd", "cov:nobody", "agent:cmd", "env"]));
+  assert.equal(env.get("sb:sbd").severity, "error");
+  assert.equal(env.get("sb:sbd").fixes.length, 1);
+  assert.equal(env.get("cov:nobody").fixes[0].args.name, "nobody");
+  assert.equal(env.get("agent:cmd").fixes[0].action, "editAgentPort");
+  assert.ok(!env.has("env"), "nothing bubbles while the boxes are on screen");
+  const root = statusIdsTb(decos, new Set(["env"]));
+  assert.equal(root.size, 1);
+  assert.deepEqual(
+    root.get("env").messages.map((m) => m.split(":")[0]),
+    ["sbd", "nobody_cov", "cmd"],
+    "bubbled onto Env, prefixed with the owner"
+  );
+  assert.equal(root.get("env").severity, "error");
+  assert.equal(root.get("env").fixes.length, 3, "the repairs bubble with the messages");
+});
+
+test("R3: statusIdsTree decorates the rows AND Env; ports have no row", () => {
+  const decos = decosFromFindings([
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost", named: 1, node: "sbd" }),
+    F("ignored-and-mapped", "error", { port: "x", agent: "cmd" }),
+    F("port-orphan", "warning", { port: "gone", dut: "chan", agent: "cmd" }),
+  ]);
+  const tree = statusIdsTree(decos);
+  assert.deepEqual([...tree.keys()].sort(), ["agent:cmd", "env", "sb:sbd"]);
+  assert.equal(tree.get("agent:cmd").severity, "warning");
+  assert.equal(tree.get("env").severity, "error", "the error child wins on Env");
+  assert.equal(tree.get("env").messages.length, 2);
+});
+
+test("R3 (review): no delete repair on an unnamed scoreboard; the `#n` key lands on the right box", () => {
+  const decos = decosFromFindings([
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "source", agent: "ghost", named: 0, node: "sbd#2" }),
+    F("sb-unknown-agent", "error", { sb: "sbd", field: "monitor", agent: "ghost", named: 0 }),
+  ]);
+  assert.deepEqual(decos.map((d) => d.fixes.length), [0, 0], "a by-name delete would hit nothing or the WRONG entry");
+  const m = statusIdsTb(decos, new Set(["sb:sbd", "sb:sbd#2", "env"]));
+  assert.ok(m.has("sb:sbd#2"), "the badge sits on the second box, like its broken stub");
+  assert.ok(!m.has("sb:sbd"), "the valid first box is untouched");
+  assert.ok(m.has("env"), "the undrawn entry bubbles onto Env");
+  assert.equal(statusIdsTree(decos).has("sb:sbd#2"), true);
+});
+
+test("R3 (review, D19): the message override feeds the tree with localized text", () => {
+  const decos = decosFromFindings(
+    [F("width-mismatch", "warning", { port: "din", declared: 8, expected: 16, agent: "cmd" })],
+    (f) => `LOCALIZED ${f.kind}`
+  );
+  assert.ok(decos.every((d) => d.message === "LOCALIZED width-mismatch"));
+  assert.equal(decos[0].fixes.length, 1, "the repairs are untouched by the override");
 });
 
 console.log(`\ntest-status: ${passed} teste au trecut.`);

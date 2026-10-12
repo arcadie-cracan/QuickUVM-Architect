@@ -16,6 +16,7 @@
 // provider can match them without touching the real filesystem.
 
 import * as vscode from "vscode";
+import type { ElementStatus } from "./status";
 
 const GEN_SCHEME = "quvm-gen";
 
@@ -71,6 +72,48 @@ export class GenDecorationProvider implements vscode.FileDecorationProvider {
       };
     }
     return undefined;
+  }
+
+  dispose(): void {
+    this.emitter.dispose();
+  }
+}
+
+/**
+ * docs/08 R3 — the validation findings on the verification-tree rows, the SAME
+ * findings the diagram badges show (`statusIdsTree`, bubbled up onto Env so the
+ * parent row never looks clean with broken children underneath). ✕ for an error,
+ * ! for a warning, in the list's own error/warning colors; the messages in the
+ * tooltip. Recomputed from the source of truth on every overlay refresh — never
+ * persisted (the Capella lesson: markers you must delete by hand).
+ */
+export class FindingDecorationProvider implements vscode.FileDecorationProvider {
+  private readonly emitter = new vscode.EventEmitter<undefined>();
+  readonly onDidChangeFileDecorations = this.emitter.event;
+
+  constructor(private readonly status: () => ReadonlyMap<string, ElementStatus>) {}
+
+  refresh(): void {
+    this.emitter.fire(undefined);
+  }
+
+  provideFileDecoration(uri: vscode.Uri): vscode.FileDecoration | undefined {
+    if (uri.scheme !== GEN_SCHEME) {
+      return undefined;
+    }
+    const elementId = decodeURIComponent(uri.path.replace(/^\//, ""));
+    const st = this.status().get(elementId);
+    if (!st) {
+      return undefined;
+    }
+    const error = st.severity === "error";
+    return {
+      badge: error ? "\u2715" : "!",
+      tooltip: st.messages.join("\n"),
+      color: new vscode.ThemeColor(
+        error ? "list.errorForeground" : "list.warningForeground"
+      ),
+    };
   }
 
   dispose(): void {

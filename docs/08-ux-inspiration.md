@@ -87,6 +87,16 @@ All the recommendations respect the survey's golden rule: **the YAML mutation st
 
 R1–R4 form a single coherent sprint — "state and the link to the text become visible" — and attack head-on the two clusters of criticism Architect is exposed to (hidden state, late errors). R4 deserves emphasis: it is the cheapest way to offer the good half of the Xcode lesson — users *see* the code change on every gesture — without the withdrawn half, and it puts the tool ahead of every diagram editor in VS Code on the element→text link.
 
+**Status — shipped (Oct 2026, branch `feat/ux-sprint-r1-r5`).** R1–R5 are implemented, each as one commit with its tests and a harness check:
+
+- **R1** — a "+" strip above a hovered or selected agent ("+ scoreboard", "+ coverage", agent preset) and above the Env box at the root (the three bench-level adds); ghosts get none; "+ probe" is deliberately absent (a probe is born from a net in the schematic view).
+- **R2** — the canonical TLM glyphs on every port (`TbPort.glyph`): square = port, circle = export/imp, diamond = analysis port; drawn on the stub with the outer edge at the tip so the wire ends where the glyph begins; the "◆" text suffix is gone.
+- **R3** — two new findings (`sb-unknown-agent`, `cov-unknown-agent`), a broken input stub (dashed red + X) on the box, `StatusDeco.fixes[]` = the host action a palette button would send, offered on the badge (click), in the context menu and in the Properties panel; the verification tree mirrors the findings (✕ / !, bubbled onto Env). Port-orphan and port-claimed have no automatic repair yet (no "remove this port" mutation).
+- **R4** — gestures write the MINIMAL edit (`src/textedit.ts`), the changed lines flash in the visible text editors, `quickuvm.openYamlBeside` (ask once / always / never) opens the YAML beside, a "YAML" header button and the `quickuvm.openConfigBeside` command do it on demand, a selected box reveals its entry, and the caret in the YAML halos the matching box (`src/yamlmap.ts`, `probe/highlight {kind: "tb"}`) in the panel and the per-file editors.
+- **R5** — Home/F, G, U/PageUp, Ctrl+[ / Ctrl+], Ctrl+F, Alt+arrows (nudge; the plain arrows keep scrolling, the user's choice), Shift+1..5 / 1..5 quick marks (`src/webview/navfind.ts`). F2 waits for the rename mutation (R14).
+
+The host-side paths of R4 (minimal `WorkspaceEdit`, flash, open-beside, the ask-once message) are typechecked and read against the VS Code API; the Extension Development Host walkthrough is the closing check, as for every slice before.
+
 ### Medium (M): creation and connection gestures move onto the canvas
 
 | # | Pattern | Source | Mapping onto QuickUVM | Compl. | Risks |

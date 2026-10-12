@@ -17,7 +17,7 @@
 // drawn as much as possible; the authoritative validation stays in ConfigService.
 
 import { coveredAgent } from "../coverage";
-import { isCrossBlockSb } from "../quickuvm";
+import { isCrossBlockSb, scoreboardNodeIds } from "../quickuvm";
 import type { QuvmConfig, QuvmScoreboard } from "../quickuvm";
 import { inferredComponents } from "../resolved";
 import type { ResolvedConfig } from "../resolved";
@@ -64,6 +64,16 @@ export interface TbCompartment {
 }
 
 /** port on a TB block's boundary */
+/**
+ * The canonical UVM glyph of a TLM port (UVM 1.2 User's Guide, docs/08 R2):
+ * `port` = square on the producer (seq_item_port), `export` = circle on the
+ * consumer (seq_item_export, analysis export/imp), `analysis` = diamond on the
+ * monitor/agent (analysis port). Verification engineers learned this vocabulary
+ * from Accellera, Doulos and Verification Academy; the view speaks it instead of
+ * a text suffix. null = not a TLM port (an interface, a sequencer reference).
+ */
+export type PortGlyph = "port" | "export" | "analysis";
+
 export interface TbPort {
   id: string;
   port: string;
@@ -71,6 +81,11 @@ export interface TbPort {
   label: string;
   iface: boolean;
   note: string | null;
+  /** the canonical TLM glyph drawn at the stub's tip (R2); null = none */
+  glyph: PortGlyph | null;
+  /** docs/08 R3 — the input points at an agent that does not exist: drawn as a
+   *  broken stub (dashed, red X), the box keeps its badge and its repairs */
+  broken?: boolean;
 }
 
 /** a level's block: UML box with compartments; `drill` = the descent's focus */
@@ -101,6 +116,8 @@ export interface TbBoundary {
    *  ENTERS the diagram), `out` = only target (the data EXITS), `inout` = both
    *  (bidirectional interface). The flag shows it through the tip's orientation. */
   dir?: "in" | "out" | "inout";
+  /** the canonical TLM glyph at the flag's anchor (R2); null = none */
+  glyph?: PortGlyph | null;
 }
 
 export interface TbEdge {
@@ -132,7 +149,7 @@ function port(
   p: string,
   side: "WEST" | "EAST",
   label: string,
-  opts?: { iface?: boolean; note?: string | null }
+  opts?: { iface?: boolean; note?: string | null; glyph?: PortGlyph; broken?: boolean }
 ): TbPort {
   return {
     id: `${nodeId}.${p}`,
@@ -141,6 +158,8 @@ function port(
     label,
     iface: opts?.iface ?? false,
     note: opts?.note ?? null,
+    glyph: opts?.glyph ?? null,
+    ...(opts?.broken ? { broken: true } : {}),
   };
 }
 
@@ -149,9 +168,10 @@ function boundary(
   label: string,
   side: "WEST" | "EAST",
   iface = false,
-  note: string | null = null
+  note: string | null = null,
+  glyph: PortGlyph | null = null
 ): TbBoundary {
-  return { id, label, side, iface, note };
+  return { id, label, side, iface, note, glyph };
 }
 
 /**
@@ -469,7 +489,7 @@ function levelEnv(
         targetPort: null,
       });
     }
-    ports.push(port(id, "ap", "EAST", "ap ◆"));
+    ports.push(port(id, "ap", "EAST", "ap", { glyph: "analysis" }));
     nodes.push({
       id,
       kind: "tbagent",
@@ -482,17 +502,31 @@ function levelEnv(
     });
   }
 
-  // scoreboards
-  const usedSb = new Set<string>();
-  for (const sb of localSbs(config)) {
-    let id = `sb:${sb.name ?? "sbd"}`;
-    for (let n = 2; usedSb.has(id); n++) {
-      id = `sb:${sb.name ?? "sbd"}#${n}`;
+  // scoreboards — ids from the ONE scheme (scoreboardNodeIds: the same ids the
+  // tree, checkConfig and the YAML map use); the local entries are drawn here
+  const sbIds = scoreboardNodeIds(config);
+  (config.analysis?.scoreboards ?? []).forEach((sb, sbIndex) => {
+    const sbNode = sbIds[sbIndex];
+    if (!sbNode || sbNode.cross) {
+      return;
     }
-    usedSb.add(id);
-    const ports: TbPort[] = [port(id, "source", "WEST", "source ◆")];
+    const id = sbNode.id;
+    // docs/08 R3 — an endpoint naming no agent is drawn as a BROKEN input: the
+    // same fact checkConfig reports (sb-unknown-agent), seen on the wire's end
+    const known = (a: string | undefined): boolean => Boolean(a && agentNames.has(a));
+    const ports: TbPort[] = [
+      port(id, "source", "WEST", "source", {
+        glyph: "export",
+        broken: !known(sb.source),
+      }),
+    ];
     if (sb.monitor) {
-      ports.push(port(id, "monitor", "WEST", "monitor ◆"));
+      ports.push(
+        port(id, "monitor", "WEST", "monitor", {
+          glyph: "export",
+          broken: !known(sb.monitor),
+        })
+      );
     }
     nodes.push({
       id,
@@ -519,7 +553,7 @@ function levelEnv(
     };
     connect(sb.source, "source");
     connect(sb.monitor ?? undefined, "monitor");
-  }
+  });
 
   // coverage
   for (const agent of coveredAgents(config)) {
@@ -530,7 +564,12 @@ function levelEnv(
       label: `${agent}_cov`,
       stereotype: "«coverage»",
       compartments: [],
-      ports: [port(id, "ap", "WEST", "ap ◆")],
+      ports: [
+        port(id, "ap", "WEST", "ap", {
+          glyph: "export",
+          broken: !agentNames.has(agent), // docs/08 R3: cov-unknown-agent
+        }),
+      ],
       drill: null,
       tooltip: `functional coverage for ${agent}`,
     });
@@ -579,7 +618,7 @@ function levelEnv(
       label: cov ? `${inf.name}_cov` : inf.name,
       stereotype: cov ? "«coverage»" : "«scoreboard»",
       compartments: [{ items: ["inferred — not in the config"] }],
-      ports: [port(inf.id, pin, "WEST", `${pin} ◆`)],
+      ports: [port(inf.id, pin, "WEST", pin, { glyph: "export" })],
       drill: null,
       inferred: true,
       tooltip:
@@ -708,7 +747,7 @@ function levelAgent(
   if (hasDut) {
     boundaries.push(boundary("<if>", "if", "EAST", true));
   }
-  boundaries.push(boundary("<ap>", "ap ◆", "EAST"));
+  boundaries.push(boundary("<ap>", "ap", "EAST", false, null, "analysis"));
 
   const unit = (
     id: string,
@@ -731,11 +770,11 @@ function levelAgent(
     // sequencer: sqr(west) <- boundary; seq_item_port(east) -> driver
     unit("u.sequencer", "sequencer", [
       ...(coordinated ? [port("u.sequencer", "sqr", "WEST", "sqr")] : []),
-      port("u.sequencer", "seq", "EAST", "seq_item"),
+      port("u.sequencer", "seq", "EAST", "seq_item", { glyph: "export" }),
     ]);
     // driver: seq(west) <- sequencer; if(east) -> boundary
     unit("u.driver", "driver", [
-      port("u.driver", "seq", "WEST", "seq_item"),
+      port("u.driver", "seq", "WEST", "seq_item", { glyph: "port" }),
       ...(hasDut ? [port("u.driver", "if", "EAST", "if", { iface: true })] : []),
     ]);
     edges.push({
@@ -776,7 +815,7 @@ function levelAgent(
   // LEFT (the wire does not go around the monitor); ap(east) -> boundary
   unit("u.monitor", "monitor", [
     ...(hasDut ? [port("u.monitor", "if", "WEST", "if", { iface: true })] : []),
-    port("u.monitor", "ap", "EAST", "ap ◆"),
+    port("u.monitor", "ap", "EAST", "ap", { glyph: "analysis" }),
   ]);
   if (hasDut) {
     edges.push({
@@ -888,15 +927,20 @@ function addSubenvs(
       });
     }
   });
-  const usedXsb = new Set<string>();
-  xsbs.forEach((sb, i) => {
-    let id = `xsb:${sb.name ?? i}`;
-    for (let n = 2; usedXsb.has(id); n++) {
-      id = `xsb:${sb.name ?? i}#${n}`;
+  // the cross-block boxes, with the ids of the ONE scheme (scoreboardNodeIds)
+  const xsbIds = scoreboardNodeIds(config);
+  (config.analysis?.scoreboards ?? []).forEach((sb, xi) => {
+    const xsbNode = xsbIds[xi];
+    if (!xsbNode || !xsbNode.cross) {
+      return;
     }
-    usedXsb.add(id);
-    const ports: TbPort[] = [port(id, "source", "WEST", "source ◆")];
-    if (sb.monitor) ports.push(port(id, "monitor", "WEST", "monitor ◆"));
+    const id = xsbNode.id;
+    const ports: TbPort[] = [
+      port(id, "source", "WEST", "source", { glyph: "export" }),
+    ];
+    if (sb.monitor) {
+      ports.push(port(id, "monitor", "WEST", "monitor", { glyph: "export" }));
+    }
     nodes.push({
       id,
       kind: "tbsb",

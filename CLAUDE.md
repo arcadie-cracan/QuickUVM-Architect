@@ -118,6 +118,9 @@ npm run test:router      # ruterul A* pe grila + obstacolele din etichetele pini
 npm run test:minimap     # matematica minimapului (incadrare, U = M ∘ V⁻¹, salt)
 npm run test:locmap      # cross-probing editor->diagrama: loc->tinta + tinta->id-uri
 npm run test:status      # decoratiile de stare: findings->decoratii + decoratii->id-uri
+npm run test:navfind     # keyboard navigation (docs/08 R5): view history, Ctrl+F ranking, up-level, fit bounds
+npm run test:textedit    # the MINIMAL edit between two YAML texts + the span to highlight (docs/08 R4)
+npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (docs/08 R4)
 npm run test:e2e         # yamlops -> quick-uvm generate real (cere quick-uvm)
 ```
 
@@ -278,6 +281,16 @@ coliziunea de nume.
   fișierul lui există) și exclude la alegerea inițială fișierele referite ca
   `subenvs[].config` de un alt config (`topConfigPaths` în `src/yamlops.ts`,
   testată în `test:yamlops`); nu reintroduce alegerea pur alfabetică.
+- **Gestures write the MINIMAL edit, never a whole-document replace** (docs/08
+  R4, Oct 2026): `applyTextChange` in `src/config.ts` — shared by the active-config
+  target and the custom editor's document target — replaces only the span
+  `minimalEdit` (`src/textedit.ts`, pure) computed between the old and the new
+  text, slid to a line boundary for pure insertions/deletions, and fires
+  `onGestureApplied {uri, span}` for the YAML link (`src/yamllink.ts`: flash in
+  the visible editors, or open beside per `quickuvm.openYamlBeside`). The old
+  replace-all hid WHAT changed, churned undo and the editor's view, and would
+  have made the highlight the whole file. A mutation that returns the same text
+  is still no WorkspaceEdit at all (the no-op invariant).
 - `ConfigService.apply` trebuie să împrospăteze SINCRON (`await refresh()`):
   cu refresh debounced, `checkDut` citea `current` vechi imediat după „Set
   this module as DUT" și `createSubenv`/`createAgent` avortau tăcut

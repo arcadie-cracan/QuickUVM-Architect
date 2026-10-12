@@ -7,6 +7,7 @@
 // from the diagram.
 
 import { coveredAgent } from "./coverage";
+import { scoreboardNodeIds } from "./quickuvm";
 import type { QuvmConfig } from "./quickuvm";
 
 /** The agents with a coverage collector, from entries in EITHER form (a bare name or
@@ -145,21 +146,23 @@ export function buildVTree(config: QuvmConfig, configPath: string | null): VTree
       }
     }
 
-    const usedSb = new Set<string>();
-    for (const sb of (config.analysis?.scoreboards ?? []).filter((s) => s.source)) {
-      let id = `sb:${sb.name ?? "sbd"}`;
-      for (let n = 2; usedSb.has(id); n++) {
-        id = `sb:${sb.name ?? "sbd"}#${n}`;
+    // the ONE id scheme (scoreboardNodeIds): a cross-block scoreboard is `xsb:`
+    // in the diagram — before, the tree called it `sb:` and the reveal found no
+    // such node; an entry the diagram does not draw (no source) has no row
+    const sbIds = scoreboardNodeIds(config);
+    (config.analysis?.scoreboards ?? []).forEach((sb, i) => {
+      const node = sbIds[i];
+      if (!node) {
+        return;
       }
-      usedSb.add(id);
       env.children.push(
-        mk(`v:${id}`, sb.name ?? "sbd", "checklist", "env", id, env, {
-          description: "scoreboard",
+        mk(`v:${node.id}`, sb.name ?? "sbd", "checklist", "env", node.id, env, {
+          description: node.cross ? "cross-block scoreboard" : "scoreboard",
           identFocus: "env",
-          identId: id,
+          identId: node.id,
         })
       );
-    }
+    });
     for (const agent of coveredAgentNames(config)) {
       env.children.push(
         mk(`v:cov:${agent}`, `${agent}_cov`, "graph", "env", `cov:${agent}`, env, {

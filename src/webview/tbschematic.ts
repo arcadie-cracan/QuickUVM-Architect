@@ -8,7 +8,14 @@
 import type { ElkNode } from "elkjs/lib/elk.bundled.js";
 import { Rect, route, RouteRequest } from "./router";
 import { el } from "./svg";
-import type { TbBoundary, TbEdge, TbNode, TbPort, TbScene } from "./tbscene";
+import type {
+  PortGlyph,
+  TbBoundary,
+  TbEdge,
+  TbNode,
+  TbPort,
+  TbScene,
+} from "./tbscene";
 
 interface ElkLike {
   layout(graph: ElkNode): Promise<ElkNode>;
@@ -414,13 +421,37 @@ function drawBox(p: TbPlaced): SVGGElement {
     const py = a.y; // port relative to the node's origin (the group already has translate)
     g.append(
       el("line", {
-        class: `tb-stub${port.iface ? " iface" : ""}`,
+        class: `tb-stub${port.iface ? " iface" : ""}${port.broken ? " broken" : ""}`,
         x1: String(west ? 0 : p.w),
         y1: String(py),
         x2: String(west ? -STUB : p.w + STUB),
         y2: String(py),
       })
     );
+    if (port.broken) {
+      // docs/08 R3 — LabVIEW's broken wire: a red X past the tip, where the wire
+      // that cannot be drawn would have arrived
+      const tip = west ? -STUB : p.w + STUB;
+      g.append(
+        el(
+          "text",
+          {
+            class: "tb-broken-x",
+            x: String(tip + (west ? -8 : 8)),
+            y: String(py + 3.5),
+            "text-anchor": "middle",
+          },
+          "✕"
+        )
+      );
+    }
+    if (port.glyph) {
+      // R2 — the canonical TLM glyph sits ON the stub, its outer edge at the tip:
+      // the wire (routed above the nodes) ends exactly where the glyph begins,
+      // so a square/circle/diamond reads as the port it is, not as a bead on a line
+      const tip = west ? -STUB : p.w + STUB;
+      g.append(glyphEl(port.glyph, tip + (west ? GLYPH_R : -GLYPH_R), py));
+    }
     // an empty label = the name was de-duplicated onto the opposite port
     // (dedupeEdgeLabels): draw only the stub, no empty <text>.
     if (port.label) {
@@ -445,6 +476,41 @@ function drawBox(p: TbPlaced): SVGGElement {
     }
   }
   return g;
+}
+
+/** half-size of a TLM glyph (R2): 8px shapes, centered GLYPH_R inside the stub tip */
+const GLYPH_R = 4;
+
+/**
+ * The canonical UVM TLM glyph (R2, docs/08): square = port (producer), circle =
+ * export/imp (consumer), diamond = analysis port. Hollow, filled with the editor
+ * background so it masks the stub underneath; the shape alone carries the
+ * distinction (no color, no text) — the convention the audience already knows.
+ */
+function glyphEl(kind: PortGlyph, cx: number, cy: number): SVGElement {
+  const r = GLYPH_R;
+  switch (kind) {
+    case "port":
+      return el("rect", {
+        class: "tb-glyph port",
+        x: String(cx - r),
+        y: String(cy - r),
+        width: String(2 * r),
+        height: String(2 * r),
+      });
+    case "export":
+      return el("circle", {
+        class: "tb-glyph export",
+        cx: String(cx),
+        cy: String(cy),
+        r: String(r),
+      });
+    case "analysis":
+      return el("path", {
+        class: "tb-glyph analysis",
+        d: `M ${cx} ${cy - r - 1} L ${cx + r + 1} ${cy} L ${cx} ${cy + r + 1} L ${cx - r - 1} ${cy} Z`,
+      });
+  }
 }
 
 function drawBoundary(p: TbBPlaced): SVGGElement {
@@ -486,6 +552,15 @@ function drawBoundary(p: TbBPlaced): SVGGElement {
       b.label
     )
   );
+  if (b.glyph) {
+    // R2 — the glyph at the flag's ANCHOR (the side facing the diagram, the same
+    // rule as `anchor()`: east for a west flag, and the local flip swaps it),
+    // centered GLYPH_R inside the edge so the wire ends at the glyph's outer edge
+    const anchorEast = (b.side === "WEST") !== Boolean(p.flipH);
+    g.append(
+      glyphEl(b.glyph, anchorEast ? w - GLYPH_R : GLYPH_R, BPORT_H / 2)
+    );
+  }
   return g;
 }
 

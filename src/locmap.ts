@@ -86,6 +86,7 @@ const KIND_RANK: Record<XprobeTarget["kind"], number> = {
   port: 0,
   instance: 1,
   module: 2,
+  tb: 3, // never produced by resolveLoc (the YAML caret, docs/08 R4); the type asks
 };
 
 /**
@@ -234,8 +235,9 @@ export function probeIds(
           }
         }
       }
-    } else {
-      // module: all its instances in the current view
+    } else if (t.kind === "module") {
+      // module: all its instances in the current view (the `tb` kind — the YAML
+      // caret, docs/08 R4 — is mapped by the webview itself, never here)
       if (ctx.mode === "schematic") {
         for (const n of ctx.nodes) {
           if (n.module === t.module) {
