@@ -1086,6 +1086,7 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
 // ------------------------------------------------------------ interaction
 
 function applyTransform(): void {
+  cancelRename(); // docs/08 R14: a fixed-position editor would detach from its title
   viewport?.setAttribute(
     "transform",
     `translate(${state.tx},${state.ty}) scale(${state.k})`
@@ -1703,7 +1704,14 @@ canvas.addEventListener("click", (e) => {
   // the second click of a double-click (e.detail > 1) is ignored — otherwise a
   // double-click toggled twice and drilled
   const widget = (e.target as Element).closest<SVGElement>(".tb-widget");
-  if (widget && state.mode === "tb" && state.selection.has(widget.dataset.node ?? "")) {
+  if (
+    widget &&
+    state.mode === "tb" &&
+    state.selection.has(widget.dataset.node ?? "") &&
+    !e.ctrlKey &&
+    !e.metaKey &&
+    !e.shiftKey // a modifier click edits the SELECTION, never the field
+  ) {
     if (e.detail <= 1) {
       activateWidget(widget);
     }
@@ -2168,6 +2176,21 @@ function undoPositions(redo: boolean): void {
 // moves the selection and the focus to the new id.
 
 let renameBox: HTMLInputElement | null = null;
+/** the editor's "do not commit" hook: `cancelRename` runs it BEFORE removing the
+ *  input, so a `blur` fired by the removal cannot commit a half-typed name */
+const inlineCancel = new WeakMap<HTMLInputElement, () => void>();
+/** docs/08 R14 — a rename sent to the host, applied on the render that shows
+ *  the new id: the sidecar positions are carried then (not before — a refused
+ *  rename must leave no orphan entries), and the selection moves then */
+let pendingRename:
+  | {
+      key: string;
+      pairs: [string, string][];
+      level?: { from: string; to: string };
+      select: string;
+      at: number;
+    }
+  | undefined;
 
 /** why a name cannot be used, as the host will judge it: an SV identifier, no
  *  keyword, free across agents/scoreboards/subenvs/probes; null = fine */
@@ -2193,8 +2216,11 @@ function renameProblem(oldName: string, value: string): string | null {
 }
 
 function cancelRename(): void {
-  renameBox?.remove();
-  renameBox = null;
+  if (renameBox) {
+    inlineCancel.get(renameBox)?.();
+    renameBox.remove();
+    renameBox = null;
+  }
 }
 
 /** opens the editor over the title of the TB node `nodeId` (a renameable one) */
@@ -2251,6 +2277,9 @@ function startRename(nodeId: string): void {
     box.title = p ?? "";
   });
   box.addEventListener("blur", () => finish(true));
+  inlineCancel.set(box, () => {
+    done = true;
+  });
   document.body.append(box);
   renameBox = box;
   box.focus();
@@ -2278,16 +2307,23 @@ function activateWidget(w: SVGElement): void {
   }
 }
 
-/** a small number editor over a widget's pill (the rename editor's mechanics):
- *  Enter commits — empty = reset to the default —, Escape cancels, leaving the
- *  field with a change commits */
+/**
+ * A small number editor over a widget's pill (the rename editor's mechanics):
+ * Enter commits — empty = reset to the default —, Escape cancels, leaving the
+ * field commits a VALID change. A bad value is flagged and keeps the editor on
+ * Enter, and cancels on blur: a number input reads `""` for text the browser
+ * cannot parse (`1e`, `-`), and without `validity.badInput` that `""` meant
+ * "reset" and DELETED the key (review finding); `0` is refused too — quick-uvm
+ * wants `max_latency >= 1`.
+ */
 function startNumberEdit(anchor: SVGElement, current: string, commit: (v: string) => void): void {
   cancelRename();
   const pill = anchor.querySelector(".tb-widget-pill") ?? anchor;
   const r = pill.getBoundingClientRect();
   const box = h("input", "rename number");
   box.type = "number";
-  box.min = "0";
+  box.min = "1";
+  box.step = "1";
   box.value = current;
   box.placeholder = "unbounded";
   box.style.left = `${r.left}px`;
@@ -2295,19 +2331,34 @@ function startNumberEdit(anchor: SVGElement, current: string, commit: (v: string
   box.style.width = `${Math.max(r.width, 72)}px`;
   box.style.height = `${Math.max(r.height, 18)}px`;
   box.style.fontSize = `${Math.max(10, Math.round(10.5 * state.k))}px`;
+  const problem = (): string | null => {
+    if (box.validity.badInput) {
+      return "not a number";
+    }
+    const v = box.value.trim();
+    if (v === "") {
+      return null; // unbounded
+    }
+    if (!/^\d+$/.test(v)) {
+      return "an integer number of cycles";
+    }
+    return Number(v) < 1 ? "at least 1 cycle" : null;
+  };
   let done = false;
   const finish = (ok: boolean): void => {
     if (done) {
       return;
+    }
+    if (ok && problem()) {
+      box.classList.add("invalid");
+      box.title = problem() ?? "";
+      return; // Enter on a bad value keeps the editor: fix it or Escape
     }
     done = true;
     const value = box.value.trim();
     cancelRename();
     if (!ok || value === current) {
       return;
-    }
-    if (value !== "" && !/^\d+$/.test(value)) {
-      return; // the host would refuse a non-integer anyway
     }
     commit(value);
   };
@@ -2321,14 +2372,23 @@ function startNumberEdit(anchor: SVGElement, current: string, commit: (v: string
       finish(false);
     }
   });
-  box.addEventListener("blur", () => finish(true));
+  box.addEventListener("input", () => {
+    const p = problem();
+    box.classList.toggle("invalid", Boolean(p));
+    box.title = p ?? "";
+  });
+  box.addEventListener("blur", () => finish(!problem())); // leaving with a bad value cancels
+  inlineCancel.set(box, () => {
+    done = true;
+  });
   document.body.append(box);
   renameBox = box;
   box.focus();
   box.select();
 }
 
-/** the new id of a renamed node, plus the ids that follow it (the agent's coverage) */
+/** the new id of a renamed node, plus the ids that follow it (the agent's
+ *  coverage node and its `<if>` boundary flag at the Env level) */
 function renamedIds(
   nodeId: string,
   kind: "agent" | "scoreboard" | "subenv",
@@ -2339,6 +2399,7 @@ function renamedIds(
     return [
       [nodeId, `agent:${newName}`],
       [`cov:${old}`, `cov:${newName}`],
+      [`<if>.${old}`, `<if>.${newName}`],
     ];
   }
   return [[nodeId, `${kind === "scoreboard" ? "sb" : "sub"}:${newName}`]];
@@ -2346,51 +2407,84 @@ function renamedIds(
 
 function commitRename(
   nodeId: string,
-  target: { kind: "agent" | "scoreboard" | "subenv"; name: string },
+  target: { kind: "agent" | "scoreboard" | "subenv"; name: string; id?: string },
   newName: string
 ): void {
   const key = layoutKey();
   const pairs = renamedIds(nodeId, target.kind, newName);
-  if (key) {
-    // the positions follow the new ids: without this the renamed box has no
-    // seed and lands wherever interactive ELK puts a new node
-    const nodes = sidecar.views[key]?.nodes ?? {};
-    const moved: Record<string, { x: number; y: number }> = {};
-    for (const [oldId, newId] of pairs) {
-      const o = nodes[oldId];
-      if (o && o.x !== undefined && o.y !== undefined) {
-        Object.assign(sidecarNode(key, newId), o);
-        moved[newId] = { x: o.x, y: o.y };
+  pendingRename = key
+    ? {
+        key,
+        pairs,
+        // an agent's own level is keyed by its name: the arrangement follows too
+        level:
+          target.kind === "agent" && state.viewId
+            ? {
+                from: `${state.viewId}|agent:${target.name}`,
+                to: `${state.viewId}|agent:${newName}`,
+              }
+            : undefined,
+        select: pairs[0][1],
+        at: Date.now(),
       }
+    : undefined;
+  postAction("renameComponent", {
+    kind: target.kind,
+    name: target.name,
+    newName,
+    ...(target.id ? { id: target.id } : {}),
+  });
+}
+
+/**
+ * The render that shows the renamed id finishes the rename: the sidecar
+ * positions follow the new ids — without a seed the renamed box would land
+ * wherever interactive ELK puts a new node — and the selection moves. Called
+ * BEFORE the seeds are read, with the new scene; nothing happens while the host
+ * has not applied (or has refused) the rename.
+ */
+function applyPendingRename(scene: TbScene): void {
+  const pr = pendingRename;
+  if (!pr) {
+    return;
+  }
+  if (pr.key !== layoutKey() || Date.now() - pr.at > 60_000) {
+    pendingRename = undefined;
+    return;
+  }
+  if (!scene.nodes.some((n) => n.id === pr.select)) {
+    return;
+  }
+  pendingRename = undefined;
+  const nodes = sidecar.views[pr.key]?.nodes ?? {};
+  const moved: Record<string, { x: number; y: number }> = {};
+  for (const [oldId, newId] of pr.pairs) {
+    const o = nodes[oldId];
+    if (o && o.x !== undefined && o.y !== undefined) {
+      Object.assign(sidecarNode(pr.key, newId), o);
+      moved[newId] = { x: o.x, y: o.y };
     }
-    if (Object.keys(moved).length) {
-      post({ v: 1, type: "layout/snapshot", viewId: key, nodes: moved });
-    }
-    // an agent's own level is keyed by its name: the arrangement follows too
-    if (target.kind === "agent" && state.viewId) {
-      const oldLevel = sidecar.views[`${state.viewId}|agent:${target.name}`];
-      if (oldLevel?.nodes) {
-        const levelKey = `${state.viewId}|agent:${newName}`;
-        const all: Record<string, { x: number; y: number }> = {};
-        for (const [id, o] of Object.entries(oldLevel.nodes)) {
-          Object.assign(sidecarNode(levelKey, id), o);
-          if (o.x !== undefined && o.y !== undefined) {
-            all[id] = { x: o.x, y: o.y };
-          }
+  }
+  if (Object.keys(moved).length) {
+    post({ v: 1, type: "layout/snapshot", viewId: pr.key, nodes: moved });
+  }
+  if (pr.level) {
+    const oldLevel = sidecar.views[pr.level.from];
+    if (oldLevel?.nodes) {
+      const all: Record<string, { x: number; y: number }> = {};
+      for (const [id, o] of Object.entries(oldLevel.nodes)) {
+        Object.assign(sidecarNode(pr.level.to, id), o);
+        if (o.x !== undefined && o.y !== undefined) {
+          all[id] = { x: o.x, y: o.y };
         }
-        if (Object.keys(all).length) {
-          post({ v: 1, type: "layout/snapshot", viewId: levelKey, nodes: all });
-        }
+      }
+      if (Object.keys(all).length) {
+        post({ v: 1, type: "layout/snapshot", viewId: pr.level.to, nodes: all });
       }
     }
   }
-  postAction("renameComponent", { kind: target.kind, name: target.name, newName });
-  // the selection and the focus follow the new name (the old id goes with config/full)
-  state.selection = new Set([pairs[0][1]]);
-  if (target.kind === "agent" && state.tbFocus === `agent:${target.name}`) {
-    state.tbFocus = `agent:${newName}`;
-    post({ v: 1, type: "tb/focus", focus: state.tbFocus, select: null });
-  }
+  state.selection = new Set([pr.select]);
+  postSelection(); // the host's copy of the selection follows (palette commands read it)
 }
 
 // ------------------------------------------- designer assistance (docs/08 R12)
@@ -4615,6 +4709,7 @@ async function renderTb(refit: boolean): Promise<void> {
   }
   renderTbHeader(scene);
   hideBanner();
+  applyPendingRename(scene); // docs/08 R14: the carried seeds must exist before they are read
   // the user-owned positions (per level) become seeds for interactive
   // ELK (docs/04, the same D21 mechanics as the RTL schematic view)
   const key = layoutKey();

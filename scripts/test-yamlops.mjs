@@ -1309,6 +1309,30 @@ test("renameAgent: the name, its conventional interface/seq_item and every refer
   assert.equal(ops.renameAgent(text, "nope", "x"), text, "missing agent: byte-identical");
   assert.equal(ops.renameAgent(text, "cmd", "cmd"), text, "same name: byte-identical");
   assert.throws(() => ops.renameAgent(text, "cmd", "rsp"), /already exists/);
+  // the review's gaps: tests[].sequence.agent, a boundary agent's `<agent>.<port>`
+  // endpoints in connections and cross-block scoreboards, and a VIP reference
+  const hybrid = text.replace("tests:\n  - { name: s_test }", "tests:\n  - { name: t1, sequence: { agent: cmd, name: cmd_burst } }") +
+    "subenvs:\n  - { name: u_b, config: b.yaml }\n" +
+    "connections:\n  - { from: cmd.dout, to: u_b.din }\n  - { from: u_b.q, to: cmd.din }\n";
+  const hcfg = ops.parseQuvm(ops.renameAgent(hybrid, "cmd", "req"));
+  assert.equal(hcfg.tests[0].sequence.agent, "req");
+  assert.deepEqual(hcfg.connections, [{ from: "req.dout", to: "u_b.din" }, { from: "u_b.q", to: "req.din" }]);
+  const boundary = text.replace("source: u_a.cmd", "source: cmd.pkt");
+  assert.equal(ops.parseQuvm(ops.renameAgent(boundary, "cmd", "req")).analysis.scoreboards[1].source, "req.pkt");
+  const vip = ops.addVipAgent(ops.setDut(ops.newConfigText("s"), DUT), "io", "../vip/io.qvip");
+  assert.throws(() => ops.renameAgent(vip, "io", "io2"), /VIP reference/);
+});
+
+test("renameScoreboardAt: duplicates are renamed by ordinal, not by the first of that name", () => {
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.createAgent(text, { name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [] });
+  const dup = text + "analysis:\n  scoreboards:\n    - { name: x, source: cmd }\n    - { name: x, source: cmd, monitor: cmd }\n    - { name: z, source: cmd }\n";
+  const second = ops.parseQuvm(ops.renameScoreboardAt(dup, 1, "y")).analysis.scoreboards;
+  assert.deepEqual(second.map((s) => s.name), ["x", "y", "z"], "the SECOND entry (sb:x#2) is the one renamed");
+  assert.equal(second[1].monitor, "cmd", "and it keeps its own fields");
+  assert.equal(ops.renameScoreboardAt(dup, 5, "y"), dup, "out of range: byte-identical");
+  assert.equal(ops.renameScoreboardAt(dup, 0, "x"), dup, "same name: byte-identical");
+  assert.throws(() => ops.renameScoreboardAt(dup, 2, "x"), /already exists/, "another entry's name is taken");
 });
 
 test("renameScoreboard / renameSubenv: the key, and for a subenv the endpoints that carry its name", () => {

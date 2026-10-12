@@ -21,7 +21,7 @@ import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import { probeCoverageAllowed, proposeProbe } from "./probe";
 import { connectedIface } from "./proposals";
 import type { ProposalApply } from "./protocol";
-import type { QuvmConfig } from "./quickuvm";
+import { scoreboardNodeIds, type QuvmConfig } from "./quickuvm";
 import { inferredComponents, type ResolvedConfig } from "./resolved";
 import * as ops from "./yamlops";
 
@@ -2222,8 +2222,9 @@ export class Actions {
    * instance, no XMR, no config_db, and not even in the filelist) — a real bug
    * of quick-uvm 0.9.2, which nevertheless exits with 0: SILENT failure, so we warn.
    */
-  private async isComposedChild(): Promise<boolean> {
-    const uri = this.config.configUri;
+  private async isComposedChild(
+    uri: vscode.Uri | undefined = this.config.configUri
+  ): Promise<boolean> {
     if (!uri) {
       return false;
     }
@@ -2688,7 +2689,9 @@ export class Actions {
     kind: string,
     name: string,
     newName: string,
-    cfg: TbEditTarget = this.config
+    cfg: TbEditTarget = this.config,
+    /** the diagram node id — a scoreboard is addressed by ORDINAL (`sb:x#2`) */
+    id?: string
   ): Promise<void> {
     if (!cfg.configUri || !name) {
       return;
@@ -2719,25 +2722,45 @@ export class Actions {
     let refs = 0;
     let what: string;
     let mutate: (t: string) => string;
+    const pre = `${name}.`;
     switch (kind) {
-      case "agent":
+      case "agent": {
+        if ((c.agents ?? []).find((a) => a.name === name)?.from_vip) {
+          // a VIP reference is resolved by its entry name against the manifest
+          void vscode.window.showWarningMessage(
+            vscode.l10n.t(
+              "QuickUVM Architect: \"{0}\" is a VIP reference — its name is the manifest's; rename it in the VIP.",
+              name
+            )
+          );
+          return;
+        }
+        const endpoint = (v: string | undefined): boolean => v === name || Boolean(v?.startsWith(pre));
         refs =
           (c.analysis?.coverage ?? []).filter((e) => coveredAgent(e) === name).length +
-          (c.analysis?.scoreboards ?? []).filter((s) => s.source === name || s.monitor === name).length +
+          (c.analysis?.scoreboards ?? []).filter((s) => endpoint(s.source) || endpoint(s.monitor)).length +
           (c.virtual_sequences ?? []).reduce(
             (n, v) => n + (v.body ?? []).filter((st) => st.agent === name).length,
             0
           ) +
+          (c.tests ?? []).filter(
+            (t) => (t as { sequence?: { agent?: string } }).sequence?.agent === name
+          ).length +
+          (c.connections ?? []).filter((x) => x.from?.startsWith(pre) || x.to?.startsWith(pre)).length +
           (c.register_model?.bus_agent === name ? 1 : 0);
         what = vscode.l10n.t("agent");
         mutate = (t) => ops.renameAgent(t, name, nn);
         break;
-      case "scoreboard":
+      }
+      case "scoreboard": {
+        // the entry the user clicked, by ordinal: duplicates draw as `sb:x#2`
+        const index = id ? scoreboardNodeIds(c).findIndex((n) => n?.id === id) : -1;
         what = vscode.l10n.t("scoreboard");
-        mutate = (t) => ops.renameScoreboard(t, name, nn);
+        mutate = (t) =>
+          index >= 0 ? ops.renameScoreboardAt(t, index, nn) : ops.renameScoreboard(t, name, nn);
         break;
+      }
       case "subenv": {
-        const pre = `${name}.`;
         refs =
           (c.connections ?? []).filter((x) => x.from?.startsWith(pre) || x.to?.startsWith(pre)).length +
           (c.analysis?.scoreboards ?? []).filter(
@@ -2757,7 +2780,7 @@ export class Actions {
         void vscode.window.showInformationMessage(
           vscode.l10n.t("QuickUVM Architect: {0} \"{1}\" renamed to \"{2}\"{3}.", what, name, nn, note)
         );
-        if (kind === "agent" && cfg === this.config && (await this.isComposedChild())) {
+        if (kind === "agent" && (await this.isComposedChild(cfg.configUri))) {
           void vscode.window.showWarningMessage(
             vscode.l10n.t(
               "QuickUVM Architect: this configuration is composed as a subenv of another bench — the references there (<subenv>.{0}) are not updated; rename them in the parent config.",

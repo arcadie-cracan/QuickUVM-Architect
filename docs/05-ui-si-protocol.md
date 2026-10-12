@@ -187,23 +187,35 @@ mesajele tot aici, la implementare.
   editor; Escape cancels; leaving the field with a change applies. One resolver
   (`tbRenameTarget`, next to `tbDeleteTarget`) decides what can be renamed:
   agents, named scoreboards, subenvs — a ghost, an unnamed scoreboard and the
-  derived names (coverage `<agent>_cov`, the aggregates) cannot. The webview
-  sends `renameComponent {kind, name, newName}`, carries the sidecar positions
-  of the renamed ids (`agent:` + its `cov:`, `sb:`, `sub:`) and an agent's own
-  level (`tb:<config>|agent:<name>`) to the new ids through `layout/snapshot` —
-  the box keeps its seat — and moves the selection and the focus. The host
-  renames with the cascade (`renameAgent`: coverage bare or rich, scoreboard
-  endpoints, vseq steps, `register_model.bus_agent`, the agent's own
-  `<name>_if` / `<name>_seq_item` when conventional; `renameSubenv`:
-  `connections` and cross-block endpoints) and reports the references updated.
+  derived names (coverage `<agent>_cov`, the aggregates) cannot; nor can a VIP
+  reference (`from_vip` — its name is the manifest's) or a duplicate subenv
+  name. A scoreboard is addressed by ORDINAL (`id: sb:x#2` travels with the
+  action), so a duplicate renames its own entry. The webview sends
+  `renameComponent {kind, name, newName, id?}` and, on the render that shows
+  the new id, carries the sidecar positions of the renamed ids (`agent:` + its
+  `cov:` and `<if>.` flag, `sb:`, `sub:`) and an agent's own level
+  (`tb:<config>|agent:<name>`) to the new ids through `layout/snapshot` — the
+  box keeps its seat — and moves the selection (deferred on purpose: a refused
+  rename leaves no orphan entries). The host renames with the cascade
+  (`renameAgent`: coverage bare or rich, scoreboard endpoints bare and
+  `<agent>.<port>`, vseq steps, `tests[].sequence.agent`, `connections`
+  endpoints of a boundary agent, `register_model.bus_agent`, the agent's own
+  `<name>_if` / `<name>_seq_item` when conventional; `renameScoreboardAt`;
+  `renameSubenv`: `connections` and cross-block endpoints) and reports the
+  references updated.
 - **Inline widgets on the boxes** (docs/08 R13, Oct 2026): the two or three
   facts a bench is tuned by sit ON the box, under its compartments, as pills
   (`TbNode.widgets`, built in `buildTbScene`; sized and drawn in
   `tbschematic.ts`): `active` / `passive` on an agent (a toggle), `match: …`
   (a cycle in_order ↔ out_of_order) and `latency: …` (a small number editor,
-  empty = unbounded) on a NAMED two-stream scoreboard — a single-stream entry
-  has neither fact, an unnamed one cannot be edited by name, a ghost has nothing
-  in the YAML. A click sends the SAME host action the Properties panel would
+  empty = unbounded, at least 1 cycle — quick-uvm refuses 0) on a NAMED
+  two-stream scoreboard — a single-stream entry has neither fact, an unnamed or
+  duplicate-named one (`sb:x#2`) cannot be edited by name, a ghost has nothing
+  in the YAML, a VIP reference (`from_vip`) takes no keys. The `match` pill
+  shows the `match_key` with the mode and its tooltip says the step to in_order
+  drops it (the `setScoreboardField` cascade). A bad number (a stray `e`, a
+  fraction, 0) is flagged, keeps the editor on Enter and cancels on blur. A
+  click sends the SAME host action the Properties panel would
   (`editAgent {name, field: active, value}` / `editScoreboard {name, field,
   value}`), so the panel and the box stay in sync through the YAML. The
   accidental-edit rule of the research: a widget takes pointer events only

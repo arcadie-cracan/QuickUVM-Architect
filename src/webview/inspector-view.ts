@@ -27,6 +27,7 @@ import type {
   QuvmPort,
   QuvmScoreboard,
 } from "../quickuvm";
+import { scoreboardNodeIds } from "../quickuvm";
 import type { Instance } from "../model";
 import type { SchematicScene } from "./scene";
 import type { TbScene } from "./tbscene";
@@ -1696,21 +1697,28 @@ export function tbDeleteTarget(
  *  context menu — like `tbDeleteTarget` for deletion. */
 export function tbRenameTarget(
   node: TbScene["nodes"][number]
-): { kind: "agent" | "scoreboard" | "subenv"; name: string } | null {
+): { kind: "agent" | "scoreboard" | "subenv"; name: string; id?: string } | null {
   if (node.inferred) {
     return null;
   }
+  const cfg = ctx.state.config;
   if (node.kind === "tbagent") {
-    return { kind: "agent", name: node.label };
+    // a VIP reference is resolved by its entry name against the manifest's
+    // agents: renaming it breaks the load — its name is the VIP's
+    const decl = cfg?.agents?.find((a) => a.name === node.label);
+    return decl?.from_vip ? null : { kind: "agent", name: node.label };
   }
   if (node.kind === "tbsb" && node.id.startsWith("sb:")) {
-    const sb = ctx.state.config?.analysis?.scoreboards?.find(
-      (s) => (s.name ?? "sbd") === node.label
-    );
-    return sb?.name ? { kind: "scoreboard", name: sb.name } : null;
+    // by ORDINAL, not by label: duplicates draw as `sb:x#2` and must rename
+    // their OWN entry (the id scheme of scoreboardNodeIds)
+    const i = cfg ? scoreboardNodeIds(cfg).findIndex((n) => n?.id === node.id) : -1;
+    const sb = i >= 0 ? cfg?.analysis?.scoreboards?.[i] : undefined;
+    return sb?.name ? { kind: "scoreboard", name: sb.name, id: node.id } : null;
   }
   if (node.id.startsWith("sub:")) {
-    return { kind: "subenv", name: node.id.slice("sub:".length) };
+    const name = node.id.slice("sub:".length);
+    // a duplicate subenv name (`sub:u_a#2`) is an invalid config: ambiguous, no rename
+    return name.includes("#") ? null : { kind: "subenv", name };
   }
   return null;
 }
