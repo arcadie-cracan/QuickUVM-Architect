@@ -80,6 +80,22 @@ export function activate(context: vscode.ExtensionContext): void {
   // `openYamlBeside` setting), a selected box reveals its entry, and the caret
   // in the YAML lights the matching box
   const yamlLink = new YamlLink();
+  // docs/08 R20 — the generated code next to the diagram: the selection lights
+  // the element's lines in the visible generated editors (and opens its primary
+  // file beside, when the setting says so), the CodeLenses lead back to the
+  // verification view, the report lists what traces where. Constructed BEFORE
+  // the genState listener below references it (review finding: a TDZ otherwise)
+  const trace = new TraceService({
+    manifest: () => genState.currentManifest,
+    outDir: () => genState.outDir,
+    present: () => genState.presentFiles,
+    primaryFile: (id) => genState.primaryFilePath(id),
+    ownedFiles: (id) => genState.filesFor(id),
+    resolved: () => resolve.current,
+    config: () => config.current,
+    configPath: () => config.configUri?.fsPath,
+  });
+  context.subscriptions.push(resolve.onDidChange(() => trace.refresh()));
   /** the status payload shared by the panel (getStatus), the sidebar replay and
    *  the live pushes — one shape, so the surfaces cannot disagree */
   const statusSnapshot = () => ({
@@ -97,20 +113,6 @@ export function activate(context: vscode.ExtensionContext): void {
     trace.refresh(); // docs/08 R20: the lenses and the lit lines follow the manifest
     DiagramPanel.current?.postStatus();
   });
-  // docs/08 R20 — the generated code next to the diagram: the selection lights
-  // the element's lines in the visible generated editors (and opens its primary
-  // file beside, when the setting says so), the CodeLenses lead back to the
-  // verification view, the report lists what traces where
-  const trace = new TraceService({
-    manifest: () => genState.currentManifest,
-    outDir: () => genState.outDir,
-    present: () => genState.presentFiles,
-    primaryFile: (id) => genState.primaryFilePath(id),
-    resolved: () => resolve.current,
-    config: () => config.current,
-    configPath: () => config.configUri?.fsPath,
-  });
-  context.subscriptions.push(resolve.onDidChange(() => trace.refresh()));
   context.subscriptions.push(
     log, slangDiags, configDiags, generateDiags, tree, vtree, backend, config,
     layout, genState, genDeco, resolve, findDeco, yamlLink, trace,

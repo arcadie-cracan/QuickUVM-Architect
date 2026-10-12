@@ -24,6 +24,13 @@ export function baseName(file: string): string {
   return i >= 0 ? file.slice(i + 1) : file;
 }
 
+/** a file name without its extension (`cmd_agent.svh` -> `cmd_agent`) */
+export function stemOf(file: string): string {
+  const name = baseName(file);
+  const dot = name.lastIndexOf(".");
+  return dot > 0 ? name.slice(0, dot) : name;
+}
+
 /** the manifest OWNER of a generated file (`agent:cmd`, `scoreboard:pkt_sb`,
  *  `aggregate`, ...), or null when the manifest does not list it */
 export function ownerOfFile(manifest: Manifest, file: string): string | null {
@@ -72,8 +79,7 @@ function stemsOf(manifest: Manifest, owner: string): string[] {
   for (const el of manifest.elements) {
     if (el.owner === owner) {
       for (const f of el.files) {
-        const dot = f.file.lastIndexOf(".");
-        out.push(dot > 0 ? f.file.slice(0, dot) : f.file);
+        out.push(stemOf(f.file));
       }
     }
   }
@@ -90,8 +96,12 @@ const ABBREV: Record<string, string> = { driver: "drv", monitor: "mon", sequence
  * The pattern that finds a diagram element's generated identifiers in an
  * AGGREGATE file: its name, the stems of its owned files, and the handles the
  * generator derives from them (`<word>` or `<word>_<suffix>`, word-bounded).
- * Null for the elements that own no generated identifier (`env`, `dut`, the
- * boundary flags, an unknown id).
+ * An identifier that continues one of the words into ANOTHER element's name or
+ * stem, or into a whole-config stem, belongs to that other element and is
+ * refused with a lookahead: `cmd` must not light `cmd_rsp_agnt`, and an agent
+ * named after the DUT's prefix (`yapp` on `yapp_buffer`) must not light
+ * `yapp_buffer_env` (review finding). Null for the elements that own no
+ * generated identifier (`env`, `dut`, the boundary flags, an unknown id).
  */
 export function tracePattern(manifest: Manifest, nodeId: string): RegExp | null {
   const words: string[] = [];
@@ -108,7 +118,8 @@ export function tracePattern(manifest: Manifest, nodeId: string): RegExp | null 
     const a = nodeId.slice("agent:".length);
     words.push(a, ...stemsOf(manifest, nodeId));
   } else if (nodeId.startsWith("sb:") || nodeId.startsWith("xsb:")) {
-    const n = nodeId.slice(nodeId.indexOf(":") + 1);
+    // an ordinal id (`sb:x#2`, a duplicate name) addresses the same entry name
+    const n = nodeId.slice(nodeId.indexOf(":") + 1).replace(/#\d+$/, "");
     words.push(n, ...stemsOf(manifest, `scoreboard:${n}`));
   } else if (nodeId === "vsqr") {
     words.push("vsqr");
@@ -124,14 +135,34 @@ export function tracePattern(manifest: Manifest, nodeId: string): RegExp | null 
   } else {
     return null;
   }
-  const alts = [...new Set(words.filter(Boolean))].map(escapeRe);
+  const own = new Set(words.filter(Boolean));
+  // the names and the stems of every element and of the whole-config files,
+  // minus the element's own: the identifiers they begin are theirs
+  const competitors = new Set<string>();
+  for (const el of manifest.elements) {
+    const { name } = ownerParts(el.owner);
+    if (name && !own.has(name)) {
+      competitors.add(name);
+    }
+    for (const s of stemsOf(manifest, el.owner)) {
+      if (!own.has(s)) {
+        competitors.add(s);
+      }
+    }
+  }
+  const alt = (w: string): string => {
+    const rests = [...competitors].filter((c) => c.startsWith(`${w}_`)).map((c) => c.slice(w.length));
+    const guard = rests.length ? `(?!${rests.map((r) => `${escapeRe(r)}(?:_|\\b)`).join("|")})` : "";
+    return `${escapeRe(w)}${guard}`;
+  };
+  const alts = [...own].map(alt);
   if (nodeId === "vsqr") {
     alts.push("(?:\\w+_)?virtual_sequencer"); // the class of the aggregate file itself
   }
   return new RegExp(`\\b(?:${alts.join("|")})(?:_\\w+)?\\b`);
 }
 
-/** the 0-based lines of `text` the pattern matches; comment-only lines are
+/** the 0-based lines of `text` the pattern matches; `//` comment lines are
  *  skipped (the file header names the file, a section comment names a kind) */
 export function traceLines(text: string, pattern: RegExp): number[] {
   const out: number[] = [];
@@ -166,6 +197,24 @@ export function isInferred(resolved: ResolvedConfig | null | undefined, owner: s
   return false;
 }
 
+/** the agent's coverage collector is the generator's (implicit mode), not the YAML's */
+export function isCoverageInferred(resolved: ResolvedConfig | null | undefined, agent: string): boolean {
+  return (resolved?.analysis?.coverage ?? []).some((c) => c.agent === agent && c.origin === "inferred");
+}
+
+/** the `<agent>_cov.*` file of an agent owner, if the manifest lists one */
+function coverageFileOf(manifest: Manifest, agent: string): string | null {
+  for (const el of manifest.elements) {
+    if (el.owner === `agent:${agent}`) {
+      const f = el.files.find((x) => stemOf(x.file) === `${agent}_cov`);
+      if (f) {
+        return f.file;
+      }
+    }
+  }
+  return null;
+}
+
 export interface TraceLens {
   /** 0-based line */
   line: number;
@@ -178,9 +227,11 @@ export interface TraceLens {
 
 /**
  * The lenses of a generated file: an OWNED file gets one at its top (its
- * element); an AGGREGATE file gets one per element at the first line that
- * mentions it; a file the manifest does not list, or an owner the diagram does
- * not draw (`test:`, `vip`, `register_model`), gets none.
+ * element — the agent's `<a>_cov` file is its coverage collector, a node of
+ * its own); an AGGREGATE file gets one per element at the first line that
+ * mentions it (the coverage collectors included); a file the manifest does not
+ * list, or an owner the diagram does not draw (`test:`, `vip`,
+ * `register_model`), gets none.
  */
 export function traceLenses(
   manifest: Manifest,
@@ -193,31 +244,44 @@ export function traceLenses(
     return [];
   }
   if (owner !== "aggregate") {
+    const { kind, name } = ownerParts(owner);
+    if (kind === "agent" && stemOf(file) === `${name}_cov`) {
+      return [
+        {
+          line: 0,
+          nodeId: `cov:${name}`,
+          owner,
+          label: `coverage on ${name}`,
+          inferred: isCoverageInferred(resolved, name),
+        },
+      ];
+    }
     const nodeId = ownerToNodeId(owner);
     return nodeId
       ? [{ line: 0, nodeId, owner, label: ownerLabel(owner), inferred: isInferred(resolved, owner) }]
       : [];
   }
   const out: TraceLens[] = [];
+  const add = (nodeId: string, owner: string, label: string, inferred: boolean): void => {
+    // several vseq owners share the `vsqr` node: one lens, on the node's pattern
+    if (out.some((l) => l.nodeId === nodeId)) {
+      return;
+    }
+    const pattern = tracePattern(manifest, nodeId);
+    const first = pattern ? traceLines(text, pattern)[0] : undefined;
+    if (first !== undefined) {
+      out.push({ line: first, nodeId, owner, label, inferred });
+    }
+  };
   for (const el of manifest.elements) {
     const nodeId = ownerToNodeId(el.owner);
     if (el.owner === "aggregate" || !nodeId) {
       continue;
     }
-    // several vseq owners share the `vsqr` node: one lens, on the node's pattern
-    if (out.some((l) => l.nodeId === nodeId)) {
-      continue;
-    }
-    const pattern = tracePattern(manifest, nodeId);
-    const first = pattern ? traceLines(text, pattern)[0] : undefined;
-    if (first !== undefined) {
-      out.push({
-        line: first,
-        nodeId,
-        owner: el.owner,
-        label: ownerLabel(el.owner),
-        inferred: isInferred(resolved, el.owner),
-      });
+    add(nodeId, el.owner, ownerLabel(el.owner), isInferred(resolved, el.owner));
+    const { kind, name } = ownerParts(el.owner);
+    if (kind === "agent" && coverageFileOf(manifest, name)) {
+      add(`cov:${name}`, el.owner, `coverage on ${name}`, isCoverageInferred(resolved, name));
     }
   }
   return out.sort((a, b) => a.line - b.line);
@@ -226,9 +290,10 @@ export function traceLenses(
 /**
  * The traceability report (markdown): every element with its owned files and
  * their on-disk state, the elements the generator supplies without a YAML entry
- * (the "untraceable" list of the row — nothing in the YAML to go back to), and
- * the whole-config files. `present` = the files that exist on disk (null when
- * unknown: no flags).
+ * (the "untraceable" list of the row — nothing in the YAML to go back to; the
+ * inferred coverage collectors included, though their file sits under the
+ * agent), and the whole-config files. `present` = the files that exist on disk
+ * (null when unknown: no flags).
  */
 export function traceReport(
   manifest: Manifest,
@@ -250,6 +315,14 @@ export function traceReport(
     }
     const row = `| ${ownerLabel(el.owner)} | ${files(el.owner)} |`;
     (isInferred(resolved, el.owner) ? inferred : declared).push(row);
+  }
+  for (const c of resolved?.analysis?.coverage ?? []) {
+    if (c.origin === "inferred") {
+      const f = coverageFileOf(manifest, c.agent);
+      inferred.push(
+        `| coverage on ${c.agent} | ${f ? `${flag(f)}\`${f}\`` : "—"} (emitted under agent ${c.agent}) |`
+      );
+    }
   }
   const lines: string[] = [
     `# Traceability — ${configName}`,

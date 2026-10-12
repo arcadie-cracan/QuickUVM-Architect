@@ -149,6 +149,19 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       }
     };
 
+    // the UI preferences (docs/05 ui/config): at ready and whenever they change —
+    // the palette's "Code view" row reads its label from `codeFollow`, and this
+    // editor is the DEFAULT one for `*.quickuvm.yaml` (review finding: posted
+    // only at ready, the row's second click switched the mode back off)
+    const postUi = (): void => {
+      const quvm = vscode.workspace.getConfiguration("quickuvm");
+      const lasso: LassoMode =
+        quvm.get<string>("lassoMode", "contain") === "intersect" ? "intersect" : "contain";
+      const decorations = quvm.get<boolean>("schematicDecorations", true);
+      const codeFollow = quvm.get<boolean>("codeFollowsSelection", false);
+      void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
+    };
+
     // Any change to the document (text editing, undo/redo, or a gesture's own
     // WorkspaceEdit) re-renders the diagram from the current YAML.
     // Idempotent, no loop: `config/full` -> render emits no other edit.
@@ -203,6 +216,17 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       setActiveExporter(exporter);
     }
     disposables.push(
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (
+          e.affectsConfiguration("quickuvm.lassoMode") ||
+          e.affectsConfiguration("quickuvm.schematicDecorations") ||
+          e.affectsConfiguration("quickuvm.codeFollowsSelection")
+        ) {
+          postUi();
+        }
+      })
+    );
+    disposables.push(
       webviewPanel.onDidChangeViewState(() => {
         if (webviewPanel.active) {
           setActiveExporter(exporter);
@@ -228,14 +252,7 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
             type: "layout/full",
             sidecar: this.layout.sidecar,
           });
-          const quvm = vscode.workspace.getConfiguration("quickuvm");
-          const lasso: LassoMode =
-            quvm.get<string>("lassoMode", "contain") === "intersect"
-              ? "intersect"
-              : "contain";
-          const decorations = quvm.get<boolean>("schematicDecorations", true);
-          const codeFollow = quvm.get<boolean>("codeFollowsSelection", false);
-          void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
+          postUi();
           postConfig();
           // The inferred components need a subprocess, so the first paint cannot
           // wait for them: post the config now; `onDidChange` above re-posts once

@@ -265,23 +265,36 @@ mesajele tot aici, la implementare.
   approximate: a word-bounded pattern on the element's name and on the stems of
   its owned files finds the derived identifiers (`cmd_agnt`, `cmd_if_inst`,
   `cmd_cov_h`, `pkt_sb`, `yapp_buffer_scoreboard`) — `tracePattern` /
-  `traceLines` in the pure `src/trace.ts` (`test:trace`). Host side
+  `traceLines` in the pure `src/trace.ts` (`test:trace`); an identifier that
+  continues a name into ANOTHER element's name or stem, or into a whole-config
+  stem, is refused (`cmd` does not light `cmd_rsp_agnt`, an agent `yapp` on
+  DUT `yapp_buffer` does not light `yapp_buffer_env`). Host side
   (`src/trace-service.ts`): on `select/changed` with ONE TB element the lines
   light (whole-line, the range-highlight colour) in the VISIBLE generated
   editors that are aggregate files of the active bench — an owned file IS the
-  element, nothing to point at — and the first is revealed; with
-  `quickuvm.codeFollowsSelection` the element's primary file also opens in a
+  element, nothing to point at — and the first is revealed (only on a
+  selection: a tab opening or a manifest refresh re-lights without scrolling);
+  with `quickuvm.codeFollowsSelection` the element's primary file (for
+  `cov:<a>` and the agent internals, its first owned file) also opens in a
   PREVIEW tab beside the diagram, focus kept (the next selection replaces it —
-  HDL Coder's Code view); off by default, nothing opens a tab without the
-  user's say-so. The reverse direction is a CodeLens in every generated file
-  under the output dir: an owned file gets one at its top ("↖ agent cmd in the
-  verification view" → `quickuvm.revealTbComponent`), an aggregate file one per
-  element at its first mention; an element `quick-uvm resolve` reports as
-  inferred reads "inferred by quick-uvm, not in the YAML" — the row's
-  "untraceable" list, which the report also prints (`quickuvm.traceabilityReport`:
-  a markdown document — declared elements with their files and on-disk flags,
-  the inferred ones, the whole-config files). The per-file editor drives the
-  trace only when its document IS the active config (the manifest is its).
+  HDL Coder's Code view, with VS Code's preview tabs enabled); off by default,
+  nothing opens a tab without the user's say-so. The reverse direction is a
+  CodeLens in every generated file under the output dir: an owned file gets one
+  at its top ("↖ agent cmd in the verification view" →
+  `quickuvm.revealTbComponent`; the agent's `<a>_cov` file points at its
+  coverage node), an aggregate file one per element at its first mention (the
+  coverage collectors included; a cross-block scoreboard resolves to its
+  `xsb:` node at the root); an element `quick-uvm resolve` reports as inferred
+  — scoreboard, vseq, coverage — reads "inferred by quick-uvm, not in the YAML":
+  the row's "untraceable" list, which the report also prints
+  (`quickuvm.traceabilityReport`: a read-only virtual `quickuvm-trace:` markdown
+  document, rendered through the markdown preview — declared elements with
+  their files and on-disk flags, the inferred ones, the whole-config files).
+  The per-file editor drives the trace only when its document IS the active
+  config (the manifest is its), and re-posts `ui/config` on the settings
+  change like the panel. Two benches sharing one `quickuvm.outputDir` share
+  the lenses too: a generated file names no config, so it is read against the
+  ACTIVE bench's manifest.
 - **Diff preview before a gesture** (docs/08 R19, Oct 2026): a DESTRUCTIVE
   gesture (`deleteComponent` with its cascade, the covergroup downgrade,
   `removeTest`, `removeRegisterModel`, the regression block while tests set

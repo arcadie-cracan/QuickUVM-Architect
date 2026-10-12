@@ -202,8 +202,9 @@ test("traceLenses: an owned file gets one lens at its top, an aggregate one per 
       [10, "agent:rsp"],
       [13, "vsqr"],
       [16, "sb:pkt_sb"],
+      [19, "cov:cmd"],
     ],
-    "sorted by line; the test owner has no node"
+    "sorted by line; the test owner has no node; the coverage collector is a node of its own"
   );
   assert.deepEqual(traceLenses(MANIFEST, "yapp_buffer_test.svh", "class yapp_buffer_test;", null), [], "tests are not drawn");
   assert.deepEqual(traceLenses(MANIFEST, "notes.svh", "x", null), []);
@@ -232,6 +233,80 @@ test("traceReport: declared / inferred / aggregate sections, with the on-disk fl
   const none = traceReport(MANIFEST, null, null, "x.yaml");
   assert.match(none, /## Inferred by quick-uvm[^\n]*\n\nNone\./);
   assert.ok(!none.includes("✓"), "no flags when the disk state is unknown");
+});
+
+test("review: a name that prefixes another element's does not light the other's lines", () => {
+  // agents `cmd` and `cmd_rsp` (a shared bus prefix is ordinary: axi / axi_lite)
+  const m = {
+    ...MANIFEST,
+    elements: [
+      ...MANIFEST.elements,
+      { owner: "agent:cmd_rsp", files: files("cmd_rsp_if.sv", "cmd_rsp_cfg.svh", "cmd_rsp_agent.svh", "cmd_rsp_cov.svh") },
+    ],
+  };
+  const env = [
+    "  cmd_agent  cmd_agnt;", // 0
+    "  cmd_rsp_agent  cmd_rsp_agnt;", // 1
+    '    uvm_config_db#(cmd_rsp_cfg)::set(this, "cmd_rsp_agnt", "cfg", env_cfg.cmd_rsp_cfg);', // 2
+    "    vsqr.cmd_rsp_sqr = cmd_rsp_agnt.sqr;", // 3
+    "    vsqr.cmd_sqr = cmd_agnt.sqr;", // 4
+  ].join("\n");
+  assert.deepEqual(traceLines(env, tracePattern(m, "agent:cmd")), [0, 4]);
+  assert.deepEqual(traceLines(env, tracePattern(m, "agent:cmd_rsp")), [1, 2, 3]);
+});
+
+test("review: an agent named with the DUT's prefix does not light the whole env", () => {
+  // agent `yapp` on DUT `yapp_buffer`: `yapp_buffer_env`, `_scoreboard`, `_vseq` are not its
+  const m = {
+    ...MANIFEST,
+    elements: [
+      ...MANIFEST.elements,
+      { owner: "agent:yapp", files: files("yapp_if.sv", "yapp_cfg.svh", "yapp_agent.svh", "yapp_cov.svh") },
+    ],
+  };
+  const env = [
+    "class yapp_buffer_env extends uvm_env;", // 0
+    "  yapp_agent  yapp_agnt;", // 1
+    "  yapp_buffer_virtual_sequencer vsqr;", // 2
+    "  yapp_buffer_scoreboard pkt_sb;", // 3
+    '    uvm_config_db#(yapp_cfg)::set(this, "yapp_agnt", "cfg", env_cfg.yapp_cfg);', // 4
+    "  yapp_buffer dut_inst (.clk(clk));", // 5
+    "  yapp_buffer_env_cfg env_cfg;", // 6
+  ].join("\n");
+  assert.deepEqual(traceLines(env, tracePattern(m, "agent:yapp")), [1, 4]);
+  const lens = traceLenses(m, "yapp_buffer_env.svh", env, null).find((l) => l.nodeId === "agent:yapp");
+  assert.equal(lens?.line, 1, "the lens lands on the agent's handle, not on the env class");
+});
+
+test("review: an ordinal scoreboard id (`sb:x#2`) traces the entry's name", () => {
+  assert.deepEqual(traceLines(ENV, tracePattern(MANIFEST, "sb:pkt_sb#2")), [16, 26, 31, 32]);
+});
+
+test("review: the coverage collector is a node of its own — its file's lens and the aggregate lens", () => {
+  assert.deepEqual(traceLenses(MANIFEST, "cmd_cov.svh", "class cmd_cov;", null), [
+    { line: 0, nodeId: "cov:cmd", owner: "agent:cmd", label: "coverage on cmd", inferred: false },
+  ]);
+  const inferred = traceLenses(IMPLICIT, "cmd_cov.svh", "class cmd_cov;", RESOLVED_IMPLICIT);
+  assert.equal(inferred[0].inferred, true, "implicit mode: the generator's coverage");
+  const env = traceLenses(MANIFEST, "yapp_buffer_env.svh", ENV, null);
+  assert.deepEqual(
+    env.map((l) => [l.line, l.nodeId]),
+    [
+      [9, "agent:cmd"],
+      [10, "agent:rsp"],
+      [13, "vsqr"],
+      [16, "sb:pkt_sb"],
+      [19, "cov:cmd"],
+    ],
+    "rsp has a cov file but the env never mentions rsp_cov: no lens for it"
+  );
+});
+
+test("review: the report lists the inferred coverage collector among the untraceable", () => {
+  const md = traceReport(IMPLICIT, RESOLVED_IMPLICIT, new Set(["cmd_cov.svh"]), "x.yaml");
+  assert.match(md, /## Inferred by quick-uvm[\s\S]*\| coverage on cmd \| ✓ `cmd_cov\.svh` \(emitted under agent cmd\) \|/);
+  const declared = traceReport(MANIFEST, { ...RESOLVED_IMPLICIT, analysis: { mode: "declared", scoreboards: [], coverage: [{ agent: "cmd", origin: "declared" }] } }, null, "x.yaml");
+  assert.ok(!declared.includes("coverage on cmd"), "a declared collector is the agent's row");
 });
 
 console.log(`\ntest-trace: ${passed} tests passed.`);

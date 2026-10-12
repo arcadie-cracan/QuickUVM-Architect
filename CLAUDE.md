@@ -673,23 +673,49 @@ coliziunea de nume.
   `tracePattern` (the name + the stems of the owned files, word-bounded, with
   the `_<suffix>` handles the generator derives; `cov:<a>` is `<a>_cov` only,
   `agent:<a>:u.<part>` is `<a>_<part>` + the `drv/mon/sqr` abbreviation, an
-  id with an unknown shape is `null` — `agent:cmd:nope` once fell on the
-  agent branch, caught by the suite). Comment-only lines never match (the
+  ordinal `sb:x#2` traces `x`, an id with an unknown shape is `null` —
+  `agent:cmd:nope` once fell on the agent branch, caught by the suite). The
+  `_<suffix>` MUST be guarded: an identifier that continues a word into
+  another element's name or stem, or into a whole-config stem, is that other
+  element's — a negative lookahead built from the OTHER owners' names and
+  stems (`cmd(?!_rsp(?:_|\b))`, `yapp(?!_buffer_env(?:_|\b)|…)`); without it
+  `cmd` lit `cmd_rsp_*` and an agent `yapp` on DUT `yapp_buffer` lit most of
+  the env with its lens on the env class (review finding, both locked in
+  `test:trace`). Port-name collisions (an agent `in` lights `.in_data(...)`)
+  remain: approximate, as the row says. Comment-only lines never match (the
   header names the file; `// This File: x_virtual_sequencer.svh` would light
   for `vsqr`). The lit lines are drawn ONLY in aggregate files — in an owned
   file every line is the element — and only in the VISIBLE editors of the
-  ACTIVE bench (under `GenStateService.outDir`, listed by the manifest); the
-  per-file editor drives the trace only when its document is the active
-  config. The follow mode (`quickuvm.codeFollowsSelection`) opens the primary
-  file as a PREVIEW tab beside with `preserveFocus` — the next selection
-  replaces it; it is OFF by default (nothing opens a tab without the user's
-  say-so), and the palette row's label comes from `ui/config.codeFollow`,
-  re-posted by the settings listener to the PANEL only (a custom editor's
-  label refreshes at its next `ready`). The CodeLens provider is registered
-  by PATTERN (`**/*.{sv,svh}`), not by language: without a SystemVerilog
+  ACTIVE bench (under `GenStateService.outDir`, listed by the manifest); they
+  REVEAL only on a selection (`apply(reveal)`): the visible-editors event and
+  a manifest/resolve refresh re-light without scrolling, or a tab opening
+  yanked the file being read. The per-file editor drives the trace only when
+  its document is the active config, and re-posts `ui/config` on the
+  settings change (it is the DEFAULT editor; posted only at ready, its toggle
+  row's second click switched the mode back off). The follow mode
+  (`quickuvm.codeFollowsSelection`) opens the primary file — for `cov:<a>`
+  and the agent internals, the first file of R15's `ownedFilesFor` — as a
+  PREVIEW tab beside with `preserveFocus`; the next selection replaces it
+  while VS Code's preview tabs are enabled; it is OFF by default (nothing
+  opens a tab without the user's say-so). The coverage collector is a node of
+  its own: the agent's `<a>_cov` file gets a `cov:<a>` lens, an aggregate
+  file a `cov:<a>` lens where it mentions `<a>_cov*`, the report a row under
+  "inferred" when resolve says so (the diagram draws it as a ghost — the
+  untraceable list was missing it). A cross-block scoreboard's lens maps
+  `sb:<n>` → `xsb:<n>` (root level) through `scoreboardNodeIds`; every other
+  lens target is at `env` (no tree lookup: agents have no `selectId` in the
+  VTree, the lookup was dead code). The report is a read-only virtual
+  `quickuvm-trace:` document (an untitled one is born DIRTY and prompts to
+  save; `preview: true` is moot on a dirty buffer), re-rendered on each run
+  through `onDidChange`. `clear()` touches only the still-visible editors (a
+  closed one logs a warning per call). The CodeLens provider is registered by
+  PATTERN (`**/*.{sv,svh}`), not by language: without a SystemVerilog
   extension `.sv/.svh` have no language id; the provider itself checks the
   output dir and the manifest. The lenses refresh on `genState.onDidChange`
-  AND `resolve.onDidChange` (the inferred flag comes from resolve).
+  (a badge-STATE change, not every manifest reload — VS Code re-requests on
+  edits anyway) AND `resolve.onDidChange` (the inferred flag comes from
+  resolve). `trace` is constructed BEFORE the `genState.onDidChange` closure
+  that references it (a TDZ otherwise).
 
 
 ## Faza curentă
