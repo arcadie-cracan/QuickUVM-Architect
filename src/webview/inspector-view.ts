@@ -70,6 +70,10 @@ export interface InspectorCtx {
   toggleFold(id: string): void;
   hasSchematic(model: unknown, viewId: string): boolean;
   navigateTo(viewId: string, mode: "schematic" | "symbol"): void;
+  /** docs/08 R17 — render EVERY section open (the action palette collects the
+   *  enabled buttons from a detached render; a closed section would hide its
+   *  actions). Never set for the visible panel. */
+  allOpen?: boolean;
 }
 
 // assigned by `renderInspector` before any helper runs (they are only reachable
@@ -932,7 +936,10 @@ function tbSection(
   render: () => void,
   defaultOpen = false
 ): void {
-  const open = openSections.has(id) || (defaultOpen && !openSections.has(`!${id}`));
+  const open =
+    Boolean(ctx.allOpen) ||
+    openSections.has(id) ||
+    (defaultOpen && !openSections.has(`!${id}`));
   const head = h("div", "sec-head");
   head.append(h("span", "sec-twisty", open ? "▾" : "▸"), h("span", "", title));
   head.addEventListener("click", () => {

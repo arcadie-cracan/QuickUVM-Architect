@@ -119,6 +119,45 @@ export function findMatches(
   return scored.slice(0, limit).map((s) => s.item);
 }
 
+/**
+ * docs/08 R17 — the order of the action palette. With no query, the RECENT
+ * actions first (most recent first, only those still offered), then the rest in
+ * the order they were offered; with a query, `findMatches`' ranking. Recency is
+ * a list of item ids, newest first (`pushRecent`).
+ */
+export function rankPalette(
+  items: readonly FindItem[],
+  recent: readonly string[],
+  query: string,
+  limit = 12
+): FindItem[] {
+  if (query.trim()) {
+    return findMatches(items, query, limit);
+  }
+  const byId = new Map(items.map((i) => [i.id, i]));
+  const out: FindItem[] = [];
+  const seen = new Set<string>();
+  for (const id of recent) {
+    const it = byId.get(id);
+    if (it && !seen.has(id)) {
+      out.push(it);
+      seen.add(id);
+    }
+  }
+  for (const it of items) {
+    if (!seen.has(it.id)) {
+      out.push(it);
+      seen.add(it.id);
+    }
+  }
+  return out.slice(0, limit);
+}
+
+/** the recency list after running `id`: moved (or added) to the front, capped */
+export function pushRecent(recent: readonly string[], id: string, max = 8): string[] {
+  return [id, ...recent.filter((r) => r !== id)].slice(0, max);
+}
+
 function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

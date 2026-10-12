@@ -1528,3 +1528,17 @@ text.split-sign {
 .gencard-note { font-size: 11px; opacity: 0.8; font-style: italic; }
 .gencard-actions { display: flex; gap: 6px; margin-top: 8px; }
 .gencard-actions .assist-btn:disabled { opacity: 0.5; cursor: default; }
+
+/* ------------------------------- contextual action palette (docs/08 R17) */
+.findbox.palette { width: 380px; }
+.finditem .grp {
+  display: inline-block;
+  min-width: 68px;
+  margin-right: 6px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.55;
+}
+.finditem.danger { color: var(--vscode-errorForeground, var(--vscode-charts-red, #f14c4c)); }
+.finditem.active.danger { color: var(--vscode-list-activeSelectionForeground); }
