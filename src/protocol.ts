@@ -106,8 +106,10 @@ export interface ElementCard {
   files: { file: string; exists: boolean }[];
   /** absolute path of the file "Open generated code" opens; null = none yet */
   primary: string | null;
-  /** false when the manifest is unavailable (quick-uvm < 1.1.0, an invalid config) */
-  manifest: boolean;
+  /** `ok` = the files come from the cached manifest; `unavailable` = no manifest
+   *  (quick-uvm < 1.1.0, an invalid config); `inactive` = this document is not
+   *  the active config, whose manifest it is — the card says which */
+  manifest: "ok" | "unavailable" | "inactive";
 }
 
 // ---------------------------------------------- designer assistance (R12)

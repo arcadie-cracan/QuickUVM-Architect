@@ -237,16 +237,18 @@ test("docs/08 R15: ownedFilesFor lists an element's own files with their flags, 
   const manifest = {
     version: "1.1.0", layout: "flat", kind: "bench", output_dir: "tb",
     elements: [
-      { owner: "agent:cmd", files: [{ file: "cmd_agent.svh", exists: true }, { file: "cmd_driver.svh", exists: false }] },
+      { owner: "agent:cmd", files: [{ file: "cmd_agent.svh", exists: true }, { file: "cmd_driver.svh", exists: false }, { file: "cmd_monitor.svh", exists: true }, { file: "cmd_cov.svh", exists: true }] },
       { owner: "scoreboard:sbd", files: [{ file: "soc_scoreboard.svh", exists: true }] },
       { owner: "aggregate", files: [{ file: "env_pkg.sv", exists: true }] },
     ],
   };
-  assert.deepEqual(ownedFilesFor(manifest, "agent:cmd"), [
-    { file: "cmd_agent.svh", exists: true }, { file: "cmd_driver.svh", exists: false },
-  ]);
+  assert.deepEqual(ownedFilesFor(manifest, "agent:cmd").map((f) => f.file), ["cmd_agent.svh", "cmd_driver.svh", "cmd_monitor.svh", "cmd_cov.svh"]);
   assert.deepEqual(ownedFilesFor(manifest, "sb:sbd"), [{ file: "soc_scoreboard.svh", exists: true }]);
-  assert.deepEqual(ownedFilesFor(manifest, "cov:cmd"), [], "coverage owns nothing of its own (docs/07)");
+  // the diagram's ids the manifest does not own directly map onto the owner that does
+  assert.deepEqual(ownedFilesFor(manifest, "cov:cmd"), [{ file: "cmd_cov.svh", exists: true }], "the collector lives under the agent (docs/07)");
+  assert.deepEqual(ownedFilesFor(manifest, "agent:cmd:u.driver"), [{ file: "cmd_driver.svh", exists: false }], "an internal: the agent's file of that part");
+  assert.deepEqual(ownedFilesFor(manifest, "agent:cmd:u.sequencer").map((f) => f.file), ["cmd_agent.svh", "cmd_driver.svh", "cmd_monitor.svh", "cmd_cov.svh"], "no file of that part: the agent's files, not nothing");
+  assert.deepEqual(ownedFilesFor(manifest, "xsb:sbd"), [{ file: "soc_scoreboard.svh", exists: true }], "cross-block: the same scoreboard owner");
   assert.deepEqual(ownedFilesFor(manifest, "env"), [], "the aggregates belong to no box");
 });
 

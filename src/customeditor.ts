@@ -23,7 +23,7 @@ import {
 import type { ActionKind, HostMessage, LassoMode, ProposalApply, WebviewMessage } from "./protocol";
 import { ghostProposals } from "./proposals";
 import type { QuvmConfig } from "./quickuvm";
-import { elementRange } from "./yamlmap";
+import { elementRange, entryText } from "./yamlmap";
 import { parseQuvm } from "./yamlops";
 import type { LayoutStore } from "./sidecar";
 
@@ -91,7 +91,11 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
     private readonly cardInfo?: (
       uri: vscode.Uri,
       id: string
-    ) => { files: { file: string; exists: boolean }[]; primary: string | null; manifest: boolean }
+    ) => {
+      files: { file: string; exists: boolean }[];
+      primary: string | null;
+      manifest: "ok" | "unavailable" | "inactive";
+    }
   ) {}
 
   resolveCustomTextEditor(
@@ -275,13 +279,13 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           const info = this.cardInfo?.(document.uri, m.id) ?? {
             files: [],
             primary: null,
-            manifest: false,
+            manifest: "inactive" as const,
           };
           void webview.postMessage({
             v: 1,
             type: "card/full",
             id: m.id,
-            yaml: span ? text.slice(span.start, span.end) : null,
+            yaml: span ? entryText(text, span) : null,
             ...info,
           });
           break;

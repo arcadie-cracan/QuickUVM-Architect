@@ -12,7 +12,7 @@ import { Backend } from "./backend";
 import { ConfigService, onGestureApplied, WidthFixProvider } from "./config";
 import { postToConfigEditors } from "./customeditor";
 import { YamlLink } from "./yamllink";
-import { elementAtOffset, elementRange } from "./yamlmap";
+import { elementAtOffset, elementRange, entryText } from "./yamlmap";
 import { DirtyConfigStatus } from "./dirtystatus";
 import { QuvmConfigEditor } from "./customeditor";
 import { Generator } from "./generate";
@@ -125,9 +125,9 @@ export function activate(context: vscode.ExtensionContext): void {
           ? {
               files: genState.filesFor(id) ?? [],
               primary: genState.primaryFilePath(id),
-              manifest: genState.hasManifest,
+              manifest: genState.hasManifest ? ("ok" as const) : ("unavailable" as const),
             }
-          : { files: [], primary: null, manifest: false }
+          : { files: [], primary: null, manifest: "inactive" as const }
       ),
       {
         webviewOptions: { retainContextWhenHidden: true },
@@ -570,10 +570,10 @@ export function activate(context: vscode.ExtensionContext): void {
       const span = elementRange(text, id);
       return {
         id,
-        yaml: span ? text.slice(span.start, span.end) : null,
+        yaml: span ? entryText(text, span) : null,
         files: genState.filesFor(id) ?? [],
         primary: genState.primaryFilePath(id),
-        manifest: genState.hasManifest,
+        manifest: genState.hasManifest ? "ok" : "unavailable",
       };
     },
     // docs/08 R12 — the designer-assistance proposals of the view the panel shows

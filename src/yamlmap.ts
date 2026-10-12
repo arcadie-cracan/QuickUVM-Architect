@@ -170,6 +170,31 @@ export function elementAtOffset(text: string, offset: number): YamlElement | nul
 }
 
 /**
+ * docs/08 R15 — an element's entry as the card shows it: the span's text with
+ * the list-item dash restored and the continuation lines dedented. The CST range
+ * of a list item starts at its first key (after `- `), so the raw slice came out
+ * ragged: an unindented first line over 4-space continuation lines.
+ */
+export function entryText(text: string, span: YamlSpan): string {
+  const lineStart = text.lastIndexOf("\n", span.start - 1) + 1;
+  const before = text.slice(lineStart, span.start);
+  const col = before.length;
+  const item = /-\s*$/.test(before);
+  const lines = text.slice(span.start, span.end).replace(/\s+$/, "").split("\n");
+  const out = lines.map((l, i) => {
+    if (i === 0) {
+      return (item ? "- " : "") + l;
+    }
+    let k = 0;
+    while (k < col && l[k] === " ") {
+      k++;
+    }
+    return (item ? "  " : "") + l.slice(k);
+  });
+  return out.join("\n");
+}
+
+/**
  * The YAML span of a TB element id, or null when the file has no such entry
  * (an inferred ghost, a level node like `env`, a renamed element). `vsqr` and
  * `probes` map to their whole block; an agent maps to its list item.

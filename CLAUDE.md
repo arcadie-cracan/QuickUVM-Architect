@@ -590,7 +590,21 @@ coliziunea de nume.
   resolved" (quick-uvm < 1.1.0, an invalid config) instead of claiming the
   element owns nothing. The per-file editor's card gets the manifest's files
   only when its document IS the active config (the manifest is the active
-  config's).
+  config's). From the adversarial review: the ●/U/M line appears only for ids
+  the badges TRACK (agents, scoreboards, probes, vsqr — `ownerToNodeId`) and
+  only once a `status/decorations` snapshot arrived (the per-file editor never
+  sends one) — a fall-through "✓ generated" lied for `cov:`, `env`, `dut`,
+  `sub:` and the agent internals; the ids the manifest does not own map onto
+  the owner that does (`ownedFilesFor`: `agent:<a>:u.driver` → the agent's
+  `_driver` file, `cov:<a>` → `<a>_cov.svh`, `xsb:` → `scoreboard:`); the
+  manifest is produced with `-o <outputDir>` (without it quick-uvm checks
+  `exists` against its default `tb/`) and the card's flags come from the
+  service's LIVE `present` set, not the manifest's snapshot; `card/full` and
+  `status/decorations` re-render through `refreshCard`, which never touches
+  the dwell/hide timers (an answer that cleared the pending hide left a card
+  orphaned after the pointer had gone); a pinned card follows pan/zoom/drag
+  (`repositionCard` in `applyTransform` and `dragReroute`); the dwell restarts
+  only when the hovered BOX changes, not on every compartment crossing.
 
 ## Faza curentă
 
