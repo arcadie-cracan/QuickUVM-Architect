@@ -109,6 +109,9 @@ export interface TbWidget {
   action: "editAgent" | "editScoreboard";
   /** the config entry the action names */
   name: string;
+  /** what the click will do beyond the obvious (a tooltip): e.g. the `match`
+   *  step to in_order drops the `match_key` (the setScoreboardField cascade) */
+  hint?: string;
 }
 
 /** a level's block: UML box with compartments; `drill` = the descent's focus */
@@ -244,8 +247,9 @@ const subId = (name: string): string => `sub:${name}`;
 /** docs/08 R13 — the widgets of a NAMED local scoreboard: match and latency
  *  are two-stream facts (a monitor), so a single-stream entry gets none; an
  *  unnamed entry cannot be edited by name (`setScoreboardField`) — none either */
-function sbWidgets(sb: QuvmScoreboard): TbWidget[] {
-  if (!sb.name || !sb.monitor) {
+function sbWidgets(sb: QuvmScoreboard, id: string): TbWidget[] {
+  // a duplicate name (`sb:x#2`) would edit the FIRST entry of that name: none
+  if (!sb.name || !sb.monitor || id.includes("#")) {
     return [];
   }
   const match = sb.match ?? "in_order";
@@ -253,11 +257,17 @@ function sbWidgets(sb: QuvmScoreboard): TbWidget[] {
     {
       field: "match",
       kind: "cycle",
-      label: `match: ${match}`,
+      // the key is shown WITH the mode: the cascade of setScoreboardField deletes
+      // it on the step to in_order, and nothing else on the canvas showed it
+      label: `match: ${match}${sb.match_key ? ` (${sb.match_key})` : ""}`,
       value: match,
       next: match === "in_order" ? "out_of_order" : "in_order",
       action: "editScoreboard",
       name: sb.name,
+      hint:
+        match === "out_of_order" && sb.match_key
+          ? `in_order drops match_key: ${sb.match_key}`
+          : undefined,
     },
     {
       field: "max_latency",
@@ -553,18 +563,21 @@ function levelEnv(
       ports,
       drill: id,
       tooltip: `${name} — double-click to open the agent`,
-      // docs/08 R13 — the one agent fact tuned most often, on the box
-      widgets: [
-        {
-          field: "active",
-          kind: "toggle",
-          label: active ? "active" : "passive",
-          value: String(active),
-          next: String(!active),
-          action: "editAgent",
-          name,
-        },
-      ],
+      // docs/08 R13 — the one agent fact tuned most often, on the box. A VIP
+      // reference takes `{name, from_vip}` only (extra keys rejected): no toggle
+      widgets: a.from_vip
+        ? []
+        : [
+            {
+              field: "active",
+              kind: "toggle",
+              label: active ? "active" : "passive",
+              value: String(active),
+              next: String(!active),
+              action: "editAgent",
+              name,
+            },
+          ],
     });
   }
 
@@ -603,7 +616,7 @@ function levelEnv(
       ports,
       drill: null,
       tooltip: `scoreboard ${sb.name ?? "sbd"}`,
-      widgets: sbWidgets(sb),
+      widgets: sbWidgets(sb, id),
     });
     const connect = (agent: string | undefined, p: string): void => {
       if (agent && agentNames.has(agent)) {

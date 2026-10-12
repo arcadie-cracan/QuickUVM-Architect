@@ -565,8 +565,16 @@ coliziunea de nume.
   of a double-click (`e.detail > 1`) is ignored and the `dblclick` handler
   returns on a widget — without both, a double-click toggled twice (two YAML
   edits) and then drilled. `boxSize` must count the widget rows
-  (`WIDGET_H`), or the pills overflow the box. Widgets exist only where the
-  by-name action can land: named two-stream scoreboards, non-ghost agents.
+  (`WIDGET_H`), or the pills overflow the box — and measures the pill text
+  MONO (the measuring trap above). Widgets exist only where the by-name action
+  can land: named, non-duplicate two-stream scoreboards; non-ghost, non-VIP
+  agents (`from_vip` takes `{name, from_vip}` only). From the adversarial
+  review: a number input reads `""` for text the browser cannot parse (`1e`,
+  `-`) — check `validity.badInput` before treating `""` as "reset", a typo
+  silently DELETED `max_latency`; quick-uvm wants `max_latency >= 1` (the
+  host and the panel refuse 0 now); the `match` cascade deletes `match_key`
+  on the step to in_order, so the pill shows the key and its tooltip says so;
+  a modifier click (Ctrl/Shift) must fall through to the selection.
 
 ## Faza curentă
 

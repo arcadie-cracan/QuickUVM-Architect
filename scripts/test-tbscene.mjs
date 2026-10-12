@@ -477,9 +477,17 @@ test("docs/08 R13: the inline widgets — active on agents, match/latency on a t
   ]);
   assert.deepEqual(nodeById(s, "agent:rsp").widgets.map((w) => [w.label, w.next]), [["passive", "true"]]);
   assert.deepEqual(nodeById(s, "sb:sbd").widgets, [
-    { field: "match", kind: "cycle", label: "match: out_of_order", value: "out_of_order", next: "in_order", action: "editScoreboard", name: "sbd" },
+    { field: "match", kind: "cycle", label: "match: out_of_order (id)", value: "out_of_order", next: "in_order", action: "editScoreboard", name: "sbd", hint: "in_order drops match_key: id" },
     { field: "max_latency", kind: "number", label: "latency: —", value: "", action: "editScoreboard", name: "sbd" },
   ]);
+  // a VIP reference takes {name, from_vip} only: no toggle; a duplicate name
+  // (sb:x#2) would edit the first entry: no pills
+  const vip = { ...CFG, agents: [...CFG.agents, { name: "io", from_vip: "../vip/io.qvip" }],
+    analysis: { scoreboards: [{ name: "x", source: "cmd", monitor: "rsp" }, { name: "x", source: "rsp", monitor: "cmd" }] } };
+  const sv = buildTbScene(vip, "env", "demo.quickuvm.yaml");
+  assert.deepEqual(nodeById(sv, "agent:io").widgets, []);
+  assert.equal(nodeById(sv, "sb:x").widgets.length, 2);
+  assert.deepEqual(nodeById(sv, "sb:x#2").widgets, []);
   const single = { ...CFG, analysis: { scoreboards: [{ name: "one", source: "cmd", max_latency: 4 }, { source: "rsp", monitor: "cmd" }] } };
   const s2 = buildTbScene(single, "env", "demo.quickuvm.yaml");
   assert.deepEqual(nodeById(s2, "sb:one").widgets, [], "single-stream: match/latency are two-stream facts");

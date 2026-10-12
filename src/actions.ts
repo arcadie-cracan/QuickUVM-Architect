@@ -2074,7 +2074,8 @@ export class Actions {
     } else if (f === "max_latency" || f === "window.length") {
       // cycles / samples per window: an integer, >= 1 for a window (>= 0 for latency)
       const n = Number(raw);
-      if (!Number.isInteger(n) || n < (f === "window.length" ? 1 : 0)) {
+      // both >= 1: quick-uvm refuses `max_latency: 0` ("must be >= 1 cycle")
+      if (!Number.isInteger(n) || n < 1) {
         return;
       }
       value = n;

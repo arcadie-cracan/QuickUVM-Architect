@@ -38,7 +38,7 @@ function ceilGrid(v: number): number {
 /** the UML box's size: title + stereotype + compartments, and min for ports */
 function boxSize(
   n: TbNode,
-  measure: (t: string) => number
+  measure: (t: string, mono?: boolean) => number
 ): { w: number; h: number } {
   let textH = 22; // the title band
   if (n.stereotype) {
@@ -59,11 +59,12 @@ function boxSize(
       maxTextW = Math.max(maxTextW, measure(it) + 12);
     }
   }
-  if (n.widgets?.length) {
-    // docs/08 R13 — one pill row per widget, under the compartments
+  if (n.widgets?.length && !n.inferred) {
+    // docs/08 R13 — one pill row per widget, under the compartments; the pill
+    // text is MONOSPACE (the measuring trap of CLAUDE.md), plus glyph + padding
     textH += 4 + n.widgets.length * WIDGET_H;
     for (const w of n.widgets) {
-      maxTextW = Math.max(maxTextW, measure(w.label) + 28);
+      maxTextW = Math.max(maxTextW, measure(w.label, true) + 36);
     }
   }
   const west = n.ports.filter((p) => p.side === "WEST").length;
@@ -157,7 +158,7 @@ function flipPorts(ports: TbPort[], flip: Flip): TbPort[] {
 export async function layoutTb(
   elk: ElkLike,
   scene: TbScene,
-  measure: (t: string) => number,
+  measure: (t: string, mono?: boolean) => number,
   seeds?: ReadonlyMap<string, { x: number; y: number }>,
   flips?: ReadonlyMap<string, Flip>
 ): Promise<TbLayout> {
@@ -455,6 +456,11 @@ function drawBox(p: TbPlaced): SVGGElement {
       wg.append(
         el("text", { class: "tb-widget-text", x: "14", y: String(y + 11) }, `${glyph} ${w.label}`)
       );
+      if (w.hint) {
+        const t = el("title", {});
+        t.textContent = w.hint;
+        wg.append(t);
+      }
       g.append(wg);
       y += WIDGET_H;
     }
