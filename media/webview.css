@@ -1315,3 +1315,61 @@ text.split-sign {
 }
 #inspector .problem.sev-error { color: var(--vscode-editorError-foreground, #f14c4c); }
 #inspector .problem.sev-warning { color: var(--vscode-editorWarning-foreground, #cca700); }
+
+/* ------------------------------------- temporary wire (docs/08 R10/R11) */
+/* the hotspot at a TLM port's tip: invisible until hovered (the crosshair says
+   "a wire starts here"); .drop-ok/.drop-bad = the legality shown BEFORE the
+   drop (Simulink R2018b, Vivado's green check), .drop-near = the snap target */
+.tb-porthit {
+  fill: var(--vscode-focusBorder);
+  fill-opacity: 0;
+  cursor: crosshair;
+  transition: fill-opacity 80ms;
+}
+.tb-porthit:hover { fill-opacity: 0.35; }
+#canvas.wiring { cursor: crosshair; }
+#canvas.wiring .tb-porthit.drop-ok {
+  fill: var(--vscode-charts-green, #89d185);
+  fill-opacity: 0.4;
+}
+#canvas.wiring .tb-porthit.drop-near { fill-opacity: 0.8; }
+#canvas.wiring .tbnode.drop-ok .tb-box {
+  stroke: var(--vscode-charts-green, #89d185);
+  stroke-width: 2;
+}
+#canvas.wiring .tbnode.drop-bad { opacity: 0.4; }
+#canvas.wiring .pin.drop-ok .stub {
+  stroke: var(--vscode-charts-green, #89d185);
+  stroke-width: 3;
+}
+#canvas.wiring .pin.drop-ok text.pin-label {
+  fill: var(--vscode-charts-green, #89d185);
+  font-weight: 600;
+}
+#canvas.wiring .pin.drop-near text.pin-label { text-decoration: underline; }
+.wire-temp {
+  fill: none;
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 1.6;
+  stroke-dasharray: 6 4;
+  pointer-events: none;
+}
+/* the reason a target is illegal, under the pointer; .toast = after a drop */
+.wirehint {
+  position: fixed;
+  z-index: 101;
+  pointer-events: none;
+  max-width: 320px;
+  padding: 3px 8px;
+  font-size: 11px;
+  border-radius: 3px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  color: var(--vscode-errorForeground, var(--vscode-charts-red, #f14c4c));
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+.wirehint.toast { animation: wirehint-fade 1.8s forwards; }
+@keyframes wirehint-fade {
+  0%, 70% { opacity: 1; }
+  100% { opacity: 0; }
+}

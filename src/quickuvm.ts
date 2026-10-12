@@ -20,7 +20,7 @@ export interface QuvmAgent {
   sequence_item?: string;
   seq_item_style?: "manual" | "field_macros";
   active?: boolean;
-  ports?: { inputs?: QuvmPort[]; outputs?: QuvmPort[] };
+  ports?: { inputs?: QuvmPort[]; outputs?: QuvmPort[]; inouts?: QuvmPort[] };
   /** reactive agents (docs/07 P1). The responder-only keys below are enforced as
    *  such by QuickUVM's validators — see §1.5 of the schema reference. */
   mode?: "initiator" | "responder";

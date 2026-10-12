@@ -224,6 +224,9 @@ export function activate(context: vscode.ExtensionContext): void {
         case "createAgentFromPins":
           void actions.createAgentFromPins(target, pins);
           break;
+        case "addPinsToAgent":
+          void actions.addPinsToAgent(target, String(args.agent ?? ""), pins);
+          break;
         case "createAgentFromIface":
           void actions.createAgentFromIface(target, String(args.port ?? ""));
           break;

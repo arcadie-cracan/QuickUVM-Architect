@@ -1235,6 +1235,26 @@ test("setAgentField writes emit_when, and the default deletes it", () => {
   const cleared = ops.setAgentField(set, "pkt", "emit_when", "");
   assert.ok(!cleared.includes("emit_when"), "clearing must delete the key");
 });
+test("addAgentPorts: appends on each side, skips what the agent has, no-op stays byte-identical", () => {
+  const t = ops.createAgent(ops.newConfigText("demo"), {
+    name: "drv",
+    inputs: [{ name: "din", width: 8 }],
+    outputs: [],
+  });
+  const t2 = ops.addAgentPorts(t, "drv", {
+    inputs: [{ name: "din", width: 8 }, { name: "en", width: 1 }],
+    outputs: [{ name: "sum", width: 8 }],
+    inouts: [{ name: "sda", width: 1 }],
+  });
+  const a = ops.parseQuvm(t2).agents[0];
+  assert.deepEqual(a.ports.inputs, [{ name: "din", width: 8 }, { name: "en" }], "din kept once, en appended");
+  assert.deepEqual(a.ports.outputs, [{ name: "sum", width: 8, randomize: false }]);
+  assert.deepEqual(a.ports.inouts, [{ name: "sda" }], "inouts created on demand, no randomize");
+  assert.match(t2, /\{ name: en \}/, "flow style, like createAgent");
+  // nothing to add: the ORIGINAL text, not a re-serialization
+  assert.equal(ops.addAgentPorts(t2, "drv", { inputs: [{ name: "en", width: 1 }], outputs: [] }), t2);
+  assert.throws(() => ops.addAgentPorts(t2, "nope", { inputs: [{ name: "x", width: 1 }], outputs: [] }), /nope/);
+});
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

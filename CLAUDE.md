@@ -121,6 +121,7 @@ npm run test:status      # decoratiile de stare: findings->decoratii + decoratii
 npm run test:navfind     # keyboard navigation (docs/08 R5): view history, Ctrl+F ranking, up-level, fit bounds
 npm run test:textedit    # the MINIMAL edit between two YAML texts + the span to highlight (docs/08 R4)
 npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (docs/08 R4)
+npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:e2e         # yamlops -> quick-uvm generate real (cere quick-uvm)
 ```
 
@@ -471,6 +472,34 @@ coliziunea de nume.
   `test:e2e` writes only to temporary directories (verified Oct 2026: nothing is
   left behind), so the exclusion guards the user's own generations, not the
   test run.
+- **The temporary wire (docs/08 R10/R11)**: the hotspots are `.tb-porthit`
+  circles appended AFTER the glyph in `drawBox` (`src/webview/tbschematic.ts`)
+  — they must stay on top to take the press. A plain click on one ARMS
+  click-click mode in the TB view ONLY: in RTL a click on a pin must keep
+  selecting it (the lasso → "Agent from selection" flow), so `pointerup`
+  without movement cancels the wire there. Boundary flags are NOT origins (a
+  drag on a flag moves it, docs/04). The snapped target's id differs by view:
+  a TB hotspot is keyed by `data-port` (the port id), an RTL pin by `data-id`
+  — its `data-port` is the bare NAME, and keying the agents map by it made a
+  drop on a claimed pin fall through to "Agent from pin" (caught in the
+  harness). The drop point of a create gesture is a `pendingDrop` consumed by
+  the next `renderTb` of the same layout key (120 s TTL — a scoreboard asks up
+  to four QuickPicks): the first node of that kind NOT in the pre-gesture scene
+  (ghosts excluded: a declared scoreboard may take a ghost's id, `sb:sbd`)
+  lands there, its stale seed under the same id is dropped so the D21 loop
+  persists the new position, and the WHOLE view is pinned (D21 total seeds)
+  even when the view had none — pinning only the new node would leave partial
+  seeds. From the adversarial review: a pin an agent already claims is no
+  origin (port-claimed is an error), `addPinsToAgent` refuses ports another
+  agent declares, "Coverage on X" is offered only while X has none (the host's
+  `addCoverage` used to substitute the single remaining agent silently; it now
+  refuses a covered preselect), a duplicate-named scoreboard (`sb:x#2`) is
+  refused like an unnamed one (`setScoreboardField` edits the FIRST `x`), a
+  middle/right press cancels the wire before the pan starts, and the armed
+  drop captures the pointer so its click reaches the canvas. Synthetic pointer
+  events in the harness never produce a `click`, so `suppressClick` stays
+  armed after a scripted drop — dispatch a `click` before testing the
+  selection.
 
 ## Faza curentă
 
@@ -739,4 +768,9 @@ diferențele de caz pe Windows). Tot atunci: cei doi octeți NUL bruți din
 `yamlops.ts` (separatori de chei de dedup) au devenit secvențe `\0` escapate —
 un NUL brut face ripgrep să trateze fișierul ca BINAR și-l exclude tăcut din
 căutări.
+**Sprint R10–R11 (docs/08) is implemented** (Oct 2026): the temporary-wire
+gesture — creation from a port's hotspot into empty canvas, connection with
+legality before the drop — on the pure module `src/webview/wiring.ts`
+(`test:wiring`), the `addAgentPorts` mutation + `addPinsToAgent` action; see
+the pitfall above and docs/05.
 Planul complet: `docs/06-plan-mvp.md`.

@@ -27,7 +27,17 @@ import {
 import type { State } from "./state";
 import type { TbScene } from "./tbscene";
 import { buildTbScene } from "./tbscene";
-import { drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
+import { anchor, drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
+import {
+  rtlWireChoices,
+  wireChoices,
+  wireChoicesOnCanvas,
+  wireOriginOf,
+  wireTargets,
+  type RtlWireOrigin,
+  type WireChoice,
+  type WireOrigin,
+} from "./wiring";
 import { el, measurer, SVG_NS } from "./svg";
 import {
   findMatches,
@@ -2108,12 +2118,440 @@ function undoPositions(redo: boolean): void {
   applyPositions(key, snap);
 }
 
+// ------------------------------------------- temporary wire (docs/08 R10/R11)
+//
+// A press on a port's hotspot starts a dashed orthogonal wire that follows the
+// pointer; the DROP decides, and every rule of what a drop means lives in the
+// pure module src/webview/wiring.ts (tested in Node): on empty canvas a
+// filtered menu at the drop point CREATES (R10 — a scoreboard fed by the agent,
+// a coverage collector on it, an agent from a DUT pin), on a legal target it
+// CONNECTS (R11 — the scoreboard endpoint, the pins joining an agent), on an
+// illegal one it says why. Legality is computed once at the press and shown
+// before the drop (.drop-ok / .drop-bad, the reason as a hint under the
+// pointer); the nearest legal hotspot within WIRE_SNAP px snaps. Escape cancels.
+// In the TB view a plain click on a hotspot arms click-click mode (R11's
+// keyboard/touch fallback): the wire follows the pointer until the next press.
+
+/** the snap radius, screen px (docs/08 R11: ~20 px, React Flow's connectionRadius) */
+const WIRE_SNAP = 20;
+/** a drop point outlives the host's chain of questions (a scoreboard asks up
+ *  to four QuickPicks), not a session */
+const DROP_TTL = 120_000;
+const ROLE_RE = /\brole-(clock|reset|ignored)\b/;
+/** the overlay's agent color on a pin = an agent already claims it */
+const CLAIMED_RE = /\bagent-c\d\b/;
+
+interface WireState {
+  /** the TB origin; null in the RTL views, where `rtl` carries the pin */
+  tb: WireOrigin | null;
+  rtl: RtlWireOrigin | null;
+  /** TB legality per target id (node or `<node>.<port>`); absent = the canvas */
+  legal: Map<string, string | null>;
+  /** RTL: the agent claiming each legal target pin, by pin id */
+  agents: Map<string, string>;
+  /** the node (TB) or pin (RTL) the wire starts from: a drop on it is a no-op */
+  originId: string;
+  /** the wire's start, diagram coordinates */
+  x0: number;
+  y0: number;
+  /** the pointer at press, screen px */
+  startX: number;
+  startY: number;
+  moved: boolean;
+  /** click-click mode: the wire follows the pointer until the next press */
+  armed: boolean;
+  path: SVGElement | null;
+  hint: HTMLElement | null;
+}
+let wire: WireState | undefined;
+
+/** docs/08 R10 — the node a wire's drop is about to create lands at the drop
+ *  point: `renderTb` moves the first new node of `kind` there (seeds, D21) */
+let pendingDrop:
+  | {
+      key: string;
+      kind: "tbsb" | "tbcov";
+      x: number;
+      y: number;
+      /** the node ids BEFORE the gesture: the new one is the one not here */
+      ids: Set<string>;
+      at: number;
+    }
+  | undefined;
+
+function clientToWorld(cx: number, cy: number): { x: number; y: number } {
+  const cb = canvas.getBoundingClientRect();
+  return {
+    x: (cx - cb.left - state.tx) / state.k,
+    y: (cy - cb.top - state.ty) / state.k,
+  };
+}
+
+/** the center of a DOM element in diagram coordinates */
+function centerWorld(elm: Element): { x: number; y: number } {
+  const r = elm.getBoundingClientRect();
+  return clientToWorld(r.left + r.width / 2, r.top + r.height / 2);
+}
+
+/** where a wire meets an RTL pin: its stub, not the label */
+function pinAnchorEl(pin: Element): Element {
+  return pin.querySelector(".stub") ?? pin;
+}
+
+/** the wire a press on `e.target` starts, or undefined (not a hotspot) */
+function wireStartAt(e: PointerEvent): WireState | undefined {
+  const t = e.target as Element;
+  const base = {
+    startX: e.clientX,
+    startY: e.clientY,
+    moved: false,
+    armed: false,
+    path: null,
+    hint: null,
+  };
+  if (state.mode === "tb") {
+    const hit = t.closest<SVGElement>(".tb-porthit");
+    if (!hit || !currentTbScene || !currentTbLayout || !state.config) {
+      return undefined;
+    }
+    const portId = hit.dataset.port ?? "";
+    const origin = wireOriginOf(currentTbScene, state.config, portId);
+    const a = origin ? anchor(currentTbLayout, origin.nodeId, portId) : null;
+    if (!origin || !a) {
+      return undefined;
+    }
+    return {
+      ...base,
+      tb: origin,
+      rtl: null,
+      legal: wireTargets(currentTbScene, state.config, origin),
+      agents: new Map(),
+      originId: origin.nodeId,
+      x0: a.x,
+      y0: a.y,
+    };
+  }
+  if (state.mode !== "symbol" && state.mode !== "schematic") {
+    return undefined;
+  }
+  // RTL: a pin of the symbol (the DUT) or of a child block in the schematic.
+  // Boundary flags are NOT origins — a drag on a flag MOVES it (docs/04); the
+  // inspector keeps "Agent from selection" for them. Clock/reset/ignored pins
+  // belong to no agent, and a fold's pins have no single module behind them.
+  const pin = t.closest<SVGElement>(".pin");
+  const port = pin?.dataset.port;
+  if (!pin || !port || t.closest(".foldbtn")) {
+    return undefined;
+  }
+  const owner = state.mode === "schematic" ? pin.dataset.inst : state.viewId;
+  const cls = pin.getAttribute("class") ?? "";
+  if (!owner || ROLE_RE.test(cls)) {
+    return undefined;
+  }
+  // a pin an agent already claims starts no wire: it can neither join a second
+  // agent (port-claimed is an ERROR in checkConfig) nor seed a new one; the
+  // overlay colors it, so the press reads as "taken" (review finding)
+  if (CLAIMED_RE.test(cls)) {
+    return undefined;
+  }
+  // in the schematic the pin's label sits INSIDE the block: a press on it keeps
+  // dragging the block, as before — the stub outside the edge starts the wire
+  if (state.mode === "schematic" && t.closest(".pin-label")) {
+    return undefined;
+  }
+  // the legal targets: the DUT pins an agent already claims (the overlay
+  // colors them — on the symbol, where the overlay is drawn): the dragged pins
+  // can JOIN that agent
+  const agents = new Map<string, string>();
+  if (state.mode === "symbol" && state.overlay) {
+    const byPort = new Map<string, string>();
+    state.overlay.agents.forEach((a) => a.pins.forEach((p) => byPort.set(p, a.name)));
+    canvas.querySelectorAll<SVGElement>(".pin[data-id]").forEach((p) => {
+      const ag = p.dataset.port ? byPort.get(p.dataset.port) : undefined;
+      if (ag && p !== pin && p.dataset.id && CLAIMED_RE.test(p.getAttribute("class") ?? "")) {
+        agents.set(p.dataset.id, ag);
+      }
+    });
+  }
+  const c = centerWorld(pinAnchorEl(pin));
+  return {
+    ...base,
+    tb: null,
+    rtl: { port, owner, iface: pin.classList.contains("iface") },
+    legal: new Map(),
+    agents,
+    originId: pin.dataset.id ?? "",
+    x0: c.x,
+    y0: c.y,
+  };
+}
+
+/** draws the wire and shows the legality (once: past DRAG_MIN, or when armed) */
+function wireBegin(): void {
+  if (!wire || wire.path) {
+    return;
+  }
+  wire.path = el("path", { class: "wire-temp" });
+  viewport?.append(wire.path);
+  wire.hint = h("div", "wirehint");
+  wire.hint.hidden = true;
+  document.body.append(wire.hint);
+  canvas.classList.add("wiring");
+  for (const [id, reason] of wire.legal) {
+    const cls = reason === null ? "drop-ok" : "drop-bad";
+    const sel = `.tbnode[data-id="${CSS.escape(id)}"], .tb-porthit[data-port="${CSS.escape(id)}"]`;
+    canvas.querySelectorAll<SVGElement>(sel).forEach((n) => n.classList.add(cls));
+  }
+  for (const id of wire.agents.keys()) {
+    canvas
+      .querySelector<SVGElement>(`.pin[data-id="${CSS.escape(id)}"]`)
+      ?.classList.add("drop-ok");
+  }
+}
+
+interface WireTarget {
+  id: string;
+  /** null = legal; "" = the origin itself (a no-op); else why it is illegal */
+  reason: string | null;
+  el: Element;
+}
+
+/** the drop target under (cx,cy), snapped to the nearest legal hotspot within WIRE_SNAP */
+function wireTargetAt(cx: number, cy: number): WireTarget | null {
+  const w = wire;
+  if (!w) {
+    return null;
+  }
+  let best: SVGElement | null = null;
+  let bestD = WIRE_SNAP;
+  for (const p of Array.from(
+    canvas.querySelectorAll<SVGElement>(".tb-porthit.drop-ok, .pin.drop-ok")
+  )) {
+    const r = (p.classList.contains("pin") ? pinAnchorEl(p) : p).getBoundingClientRect();
+    const d = Math.hypot(r.left + r.width / 2 - cx, r.top + r.height / 2 - cy);
+    if (d <= bestD) {
+      best = p;
+      bestD = d;
+    }
+  }
+  if (best) {
+    // a TB hotspot is keyed by its port id; an RTL pin by its pin id (its
+    // `data-port` is the bare NAME — the agents map would miss it)
+    const id = best.classList.contains("tb-porthit") ? best.dataset.port : best.dataset.id;
+    return { id: id ?? "", reason: null, el: best };
+  }
+  const under = document.elementFromPoint(cx, cy);
+  if (!under) {
+    return null;
+  }
+  if (w.tb) {
+    const hit = under.closest<SVGElement>(".tb-porthit");
+    const node = under.closest<SVGElement>(".tbnode[data-id]");
+    const nodeId = hit?.dataset.node ?? node?.dataset.id;
+    if (!nodeId) {
+      return null; // the canvas (a boundary flag is no target either)
+    }
+    const portId = hit?.dataset.port;
+    const id = portId && w.legal.has(portId) ? portId : nodeId;
+    if (nodeId === w.originId) {
+      return { id, reason: "", el: under };
+    }
+    return w.legal.has(id) ? { id, reason: w.legal.get(id) ?? null, el: under } : null;
+  }
+  const pin = under.closest<SVGElement>(".pin[data-id]");
+  const id = pin?.dataset.id;
+  if (!pin || !id) {
+    return null;
+  }
+  if (id === w.originId) {
+    return { id, reason: "", el: pin };
+  }
+  return w.agents.has(id) ? { id, reason: null, el: pin } : null;
+}
+
+/** the wire follows the pointer; its end snaps to a legal hotspot; the hint
+ *  names why the target under the pointer is illegal */
+function wireFollow(cx: number, cy: number): void {
+  const w = wire;
+  if (!w?.path) {
+    return;
+  }
+  const tgt = wireTargetAt(cx, cy);
+  canvas.querySelectorAll(".drop-near").forEach((n) => n.classList.remove("drop-near"));
+  let end = clientToWorld(cx, cy);
+  if (tgt && tgt.reason === null) {
+    const isPin = tgt.el.classList.contains("pin");
+    if (isPin || tgt.el.classList.contains("tb-porthit")) {
+      end = centerWorld(isPin ? pinAnchorEl(tgt.el) : tgt.el);
+      tgt.el.classList.add("drop-near");
+    }
+  }
+  const midX = (w.x0 + end.x) / 2;
+  w.path.setAttribute("d", `M${w.x0} ${w.y0} H${midX} V${end.y} H${end.x}`);
+  if (w.hint) {
+    if (tgt?.reason) {
+      w.hint.textContent = tgt.reason;
+      w.hint.hidden = false;
+      w.hint.style.left = `${cx + 14}px`;
+      w.hint.style.top = `${cy + 14}px`;
+    } else {
+      w.hint.hidden = true;
+    }
+  }
+}
+
+/** removes the wire, the hint and the legality classes */
+function wireEnd(): void {
+  if (!wire) {
+    return;
+  }
+  wire.path?.remove();
+  wire.hint?.remove();
+  canvas.classList.remove("wiring");
+  canvas
+    .querySelectorAll(".drop-ok, .drop-bad, .drop-near")
+    .forEach((n) => n.classList.remove("drop-ok", "drop-bad", "drop-near"));
+  wire = undefined;
+}
+
+/** a transient message at the pointer (an illegal drop's reason) */
+function wireToast(text: string, cx: number, cy: number): void {
+  const d = h("div", "wirehint toast", text);
+  d.style.left = `${cx + 14}px`;
+  d.style.top = `${cy + 14}px`;
+  document.body.append(d);
+  setTimeout(() => d.remove(), 1800);
+}
+
+/** the DUT pins selected alongside the origin (same module, usable for an agent) */
+function selectedWirePorts(owner: string): string[] {
+  const out: string[] = [];
+  for (const id of state.selection) {
+    const p = canvas.querySelector<SVGElement>(`.pin[data-id="${CSS.escape(id)}"]`);
+    const port = p?.dataset.port;
+    const cls = p?.getAttribute("class") ?? "";
+    if (!p || !port || p.classList.contains("iface") || ROLE_RE.test(cls) || CLAIMED_RE.test(cls)) {
+      continue; // interfaces, clock/reset/ignored and claimed pins do not travel
+    }
+    const pOwner = state.mode === "schematic" ? p.dataset.inst : state.viewId;
+    if (pOwner === owner) {
+      out.push(port);
+    }
+  }
+  return out;
+}
+
+function runWireChoice(c: WireChoice, drop: { x: number; y: number }): void {
+  const key = layoutKey();
+  if (c.creates && key && currentTbScene) {
+    pendingDrop = {
+      key,
+      kind: c.creates,
+      x: drop.x,
+      y: drop.y,
+      // ghosts excluded: a declared scoreboard may take a ghost's id (`sb:sbd`)
+      // and must still count as NEW (review finding)
+      ids: new Set(currentTbScene.nodes.filter((n) => !n.inferred).map((n) => n.id)),
+      at: Date.now(),
+    };
+  }
+  postAction(c.action, c.args);
+}
+
+/** the drop: a no-op on the origin, the reason on an illegal target, ONE legal
+ *  outcome applied directly, several (or a canvas drop) as a menu at the point */
+function wireDrop(cx: number, cy: number): void {
+  const w = wire;
+  if (!w) {
+    return;
+  }
+  const tgt = wireTargetAt(cx, cy);
+  const drop = clientToWorld(cx, cy);
+  wireEnd();
+  if (tgt?.reason === "") {
+    return;
+  }
+  if (tgt?.reason) {
+    wireToast(tgt.reason, cx, cy);
+    return;
+  }
+  let choices: WireChoice[];
+  if (w.tb) {
+    if (!currentTbScene || !state.config) {
+      return;
+    }
+    choices = tgt
+      ? wireChoices(currentTbScene, state.config, w.tb, tgt.id)
+      : wireChoicesOnCanvas(currentTbScene, state.config, w.tb);
+  } else if (w.rtl) {
+    const agent = tgt ? w.agents.get(tgt.id) ?? null : null;
+    if (tgt && !agent) {
+      return; // a target without an agent cannot happen (the map built it)
+    }
+    choices = rtlWireChoices(w.rtl, selectedWirePorts(w.rtl.owner), agent);
+  } else {
+    return;
+  }
+  if (!choices.length) {
+    const why = tgt
+      ? "Nothing to connect here."
+      : w.tb?.kind === "sb-port"
+        ? `No other agent can be the ${w.tb.field}.`
+        : "Nothing to create here.";
+    wireToast(why, cx, cy);
+    return;
+  }
+  if (tgt && choices.length === 1) {
+    runWireChoice(choices[0], drop);
+    return;
+  }
+  openCtxMenu(
+    cx,
+    cy,
+    choices.map((c) => ({ label: c.label, action: () => runWireChoice(c, drop) }))
+  );
+}
+
+// an armed wire (click-click) dies with a press outside the canvas — the
+// inspector, the header — like the context menu (capture: before any handler)
+window.addEventListener(
+  "pointerdown",
+  (e) => {
+    if (wire?.armed && !canvas.contains(e.target as Node)) {
+      wireEnd();
+    }
+  },
+  true
+);
+
 let pan: { x: number; y: number } | undefined;
 canvas.addEventListener("pointerdown", (e) => {
   // any press cancels a scheduled hover peek: otherwise it would fire in the
   // middle of a drag/click just started
   clearTimeout(hoverTimer);
   hoverKey = "";
+  // docs/08 R10/R11 — the temporary wire: in click-click mode this press is
+  // the drop; otherwise a press on a port's hotspot starts a wire candidate
+  // (the pointer is captured only past DRAG_MIN, like the node drag)
+  if (wire && e.button !== 0) {
+    wireEnd(); // a middle/right press cancels the wire: the pan must not start under it
+  }
+  if (e.button === 0 && wire?.armed) {
+    e.preventDefault();
+    // captured, so the release — and the click `suppressClick` swallows —
+    // reach the canvas even when the pointer is let go outside it
+    canvas.setPointerCapture(e.pointerId);
+    wireDrop(e.clientX, e.clientY);
+    suppressClick = true;
+    return;
+  }
+  if (e.button === 0) {
+    const w = wireStartAt(e);
+    if (w) {
+      wire = w;
+      return;
+    }
+  }
   // drag of a node or of a boundary flag in the schematic, with the left button
   // (docs/04: the positions belong to the user); the fold button keeps its
   // click
@@ -2187,6 +2625,21 @@ canvas.addEventListener("pointerdown", (e) => {
   }
 });
 canvas.addEventListener("pointermove", (e) => {
+  if (wire) {
+    if (!wire.moved && !wire.armed) {
+      if (
+        Math.abs(e.clientX - wire.startX) + Math.abs(e.clientY - wire.startY) <
+        DRAG_MIN
+      ) {
+        return; // still a click
+      }
+      wire.moved = true;
+      canvas.setPointerCapture(e.pointerId);
+      wireBegin();
+    }
+    wireFollow(e.clientX, e.clientY);
+    return;
+  }
   if (drag) {
     const dx = e.clientX - drag.startX;
     const dy = e.clientY - drag.startY;
@@ -2295,6 +2748,28 @@ canvas.addEventListener("pointermove", (e) => {
   }
 });
 canvas.addEventListener("pointerup", (e) => {
+  if (wire) {
+    if (wire.armed) {
+      return; // click-click mode: the drop is the NEXT press
+    }
+    if (!wire.moved) {
+      if (wire.tb) {
+        // R11's fallback: a plain click on a TB hotspot arms click-click mode
+        // — the wire follows the pointer until the next press
+        wire.armed = true;
+        wireBegin();
+        wireFollow(e.clientX, e.clientY);
+        suppressClick = true; // not a selection click on the box
+      } else {
+        wire = undefined; // RTL: the click selects the pin, as before
+      }
+      return;
+    }
+    canvas.releasePointerCapture(e.pointerId);
+    wireDrop(e.clientX, e.clientY);
+    suppressClick = true;
+    return;
+  }
   if (drag) {
     const key = layoutKey();
     if (drag.moved && key) {
@@ -2865,6 +3340,15 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Escape") {
+    if (wire) {
+      // a wire in flight is cancelled first (docs/08 R10); with the button still
+      // held, the release's click must not clear the selection
+      if (wire.moved && !wire.armed) {
+        suppressClick = true;
+      }
+      wireEnd();
+      return;
+    }
     if (ctxMenu) {
       closeCtxMenu(); // Escape closes the context menu first, not the selection
       return;
@@ -3264,7 +3748,10 @@ canvas.addEventListener("wheel", () => closeCtxMenu(), { passive: true });
 // the focus leaves the webview (click in Design Hierarchy, editor, another panel):
 // the pointer events do NOT reach the webview, so `blur` is the only way to
 // close the menu (otherwise it stayed open over the new selection)
-window.addEventListener("blur", closeCtxMenu);
+window.addEventListener("blur", () => {
+  closeCtxMenu();
+  wireEnd(); // a wire never outlives the webview's focus
+});
 
 // ------------------------------------------------------------- inspector
 
@@ -3752,10 +4239,38 @@ async function renderTb(refit: boolean): Promise<void> {
     p.x = Math.round(p.x / GRID) * GRID;
     p.y = Math.round(p.y / GRID) * GRID;
   }
+  // docs/08 R10 — the node a wire's drop just created lands at the drop point:
+  // its input port on the wire's end, the box to the right of it. Consumed
+  // once; another level or a stale point (a question cancelled) expires it
+  let dropped = false;
+  if (
+    pendingDrop &&
+    (pendingDrop.key !== key || Date.now() - pendingDrop.at > DROP_TTL)
+  ) {
+    pendingDrop = undefined;
+  }
+  const pd = pendingDrop;
+  if (pd) {
+    const fresh = [...layout.nodes.values()].find(
+      (p) => p.node.kind === pd.kind && !pd.ids.has(p.node.id)
+    );
+    if (fresh) {
+      const input = [...fresh.ports.values()].find((a) => a.side === "WEST");
+      fresh.x = Math.round((pd.x + GRID) / GRID) * GRID;
+      fresh.y = Math.round((pd.y - (input?.y ?? fresh.h / 2)) / GRID) * GRID;
+      // a stale seed under the same id (a deleted entry's, a dragged ghost's)
+      // must not win: dropped from `seeds`, the D21 loop below persists the
+      // drop position instead of skipping it (review finding)
+      seeds.delete(fresh.node.id);
+      pendingDrop = undefined;
+      dropped = true;
+    }
+  }
   // D21: in an arranged view (has seeds), the elements WITHOUT a seed —
   // new from editing the config, left over from a partial sidecar — are
-  // pinned now, so that the seeds remain total (docs/04)
-  if (seeds.size && key) {
+  // pinned now, so that the seeds remain total (docs/04). A dropped node pins
+  // the whole view too: its position is the user's first arrangement gesture
+  if ((seeds.size || dropped) && key) {
     const fresh: Record<string, { x: number; y: number }> = {};
     const pin = (id: string, x: number, y: number): void => {
       if (!seeds.has(id)) {
