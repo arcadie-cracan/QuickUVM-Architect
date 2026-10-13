@@ -255,6 +255,31 @@ mesajele tot aici, la implementare.
   recent actions come first (`rankPalette` / `pushRecent` in `navfind.ts`,
   recency persisted in the webview state as `paletteRecent`). Enter runs,
   Escape closes, the arrows move. No protocol change.
+- **Collapse, hide, preview** (docs/08 R18, Oct 2026): three view-state
+  gestures, none of which touches the YAML. (1) A TB block **collapsed to its
+  header** — `C` on the selection, "Collapse to header (C)" / "Expand (C)" in
+  the context menu, the palette and the inspector: the box keeps its title,
+  stereotype and ports (the wires still connect, re-routed by the A* router),
+  the compartments and the inline widgets are not drawn, the title ends in `⋯`;
+  `layoutTb` sizes it from `boxSize(n, measure, collapsed)` and marks
+  `TbPlaced.collapsed`; persisted per level in the sidecar through
+  `node/collapsed`, like a flip (`setCollapsed`, `test:sidecar`; the height in
+  `test:tblayout`). (2) An RTL view's **nc / ignored pins hidden** — `Ctrl+H`
+  (plain `H` is the flip since phase 3, so the row's "H" became `Ctrl+H`) or the
+  palette's View row: in the schematic the child pins annotated `nc` go
+  (`pruneNcPins` in `scene.ts`, pure, `test:scene` — an nc pin has no edge and no
+  net, so nothing else refers to it), in the symbol the DUT ports whose overlay
+  role is `ignored`; the boxes shrink in place (the seeds keep the positions),
+  persisted per view through `view/pins`. (3) A **hover preview** of a composed
+  child: `config/full.children` carries the children's parsed configs by subenv
+  name (one parse with `childAgents`, in `ConfigService.loadChildAgents`; absent
+  in the per-file editor), and a 450 ms dwell on a `sub:` box draws the child's
+  bench at its env level (`buildTbScene` + `layoutTb`, laid out once per child
+  and cached until the next `config/full`) scaled into a `<g>` above the box
+  (below it when there is no room) — drawn with the TB drawer but stripped of
+  `data-id` and of pointer events, so nothing in it is a hit target, a badge
+  owner or a selection; it closes on leave, on a press, and on every render.
+  The harness has `?compose=1` (two subenvs with their children).
 - **Declared / Common / All inspector** (docs/08 R16, Oct 2026): the agent,
   scoreboard and port editors of the Properties panel are structured by the
   PROVENANCE of each field — the third rule of the pure `src/inspector.ts`
@@ -477,6 +502,8 @@ JSON, versionat (`v: 1`), tipat în TypeScript într-un singur fișier partajat
 | `ready` | `{v}` | webview inițializat; host răspunde cu `layout/full` + `model/full` + `overlay/config` — sidecar-ul ÎNAINTEA modelului, ca prima randare să aibă semințele de poziții (altfel o vedere aranjată ar licări întâi cu layout-ul automat) |
 | `select/changed` | `{ids[]}` | selecția curentă (pentru comenzi, sincronizare spre editor și evidențierea instanței în ierarhie: primul id care se rezolvă la o instanță — direct, prefixat cu vederea curentă sau ca instanță-proprietar a unui pin — se selectează în tree view, fără focus; fără niciun id rezolvabil — inclusiv selecție goală, la comutarea de mod sau Escape — se evidențiază instanța vederii curente, ca ierarhia să reflecte mereu ce arată diagrama) |
 | `layout/snapshot` | `{viewId, nodes: {id: {x, y}}}` | pozițiile întregii vederi, în bloc (docs/04): la finalul oricărui drag se persistă TOATE pozițiile curente (noduri, pliaje, steaguri de graniță), nu doar elementele trase; la randarea unei vederi deja aranjate se trimit pozițiile elementelor care nu aveau sămânță (elemente noi din recompilare, membri de pliaj, sidecar parțial moștenit). Fără semințe totale, ELK interactiv re-plasează elementele nepersistate altfel decât layout-ul complet văzut de utilizator (regresie reală: steagurile porturilor săreau la redeschidere). Host: `setPositions` în sidecar; fără ecou. Undo/redo-ul de poziții (Ctrl+Z/Ctrl+Y, docs/04) reutilizează același mesaj: fiecare pas restaurat se persistă ca un gest de poziție obișnuit |
+| `node/collapsed` | `{viewId, nodeId, collapsed}` | docs/08 R18: a TB block collapsed to its header (title, stereotype, ports — no compartments, no widgets) or expanded; `viewId` is the level key `tb:<config>\|<focus>`, like `node/flipped`; the host writes `collapsed: true` on the node in the sidecar (expanded = absent) |
+| `view/pins` | `{viewId, hidden}` | docs/08 R18: an RTL view hides / shows its nc (not connected) child pins and its ignored (waived) DUT pins; a view-level override in the sidecar (`hidePins: true`, shown = absent) |
 | `fold/toggled` | `{viewId, foldId, collapsed}` | expandarea/re-plierea unui pliaj generate → host persistă starea în sidecar (`nodes[foldId].collapsed`) |
 | `node/flipped` | `{viewId, nodeId, flipH, flipV}` | răsturnarea unui bloc (doc. 04: reatribuirea laturilor/ordinii pinilor, nu oglindire geometrică) → host persistă `nodes[nodeId].flipH/flipV` |
 | `ports/reordered` | `{viewId, port, side, order}` | override de pin |
