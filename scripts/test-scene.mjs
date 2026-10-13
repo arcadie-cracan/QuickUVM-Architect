@@ -22,7 +22,7 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { buildSchematicScene, hasSchematic, netCone, coneOf, portLabel, splitLabel } = await import(pathToFileURL(outFile));
+const { buildSchematicScene, hasSchematic, netCone, coneOf, portLabel, splitLabel, pruneNcPins } = await import(pathToFileURL(outFile));
 
 const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
 const none = new Set();
@@ -451,6 +451,36 @@ test("netCone: pin.nets e masina (netLabel ramane doar afisare)", () => {
   const labeled = s.nodes.flatMap((n) => n.pins.filter((p) => p.nets.length));
   assert.equal(labeled.length, 3, "din etichetat pe cei trei consumatori");
   assert.ok(labeled.every((p) => p.nets.includes("din") && p.netLabel));
+});
+
+test("docs/08 R18: pruneNcPins drops the nc pins and nothing else", () => {
+  const scene = buildSchematicScene(model, "demo_top.u_soc", new Set());
+  const first = scene.nodes[0];
+  const fake = {
+    ...scene,
+    nodes: [
+      ...scene.nodes,
+      {
+        ...first,
+        id: "x",
+        pins: [
+          { ...first.pins[0], id: "x.a", noteKind: "nc", note: "nc" },
+          { ...first.pins[0], id: "x.b", noteKind: null, note: null },
+          { ...first.pins[0], id: "x.c", noteKind: "const", note: "=1'b1" },
+        ],
+      },
+    ],
+  };
+  const out = pruneNcPins(fake);
+  assert.deepEqual(out.nodes.find((n) => n.id === "x").pins.map((p) => p.id), ["x.b", "x.c"]);
+  assert.equal(out.edges, fake.edges, "the edges are untouched (an nc pin has none)");
+  assert.equal(out.boundary, fake.boundary, "the boundary flags are untouched");
+  assert.equal(out.nodes.length, fake.nodes.length);
+  for (const n of scene.nodes) {
+    const o = out.nodes.find((m) => m.id === n.id);
+    assert.deepEqual(o.pins.map((p) => p.id), n.pins.filter((p) => p.noteKind !== "nc").map((p) => p.id), n.id);
+  }
+  assert.ok(fake.nodes.find((n) => n.id === "x").pins.length === 3, "the input is not mutated");
 });
 
 console.log(`\ntest-scene: ${passed} teste au trecut.`);

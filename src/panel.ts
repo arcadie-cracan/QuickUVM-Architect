@@ -38,6 +38,9 @@ export interface LayoutDeps {
   ): void;
   relayout(viewId: string): void;
   netRender(viewId: string, net: string, render: "wire" | "label"): void;
+  /** docs/08 R18 — a TB block collapsed to its header; an RTL view's pins hidden */
+  nodeCollapsed(viewId: string, nodeId: string, collapsed: boolean): void;
+  viewPins(viewId: string, hidden: boolean): void;
 }
 
 export interface PanelDeps {
@@ -401,6 +404,12 @@ export class DiagramPanel {
         break;
       case "node/flipped":
         this.deps.layout?.nodeFlipped(m.viewId, m.nodeId, m.flipH, m.flipV);
+        break;
+      case "node/collapsed":
+        this.deps.layout?.nodeCollapsed(m.viewId, m.nodeId, m.collapsed);
+        break;
+      case "view/pins":
+        this.deps.layout?.viewPins(m.viewId, m.hidden);
         break;
       case "net/render":
         this.deps.layout?.netRender(m.viewId, m.net, m.render);

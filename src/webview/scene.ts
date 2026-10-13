@@ -339,6 +339,22 @@ export function buildLeafScene(
   };
 }
 
+/**
+ * docs/08 R18 — the scene without the `nc` (not connected) pins of the child
+ * blocks: a view-level hide, persisted in the sidecar (`hidePins`). An nc pin has
+ * no edge and belongs to no net, so nothing else in the scene refers to it; the
+ * boxes shrink in place (the seeds keep the positions) and the wires re-route.
+ */
+export function pruneNcPins(scene: SchematicScene): SchematicScene {
+  return {
+    ...scene,
+    nodes: scene.nodes.map((n) => ({
+      ...n,
+      pins: n.pins.filter((p) => p.noteKind !== "nc"),
+    })),
+  };
+}
+
 export function buildSchematicScene(
   model: ProjectModel,
   viewId: string,

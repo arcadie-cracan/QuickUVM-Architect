@@ -18,7 +18,7 @@ import { probeIds, ProbeViewCtx, remapSelection } from "../locmap";
 import { ElementStatus, statusIdsRtl, statusIdsTb } from "../status";
 import { alignSnap, AlignPt, AlignSnap, centerChipSigns, drawSchematic, Flip, layoutSchematic, pinTipOffsets, portLabelText, routeEdges } from "./schematic";
 import { cameraForMinimapPoint, minimapLayout, minimapUseTransform, minimapViewRect, MmLayout } from "./minimap";
-import { buildLeafScene, buildSchematicScene, coneOf, hasSchematic, netOfPin as sceneNetOfPin, portLabel, SchematicScene } from "./scene";
+import { pruneNcPins, buildLeafScene, buildSchematicScene, coneOf, hasSchematic, netOfPin as sceneNetOfPin, portLabel, SchematicScene } from "./scene";
 import {
   h,
   renderInspector as renderInspectorInto,
@@ -284,6 +284,8 @@ function inspectorCtx(root: HTMLElement, allOpen = false): Parameters<typeof ren
     vscode,
     onOpen: tbOpen,
     onFlip: toggleFlip,
+    onCollapse: toggleCollapse,
+    isCollapsed,
     onSelectPins: selectPins,
     findInstance,
     tbAvailable,
@@ -443,6 +445,9 @@ window.addEventListener("message", (e: MessageEvent) => {
       state.config = m.config;
       state.configPath = m.configPath;
       state.childAgents = m.childAgents ?? {};
+      childConfigs = m.children ?? {}; // docs/08 R18: the hover preview of a subenv
+      subPreviewCache.clear();
+      closeSubPreview();
       state.resolved = m.resolved ?? null;
       if (state.mode === "tb") {
         // another active config => another view key: the positions are not written
@@ -818,6 +823,52 @@ function toggleNetRender(net: string): void {
     (view.nets ??= {})[net] = { render: next };
   }
   post({ v: 1, type: "net/render", viewId, net, render: next });
+  void render();
+}
+
+/** docs/08 R18 — a TB block collapsed to its header (title + ports), persisted
+ *  per level in the sidecar like a flip; the wires re-route locally (seeds) */
+function isCollapsed(nodeId: string): boolean {
+  const key = layoutKey();
+  return Boolean(key && sidecar.views[key]?.nodes?.[nodeId]?.collapsed === true);
+}
+
+function toggleCollapse(nodeId: string): void {
+  const key = layoutKey();
+  if (!key || state.mode !== "tb") {
+    return;
+  }
+  const n = sidecarNode(key, nodeId);
+  const collapsed = n.collapsed !== true;
+  if (collapsed) {
+    n.collapsed = true;
+  } else {
+    delete n.collapsed;
+  }
+  post({ v: 1, type: "node/collapsed", viewId: key, nodeId, collapsed });
+  void render();
+}
+
+/** docs/08 R18 — the nc / ignored pins of an RTL view hidden: a view-level
+ *  state in the sidecar (`hidePins`); the boxes shrink in place (seeds) */
+function hidePinsOn(): boolean {
+  const viewId = state.viewId;
+  return Boolean(viewId && state.mode !== "tb" && sidecar.views[viewId]?.hidePins);
+}
+
+function toggleHidePins(): void {
+  const viewId = state.viewId;
+  if (!viewId || state.mode === "tb") {
+    return;
+  }
+  const view = (sidecar.views[viewId] ??= {});
+  const hidden = !view.hidePins;
+  if (hidden) {
+    view.hidePins = true;
+  } else {
+    delete view.hidePins;
+  }
+  post({ v: 1, type: "view/pins", viewId, hidden });
   void render();
 }
 
@@ -2433,6 +2484,104 @@ function scheduleCardHide(): void {
   }, 220);
 }
 
+// --------------------------------------------- docs/08 R18: the hover preview of a subenv
+//
+// A `sub:` box is a composed child whose contents live in ANOTHER file; its
+// box shows only the info the parent config holds. A dwell on it draws the
+// child's bench (its env level, from `config/full.children`) at small scale
+// above the box — Blueprints' collapsed-graph preview. The mini scene is laid
+// out once per child and cached until the config changes; it is drawn with
+// the TB drawer but stripped of ids and of pointer events, so nothing in it
+// is a hit target, a badge owner or a selection.
+
+/** the composed children's configs, by subenv name (config/full.children) */
+type ChildScene = NonNullable<ReturnType<typeof buildTbScene>>;
+let childConfigs: Record<string, NonNullable<typeof state.config>> = {};
+const subPreviewCache = new Map<string, { scene: ChildScene; layout: TbLayout }>();
+let subPreviewTimer: ReturnType<typeof setTimeout> | undefined;
+let subPreview: { id: string; g: SVGGElement } | null = null;
+const SUB_PREVIEW_MAX = { w: 360, h: 240 };
+
+function closeSubPreview(): void {
+  subPreview?.g.remove();
+  subPreview = null;
+}
+
+/** the pointer left `id` (or anything): the pending dwell and the open preview go */
+function cancelSubPreview(id?: string): void {
+  clearTimeout(subPreviewTimer);
+  if (!id || subPreview?.id === id) {
+    closeSubPreview();
+  }
+}
+
+function scheduleSubPreview(id: string): void {
+  if (!id.startsWith("sub:") || subPreview?.id === id) {
+    return;
+  }
+  clearTimeout(subPreviewTimer);
+  subPreviewTimer = setTimeout(() => void openSubPreview(id), 450);
+}
+
+async function openSubPreview(id: string): Promise<void> {
+  const name = id.slice("sub:".length);
+  const cfg = childConfigs[name];
+  if (!cfg || !currentTbLayout?.nodes.get(id)) {
+    return;
+  }
+  let entry = subPreviewCache.get(name);
+  if (!entry) {
+    const scene =
+      buildTbScene(cfg, "env", null, null) ?? buildTbScene(cfg, "", null, null);
+    if (!scene) {
+      return;
+    }
+    try {
+      entry = { scene, layout: await layoutTb(elk, scene, measurer()) };
+    } catch {
+      return; // ELK refused the child's scene: no preview, nothing else
+    }
+    subPreviewCache.set(name, entry);
+  }
+  // the layout is asynchronous: the box may be gone (a render) or the mode changed
+  const box = currentTbLayout?.nodes.get(id);
+  if (!box || state.mode !== "tb") {
+    return;
+  }
+  closeSubPreview();
+  const { scene, layout } = entry;
+  const s = Math.min(
+    SUB_PREVIEW_MAX.w / Math.max(layout.width, 1),
+    SUB_PREVIEW_MAX.h / Math.max(layout.height, 1),
+    0.6
+  );
+  const w = Math.max(layout.width * s + 16, 120);
+  const h = layout.height * s + 28;
+  const x = box.x;
+  const y = box.y - h - 8 >= 0 ? box.y - h - 8 : box.y + box.h + 8;
+  const g = el("g", { class: "tb-preview", transform: `translate(${x},${y})` });
+  g.append(
+    el("rect", { class: "tb-preview-bg", x: "0", y: "0", width: String(w), height: String(h), rx: "4" }),
+    el(
+      "text",
+      { class: "tb-preview-title", x: "8", y: "13" },
+      `${name} — ${scene.nodes.length} block${scene.nodes.length === 1 ? "" : "s"} (${cfg.dut?.name ?? "?"})`
+    )
+  );
+  const inner = el("g", { transform: `translate(8,20) scale(${s})` });
+  drawTb(scene, layout, inner);
+  // the drawn boxes are not elements of THIS view: no ids, no hit targets
+  for (const e of inner.querySelectorAll("[data-id]")) {
+    e.removeAttribute("data-id");
+  }
+  g.append(inner);
+  if (!viewport) {
+    return;
+  }
+  viewport.append(g);
+  subPreview = { id, g };
+}
+
 canvas.addEventListener("pointerover", (e) => {
   if (state.mode !== "tb" || e.buttons !== 0 || wire || drag) {
     return; // a press in progress is a drag or a wire, not a dwell
@@ -2441,6 +2590,7 @@ canvas.addEventListener("pointerover", (e) => {
   if (!id) {
     return;
   }
+  scheduleSubPreview(id); // docs/08 R18: a `sub:` box previews its child bench
   clearTimeout(cardHideTimer);
   if (cardPinned || id === cardId || id === cardHoverId) {
     return; // the same box: crossing its compartments is not a new dwell
@@ -2461,12 +2611,14 @@ canvas.addEventListener("pointerout", (e) => {
   }
   cardHoverId = null;
   clearTimeout(cardTimer);
+  cancelSubPreview(from); // docs/08 R18
   if (!cardPinned) {
     scheduleCardHide();
   }
 });
 canvas.addEventListener("pointerdown", () => {
   clearTimeout(cardTimer);
+  cancelSubPreview(); // docs/08 R18: a press is not a dwell
   if (!cardPinned) {
     closeCard(); // a press is a gesture (drag, wire, selection), not a dwell
   }
@@ -4275,6 +4427,16 @@ function paletteItems(): PaletteItem[] {
       }
     }
   }
+  if (state.mode !== "tb" && state.viewId) {
+    // docs/08 R18 — the view's nc / ignored pins
+    add(
+      "View",
+      hidePinsOn()
+        ? "Show the unconnected / ignored pins (Ctrl+H)"
+        : "Hide the unconnected / ignored pins (Ctrl+H)",
+      toggleHidePins
+    );
+  }
   if (state.mode === "tb") {
     // docs/08 R20: the generated code next to the diagram — a host setting the
     // row toggles (its label reads the current value from ui/config), and the
@@ -4486,6 +4648,12 @@ window.addEventListener("keydown", (e) => {
       openPalette();
       return;
     }
+    if (e.key === "h" && state.mode !== "tb") {
+      // docs/08 R18 — Ctrl+H: hide/show the nc / ignored pins (plain H is the flip)
+      e.preventDefault();
+      toggleHidePins();
+      return;
+    }
     if (e.key === "[" || e.key === "]") {
       e.preventDefault();
       goHistory(e.key === "[");
@@ -4609,6 +4777,15 @@ window.addEventListener("keydown", (e) => {
   // flip (mirrors the shape + moves the anchor to the opposite side of the
   // flag), without changing its ELK position/side — so it does not violate
   // FIRST/LAST_SEPARATE. V makes no sense on a flag (a single connection).
+  // C: the selected TB blocks collapsed to their header / expanded (docs/08 R18)
+  if (key === "c" && state.mode === "tb") {
+    for (const n of currentTbScene?.nodes ?? []) {
+      if (state.selection.has(n.id)) {
+        toggleCollapse(n.id);
+      }
+    }
+    return;
+  }
   if (key === "h" || key === "v") {
     let nodeId: string | undefined;
     if (state.mode === "schematic") {
@@ -4834,6 +5011,13 @@ function tbMenuItems(id: string): CtxItem[] {
       { label: "Flip horizontal (H)", action: () => toggleFlip(id, "h") },
       { label: "Flip vertical (V)", action: () => toggleFlip(id, "v") }
     );
+    if (node.compartments.length || node.widgets?.length) {
+      // docs/08 R18 — collapse to the header (title + ports)
+      items.push({
+        label: isCollapsed(id) ? "Expand (C)" : "Collapse to header (C)",
+        action: () => toggleCollapse(id),
+      });
+    }
     items.push(...problemItems(id)); // docs/08 R3: the problems + repairs
     if (tbRenameTarget(node)) {
       items.push({ label: "Rename… (F2)", action: () => startRename(id) });
@@ -4936,6 +5120,7 @@ async function render(refit = false): Promise<void> {
   cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
   closeCard(); // docs/08 R15: the card is anchored to a box that is about to be redrawn
   closePalette(); // docs/08 R17: its rows close over the scene that is about to change
+  closeSubPreview(); // docs/08 R18: drawn into the viewport that is about to be rebuilt
   renderAssist(); // docs/08 R12: the strip follows the view (hidden on a mismatch)
   if (state.mode === "tb") {
     return renderTb(refit);
@@ -4983,7 +5168,11 @@ async function render(refit = false): Promise<void> {
     currentScene = null;
     currentLayout = null;
     currentEdgesGroup = null;
-    const pins = buildPins(def);
+    // docs/08 R18 — the ignored (waived) ports hidden with the view's `hidePins`
+    const roles = state.overlay?.roles ?? {};
+    const pins = hidePinsOn()
+      ? buildPins(def).filter((p) => roles[p.name] !== "ignored")
+      : buildPins(def);
     currentPins = pins;
     const layout = await layoutSymbol(inst.module, pins);
     if (gen !== renderGen) {
@@ -5106,6 +5295,9 @@ async function presentScene(
   const viewId = state.viewId;
   if (!viewId) {
     return false;
+  }
+  if (sidecar.views[viewId]?.hidePins) {
+    scene = pruneNcPins(scene); // docs/08 R18: the view hides its nc pins
   }
   // the flips enter the port geometry at layout (docs/04):
   // ELK routes toward the already-flipped positions, so its routes remain
@@ -5350,6 +5542,12 @@ async function renderTb(refit: boolean): Promise<void> {
       .filter(([, o]) => o.flipH || o.flipV)
       .map(([id, o]) => [id, { h: Boolean(o.flipH), v: Boolean(o.flipV) }])
   );
+  // docs/08 R18 — the blocks collapsed to their header (per level, like the flips)
+  const collapsedIds = new Set(
+    Object.entries(nodesOv)
+      .filter(([, o]) => o.collapsed === true)
+      .map(([id]) => id)
+  );
   // ELK can throw on invalid configurations (e.g. a layerConstraint
   // FIRST/LAST_SEPARATE incompatible with the edge direction): we catch the error so that
   // the render does not fail SILENTLY (the diagram would stay frozen on the old state,
@@ -5361,7 +5559,8 @@ async function renderTb(refit: boolean): Promise<void> {
       scene,
       measurer(),
       seeds.size ? seeds : undefined,
-      flips.size ? flips : undefined
+      flips.size ? flips : undefined,
+      collapsedIds.size ? collapsedIds : undefined
     );
   } catch {
     if (gen !== renderGen) {

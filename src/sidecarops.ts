@@ -78,6 +78,9 @@ export function serializeSidecar(data: SidecarData): string {
       }
       out.nets = nets;
     }
+    if (v.hidePins) {
+      out.hidePins = true; // docs/08 R18: a view-level override
+    }
     views[viewId] = out;
   }
   return stringify(
@@ -127,7 +130,7 @@ function prune(data: SidecarData, viewId: string, nodeId?: string): void {
       delete view.nodes;
     }
   }
-  if (!view.nodes && !view.nets) {
+  if (!view.nodes && !view.nets && !view.hidePins) {
     delete data.views[viewId];
   }
 }
@@ -180,6 +183,38 @@ export function setFlip(
     delete n.flipV;
   }
   prune(data, viewId, nodeId);
+  return data;
+}
+
+/** docs/08 R18 — a TB block collapsed to its header: `collapsed: true` is the
+ *  override, expanded is the default (not persisted). The TB keys
+ *  (`tb:<config>|<focus>`) are never invalidated, so no orphan cleanup applies. */
+export function setCollapsed(
+  data: SidecarData,
+  viewId: string,
+  nodeId: string,
+  collapsed: boolean
+): SidecarData {
+  const n = nodeOf(data, viewId, nodeId);
+  if (collapsed) {
+    n.collapsed = true;
+  } else {
+    delete n.collapsed;
+  }
+  prune(data, viewId, nodeId);
+  return data;
+}
+
+/** docs/08 R18 — an RTL view hides its nc / ignored pins: `hidePins: true` is
+ *  the override, shown is the default (not persisted) */
+export function setHidePins(data: SidecarData, viewId: string, hidden: boolean): SidecarData {
+  const view = viewOf(data, viewId);
+  if (hidden) {
+    view.hidePins = true;
+  } else {
+    delete view.hidePins;
+  }
+  prune(data, viewId);
   return data;
 }
 

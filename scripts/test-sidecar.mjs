@@ -33,6 +33,25 @@ function test(name, fn) {
   console.log(`  ok ${name}`);
 }
 
+test("docs/08 R18: a collapsed TB block and a view's hidden pins are overrides; the defaults are not persisted", () => {
+  const d = ops.emptySidecar();
+  ops.setCollapsed(d, "tb:x.yaml|env", "agent:cmd", true);
+  assert.deepEqual(d.views["tb:x.yaml|env"].nodes["agent:cmd"], { collapsed: true });
+  ops.setNodePos(d, "tb:x.yaml|env", "agent:cmd", 40, 80);
+  ops.setCollapsed(d, "tb:x.yaml|env", "agent:cmd", false);
+  assert.deepEqual(d.views["tb:x.yaml|env"].nodes["agent:cmd"], { x: 40, y: 80 }, "expanded = the default: only the position stays");
+  ops.setCollapsed(d, "tb:y.yaml|env", "sb:x", true);
+  ops.setCollapsed(d, "tb:y.yaml|env", "sb:x", false);
+  assert.equal(d.views["tb:y.yaml|env"], undefined, "nothing left: the view goes");
+  ops.setHidePins(d, "demo_top.u_soc", true);
+  assert.deepEqual(d.views["demo_top.u_soc"], { hidePins: true });
+  const back = ops.parseSidecar(ops.serializeSidecar(d));
+  assert.deepEqual(back.views["demo_top.u_soc"], { hidePins: true }, "survives the file round trip");
+  assert.deepEqual(back.views["tb:x.yaml|env"].nodes["agent:cmd"], { x: 40, y: 80 });
+  ops.setHidePins(d, "demo_top.u_soc", false);
+  assert.equal(d.views["demo_top.u_soc"], undefined, "shown = the default: the view goes");
+});
+
 test("roundtrip: pozitii + fold supravietuiesc serializarii", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 120, 80);

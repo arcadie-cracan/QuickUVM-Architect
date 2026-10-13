@@ -279,6 +279,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         case "fold/toggled":
           this.layout.foldToggled(m.viewId, m.foldId, m.collapsed);
           break;
+        case "node/collapsed":
+          this.layout.nodeCollapsed(m.viewId, m.nodeId, m.collapsed);
+          break;
+        case "view/pins":
+          this.layout.viewPins(m.viewId, m.hidden);
+          break;
         case "node/flipped":
           this.layout.nodeFlipped(m.viewId, m.nodeId, m.flipH, m.flipV);
           break;

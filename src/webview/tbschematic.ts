@@ -38,7 +38,8 @@ function ceilGrid(v: number): number {
 /** the UML box's size: title + stereotype + compartments, and min for ports */
 function boxSize(
   n: TbNode,
-  measure: (t: string, mono?: boolean) => number
+  measure: (t: string, mono?: boolean) => number,
+  collapsed = false
 ): { w: number; h: number } {
   let textH = 22; // the title band
   if (n.stereotype) {
@@ -48,7 +49,9 @@ function boxSize(
     measure(n.label),
     n.stereotype ? measure(n.stereotype) : 0
   );
-  for (const c of n.compartments) {
+  // docs/08 R18 — collapsed to its header: the title band (+ stereotype) and the
+  // ports; the compartments and the widgets are not drawn, so they do not count
+  for (const c of collapsed ? [] : n.compartments) {
     textH += 4; // separator
     if (c.title) {
       textH += 12;
@@ -59,7 +62,7 @@ function boxSize(
       maxTextW = Math.max(maxTextW, measure(it) + 12);
     }
   }
-  if (n.widgets?.length && !n.inferred) {
+  if (n.widgets?.length && !n.inferred && !collapsed) {
     // docs/08 R13 — one pill row per widget, under the compartments; the pill
     // text is MONOSPACE (the measuring trap of CLAUDE.md), plus glyph + padding
     textH += 4 + n.widgets.length * WIDGET_H;
@@ -106,6 +109,8 @@ export interface TbPlaced {
   w: number;
   h: number;
   ports: Map<string, { x: number; y: number; side: "WEST" | "EAST" }>;
+  /** docs/08 R18 — drawn as its header only (title, stereotype, ports) */
+  collapsed?: boolean;
 }
 
 export interface TbBPlaced {
@@ -160,7 +165,9 @@ export async function layoutTb(
   scene: TbScene,
   measure: (t: string, mono?: boolean) => number,
   seeds?: ReadonlyMap<string, { x: number; y: number }>,
-  flips?: ReadonlyMap<string, Flip>
+  flips?: ReadonlyMap<string, Flip>,
+  /** docs/08 R18 — the blocks collapsed to their header (sized without compartments) */
+  collapsed?: ReadonlySet<string>
 ): Promise<TbLayout> {
   const children: ElkNode[] = [];
   const sizes = new Map<string, { w: number; h: number }>();
@@ -202,7 +209,7 @@ export async function layoutTb(
         ? { ...n0, ports: flipPorts(n0.ports, flip) }
         : n0;
     effNode.set(n0.id, n);
-    const size = boxSize(n, measure);
+    const size = boxSize(n, measure, Boolean(collapsed?.has(n.id)));
     sizes.set(n.id, size);
     const geo = portGeometry(n, size);
     geoms.set(n.id, geo.ports);
@@ -308,6 +315,7 @@ export async function layoutTb(
       w: c.width ?? 0,
       h: c.height ?? 0,
       ports,
+      collapsed: collapsed?.has(n.id) || undefined,
     });
   }
   return {
@@ -358,7 +366,7 @@ function drawBox(p: TbPlaced): SVGGElement {
     // (docs/07). Dashed and dimmed, so "quick-uvm will build this" reads differently
     // from "you asked for this" — without it, an implicit bench looked EMPTY next to
     // the three components it actually generates.
-    class: `tbnode ${CLASS[n.kind] ?? ""}${drill ? " drill" : ""}${n.inferred ? " ghost" : ""}`,
+    class: `tbnode ${CLASS[n.kind] ?? ""}${drill ? " drill" : ""}${n.inferred ? " ghost" : ""}${p.collapsed ? " collapsed" : ""}`,
     transform: `translate(${p.x},${p.y})`,
   });
   g.dataset.id = n.id;
@@ -385,7 +393,8 @@ function drawBox(p: TbPlaced): SVGGElement {
     el(
       "text",
       { class: "tb-name", x: String(p.w / 2), y: String(y) },
-      drill ? `${n.label} ⊟` : n.label
+      // docs/08 R18: a collapsed block says so in its title (the compartments are gone)
+      (drill ? `${n.label} ⊟` : n.label) + (p.collapsed ? " ⋯" : "")
     )
   );
   y += 4;
@@ -400,7 +409,7 @@ function drawBox(p: TbPlaced): SVGGElement {
     );
   }
   y += 6;
-  for (const c of n.compartments) {
+  for (const c of p.collapsed ? [] : n.compartments) {
     g.append(
       el("line", {
         class: "tb-sep",
@@ -423,7 +432,7 @@ function drawBox(p: TbPlaced): SVGGElement {
     }
     y += 2;
   }
-  if (n.widgets?.length && !n.inferred) {
+  if (n.widgets?.length && !n.inferred && !p.collapsed) {
     // docs/08 R13 — the inline widgets: a pill per field, data-* for the click
     // handler in main.ts (which acts only while the box is selected)
     g.append(

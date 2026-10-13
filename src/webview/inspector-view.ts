@@ -63,6 +63,9 @@ export interface InspectorCtx {
   /** drill into a TB component / flip a node / select pins in the diagram */
   onOpen(drill: string): void;
   onFlip(id: string, axis: "h" | "v"): void;
+  /** docs/08 R18 — a TB block collapsed to its header, and its current state */
+  onCollapse?(id: string): void;
+  isCollapsed?(id: string): boolean;
   onSelectPins(names: string[]): void;
   findInstance(viewId: string): Instance | undefined;
   tbAvailable(): boolean;
@@ -2057,6 +2060,17 @@ export function renderInspector(c: InspectorCtx): void {
         button("Flip horizontal (H)", true, () => ctx.onFlip(selNode.id, "h"), true),
         button("Flip vertical (V)", true, () => ctx.onFlip(selNode.id, "v"), true)
       );
+      if (ctx.onCollapse && (selNode.compartments.length || selNode.widgets?.length)) {
+        // docs/08 R18 — the header only (title + ports); the wires still connect
+        ctx.root.append(
+          button(
+            ctx.isCollapsed?.(selNode.id) ? "Expand (C)" : "Collapse to header (C)",
+            true,
+            () => ctx.onCollapse?.(selNode.id),
+            true
+          )
+        );
+      }
       // editing + deletion per component type (slice 2). Scoreboard/coverage/
       // vseq are leaves; the agent falls in cascade (host: modal confirmation).
       const del = (kind: string, dname: string): void =>
