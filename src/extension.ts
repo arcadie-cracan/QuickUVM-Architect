@@ -521,6 +521,9 @@ export function activate(context: vscode.ExtensionContext): void {
         case "relay/fold":
           DiagramPanel.current?.postRelay({ v: 1, type: "relay/fold", foldId: m.foldId });
           break;
+        case "relay/collapse":
+          DiagramPanel.current?.postRelay({ v: 1, type: "relay/collapse", nodeId: m.nodeId });
+          break;
         case "relay/netRender":
           DiagramPanel.current?.postRelay({ v: 1, type: "relay/netRender", net: m.net });
           break;

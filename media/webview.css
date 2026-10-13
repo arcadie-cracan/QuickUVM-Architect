@@ -1606,6 +1606,13 @@ text.split-sign {
   pointer-events: none;
 }
 
+/* the title's own `pointer-events: auto` (R14's rename) would win over the
+   group's `none` in SVG: the preview's titles are not hit targets either */
+.tb-preview .tb-name {
+  pointer-events: none;
+  cursor: default;
+}
+
 .tb-preview-bg {
   fill: var(--vscode-editorWidget-background, #252526);
   stroke: var(--vscode-editorWidget-border, #454545);

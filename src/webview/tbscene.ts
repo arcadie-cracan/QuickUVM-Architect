@@ -114,6 +114,12 @@ export interface TbWidget {
   hint?: string;
 }
 
+/** docs/08 R18 — a block worth collapsing: one with something below its header.
+ *  The ONE predicate behind the C key, the context menu and the inspector. */
+export function canCollapse(n: TbNode): boolean {
+  return n.compartments.length > 0 || (n.widgets?.length ?? 0) > 0;
+}
+
 /** a level's block: UML box with compartments; `drill` = the descent's focus */
 export interface TbNode {
   id: string;

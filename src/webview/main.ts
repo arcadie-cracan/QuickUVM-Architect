@@ -28,7 +28,7 @@ import {
 import { SV_KEYWORDS } from "../heuristics";
 import type { State } from "./state";
 import type { TbNode, TbScene } from "./tbscene";
-import { buildTbScene } from "./tbscene";
+import { buildTbScene, canCollapse } from "./tbscene";
 import { anchor, drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
 import {
   rtlWireChoices,
@@ -447,6 +447,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       state.childAgents = m.childAgents ?? {};
       childConfigs = m.children ?? {}; // docs/08 R18: the hover preview of a subenv
       subPreviewCache.clear();
+      subPreviewGen++; // a layout still running describes the old children
       closeSubPreview();
       state.resolved = m.resolved ?? null;
       if (state.mode === "tb") {
@@ -496,6 +497,9 @@ window.addEventListener("message", (e: MessageEvent) => {
     // two paths cannot drift.
     case "relay/flip":
       toggleFlip(m.nodeId, m.axis);
+      break;
+    case "relay/collapse":
+      toggleCollapse(m.nodeId); // docs/08 R18: the sidebar's button
       break;
     case "relay/fold":
       toggleFold(m.foldId);
@@ -833,11 +837,37 @@ function isCollapsed(nodeId: string): boolean {
   return Boolean(key && sidecar.views[key]?.nodes?.[nodeId]?.collapsed === true);
 }
 
+/** docs/08 R18 — a view toggle (collapse, hidden pins) must not re-lay out the
+ *  whole view: without seeds the next render is a full ELK pass and every box
+ *  jumps (the row's own risk, reproduced at the review). An un-seeded view is
+ *  pinned first — the same D21 total snapshot the first drag makes. */
+function pinViewIfUnseeded(key: string): void {
+  const nodes = sidecar.views[key]?.nodes ?? {};
+  if (Object.values(nodes).some((o) => o.x !== undefined && o.y !== undefined)) {
+    return;
+  }
+  const all = capturePositions();
+  if (!all) {
+    return;
+  }
+  for (const [id, p] of Object.entries(all)) {
+    const n = sidecarNode(key, id);
+    n.x = p.x;
+    n.y = p.y;
+  }
+  post({ v: 1, type: "layout/snapshot", viewId: key, nodes: all });
+}
+
 function toggleCollapse(nodeId: string): void {
   const key = layoutKey();
   if (!key || state.mode !== "tb") {
     return;
   }
+  const node = currentTbScene?.nodes.find((x) => x.id === nodeId);
+  if (!node || !canCollapse(node)) {
+    return; // a header-only box has nothing to collapse (the menu agrees)
+  }
+  pinViewIfUnseeded(key);
   const n = sidecarNode(key, nodeId);
   const collapsed = n.collapsed !== true;
   if (collapsed) {
@@ -861,6 +891,7 @@ function toggleHidePins(): void {
   if (!viewId || state.mode === "tb") {
     return;
   }
+  pinViewIfUnseeded(viewId);
   const view = (sidecar.views[viewId] ??= {});
   const hidden = !view.hidePins;
   if (hidden) {
@@ -1521,6 +1552,7 @@ function exportSvg(): void {
   clone.querySelector<SVGGElement>("#viewport")?.removeAttribute("transform");
   // the minimap is UI chrome (navigator), not content — it does not go into the export
   clone.querySelector<SVGGElement>("#minimap")?.remove();
+  clone.querySelector<SVGGElement>(".tb-preview")?.remove(); // docs/08 R18: a hover preview is not content
   clone.setAttribute("xmlns", SVG_NS);
   const w = Math.ceil(bb.width + 2 * MARGIN);
   const hh = Math.ceil(bb.height + 2 * MARGIN);
@@ -2500,6 +2532,10 @@ let childConfigs: Record<string, NonNullable<typeof state.config>> = {};
 const subPreviewCache = new Map<string, { scene: ChildScene; layout: TbLayout }>();
 let subPreviewTimer: ReturnType<typeof setTimeout> | undefined;
 let subPreview: { id: string; g: SVGGElement } | null = null;
+/** the `sub:` box under the pointer (the dwell's target); null when none */
+let subHoverId: string | null = null;
+/** bumped on every config/full: a layout that started on the old config is dropped */
+let subPreviewGen = 0;
 const SUB_PREVIEW_MAX = { w: 360, h: 240 };
 
 function closeSubPreview(): void {
@@ -2510,13 +2546,20 @@ function closeSubPreview(): void {
 /** the pointer left `id` (or anything): the pending dwell and the open preview go */
 function cancelSubPreview(id?: string): void {
   clearTimeout(subPreviewTimer);
+  if (!id || subHoverId === id) {
+    subHoverId = null;
+  }
   if (!id || subPreview?.id === id) {
     closeSubPreview();
   }
 }
 
 function scheduleSubPreview(id: string): void {
-  if (!id.startsWith("sub:") || subPreview?.id === id) {
+  if (!id.startsWith("sub:") || id === subHoverId) {
+    return; // crossing the box's own elements is not a new dwell (the card's rule)
+  }
+  subHoverId = id;
+  if (subPreview?.id === id) {
     return;
   }
   clearTimeout(subPreviewTimer);
@@ -2526,6 +2569,7 @@ function scheduleSubPreview(id: string): void {
 async function openSubPreview(id: string): Promise<void> {
   const name = id.slice("sub:".length);
   const cfg = childConfigs[name];
+  const gen = subPreviewGen;
   if (!cfg || !currentTbLayout?.nodes.get(id)) {
     return;
   }
@@ -2541,11 +2585,16 @@ async function openSubPreview(id: string): Promise<void> {
     } catch {
       return; // ELK refused the child's scene: no preview, nothing else
     }
+    if (gen !== subPreviewGen) {
+      return; // the config changed meanwhile: this entry describes the OLD child
+    }
     subPreviewCache.set(name, entry);
   }
-  // the layout is asynchronous: the box may be gone (a render) or the mode changed
+  // the layout is asynchronous: the pointer may have left (an orphan preview),
+  // moved onto another sub (the wrong one on top), the box may be gone (a
+  // render) or the mode changed — review findings
   const box = currentTbLayout?.nodes.get(id);
-  if (!box || state.mode !== "tb") {
+  if (!box || state.mode !== "tb" || subHoverId !== id || gen !== subPreviewGen) {
     return;
   }
   closeSubPreview();
@@ -2928,9 +2977,13 @@ function applyPendingRename(scene: TbScene): void {
   const moved: Record<string, { x: number; y: number }> = {};
   for (const [oldId, newId] of pr.pairs) {
     const o = nodes[oldId];
-    if (o && o.x !== undefined && o.y !== undefined) {
+    // the seat AND the view state (flips, docs/08 R18's collapse) travel; only
+    // the seat is a snapshot entry
+    if (o && (o.x !== undefined || o.collapsed || o.flipH || o.flipV)) {
       Object.assign(sidecarNode(pr.key, newId), o);
-      moved[newId] = { x: o.x, y: o.y };
+      if (o.x !== undefined && o.y !== undefined) {
+        moved[newId] = { x: o.x, y: o.y };
+      }
     }
   }
   if (Object.keys(moved).length) {
@@ -4648,7 +4701,7 @@ window.addEventListener("keydown", (e) => {
       openPalette();
       return;
     }
-    if (e.key === "h" && state.mode !== "tb") {
+    if (key === "h" && state.mode !== "tb") {
       // docs/08 R18 — Ctrl+H: hide/show the nc / ignored pins (plain H is the flip)
       e.preventDefault();
       toggleHidePins();
@@ -4780,7 +4833,7 @@ window.addEventListener("keydown", (e) => {
   // C: the selected TB blocks collapsed to their header / expanded (docs/08 R18)
   if (key === "c" && state.mode === "tb") {
     for (const n of currentTbScene?.nodes ?? []) {
-      if (state.selection.has(n.id)) {
+      if (state.selection.has(n.id) && canCollapse(n)) {
         toggleCollapse(n.id);
       }
     }
@@ -5011,7 +5064,7 @@ function tbMenuItems(id: string): CtxItem[] {
       { label: "Flip horizontal (H)", action: () => toggleFlip(id, "h") },
       { label: "Flip vertical (V)", action: () => toggleFlip(id, "v") }
     );
-    if (node.compartments.length || node.widgets?.length) {
+    if (canCollapse(node)) {
       // docs/08 R18 — collapse to the header (title + ports)
       items.push({
         label: isCollapsed(id) ? "Expand (C)" : "Collapse to header (C)",
@@ -5170,8 +5223,17 @@ async function render(refit = false): Promise<void> {
     currentEdgesGroup = null;
     // docs/08 R18 — the ignored (waived) ports hidden with the view's `hidePins`
     const roles = state.overlay?.roles ?? {};
+    // a waived port an agent still claims is the `ignored-and-mapped` ERROR, and
+    // a port with any finding carries a badge: neither may vanish behind a view
+    // toggle (the diagram never hides a problem — review finding)
+    const claimed = new Set((state.overlay?.agents ?? []).flatMap((a) => a.pins));
     const pins = hidePinsOn()
-      ? buildPins(def).filter((p) => roles[p.name] !== "ignored")
+      ? buildPins(def).filter(
+          (p) =>
+            roles[p.name] !== "ignored" ||
+            claimed.has(p.name) ||
+            statusByElement.has(`<port>.${p.name}`)
+        )
       : buildPins(def);
     currentPins = pins;
     const layout = await layoutSymbol(inst.module, pins);

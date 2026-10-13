@@ -41,7 +41,7 @@ import type {
 import { scoreboardNodeIds } from "../quickuvm";
 import type { Instance } from "../model";
 import type { SchematicScene } from "./scene";
-import type { TbScene } from "./tbscene";
+import { canCollapse, type TbScene } from "./tbscene";
 import type { State } from "./state";
 
 /** Everything the inspector used to reach through module globals. */
@@ -2060,7 +2060,7 @@ export function renderInspector(c: InspectorCtx): void {
         button("Flip horizontal (H)", true, () => ctx.onFlip(selNode.id, "h"), true),
         button("Flip vertical (V)", true, () => ctx.onFlip(selNode.id, "v"), true)
       );
-      if (ctx.onCollapse && (selNode.compartments.length || selNode.widgets?.length)) {
+      if (ctx.onCollapse && canCollapse(selNode)) {
         // docs/08 R18 — the header only (title + ports); the wires still connect
         ctx.root.append(
           button(

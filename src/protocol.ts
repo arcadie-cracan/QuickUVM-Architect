@@ -358,6 +358,8 @@ export type HostMessage =
   | { v: 1; type: "relay/fold"; foldId: string }
   | { v: 1; type: "relay/netRender"; net: string }
   | { v: 1; type: "relay/selectPins"; names: string[] }
+  // docs/08 R18 — the sidebar's "Collapse to header" / "Expand", relayed like a flip
+  | { v: 1; type: "relay/collapse"; nodeId: string }
   | { v: 1; type: "relay/openTb" };
 
 // ------------------------------------------------------------ webview -> host
@@ -441,4 +443,6 @@ export type WebviewMessage =
   | { v: 1; type: "relay/fold"; foldId: string }
   | { v: 1; type: "relay/netRender"; net: string }
   | { v: 1; type: "relay/selectPins"; names: string[] }
+  // docs/08 R18 — the sidebar's "Collapse to header" / "Expand", relayed like a flip
+  | { v: 1; type: "relay/collapse"; nodeId: string }
   | { v: 1; type: "relay/openTb" };

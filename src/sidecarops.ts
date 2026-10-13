@@ -410,12 +410,18 @@ export function invalidate(
     if (view.nodes && Object.keys(view.nodes).length === 0) {
       delete view.nodes;
     }
-    if (keys === null) {
+    // docs/08 R18 — a view-level override (`hidePins`) is not a node: it stays
+    // while the view is a view. A LEAF instance has no schematic keys (`keys ===
+    // null`) but its symbol is a valid view, so the override on it stays too —
+    // the first cut lost the DUT's hidden pins on every recompile (review finding)
+    const leafView =
+      keys === null && Boolean(view.hidePins) && model.instances.some((i) => i.path === viewId);
+    if (keys === null && !leafView) {
       // the view itself disappeared: the positions migrated into orphans (the
       // protected asset, docs/04)
       delete data.views[viewId];
       changed = true;
-    } else if (!view.nodes && !view.nets) {
+    } else if (!view.nodes && !view.nets && !view.hidePins) {
       delete data.views[viewId];
     }
   }

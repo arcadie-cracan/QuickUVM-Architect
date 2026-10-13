@@ -52,6 +52,19 @@ test("docs/08 R18: a collapsed TB block and a view's hidden pins are overrides; 
   assert.equal(d.views["demo_top.u_soc"], undefined, "shown = the default: the view goes");
 });
 
+test("docs/08 R18: invalidate keeps a view that holds only hidePins — a schematic and a leaf's symbol", () => {
+  const d = ops.emptySidecar();
+  ops.setHidePins(d, "demo_top.u_soc", true);
+  ops.setHidePins(d, "demo_top.u_soc.g_ch[0].u_ch", true);
+  ops.setHidePins(d, "gone.view", true);
+  const changed = ops.invalidate(d, model, "2026-10-13");
+  assert.deepEqual(d.views["demo_top.u_soc"], { hidePins: true }, "a schematic view with no positions keeps its override");
+  assert.deepEqual(d.views["demo_top.u_soc.g_ch[0].u_ch"], { hidePins: true }, "a leaf has no schematic keys but is a view (its symbol)");
+  assert.equal(d.views["gone.view"], undefined, "a view that is no instance goes");
+  assert.equal(changed, true);
+  assert.equal(ops.invalidate(d, model, "2026-10-13"), false, "stable afterwards");
+});
+
 test("roundtrip: pozitii + fold supravietuiesc serializarii", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 120, 80);

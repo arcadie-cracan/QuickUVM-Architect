@@ -673,8 +673,27 @@ coliziunea de nume.
   its header (absent = expanded) — `setFold` and `setCollapsed` are separate
   mutations, do not route one through the other (`setFold` DELETES on
   `true`). `hidePins` is a VIEW-level key: `prune` must not drop a view that
-  holds only it, and `serializeSidecar` must copy it (it whitelists `nodes`
-  and `nets` — the first cut lost the override at the first save). `boxSize`
+  holds only it, `serializeSidecar` must copy it (it whitelists `nodes`
+  and `nets` — the first cut lost the override at the first save), and
+  `invalidate` has TWO deletion branches of its own — the empty-view one and
+  the `keys === null` one, which fires for every LEAF instance (its symbol is
+  a view with no schematic keys) — both must spare a hidePins-only view (the
+  DUT's hidden pins came back on every recompile; `test:sidecar`). A toggle
+  (collapse, hidden pins) on an UN-SEEDED view first pins it
+  (`pinViewIfUnseeded`, the D21 total snapshot): without seeds the next render
+  is a full ELK pass and every box jumps — the row's risk, reproduced at the
+  review. A waived port an agent still claims (the `ignored-and-mapped`
+  ERROR) or any port with a status entry is never hidden: the diagram never
+  hides a problem. `canCollapse` (tbscene.ts) is the ONE predicate behind the
+  `C` key, the menu, the inspector and `toggleCollapse` itself (a header-only
+  box got `collapsed: true` persisted with no way to expand it). The sidebar
+  Properties view reaches the panel through `relay/collapse`, like
+  `relay/flip`. The async preview keeps a `subHoverId` and a `subPreviewGen`:
+  the layout is applied only while the pointer is still on that box and the
+  config unchanged (an orphan preview after leaving, the wrong child on top
+  after moving to another sub, a stale child cached after a save); the dwell
+  is not re-armed by crossings inside the box; `exportSvg` strips
+  `.tb-preview`; a rename carries `collapsed` with the seat. `boxSize`
   takes `collapsed` and `drawBox` reads `TbPlaced.collapsed`: both the size
   and the drawing skip the compartments AND the widgets, or the pills overflow
   a header-only box. The key is `C` (TB only), not the row's `H` — `H` is the

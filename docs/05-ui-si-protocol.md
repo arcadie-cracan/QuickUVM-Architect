@@ -278,8 +278,18 @@ mesajele tot aici, la implementare.
   and cached until the next `config/full`) scaled into a `<g>` above the box
   (below it when there is no room) — drawn with the TB drawer but stripped of
   `data-id` and of pointer events, so nothing in it is a hit target, a badge
-  owner or a selection; it closes on leave, on a press, and on every render.
-  The harness has `?compose=1` (two subenvs with their children).
+  owner or a selection; it closes on leave, on a press, and on every render,
+  and the async layout is applied only while the pointer is still on that box
+  and the config has not changed since (`subHoverId`, `subPreviewGen`). The
+  child is drawn without its `resolve` (the ghosts of an implicit child are
+  not shown). The harness has `?compose=1` (two subenvs with their children).
+  Three rules from the adversarial review: a toggle on an un-seeded view first
+  pins it (`pinViewIfUnseeded` — the D21 total snapshot), or the next render
+  would be a full ELK pass; a waived port an agent still claims (the
+  `ignored-and-mapped` error) or any port with a finding is never hidden; the
+  sidebar Properties view relays its button as `relay/collapse {nodeId}`, like
+  `relay/flip`. The symbol and the schematic of one instance share the
+  `hidePins` flag (one view key).
 - **Declared / Common / All inspector** (docs/08 R16, Oct 2026): the agent,
   scoreboard and port editors of the Properties panel are structured by the
   PROVENANCE of each field — the third rule of the pure `src/inspector.ts`
