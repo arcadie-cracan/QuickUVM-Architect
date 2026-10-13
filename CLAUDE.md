@@ -502,7 +502,17 @@ coliziunea de nume.
   drop captures the pointer so its click reaches the canvas. Synthetic pointer
   events in the harness never produce a `click`, so `suppressClick` stays
   armed after a scripted drop — dispatch a `click` before testing the
-  selection.
+  selection. **The connections wire** (R11's composition half, Oct 2026): a
+  `sub:` box's ports come from `config/full.children` (R18) — outputs east =
+  sources, inputs west = targets — with the `signal` glyph, because a hotspot
+  exists ONLY for a port with a glyph (`drawBox`): a glyph-less port starts
+  and receives nothing. The legality is `subPortReason` in `wiring.ts` (another
+  block, one driver per input, equal widths when both are known); the host
+  re-checks in the pure `singleConnection` and writes through `applyWirePlan`,
+  the tail extracted from `wireConnections` — do not add a second write path.
+  A width mismatch is a WARNING that still wires (as `deriveConnections` does;
+  quick-uvm has the last word), an unreadable child leaves direction and width
+  unchecked with a warning; the gesture itself blocks a mismatch it can see.
 - **Designer assistance (docs/08 R12)**: the proposals are computed on the HOST
   (`src/proposals.ts`, pure) and shipped as `proposals/full`; the webview never
   derives one — the connections proposal needs `deriveConnections` (compose.ts
@@ -1095,6 +1105,9 @@ selection, recent first; `rankPalette` / `pushRecent` in `test:navfind`.
 destructive or multi-file gesture (`quickuvm.previewEdits` = ask / always /
 never; `src/preview.ts` + `test:preview`, `src/previewdiff.ts`,
 `TbEditTarget.readText`).
+**R11's composition half is implemented** (Oct 2026): the connections wire
+between `sub:` boxes (`sub-port` origin in `test:wiring`, `singleConnection`
+in `test:compose`, the `addConnection` action through `applyWirePlan`).
 **R18 (docs/08) is implemented** (Oct 2026): a TB block collapsed to its
 header (`C`, `node/collapsed`), an RTL view's nc / ignored pins hidden
 (`Ctrl+H`, `view/pins`, `pruneNcPins` in `test:scene`), the hover preview of a
