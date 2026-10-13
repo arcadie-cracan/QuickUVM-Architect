@@ -12,7 +12,7 @@
 
 import { SV_IDENT_RE } from "./heuristics";
 import type { Dir, ProjectModel } from "./model";
-import type { QuvmSubenv } from "./quickuvm";
+import type { QuvmConfig, QuvmSubenv } from "./quickuvm";
 import { addConnections, parseQuvm, setAgentActive } from "./yamlops";
 
 export interface ParentComposition {
@@ -246,6 +246,88 @@ export function deriveConnections(
   }
   out.sinks = [...sinkSet];
   return out;
+}
+
+/**
+ * docs/08 R11 — ONE connection drawn by hand between two composed blocks
+ * (`<subenv>.<port>` → `<subenv>.<port>`), checked the way `deriveConnections`
+ * checks a derived one, with what the children's configs say: `from` must be an
+ * OUTPUT port of the source block's agents, `to` an INPUT port of the
+ * destination's, two different blocks, one driver per input. A width mismatch is
+ * a warning (still wired — quick-uvm has the last word, as for the derived ones);
+ * an unreadable child leaves direction and width unchecked, with a warning.
+ * Returns the input of `planWireEdits`, or the refusal.
+ */
+export function singleConnection(
+  from: string,
+  to: string,
+  config: QuvmConfig,
+  children: Readonly<Record<string, QuvmConfig>>
+): ComposeResult | { error: string } {
+  const subenvs = new Set(
+    (config.subenvs ?? []).map((s) => s.name).filter((n): n is string => Boolean(n))
+  );
+  const split = (ep: string): [string, string] | null => {
+    const i = ep.indexOf(".");
+    if (i <= 0 || i >= ep.length - 1) {
+      return null;
+    }
+    const sub = ep.slice(0, i);
+    return subenvs.has(sub) ? [sub, ep.slice(i + 1)] : null;
+  };
+  const f = split(from);
+  const t = split(to);
+  if (!f) {
+    return { error: `"${from}" is not <subenv>.<port> of a composed block` };
+  }
+  if (!t) {
+    return { error: `"${to}" is not <subenv>.<port> of a composed block` };
+  }
+  if (f[0] === t[0]) {
+    return { error: `${from} and ${to} are on the same block — a connection joins two subenvs` };
+  }
+  const driven = (config.connections ?? []).find((c) => c.to === to && c.from);
+  if (driven) {
+    return { error: `${to} is already driven by ${driven.from} — one driver per input` };
+  }
+  const lookup = (sub: string, port: string, dir: "out" | "in"): number | "missing" | "unknown" => {
+    const child = children[sub];
+    if (!child) {
+      return "unknown";
+    }
+    for (const a of child.agents ?? []) {
+      const list = dir === "out" ? a.ports?.outputs : a.ports?.inputs;
+      const p = list?.find((x) => x.name === port);
+      if (p) {
+        return p.width ?? 1;
+      }
+    }
+    return "missing";
+  };
+  const fp = lookup(f[0], f[1], "out");
+  const tp = lookup(t[0], t[1], "in");
+  if (fp === "missing") {
+    return { error: `${from} is not an output port of ${f[0]}'s agents — a source is a block OUTPUT` };
+  }
+  if (tp === "missing") {
+    return { error: `${to} is not an input port of ${t[0]}'s agents — a destination is a block INPUT` };
+  }
+  const warnings: string[] = [];
+  for (const [sub, r] of [[f[0], fp], [t[0], tp]] as const) {
+    if (r === "unknown") {
+      warnings.push(`${sub}: child config not readable — direction and width unchecked`);
+    }
+  }
+  if (typeof fp === "number" && typeof tp === "number" && fp !== tp) {
+    warnings.push(`${from} is ${fp}b but ${to} is ${tp}b — width mismatch (quick-uvm will reject)`);
+  }
+  return {
+    connections: [
+      { from, to, width: typeof fp === "number" ? fp : typeof tp === "number" ? tp : null },
+    ],
+    sinks: [t[0]],
+    warnings,
+  };
 }
 
 // ------------------------------------------------- the edit plan (H1)

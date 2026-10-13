@@ -9,8 +9,10 @@ import {
   deriveConnections,
   parentComposition,
   planWireEdits,
+  singleConnection,
   subenvMapping,
   subenvName,
+  type ComposeResult,
 } from "./compose";
 import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
@@ -2403,6 +2405,20 @@ export class Actions {
       );
       return;
     }
+    await this.applyWirePlan(subenvs, derived, vscode.l10n.t("Wire connections from design"));
+  }
+
+  /**
+   * Writes a connection plan — "Wire connections from design" and docs/08 R11's
+   * hand-drawn connection share it: `connections` on the top + the destination
+   * blocks' agents set passive in their files, one atomic WorkspaceEdit,
+   * previewed / confirmed per `previewEdits` (R19) when more than one file changes.
+   */
+  private async applyWirePlan(
+    subenvs: NonNullable<QuvmConfig["subenvs"]>,
+    derived: ComposeResult,
+    title: string
+  ): Promise<void> {
     // ATOMIC edit (a single undo) on MULTIPLE files: `connections` on the top +
     // the DESTINATION block's agent set passive in each child config (an input
     // port driven by a wire cannot also be driven by its own agent — quick-uvm
@@ -2411,6 +2427,9 @@ export class Actions {
     // The host only READS the files; the new texts come from planWireEdits
     // (compose.ts, pure, tested — including the folding on a shared file, #4).
     const topUri = this.config.configUri;
+    if (!topUri) {
+      return;
+    }
     const dir = vscode.Uri.joinPath(topUri, "..");
     const fullRange = (d: vscode.TextDocument): vscode.Range =>
       new vscode.Range(d.positionAt(0), d.positionAt(d.getText().length));
@@ -2465,7 +2484,7 @@ export class Actions {
       ),
       detail: notes.join("\n") || undefined,
       verb: vscode.l10n.t("Wire"),
-      title: vscode.l10n.t("Wire connections from design"),
+      title,
       changes,
     });
     if (!go) {
@@ -2529,6 +2548,30 @@ export class Actions {
         `${passivated.length} passivated, ${manual.length} manual` +
         (derived.warnings.length ? `, ${derived.warnings.length} warnings` : "")
     );
+  }
+
+  /** docs/08 R11 — ONE connection drawn by hand between two composed blocks
+   *  (the temporary wire from a block's output to another's input, or the
+   *  reverse): the checks are the pure `singleConnection`, the write the same
+   *  multi-file plan as "Wire connections from design" */
+  async addConnection(from: string, to: string): Promise<void> {
+    if (!this.config.configUri) {
+      return this.warnNoConfig();
+    }
+    const cfg = this.config.current;
+    const subenvs = cfg.subenvs ?? [];
+    if (!subenvs.length) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t("QuickUVM Architect: compose blocks as subenvs first (Create subenv).")
+      );
+      return;
+    }
+    const r = singleConnection(from, to, cfg, this.config.childConfigs);
+    if ("error" in r) {
+      void vscode.window.showWarningMessage(vscode.l10n.t("QuickUVM Architect: {0}", r.error));
+      return;
+    }
+    await this.applyWirePlan(subenvs, r, vscode.l10n.t("Connect {0} → {1}", from, to));
   }
 
   /**

@@ -20,7 +20,7 @@ await esbuild.build({
     js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   },
 });
-const { deriveConnections, parentComposition, subenvMapping, subenvName, planWireEdits } =
+const { deriveConnections, parentComposition, subenvMapping, subenvName, planWireEdits, singleConnection } =
   await import(pathToFileURL(outFile));
 
 let passed = 0;
@@ -375,6 +375,40 @@ test("planWireEdits: sink fara config/fisier/agent -> manual, restul merg", () =
   assert.equal(plan.childTexts.size, 0, "scheletul neschimbat nu se scrie");
   // the connections are written to top anyway (passivation is the user's responsibility)
   assert.match(plan.topText, /connections:/);
+});
+
+// docs/08 R11 — a hand-drawn connection, checked
+const HAND_CFG = {
+  subenvs: [{ name: "p", config: "p.yaml" }, { name: "c", config: "c.yaml" }, { name: "u", config: "u.yaml" }],
+  connections: [{ from: "p.dout", to: "c.din2" }],
+};
+const HAND_CHILDREN = {
+  p: { agents: [{ name: "pa", ports: { inputs: [{ name: "ack" }], outputs: [{ name: "dout", width: 8 }, { name: "v" }] } }] },
+  c: { agents: [{ name: "ca", ports: { inputs: [{ name: "din", width: 8 }, { name: "din2", width: 8 }, { name: "en" }] } }] },
+};
+
+test("singleConnection: output -> input of another block, with the width; the plan's sink is the destination", () => {
+  const r = singleConnection("p.dout", "c.din", HAND_CFG, HAND_CHILDREN);
+  assert.deepEqual(r, { connections: [{ from: "p.dout", to: "c.din", width: 8 }], sinks: ["c"], warnings: [] });
+});
+
+test("singleConnection: the refusals mirror the gesture's legality", () => {
+  assert.match(singleConnection("p.dout", "c.din2", HAND_CFG, HAND_CHILDREN).error, /already driven by p\.dout/);
+  assert.match(singleConnection("p.dout", "p.ack", HAND_CFG, HAND_CHILDREN).error, /same block/);
+  assert.match(singleConnection("p.ack", "c.din", HAND_CFG, HAND_CHILDREN).error, /not an output port of p/);
+  assert.match(singleConnection("p.dout", "c.nope", HAND_CFG, HAND_CHILDREN).error, /not an input port of c/);
+  assert.match(singleConnection("zz.dout", "c.din", HAND_CFG, HAND_CHILDREN).error, /not <subenv>\.<port>/);
+  assert.match(singleConnection("p", "c.din", HAND_CFG, HAND_CHILDREN).error, /not <subenv>\.<port>/);
+});
+
+test("singleConnection: a width mismatch and an unreadable child are warnings — still wired, quick-uvm decides", () => {
+  const w = singleConnection("p.v", "c.din", HAND_CFG, HAND_CHILDREN);
+  assert.equal(w.connections[0].width, 1);
+  assert.match(w.warnings[0], /p\.v is 1b but c\.din is 8b/);
+  const u = singleConnection("u.out", "c.en", HAND_CFG, HAND_CHILDREN);
+  assert.deepEqual(u.connections, [{ from: "u.out", to: "c.en", width: 1 }]);
+  assert.match(u.warnings[0], /u: child config not readable/);
+  assert.deepEqual(u.sinks, ["c"]);
 });
 
 console.log(`\ntest-compose: ${passed} teste au trecut.`);

@@ -76,6 +76,8 @@ export type ActionKind =
   | "createProbe"
   // slice 3: derived composition — H1 connections from the view's nets
   | "wireConnections"
+  // docs/08 R11: one hand-drawn connection between two composed blocks
+  | "addConnection"
   // slice 3: composes the current block + its siblings into the parent bench
   | "composeIntoParent"
   // drill into the composed block: opens the subenv's config with the default

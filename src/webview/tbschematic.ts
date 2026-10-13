@@ -585,6 +585,16 @@ function glyphEl(kind: PortGlyph, cx: number, cy: number): SVGElement {
         cy: String(cy),
         r: String(r),
       });
+    case "signal":
+      // a composed block's signal port (docs/08 R11): a small filled square,
+      // deliberately unlike the hollow TLM shapes
+      return el("rect", {
+        class: "tb-glyph signal",
+        x: String(cx - 3),
+        y: String(cy - 3),
+        width: "6",
+        height: "6",
+      });
     case "analysis":
       return el("path", {
         class: "tb-glyph analysis",

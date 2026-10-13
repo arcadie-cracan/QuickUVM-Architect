@@ -3259,7 +3259,7 @@ function wireStartAt(e: PointerEvent): WireState | undefined {
       return undefined;
     }
     const portId = hit.dataset.port ?? "";
-    const origin = wireOriginOf(currentTbScene, state.config, portId);
+    const origin = wireOriginOf(currentTbScene, state.config, portId, childConfigs);
     const a = origin ? anchor(currentTbLayout, origin.nodeId, portId) : null;
     if (!origin || !a) {
       return undefined;
@@ -3268,7 +3268,7 @@ function wireStartAt(e: PointerEvent): WireState | undefined {
       ...base,
       tb: origin,
       rtl: null,
-      legal: wireTargets(currentTbScene, state.config, origin),
+      legal: wireTargets(currentTbScene, state.config, origin, childConfigs),
       agents: new Map(),
       originId: origin.nodeId,
       x0: a.x,
@@ -3525,8 +3525,8 @@ function wireDrop(cx: number, cy: number): void {
       return;
     }
     choices = tgt
-      ? wireChoices(currentTbScene, state.config, w.tb, tgt.id)
-      : wireChoicesOnCanvas(currentTbScene, state.config, w.tb);
+      ? wireChoices(currentTbScene, state.config, w.tb, tgt.id, childConfigs)
+      : wireChoicesOnCanvas(currentTbScene, state.config, w.tb, childConfigs);
   } else if (w.rtl) {
     const agent = tgt ? w.agents.get(tgt.id) ?? null : null;
     if (tgt && !agent) {
@@ -3541,7 +3541,9 @@ function wireDrop(cx: number, cy: number): void {
       ? "Nothing to connect here."
       : w.tb?.kind === "sb-port"
         ? `No other agent can be the ${w.tb.field}.`
-        : "Nothing to create here.";
+        : w.tb?.kind === "sub-port"
+          ? "No free port of the right direction on another block."
+          : "Nothing to create here.";
     wireToast(why, cx, cy);
     return;
   }
@@ -5563,13 +5565,13 @@ async function renderTb(refit: boolean): Promise<void> {
   currentPins = [];
   // the current level (D24): "" testbench, "env", "agent:X". On a nonexistent
   // focus (config changed), it falls onto the root.
-  let scene = buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved);
+  let scene = buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved, childConfigs);
   if (!scene && state.tbFocus !== "") {
     // the focus level disappeared (config changed): it falls onto the root and
     // notifies the host, so that the reveal from the tree does not stay on the old level
     state.tbFocus = "";
     post({ v: 1, type: "tb/focus", focus: "", select: null });
-    scene = buildTbScene(state.config, "", state.configPath, state.resolved);
+    scene = buildTbScene(state.config, "", state.configPath, state.resolved, childConfigs);
   }
   if (!scene) {
     currentScene = null;
