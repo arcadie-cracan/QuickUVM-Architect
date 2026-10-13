@@ -4429,6 +4429,7 @@ window.addEventListener("keydown", (e) => {
     (t.tagName === "INPUT" ||
       t.tagName === "SELECT" ||
       t.tagName === "TEXTAREA" ||
+      (t.tagName === "BUTTON" && Boolean(t.closest("#inspector"))) || // a focused panel button (⟲): Delete is not the diagram's; the header buttons keep the shortcuts
       t.isContentEditable)
   ) {
     return;

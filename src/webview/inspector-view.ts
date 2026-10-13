@@ -18,7 +18,18 @@ import {
   isRich,
   scoreboardEndpoints,
 } from "../coverage";
-import { agentRows, isBenchScope, portRows, scoreboardRows } from "../inspector";
+import {
+  AGENT_SPEC,
+  PORT_SPEC,
+  SCOREBOARD_SPEC,
+  agentRows,
+  fieldGroups,
+  isBenchScope,
+  portRows,
+  scoreboardRows,
+  type FieldInfo,
+  type OtherField,
+} from "../inspector";
 import { statusIdsTb } from "../status";
 import type { ActionKind, WebviewMessage } from "../protocol";
 import type {
@@ -112,10 +123,81 @@ export function button(
 }
 
 /** a property row in the inspector: label + control (select/input) */
-function tbPropRow(label: string, control: HTMLElement): HTMLElement {
+/**
+ * One property row. With a `FieldInfo` (docs/08 R16) the row shows the field's
+ * PROVENANCE: a declared key gets a bold label when its value differs from the
+ * generator's default and a ⟲ that removes the key (`onReset`); an undeclared
+ * one gets its control dimmed and the default as the placeholder — shown, never
+ * written.
+ */
+function tbPropRow(
+  label: string,
+  control: HTMLElement,
+  info?: FieldInfo,
+  onReset?: () => void
+): HTMLElement {
   const row = h("div", "prop-row");
-  row.append(h("label", "prop-label", label), control);
+  const lab = h("label", "prop-label", label);
+  if (info) {
+    if (info.declared) {
+      row.classList.add("declared");
+      if (info.modified) {
+        lab.classList.add("modified");
+      }
+      lab.title = info.required
+        ? "set in the YAML — required by the generator here"
+        : info.modified
+          ? "set in the YAML — differs from the generator's default"
+          : "set in the YAML — equal to the generator's default";
+    } else {
+      control.classList.add("prop-dim");
+      lab.title =
+        info.placeholder !== undefined
+          ? `not in the YAML — the generator's default applies: ${info.placeholder}`
+          : "not in the YAML — the generator's default applies";
+      if (
+        control instanceof HTMLInputElement &&
+        !control.placeholder &&
+        info.placeholder !== undefined
+      ) {
+        control.placeholder = info.placeholder;
+      }
+    }
+  }
+  row.append(lab, control);
+  if (info?.resettable && onReset) {
+    const reset = h("button", "prop-reset", "⟲");
+    reset.type = "button";
+    // the mutation may cascade (a select shows that choice, a glyph cannot): say so
+    reset.title =
+      "Reset to the generator's default (removes the key from the YAML)" +
+      (info.resetNote ? ` — ${info.resetNote}` : "");
+    reset.addEventListener("click", onReset);
+    row.append(reset);
+  }
   return row;
+}
+
+/** the heading of a provenance group (docs/08 R16): Declared / Common / All */
+function tbGroupHead(title: string, count?: number): void {
+  ctx.root.append(
+    h("div", "prop-grouphead", count !== undefined ? `${title} (${count})` : title)
+  );
+}
+
+/** a declared key the editor has no control for: read-only, the value summarised */
+function tbOtherRow(o: OtherField): void {
+  const row = tbPropRow(o.key, h("div", "prop-ro", o.summary), {
+    id: o.key,
+    declared: true,
+    required: o.required,
+    modified: o.modified,
+    resettable: false,
+    placeholder: undefined,
+  });
+  // the key may be wider than the label column (`sequence_item`): the row says it whole
+  row.title = `${o.key}: ${o.summary} — ${o.required ? "required by the generator" : "edit it in the YAML"}`;
+  ctx.root.append(row);
 }
 
 /**
@@ -1051,30 +1133,41 @@ function tbAgentPorts(agent: QuvmAgent): void {
   const count = groups.reduce((n, [, ps]) => n + ps.length, 0);
 
   /** one port's rows, by id — `advancedOnly` renders the second half */
-  const renderPort = (p: QuvmPort, ids: string[]): void => {
+  const renderPort = (p: QuvmPort, infos: FieldInfo[]): void => {
     const port = p.name as string;
     const send = (field: string, value: string): void =>
       ctx.postAction("editAgentPort", { agent: name, port, field, value });
+    let cur: FieldInfo | undefined;
+    const prow = (label: string, control: HTMLElement): HTMLElement => {
+      const info = cur;
+      // the width resets to 1 (the key is deleted at 1); the rest through "" ⇒ default
+      const reset = info?.resettable
+        ? (): void => send(info.id, info.id === "width" ? "1" : "")
+        : undefined;
+      return tbPropRow(label, control, info, reset);
+    };
     const rich = p as {
       constraint?: string;
       enum?: Record<string, number>;
       open_drain?: boolean;
       pullup?: boolean;
     };
-    for (const id of ids) {
+    for (const info of infos) {
+      const id = info.id;
+      cur = info;
       switch (id) {
         case "width": {
           const wIn = h("input", "prop");
           wIn.type = "number";
           wIn.min = "1";
-          wIn.value = String(p.width ?? 1);
+          wIn.value = p.width != null ? String(p.width) : "";
           wIn.addEventListener("change", () => send("width", wIn.value));
-          ctx.root.append(tbPropRow("Width", wIn));
+          ctx.root.append(prow("Width", wIn));
           break;
         }
         case "randomize":
           ctx.root.append(
-            tbPropRow(
+            prow(
               "Randomize",
               tbSelect(
                 [
@@ -1092,7 +1185,7 @@ function tbAgentPorts(agent: QuvmAgent): void {
           cIn.value = rich.constraint ?? "";
           cIn.placeholder = "e.g. op inside {[0:2]}";
           cIn.addEventListener("change", () => send("constraint", cIn.value));
-          ctx.root.append(tbPropRow("Constraint", cIn));
+          ctx.root.append(prow("Constraint", cIn));
           break;
         }
         case "enum": {
@@ -1103,7 +1196,7 @@ function tbAgentPorts(agent: QuvmAgent): void {
             .join(", ");
           eIn.placeholder = "IDLE=0, BUSY=1";
           eIn.addEventListener("change", () => send("enum", eIn.value));
-          ctx.root.append(tbPropRow("Enum", eIn));
+          ctx.root.append(prow("Enum", eIn));
           break;
         }
         case "type_specifier_hint":
@@ -1113,7 +1206,7 @@ function tbAgentPorts(agent: QuvmAgent): void {
           break;
         case "open_drain":
           ctx.root.append(
-            tbPropRow(
+            prow(
               "Drive",
               tbSelect(
                 [
@@ -1129,7 +1222,7 @@ function tbAgentPorts(agent: QuvmAgent): void {
         case "pullup":
           // mandatory once open drain is on: it is a statement, not a choice
           ctx.root.append(
-            tbPropRow("Pullup", h("div", "dim", "on (an open-drain line never drives high)"))
+            prow("Pullup", h("div", "dim", "on (an open-drain line never drives high)"))
           );
           break;
         default:
@@ -1148,11 +1241,16 @@ function tbAgentPorts(agent: QuvmAgent): void {
             continue;
           }
           const rows = portRows(kind, p);
+          // docs/08 R16: declared + common open (the row's rule: ports stay open), the rest under "All"
+          const groups = fieldGroups(rows, p as unknown as Record<string, unknown>, PORT_SPEC);
           ctx.root.append(h("div", "prop-group", `${p.name} (${kind})`));
-          renderPort(p, rows.basic);
-          tbSection(`port.advanced.${name}.${p.name}`, "More", () =>
-            renderPort(p, rows.advanced)
-          );
+          renderPort(p, [...groups.declared, ...groups.common]);
+          for (const o of groups.other) {
+            tbOtherRow(o);
+          }
+          if (groups.all.length) {
+            tbSection(`port.advanced.${name}.${p.name}`, "All", () => renderPort(p, groups.all));
+          }
         }
       }
     },
@@ -1185,13 +1283,38 @@ function tbAgentEditor(agent: QuvmAgent): void {
   const oneBitSampled = sampled.filter((p: QuvmPort) => (p.width ?? 1) === 1 && p.name);
   // which rows are worth showing at all — the tested rule, not an inline condition
   const rows = agentRows(agent);
+  // docs/08 R16 — the PROVENANCE rule (src/inspector.ts): the declared keys first,
+  // then the common rows with the default dimmed, then "All"
+  const groups = fieldGroups(rows, agent as unknown as Record<string, unknown>, AGENT_SPEC);
+  // clock/reset domains: only meaningful when they were DECLARED AS LISTS (M1) —
+  // a 1-element list is still multi-domain, so the gate is "is it a list?"
+  const domains = (v: unknown): string[] =>
+    Array.isArray(v)
+      ? v
+          .map((d) => (d as { name?: string })?.name)
+          .filter((n): n is string => Boolean(n))
+      : [];
+  const clockDomains = domains(ctx.state.config?.clock);
+  const resetDomains = domains(ctx.state.config?.reset);
+
+  let cur: FieldInfo | undefined;
+  /** a property row of the field being rendered, with its provenance and reset */
+  const prow = (label: string, control: HTMLElement): HTMLElement => {
+    const info = cur;
+    // `active` resets through its own op (true = the key deleted); the rest through "" ⇒ default
+    const reset = info?.resettable
+      ? (): void => send(info.id, info.id === "active" ? "true" : "")
+      : undefined;
+    return tbPropRow(label, control, info, reset);
+  };
 
   /** render one property row by id; unknown ids are simply not rendered */
-  const row = (id: string): void => {
+  const row = (id: string, info?: FieldInfo): void => {
+    cur = info;
     switch (id) {
       case "active":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Role",
             tbSelect(
               [
@@ -1207,7 +1330,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
       case "mode":
         // the discovery point for every responder knob below
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Mode",
             tbSelect(
               [
@@ -1231,7 +1354,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
         break;
       case "seq_item_style":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Seq item style",
             tbSelect(
               [
@@ -1246,7 +1369,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
         break;
       case "respond":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Respond",
             tbSelect(
               [
@@ -1264,7 +1387,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
       case "request_valid": {
         // a SAMPLED 1-bit port: the qualifier the DUT asserts
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Request valid",
             tbSelect(
               [
@@ -1294,7 +1417,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
       case "request_ready":
         // the READY half may be driven (a slave's arready) or sampled
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Request ready",
             tbSelect(
               [
@@ -1311,7 +1434,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
         break;
       case "reorder_by":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Reorder by",
             tbSelect(
               [
@@ -1336,7 +1459,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
         break;
       case "reorder_policy":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Reorder policy",
             tbSelect(
               [
@@ -1352,7 +1475,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
         break;
       case "proactive":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Proactive",
             tbSelect(
               [
@@ -1376,7 +1499,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
           (p: QuvmPort) => p.name && (p.width ?? 1) === 1
         );
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Emit when",
             tbSelect(
               [
@@ -1399,14 +1522,34 @@ function tbAgentEditor(agent: QuvmAgent): void {
         const repIn = h("input", "prop");
         repIn.type = "number";
         repIn.min = "1";
-        repIn.value = String(agent.replicas ?? 1);
+        repIn.value = agent.replicas != null ? String(agent.replicas) : "";
         repIn.addEventListener("change", () => send("replicas", repIn.value));
-        ctx.root.append(tbPropRow("Replicas", repIn));
+        ctx.root.append(prow("Replicas", repIn));
         if ((agent.replicas ?? 1) > 1) {
           ctx.root.append(
             h("div", "note", "replicas needs reset: {external: true} — a shared vectored DUT binds the top reset")
           );
         }
+        break;
+      }
+      case "clock":
+      case "reset": {
+        // a per-agent domain: a selector when the bench declares domain lists, else
+        // the declared value read-only (a single-domain bench has nothing to pick)
+        const list = id === "clock" ? clockDomains : resetDomains;
+        const curVal = (id === "clock" ? agent.clock : agent.reset) ?? "";
+        ctx.root.append(
+          prow(
+            id === "clock" ? "Clock domain" : "Reset domain",
+            list.length
+              ? tbSelect(
+                  [["", "— default —"], ...list.map((d) => [d, d] as const)],
+                  curVal,
+                  (v) => send(id, v)
+                )
+              : h("div", "prop-ro", curVal || "—")
+          )
+        );
         break;
       }
       default:
@@ -1415,43 +1558,34 @@ function tbAgentEditor(agent: QuvmAgent): void {
   };
 
   ctx.root.append(h("h3", "", "Agent properties"));
-  for (const id of rows.basic) {
-    row(id);
+  if (groups.declared.length || groups.other.length) {
+    tbGroupHead("Declared", groups.declared.length + groups.other.length);
+    for (const f of groups.declared) {
+      row(f.id, f);
+    }
+    for (const o of groups.other) {
+      tbOtherRow(o);
+    }
   }
-
-  // clock/reset domains: only meaningful when they were DECLARED AS LISTS (M1) —
-  // a 1-element list is still multi-domain, so the gate is "is it a list?"
-  const domains = (v: unknown): string[] =>
-    Array.isArray(v)
-      ? v
-          .map((d) => (d as { name?: string })?.name)
-          .filter((n): n is string => Boolean(n))
-      : [];
-  const clockDomains = domains(ctx.state.config?.clock);
-  const resetDomains = domains(ctx.state.config?.reset);
-
-  if (rows.advanced.length || clockDomains.length || resetDomains.length) {
-    tbSection("agent.advanced", "Advanced", () => {
-      for (const id of rows.advanced) {
-        row(id);
+  if (groups.common.length) {
+    tbGroupHead("Common");
+    for (const f of groups.common) {
+      row(f.id, f);
+    }
+  }
+  // the undeclared domain selectors join "All" (a single-domain bench: noise, skipped)
+  const domainRows = (["clock", "reset"] as const).filter(
+    (f) =>
+      (f === "clock" ? clockDomains : resetDomains).length &&
+      !groups.declared.some((d) => d.id === f)
+  );
+  if (groups.all.length || domainRows.length) {
+    tbSection("agent.advanced", "All", () => {
+      for (const f of groups.all) {
+        row(f.id, f);
       }
-      for (const [label, field, list, cur] of [
-        ["Clock domain", "clock", clockDomains, agent.clock ?? ""],
-        ["Reset domain", "reset", resetDomains, agent.reset ?? ""],
-      ] as const) {
-        if (!list.length) {
-          continue; // single-domain bench: the per-agent selector would be noise
-        }
-        ctx.root.append(
-          tbPropRow(
-            label,
-            tbSelect(
-              [["", "— default —"], ...list.map((d) => [d, d] as const)],
-              cur,
-              (v) => send(field, v)
-            )
-          )
-        );
+      for (const f of domainRows) {
+        row(f, { id: f, declared: false, required: false, modified: false, resettable: false, placeholder: undefined });
       }
     });
   }
@@ -1533,8 +1667,17 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
     .map((p: QuvmPort) => p.name)
     .filter((n): n is string => Boolean(n));
   const rows = scoreboardRows(sb);
+  // docs/08 R16 — the PROVENANCE rule: declared / common / all
+  const groups = fieldGroups(rows, sb as unknown as Record<string, unknown>, SCOREBOARD_SPEC);
+  let cur: FieldInfo | undefined;
+  const prow = (label: string, control: HTMLElement): HTMLElement => {
+    const info = cur;
+    const reset = info?.resettable ? (): void => send(info.id, "") : undefined;
+    return tbPropRow(label, control, info, reset);
+  };
 
-  const row = (id: string): void => {
+  const row = (id: string, info?: FieldInfo): void => {
+    cur = info;
     switch (id) {
       case "source": {
         const srcSel = h("select", "prop");
@@ -1550,7 +1693,7 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
           srcSel.append(o);
         }
         srcSel.addEventListener("change", () => send("source", srcSel.value));
-        ctx.root.append(tbPropRow("Source", srcSel));
+        ctx.root.append(prow("Source", srcSel));
         break;
       }
       case "monitor": {
@@ -1570,12 +1713,12 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
           monSel.append(o);
         }
         monSel.addEventListener("change", () => send("monitor", monSel.value));
-        ctx.root.append(tbPropRow("Monitor", monSel));
+        ctx.root.append(prow("Monitor", monSel));
         break;
       }
       case "match":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Match",
             tbSelect(
               [
@@ -1593,7 +1736,7 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
         keyIn.value = sb.match_key ?? "";
         keyIn.placeholder = "key field";
         keyIn.addEventListener("change", () => send("match_key", keyIn.value));
-        ctx.root.append(tbPropRow("Match key", keyIn));
+        ctx.root.append(prow("Match key", keyIn));
         break;
       }
       case "max_latency": {
@@ -1603,14 +1746,14 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
         latIn.value = sb.max_latency != null ? String(sb.max_latency) : "";
         latIn.placeholder = "unbounded";
         latIn.addEventListener("change", () => send("max_latency", latIn.value));
-        ctx.root.append(tbPropRow("Max latency", latIn));
+        ctx.root.append(prow("Max latency", latIn));
         break;
       }
       case "window.boundary":
         // the boundary is a SAMPLED port of the source agent: the DUT strobe that
         // closes a window (single-stream only — a two-stream sb is strictly 1:1)
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Window on",
             tbSelect(
               [["", "— none —"], ...sampled.map((p) => [p, p] as const)],
@@ -1624,14 +1767,14 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
         const lenIn = h("input", "prop");
         lenIn.type = "number";
         lenIn.min = "1";
-        lenIn.value = String(sb.window?.length ?? 1);
+        lenIn.value = sb.window?.length != null ? String(sb.window.length) : "";
         lenIn.addEventListener("change", () => send("window.length", lenIn.value));
-        ctx.root.append(tbPropRow("Samples", lenIn));
+        ctx.root.append(prow("Samples", lenIn));
         break;
       }
       case "reference_model.language":
         ctx.root.append(
-          tbPropRow(
+          prow(
             "Predictor",
             tbSelect(
               [
@@ -1650,13 +1793,25 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
   };
 
   ctx.root.append(h("h3", "", "Scoreboard properties"));
-  for (const id of rows.basic) {
-    row(id);
+  if (groups.declared.length || groups.other.length) {
+    tbGroupHead("Declared", groups.declared.length + groups.other.length);
+    for (const f of groups.declared) {
+      row(f.id, f);
+    }
+    for (const o of groups.other) {
+      tbOtherRow(o);
+    }
   }
-  if (rows.advanced.length) {
-    tbSection("sb.advanced", "Advanced", () => {
-      for (const id of rows.advanced) {
-        row(id);
+  if (groups.common.length) {
+    tbGroupHead("Common");
+    for (const f of groups.common) {
+      row(f.id, f);
+    }
+  }
+  if (groups.all.length) {
+    tbSection("sb.advanced", "All", () => {
+      for (const f of groups.all) {
+        row(f.id, f);
       }
     });
   }

@@ -185,6 +185,13 @@ test("ignorePorts: uniune sortata, fara duplicate; unignore curata blocul", () =
   assert.equal(ops.parseQuvm(text).dut?.unverified_ports, undefined);
 });
 
+test("setAgentPortWidth: an inout port is found too (docs/08 R16: the reset on an inout threw)", () => {
+  const text = "agents:\n  - name: cmd\n    ports:\n      inouts:\n        - { name: io, width: 8 }\n";
+  const out = ops.setAgentPortWidth(text, "cmd", "io", 1);
+  assert.ok(!/width/.test(out), "width 1 is the default: the key goes");
+  assert.ok(/width: 4/.test(ops.setAgentPortWidth(out, "cmd", "io", 4)));
+});
+
 test("setAgentPortWidth: actualizeaza si stie sa omita width=1", () => {
   let text = ops.createAgent(ops.newConfigText("demo"), {
     name: "drv",
@@ -1172,6 +1179,14 @@ test("removeConnection: sterge perechea, curata lista goala, idempotent", () => 
   assert.equal(ops.removeConnection(text, "nope", "nope"), text);
   // no-op when the pair does not match
   assert.equal(ops.removeConnection(before, "x.a", "y.b"), before);
+});
+
+test("setAgentActive: a hand-written `active: true` is deleted by the reset (docs/08 R16)", () => {
+  const text = "agents:\n  - name: cmd\n    active: true\n    ports: {}\n";
+  const out = ops.setAgentActive(text, "cmd", true);
+  assert.ok(!/active:/.test(out), "the key is gone: the idempotence is on the key, not the value");
+  assert.equal(ops.setAgentActive(out, "cmd", true), out, "idempotent once canonical");
+  assert.equal(ops.setAgentActive(text, "cmd", false).includes("active: false"), true);
 });
 
 test("setAgentActive: pasiv scrie active:false, activ sterge cheia, no-op idempotent", () => {
