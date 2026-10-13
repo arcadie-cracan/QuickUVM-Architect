@@ -280,7 +280,8 @@ export class DiagramPanel {
           ? "intersect"
           : "contain";
       const decorations = cfg.get<boolean>("schematicDecorations", true);
-      this.post({ v: 1, type: "ui/config", lasso, decorations });
+      const codeFollow = cfg.get<boolean>("codeFollowsSelection", false);
+      this.post({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
     }
   }
 

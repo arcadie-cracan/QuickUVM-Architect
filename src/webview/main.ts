@@ -224,7 +224,7 @@ function leaveTbView(): void {
 }
 
 /** the UI preferences from the extension settings (the ui/config message, docs/05) */
-let uiConfig: UiConfig = { lasso: "contain", decorations: true };
+let uiConfig: UiConfig = { lasso: "contain", decorations: true, codeFollow: false };
 
 /** the cameras per view — SESSION state, not project state (docs/04): the first
  *  opening of a view always fits into the window; the frame is
@@ -4274,6 +4274,19 @@ function paletteItems(): PaletteItem[] {
         );
       }
     }
+  }
+  if (state.mode === "tb") {
+    // docs/08 R20: the generated code next to the diagram — a host setting the
+    // row toggles (its label reads the current value from ui/config), and the
+    // traceability report
+    add(
+      "View",
+      uiConfig.codeFollow
+        ? "Code view: stop following the selection"
+        : "Code view: follow the selection",
+      () => postAction("toggleCodeFollow", {})
+    );
+    add("View", "Traceability report", () => postAction("traceabilityReport", {}));
   }
   add("View", "Fit to window (F)", fitView);
   if (state.selection.size) {

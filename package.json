@@ -174,6 +174,16 @@
         "icon": "$(go-to-file)"
       },
       {
+        "command": "quickuvm.toggleCodeFollow",
+        "title": "%cmd.toggleCodeFollow%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.traceabilityReport",
+        "title": "%cmd.traceabilityReport%",
+        "category": "QuickUVM Architect"
+      },
+      {
         "command": "quickuvm.openConfig",
         "title": "%cmd.openConfig%",
         "category": "QuickUVM Architect"
@@ -434,6 +444,11 @@
             "%config.previewEdits.always%",
             "%config.previewEdits.never%"
           ]
+        },
+        "quickuvm.codeFollowsSelection": {
+          "type": "boolean",
+          "default": false,
+          "description": "%config.codeFollowsSelection%"
         }
       }
     }
@@ -470,7 +485,8 @@
     "test:yamlmap": "node scripts/test-yamlmap.mjs",
     "test:wiring": "node scripts/test-wiring.mjs",
     "test:proposals": "node scripts/test-proposals.mjs",
-    "test:preview": "node scripts/test-preview.mjs"
+    "test:preview": "node scripts/test-preview.mjs",
+    "test:trace": "node scripts/test-trace.mjs"
   },
   "devDependencies": {
     "@types/node": "^20.14.0",

@@ -99,7 +99,11 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       files: { file: string; exists: boolean }[];
       primary: string | null;
       manifest: "ok" | "unavailable" | "inactive";
-    }
+    },
+    /** docs/08 R20 — the diagram's selection, for the generated-code trace
+     *  (the host applies it only when THIS document is the active config:
+     *  the manifest is the active config's) */
+    private readonly traceSelect?: (uri: vscode.Uri, ids: string[]) => void
   ) {}
 
   resolveCustomTextEditor(
@@ -143,6 +147,19 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           items: ghostProposals(config, resolved),
         });
       }
+    };
+
+    // the UI preferences (docs/05 ui/config): at ready and whenever they change —
+    // the palette's "Code view" row reads its label from `codeFollow`, and this
+    // editor is the DEFAULT one for `*.quickuvm.yaml` (review finding: posted
+    // only at ready, the row's second click switched the mode back off)
+    const postUi = (): void => {
+      const quvm = vscode.workspace.getConfiguration("quickuvm");
+      const lasso: LassoMode =
+        quvm.get<string>("lassoMode", "contain") === "intersect" ? "intersect" : "contain";
+      const decorations = quvm.get<boolean>("schematicDecorations", true);
+      const codeFollow = quvm.get<boolean>("codeFollowsSelection", false);
+      void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
     };
 
     // Any change to the document (text editing, undo/redo, or a gesture's own
@@ -199,6 +216,17 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       setActiveExporter(exporter);
     }
     disposables.push(
+      vscode.workspace.onDidChangeConfiguration((e) => {
+        if (
+          e.affectsConfiguration("quickuvm.lassoMode") ||
+          e.affectsConfiguration("quickuvm.schematicDecorations") ||
+          e.affectsConfiguration("quickuvm.codeFollowsSelection")
+        ) {
+          postUi();
+        }
+      })
+    );
+    disposables.push(
       webviewPanel.onDidChangeViewState(() => {
         if (webviewPanel.active) {
           setActiveExporter(exporter);
@@ -224,13 +252,7 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
             type: "layout/full",
             sidecar: this.layout.sidecar,
           });
-          const quvm = vscode.workspace.getConfiguration("quickuvm");
-          const lasso: LassoMode =
-            quvm.get<string>("lassoMode", "contain") === "intersect"
-              ? "intersect"
-              : "contain";
-          const decorations = quvm.get<boolean>("schematicDecorations", true);
-          void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations });
+          postUi();
           postConfig();
           // The inferred components need a subprocess, so the first paint cannot
           // wait for them: post the config now; `onDidChange` above re-posts once
@@ -274,6 +296,7 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           if (m.ids.length === 1) {
             this.yamlLink?.revealElement(document.uri, document.getText(), m.ids[0]);
           }
+          this.traceSelect?.(document.uri, m.ids);
           break;
         case "card/request": {
           // docs/08 R15 — the YAML entry from THIS document, the files from the
@@ -435,6 +458,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           label: s("label") || "item",
           beside: true,
         });
+        break;
+      case "toggleCodeFollow":
+        void vscode.commands.executeCommand("quickuvm.toggleCodeFollow");
+        break;
+      case "traceabilityReport":
+        void vscode.commands.executeCommand("quickuvm.traceabilityReport");
         break;
       default:
         this.log.appendLine(

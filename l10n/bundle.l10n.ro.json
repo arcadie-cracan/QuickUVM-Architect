@@ -197,5 +197,10 @@
   "Wire connections from design": "Cablează conexiunile din design",
   "QuickUVM Architect: the configuration changed while the preview was open — run the gesture again.": "QuickUVM Architect: configurația s-a schimbat cât timp previzualizarea era deschisă — reia gestul.",
   "Create {0} subenv(s) in {1}, with {2} new block config(s)?": "Creez {0} subenv-uri în {1}, cu {2} config-uri de bloc noi?",
-  "Create": "Creează"
+  "Create": "Creează",
+  "↖ {0} — inferred by quick-uvm, not in the YAML": "↖ {0} — inferat de quick-uvm, nu e în YAML",
+  "↖ {0} in the verification view": "↖ {0} în vederea de verificare",
+  "QuickUVM Architect: no generation manifest — open a configuration (quick-uvm >= 1.1.0).": "QuickUVM Architect: nu există manifest de generare — deschide o configurație (quick-uvm >= 1.1.0).",
+  "QuickUVM Architect: the code view follows the selection": "QuickUVM Architect: vederea de cod urmărește selecția",
+  "QuickUVM Architect: the code view no longer follows the selection": "QuickUVM Architect: vederea de cod nu mai urmărește selecția"
 }

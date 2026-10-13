@@ -33,6 +33,9 @@ export interface UiConfig {
   /** the drawing vocabulary (slash+width on buses, junction dots) is visible;
    *  false = hidden (the quickuvm.schematicDecorations setting, docs/04) */
   decorations: boolean;
+  /** docs/08 R20: the generated code follows the selection in the TB view
+   *  (the quickuvm.codeFollowsSelection setting; the palette row toggles it) */
+  codeFollow: boolean;
 }
 
 /** Actions requested by the webview that touch the YAML or the sources (doc. 05). */
@@ -92,7 +95,11 @@ export type ActionKind =
   | "renameComponent"
   // docs/08 R15: the element's generated code, BESIDE the diagram (`{id, label}`;
   // the host offers to generate it first when it is missing)
-  | "openGeneratedCode";
+  | "openGeneratedCode"
+  // docs/08 R20: the code view follows the selection (a host setting toggle);
+  // the traceability report (a markdown document)
+  | "toggleCodeFollow"
+  | "traceabilityReport";
 
 // ------------------------------------------- "what will this generate" (R15)
 

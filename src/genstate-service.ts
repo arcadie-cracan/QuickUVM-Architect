@@ -91,6 +91,19 @@ export class GenStateService implements vscode.Disposable {
     return Boolean(this.manifest);
   }
 
+  /** docs/08 R20 — read by the trace: the cached manifest, the output dir, the files on disk */
+  get currentManifest(): Manifest | undefined {
+    return this.manifest;
+  }
+
+  get outDir(): string | undefined {
+    return this.outDirAbs;
+  }
+
+  get presentFiles(): ReadonlySet<string> | undefined {
+    return this.present;
+  }
+
   /** The absolute path of the representative file to OPEN for an element (2.3),
    *  or null if unavailable. */
   primaryFilePath(nodeId: string): string | null {
