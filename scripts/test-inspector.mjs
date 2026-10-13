@@ -140,8 +140,9 @@ test("fieldGroups: an agent's declared keys come first, in the editor's order, b
   ], "declared keys without a row, read-only; name and ports live elsewhere");
   const by = Object.fromEntries(g.declared.map((f) => [f.id, f]));
   assert.equal(by.active.modified, true, "false differs from the default true");
-  assert.equal(by.request_valid.modified, true, "no default: any value is a change");
-  assert.ok(g.declared.every((f) => f.resettable), "none of them is required");
+  assert.equal(by.replicas.modified, true, "2 differs from the default 1");
+  assert.equal(by.request_valid.required, true, "required by mode: responder (review): declared, not bold, no reset");
+  assert.deepEqual(g.declared.map((f) => f.resettable), [true, true, false, true]);
   const respond = g.common.find((f) => f.id === "respond");
   assert.equal(respond.placeholder, "on_request", "the generator's default, to be shown dimmed");
   assert.equal(respond.declared, false);
@@ -170,7 +171,8 @@ test("fieldGroups: a scoreboard's required source is declared but never reset; n
   assert.equal(by.source.resettable, false);
   assert.equal(by.source.modified, false, "required: there is no default to differ from");
   assert.equal(by["reference_model.language"].modified, false, "sv is the default");
-  assert.equal(by["window.length"].modified, true);
+  assert.equal(by["window.length"].modified, false, "required next to its boundary (review): not bold");
+  assert.equal(by["window.length"].resettable, false, "and no reset");
   assert.deepEqual(g.other, [], "window and reference_model are covered by their dotted rows");
   assert.deepEqual(g.common.map((f) => f.id), ["monitor"]);
   assert.deepEqual(g.all.map((f) => f.id), ["max_latency"]);
