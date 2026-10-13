@@ -17,8 +17,10 @@ import {
   invalidate,
   parseSidecar,
   serializeSidecar,
+  setCollapsed,
   setFlip,
   setFold,
+  setHidePins,
   setNetRender,
   setPositions,
 } from "./sidecarops";
@@ -72,6 +74,18 @@ export class LayoutStore implements vscode.Disposable {
     flipV: boolean
   ): void {
     setFlip(this.data, viewId, nodeId, flipH, flipV);
+    this.scheduleSave();
+  }
+
+  /** docs/08 R18 — a TB block collapsed to its header (per level) */
+  nodeCollapsed(viewId: string, nodeId: string, collapsed: boolean): void {
+    setCollapsed(this.data, viewId, nodeId, collapsed);
+    this.scheduleSave();
+  }
+
+  /** docs/08 R18 — an RTL view's nc / ignored pins hidden */
+  viewPins(viewId: string, hidden: boolean): void {
+    setHidePins(this.data, viewId, hidden);
     this.scheduleSave();
   }
 

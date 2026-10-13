@@ -78,6 +78,9 @@ export function serializeSidecar(data: SidecarData): string {
       }
       out.nets = nets;
     }
+    if (v.hidePins) {
+      out.hidePins = true; // docs/08 R18: a view-level override
+    }
     views[viewId] = out;
   }
   return stringify(
@@ -127,7 +130,7 @@ function prune(data: SidecarData, viewId: string, nodeId?: string): void {
       delete view.nodes;
     }
   }
-  if (!view.nodes && !view.nets) {
+  if (!view.nodes && !view.nets && !view.hidePins) {
     delete data.views[viewId];
   }
 }
@@ -180,6 +183,38 @@ export function setFlip(
     delete n.flipV;
   }
   prune(data, viewId, nodeId);
+  return data;
+}
+
+/** docs/08 R18 — a TB block collapsed to its header: `collapsed: true` is the
+ *  override, expanded is the default (not persisted). The TB keys
+ *  (`tb:<config>|<focus>`) are never invalidated, so no orphan cleanup applies. */
+export function setCollapsed(
+  data: SidecarData,
+  viewId: string,
+  nodeId: string,
+  collapsed: boolean
+): SidecarData {
+  const n = nodeOf(data, viewId, nodeId);
+  if (collapsed) {
+    n.collapsed = true;
+  } else {
+    delete n.collapsed;
+  }
+  prune(data, viewId, nodeId);
+  return data;
+}
+
+/** docs/08 R18 — an RTL view hides its nc / ignored pins: `hidePins: true` is
+ *  the override, shown is the default (not persisted) */
+export function setHidePins(data: SidecarData, viewId: string, hidden: boolean): SidecarData {
+  const view = viewOf(data, viewId);
+  if (hidden) {
+    view.hidePins = true;
+  } else {
+    delete view.hidePins;
+  }
+  prune(data, viewId);
   return data;
 }
 
@@ -375,12 +410,18 @@ export function invalidate(
     if (view.nodes && Object.keys(view.nodes).length === 0) {
       delete view.nodes;
     }
-    if (keys === null) {
+    // docs/08 R18 — a view-level override (`hidePins`) is not a node: it stays
+    // while the view is a view. A LEAF instance has no schematic keys (`keys ===
+    // null`) but its symbol is a valid view, so the override on it stays too —
+    // the first cut lost the DUT's hidden pins on every recompile (review finding)
+    const leafView =
+      keys === null && Boolean(view.hidePins) && model.instances.some((i) => i.path === viewId);
+    if (keys === null && !leafView) {
       // the view itself disappeared: the positions migrated into orphans (the
       // protected asset, docs/04)
       delete data.views[viewId];
       changed = true;
-    } else if (!view.nodes && !view.nets) {
+    } else if (!view.nodes && !view.nets && !view.hidePins) {
       delete data.views[viewId];
     }
   }

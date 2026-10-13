@@ -101,6 +101,33 @@
     guards: [],
   };
   const IMPLICIT = params.has("implicit");
+  // ?compose=1 — docs/08 R18: a composed bench (two subenvs) with the children's
+  // configs, the way the host ships them in config/full.children, so the hover
+  // preview of a `sub:` box can be probed headlessly
+  const COMPOSE = params.has("compose");
+  const CHILD_A = {
+    project: { name: "chan" },
+    dut: { name: "chan", clock: "clk", reset: "rst_n" },
+    agents: [
+      { name: "chan_a", interface: "chan_if", ports: { inputs: [{ name: "din", width: 16 }], outputs: [{ name: "dout", width: 16 }] } },
+    ],
+    analysis: { coverage: ["chan_a"], scoreboards: [{ name: "csb", source: "chan_a" }] },
+  };
+  const CHILD_B = {
+    project: { name: "adder" },
+    dut: { name: "adder", combinational: true, reset: "" },
+    agents: [{ name: "add_a", interface: "add_if" }],
+  };
+  const COMPOSED_CONFIG = {
+    project: { name: "demo" },
+    layout: "packaged",
+    dut: { name: "soc_top", combinational: true, reset: "" },
+    subenvs: [
+      { name: "ch0", config: "chan.quickuvm.yaml" },
+      { name: "u_add", config: "adder.quickuvm.yaml" },
+    ],
+  };
+  const COMPOSED_CHILDREN = { ch0: CHILD_A, u_add: CHILD_B };
   const harnessState = {
     viewId: params.get("view") || "demo_top",
     mode: params.get("mode") || "symbol",
@@ -194,7 +221,8 @@
                 v: 1,
                 type: "config/full",
                 configPath: TB_CONFIG_PATH,
-                config: IMPLICIT ? IMPLICIT_CONFIG : TB_CONFIG,
+                config: COMPOSE ? COMPOSED_CONFIG : IMPLICIT ? IMPLICIT_CONFIG : TB_CONFIG,
+                children: COMPOSE ? COMPOSED_CHILDREN : undefined,
                 resolved: IMPLICIT ? TB_RESOLVED : null,
               },
               "*"

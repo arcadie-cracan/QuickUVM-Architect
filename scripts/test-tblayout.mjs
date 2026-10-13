@@ -71,6 +71,18 @@ await test("docs/08 R13: the widget rows are counted in the box (the pills fit)"
   assert.ok(w.w > sb.w, `wide label ${w.w} vs ${sb.w}`);
 });
 
+await test("docs/08 R18: a block collapsed to its header is shorter, keeps its ports, and is marked", async () => {
+  const scene = buildTbScene(CFG, "env", "d.yaml");
+  const full = (await layoutTb(elk, scene, measure)).nodes.get("agent:cmd");
+  const layout = await layoutTb(elk, scene, measure, undefined, undefined, new Set(["agent:cmd"]));
+  const c = layout.nodes.get("agent:cmd");
+  assert.equal(c.collapsed, true);
+  assert.ok(c.h < full.h, `collapsed ${c.h} < full ${full.h}`);
+  assert.equal(c.h % 8, 0, "still on the grid");
+  assert.equal(c.ports.size, full.ports.size, "the ports stay: the wires still connect");
+  assert.equal(layout.nodes.get("agent:rsp").collapsed, undefined, "only the named block");
+});
+
 await test("porturile sunt RELATIVE la originea nodului (0 sau w)", async () => {
   const scene = buildTbScene(CFG, "", "d.yaml");
   const layout = await layoutTb(elk, scene, measure);

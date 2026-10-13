@@ -160,7 +160,8 @@ export interface ProposalApply {
 export interface SidecarNode {
   x?: number;
   y?: number;
-  /** only for generated folds; absent = default (folded) */
+  /** generated folds (RTL): absent = folded (the default), false = expanded.
+   *  TB blocks (docs/08 R18): true = collapsed to the header, absent = expanded. */
   collapsed?: boolean;
   /** horizontal flip: the west<->east sides swapped (docs/04) */
   flipH?: boolean;
@@ -174,6 +175,8 @@ export interface SidecarNode {
 
 export interface SidecarView {
   nodes?: Record<string, SidecarNode>;
+  /** docs/08 R18 — the nc / ignored pins of this RTL view are hidden (absent = shown) */
+  hidePins?: true;
   /** the level-4 override (docs/04): wire <-> label per net; absent =
    *  the suggestion from the model (render computed from fan-out) */
   nets?: Record<string, { render: "wire" | "label" }>;
@@ -298,6 +301,10 @@ export type HostMessage =
       type: "config/full";
       configPath: string | null;
       config: QuvmConfig;
+      /** docs/08 R18 — the composed children's parsed configs, by subenv NAME
+       *  (`subenvs[].name`), for the hover preview of a `sub:` box; absent in
+       *  the per-file editor (it has no ConfigService) */
+      children?: Record<string, QuvmConfig>;
       /** docs/07 — the effective topology from `quick-uvm resolve` (>= 1.1.0), which
        *  is what lets the view draw the components the generator INFERS and the YAML
        *  never mentions. Travels with the config it describes on purpose: a separate
@@ -351,6 +358,8 @@ export type HostMessage =
   | { v: 1; type: "relay/fold"; foldId: string }
   | { v: 1; type: "relay/netRender"; net: string }
   | { v: 1; type: "relay/selectPins"; names: string[] }
+  // docs/08 R18 — the sidebar's "Collapse to header" / "Expand", relayed like a flip
+  | { v: 1; type: "relay/collapse"; nodeId: string }
   | { v: 1; type: "relay/openTb" };
 
 // ------------------------------------------------------------ webview -> host
@@ -384,6 +393,16 @@ export type WebviewMessage =
       flipH: boolean;
       flipV: boolean;
     }
+  // docs/08 R18 — a TB block collapsed to its header (per level, like a flip)
+  | {
+      v: 1;
+      type: "node/collapsed";
+      viewId: string;
+      nodeId: string;
+      collapsed: boolean;
+    }
+  // docs/08 R18 — an RTL view's nc / ignored pins hidden (a view-level state)
+  | { v: 1; type: "view/pins"; viewId: string; hidden: boolean }
   | {
       v: 1;
       type: "ports/reordered";
@@ -424,4 +443,6 @@ export type WebviewMessage =
   | { v: 1; type: "relay/fold"; foldId: string }
   | { v: 1; type: "relay/netRender"; net: string }
   | { v: 1; type: "relay/selectPins"; names: string[] }
+  // docs/08 R18 — the sidebar's "Collapse to header" / "Expand", relayed like a flip
+  | { v: 1; type: "relay/collapse"; nodeId: string }
   | { v: 1; type: "relay/openTb" };

@@ -521,6 +521,9 @@ export function activate(context: vscode.ExtensionContext): void {
         case "relay/fold":
           DiagramPanel.current?.postRelay({ v: 1, type: "relay/fold", foldId: m.foldId });
           break;
+        case "relay/collapse":
+          DiagramPanel.current?.postRelay({ v: 1, type: "relay/collapse", nodeId: m.nodeId });
+          break;
         case "relay/netRender":
           DiagramPanel.current?.postRelay({ v: 1, type: "relay/netRender", net: m.net });
           break;
@@ -588,6 +591,7 @@ export function activate(context: vscode.ExtensionContext): void {
         : null,
       config: config.current,
       childAgents: config.childAgents,
+      children: config.childConfigs, // docs/08 R18: the hover preview of a subenv
       resolved: resolve.current,
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
@@ -627,6 +631,8 @@ export function activate(context: vscode.ExtensionContext): void {
       nodeFlipped: (v, n, fh, fv) => layout.nodeFlipped(v, n, fh, fv),
       relayout: (v) => layout.relayout(v),
       netRender: (v, n, r) => layout.netRender(v, n, r),
+      nodeCollapsed: (v, n, c) => layout.nodeCollapsed(v, n, c),
+      viewPins: (v, h) => layout.viewPins(v, h),
     },
     onTbFocus: (focus, select) => {
       // the webview navigated across levels (drill/breadcrumb): the host keeps

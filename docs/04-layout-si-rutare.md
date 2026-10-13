@@ -82,6 +82,12 @@ Reguli:
   cadrul se păstrează doar la comutarea între vederi în aceeași sesiune
   (decizie revenită în iul. 2026: cadrele moștenite între sesiuni au produs
   constant deschideri „pe jumătate în afara ferestrei").
+- docs/08 R18 (Oct 2026): two more overrides, both VIEW state. On a TB level's
+  node (`tb:<config>|<focus>`), `collapsed: true` = the block drawn as its header
+  only (expanded = absent; the RTL meaning of the key — a generated fold's
+  `collapsed: false` = expanded — is unchanged). On an RTL view, `hidePins: true`
+  = its nc / ignored pins hidden (shown = absent; the serializer copies it next
+  to `nodes` and `nets`, and a view with nothing but this key is kept).
 
 ## Invalidarea grațioasă
 

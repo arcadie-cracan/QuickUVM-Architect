@@ -666,6 +666,49 @@ coliziunea de nume.
   `src/preview.ts`): the character-level minimal edit of R4 over-counted a
   deletion at the end of a file without a final newline and counted an
   in-line insertion as +1 -0 (review finding; locked in `test:preview`).
+- **Collapse / hide pins / hover preview (docs/08 R18)**: all three are VIEW
+  state, never YAML. `collapsed` on a sidecar node has TWO meanings by key
+  family: on an RTL view a generated fold's `collapsed: false` = expanded
+  (absent = folded); on a TB level key `collapsed: true` = the block drawn as
+  its header (absent = expanded) — `setFold` and `setCollapsed` are separate
+  mutations, do not route one through the other (`setFold` DELETES on
+  `true`). `hidePins` is a VIEW-level key: `prune` must not drop a view that
+  holds only it, `serializeSidecar` must copy it (it whitelists `nodes`
+  and `nets` — the first cut lost the override at the first save), and
+  `invalidate` has TWO deletion branches of its own — the empty-view one and
+  the `keys === null` one, which fires for every LEAF instance (its symbol is
+  a view with no schematic keys) — both must spare a hidePins-only view (the
+  DUT's hidden pins came back on every recompile; `test:sidecar`). A toggle
+  (collapse, hidden pins) on an UN-SEEDED view first pins it
+  (`pinViewIfUnseeded`, the D21 total snapshot): without seeds the next render
+  is a full ELK pass and every box jumps — the row's risk, reproduced at the
+  review. A waived port an agent still claims (the `ignored-and-mapped`
+  ERROR) or any port with a status entry is never hidden: the diagram never
+  hides a problem. `canCollapse` (tbscene.ts) is the ONE predicate behind the
+  `C` key, the menu, the inspector and `toggleCollapse` itself (a header-only
+  box got `collapsed: true` persisted with no way to expand it). The sidebar
+  Properties view reaches the panel through `relay/collapse`, like
+  `relay/flip`. The async preview keeps a `subHoverId` and a `subPreviewGen`:
+  the layout is applied only while the pointer is still on that box and the
+  config unchanged (an orphan preview after leaving, the wrong child on top
+  after moving to another sub, a stale child cached after a save); the dwell
+  is not re-armed by crossings inside the box; `exportSvg` strips
+  `.tb-preview`; a rename carries `collapsed` with the seat. `boxSize`
+  takes `collapsed` and `drawBox` reads `TbPlaced.collapsed`: both the size
+  and the drawing skip the compartments AND the widgets, or the pills overflow
+  a header-only box. The key is `C` (TB only), not the row's `H` — `H` is the
+  flip since phase 3; the pins' key is `Ctrl+H` in the Ctrl block (RTL only).
+  The hidden pins are REMOVED from the scene before layout (`pruneNcPins`,
+  pure) and from `currentPins` in the symbol — not hidden by CSS — so the
+  boxes shrink, the router sees no phantom obstacles, and the selection /
+  wire origins cannot reach them. The hover preview draws with `drawTb` into
+  the WORLD group (it pans/zooms with the diagram) and strips `data-id` from
+  everything it drew plus `pointer-events: none` on the group: the global
+  `[data-id]` queries (badges, flash, status) and the `.tbnode` dwell handler
+  would otherwise find the child's boxes. It closes on `render()` (the
+  viewport is rebuilt), on a press and on leaving the box; the cache is per
+  child name and cleared on every `config/full`. The children's configs ride
+  on `config/full` (the panel only — the per-file editor has no ConfigService).
 - **Declared / Common / All inspector (docs/08 R16)**: the third rule of
   `src/inspector.ts`, PROVENANCE (`fieldGroups`, `test:inspector`), sits
   NEXT to relevance/rarity, not instead: `agentRows`/`scoreboardRows`/
@@ -1052,6 +1095,11 @@ selection, recent first; `rankPalette` / `pushRecent` in `test:navfind`.
 destructive or multi-file gesture (`quickuvm.previewEdits` = ask / always /
 never; `src/preview.ts` + `test:preview`, `src/previewdiff.ts`,
 `TbEditTarget.readText`).
+**R18 (docs/08) is implemented** (Oct 2026): a TB block collapsed to its
+header (`C`, `node/collapsed`), an RTL view's nc / ignored pins hidden
+(`Ctrl+H`, `view/pins`, `pruneNcPins` in `test:scene`), the hover preview of a
+composed child (`config/full.children`); `setCollapsed` / `setHidePins` in
+`test:sidecar`, the collapsed height in `test:tblayout`.
 **R16 (docs/08) is implemented** (Oct 2026): the Declared / Common / All
 inspector — provenance per field (`fieldGroups` + the schema defaults in
 `src/inspector.ts`, `test:inspector`), bold when off the default, ⟲ removes the

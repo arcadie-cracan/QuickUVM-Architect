@@ -132,6 +132,9 @@ export class ConfigService implements vscode.Disposable {
    *  agents live in ANOTHER file, so the endpoint picker cannot be derived from
    *  `current` alone. Empty for a leaf bench. */
   childAgents: Record<string, string[]> = {};
+  /** docs/08 R18 — the composed children's parsed configs, by subenv name (the
+   *  hover preview of a `sub:` box); read with the agent names, one parse */
+  childConfigs: Record<string, QuvmConfig> = {};
 
   constructor(
     private readonly log: vscode.OutputChannel,
@@ -466,6 +469,7 @@ export class ConfigService implements vscode.Disposable {
   private async loadChildAgents(): Promise<void> {
     const subenvs = this.current.subenvs ?? [];
     const next: Record<string, string[]> = {};
+    const nextCfg: Record<string, QuvmConfig> = {};
     if (subenvs.length && this.uri) {
       const dir = vscode.Uri.joinPath(this.uri, "..");
       for (const sub of subenvs) {
@@ -476,7 +480,9 @@ export class ConfigService implements vscode.Disposable {
           const child = await vscode.workspace.openTextDocument(
             vscode.Uri.joinPath(dir, sub.config)
           );
-          const names = (parseQuvm(child.getText()).agents ?? [])
+          const parsed = parseQuvm(child.getText());
+          nextCfg[sub.name] = parsed;
+          const names = (parsed.agents ?? [])
             .map((a) => a.name)
             .filter((n): n is string => Boolean(n));
           if (names.length) {
@@ -488,6 +494,7 @@ export class ConfigService implements vscode.Disposable {
       }
     }
     this.childAgents = next;
+    this.childConfigs = nextCfg;
   }
 
   private publish(

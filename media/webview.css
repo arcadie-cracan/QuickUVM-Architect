@@ -1595,3 +1595,33 @@ text.split-sign {
 }
 .finditem.danger { color: var(--vscode-errorForeground, var(--vscode-charts-red, #f14c4c)); }
 .finditem.active.danger { color: var(--vscode-list-activeSelectionForeground); }
+
+/* docs/08 R18 — a TB block collapsed to its header, and the hover preview of a
+   composed child (drawn with the TB drawer at small scale; never a hit target) */
+.tbnode.collapsed .tb-name {
+  font-weight: 600;
+}
+
+.tb-preview {
+  pointer-events: none;
+}
+
+/* the title's own `pointer-events: auto` (R14's rename) would win over the
+   group's `none` in SVG: the preview's titles are not hit targets either */
+.tb-preview .tb-name {
+  pointer-events: none;
+  cursor: default;
+}
+
+.tb-preview-bg {
+  fill: var(--vscode-editorWidget-background, #252526);
+  stroke: var(--vscode-editorWidget-border, #454545);
+  stroke-width: 1;
+  opacity: 0.97;
+}
+
+.tb-preview-title {
+  font-size: 10px;
+  fill: var(--vscode-descriptionForeground, #999);
+}
+

@@ -141,6 +141,11 @@ function render(): void {
     onOpen: (drill) => post({ v: 1, type: "tb/focus", focus: drill }),
     onFlip: (id, axis) =>
       post({ v: 1, type: "relay/flip", nodeId: id, axis }),
+    // docs/08 R18 — relayed like a flip; the state is read from this view's copy
+    // of the sidecar under the panel's level key
+    onCollapse: (id) => post({ v: 1, type: "relay/collapse", nodeId: id }),
+    isCollapsed: (id) =>
+      sidecar.views[`tb:${state.configPath ?? ""}|${state.tbFocus}`]?.nodes?.[id]?.collapsed === true,
     onSelectPins: (names) => post({ v: 1, type: "relay/selectPins", names }),
     findInstance: (v) => state.model?.instances.find((i) => i.path === v),
     tbAvailable: () => Boolean(state.config),
