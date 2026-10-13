@@ -203,5 +203,6 @@
   "QuickUVM Architect: no generation manifest — open a configuration (quick-uvm >= 1.1.0).": "QuickUVM Architect: nu există manifest de generare — deschide o configurație (quick-uvm >= 1.1.0).",
   "QuickUVM Architect: the code view follows the selection": "QuickUVM Architect: vederea de cod urmărește selecția",
   "QuickUVM Architect: the code view no longer follows the selection": "QuickUVM Architect: vederea de cod nu mai urmărește selecția",
-  "Connect {0} → {1}": "Conectează {0} → {1}"
+  "Connect {0} → {1}": "Conectează {0} → {1}",
+  "QuickUVM Architect: connections are wired from the diagram panel of the active configuration.": "QuickUVM Architect: conexiunile se cablează din panelul-diagramă al configurației active."
 }

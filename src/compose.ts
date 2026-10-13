@@ -290,7 +290,13 @@ export function singleConnection(
   if (driven) {
     return { error: `${to} is already driven by ${driven.from} — one driver per input` };
   }
-  const lookup = (sub: string, port: string, dir: "out" | "in"): number | "missing" | "unknown" => {
+  // a number = the width; null = the port exists but its width is not `width`
+  // (a parameter, packed dims, a struct, a user type — unchecked, never "1")
+  const lookup = (
+    sub: string,
+    port: string,
+    dir: "out" | "in"
+  ): number | null | "missing" | "unknown" => {
     const child = children[sub];
     if (!child) {
       return "unknown";
@@ -299,7 +305,7 @@ export function singleConnection(
       const list = dir === "out" ? a.ports?.outputs : a.ports?.inputs;
       const p = list?.find((x) => x.name === port);
       if (p) {
-        return p.width ?? 1;
+        return p.width_param || p.packed_dims || p.struct || p.type ? null : p.width ?? 1;
       }
     }
     return "missing";

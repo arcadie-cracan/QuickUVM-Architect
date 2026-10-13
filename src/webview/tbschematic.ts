@@ -590,10 +590,10 @@ function glyphEl(kind: PortGlyph, cx: number, cy: number): SVGElement {
       // deliberately unlike the hollow TLM shapes
       return el("rect", {
         class: "tb-glyph signal",
-        x: String(cx - 3),
-        y: String(cy - 3),
-        width: "6",
-        height: "6",
+        x: String(cx - r),
+        y: String(cy - r),
+        width: String(2 * r),
+        height: String(2 * r),
       });
     case "analysis":
       return el("path", {

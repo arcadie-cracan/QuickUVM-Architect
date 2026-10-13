@@ -2544,7 +2544,7 @@ export class Actions {
       `QuickUVM Architect: ${parts.join(" — ")}`
     );
     this.log.appendLine(
-      `[actions] wireConnections: ${derived.connections.length} conn, ` +
+      `[actions] ${title}: ${derived.connections.length} conn, ` +
         `${passivated.length} passivated, ${manual.length} manual` +
         (derived.warnings.length ? `, ${derived.warnings.length} warnings` : "")
     );

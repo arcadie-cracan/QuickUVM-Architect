@@ -3542,7 +3542,9 @@ function wireDrop(cx: number, cy: number): void {
       : w.tb?.kind === "sb-port"
         ? `No other agent can be the ${w.tb.field}.`
         : w.tb?.kind === "sub-port"
-          ? "No free port of the right direction on another block."
+          ? w.tb.drivenBy
+            ? `${w.tb.subenv}.${w.tb.port} is already driven by ${w.tb.drivenBy} — remove that connection first.`
+            : "No free port of the right direction on another block."
           : "Nothing to create here.";
     wireToast(why, cx, cy);
     return;

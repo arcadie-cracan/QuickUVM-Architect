@@ -254,4 +254,57 @@ test("sub-port drop: on a port one connection, on the box its legal ports, on th
   assert.deepEqual(wireChoicesOnCanvas(cscene, COMPOSED, wireOriginOf(cscene, COMPOSED, "sub:u_add.b", CHILDREN), CHILDREN), [], "a driven input: no source at all");
 });
 
+test("review: a cross-block scoreboard's endpoint pin (an agent name) has no hotspot and starts no wire", () => {
+  const cfg = {
+    ...COMPOSED,
+    analysis: { scoreboards: [{ name: "x", source: "ch0.chan_a", monitor: "u_add.add_a" }] },
+  };
+  const s = buildTbScene(cfg, "env", null, null, CHILDREN);
+  const pin = s.nodes.find((n) => n.id === "sub:ch0").ports.find((p) => p.port === "chan_a");
+  assert.equal(pin.glyph, null, "an agent reference drawn for its edge: no glyph, no hotspot");
+  assert.equal(wireOriginOf(s, cfg, "sub:ch0.chan_a", CHILDREN), null);
+  assert.equal(wireOriginOf(s, cfg, "sub:ch0.chan_a", undefined), null, "even with the children unknown: the glyph decides");
+  const t = wireTargets(s, cfg, wireOriginOf(s, cfg, "sub:u_add.a", CHILDREN), CHILDREN);
+  assert.equal(t.has("sub:ch0.chan_a"), false, "nor is it a target");
+  assert.equal(wireOriginOf(s, cfg, "sub:ch0.dout", CHILDREN).dir, "out", "the real ports still are");
+});
+
+test("review: a connection's endpoint pin a readable child does not declare is no origin; an unreadable child's is", () => {
+  const cfg = { ...COMPOSED, connections: [{ from: "ch0.stale", to: "u_add.a" }] };
+  const s = buildTbScene(cfg, "env", null, null, CHILDREN);
+  assert.equal(wireOriginOf(s, cfg, "sub:ch0.stale", CHILDREN), null, "ch0 is readable and has no `stale` output");
+  const unread = { ch0: undefined, u_add: CHILDREN.u_add };
+  const s2 = buildTbScene(cfg, "env", null, null, unread);
+  assert.equal(wireOriginOf(s2, cfg, "sub:ch0.stale", unread)?.dir, "out", "no child config: the pin is the evidence");
+});
+
+test("review: a width the child cannot state (width_param, packed_dims, struct, type) is unknown, never 1", () => {
+  const children = {
+    ...CHILDREN,
+    ch0: { agents: [{ name: "chan_a", ports: { outputs: [{ name: "data", width_param: "W" }, { name: "s", struct: [{ name: "x" }] }] } }] },
+  };
+  const s = buildTbScene(COMPOSED, "env", null, null, children);
+  const o = wireOriginOf(s, COMPOSED, "sub:ch0.data", children);
+  assert.equal(o.width, null);
+  const t = wireTargets(s, COMPOSED, o, children);
+  assert.equal(t.get("sub:u_add.a"), null, "unknown vs 16: no mismatch to claim");
+  assert.equal(t.get("sub:u_add.cin"), null, "unknown vs 1: neither");
+  assert.equal(subPortWidth(children, "ch0", "s", "out"), null);
+});
+
+test("review: a duplicate-named subenv is never a target (its pins are the origin's own); the canvas menu has one row per pair", () => {
+  const cfg = {
+    ...COMPOSED,
+    subenvs: [...COMPOSED.subenvs, { name: "ch0", config: "chan.quickuvm.yaml" }],
+  };
+  const s = buildTbScene(cfg, "env", null, null, CHILDREN);
+  assert.ok(s.nodes.some((n) => n.id === "sub:ch0#2"), "the duplicate is drawn (honestly)");
+  const o = wireOriginOf(s, cfg, "sub:ch0.dout", CHILDREN);
+  const t = wireTargets(s, cfg, o, CHILDREN);
+  assert.equal(t.get("sub:ch0#2"), "the same block");
+  assert.equal(t.get("sub:ch0.din"), undefined, "the shared input pin is not lit");
+  const rows = wireChoicesOnCanvas(s, cfg, o, CHILDREN).map((c) => c.args.to);
+  assert.deepEqual(rows, ["u_add.a"]);
+});
+
 console.log(`\ntest-wiring: ${passed} tests passed.`);

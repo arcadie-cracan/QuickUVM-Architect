@@ -74,10 +74,24 @@ export function subPortWidth(
     const list = dir === "out" ? a.ports?.outputs : a.ports?.inputs;
     const p = list?.find((x) => x.name === port);
     if (p) {
-      return p.width ?? 1;
+      // a width from a parameter, packed dims, a struct or a user type: the
+      // effective width is not `width` — unknown, never "1" (review finding)
+      return p.width_param || p.packed_dims || p.struct || p.type ? null : p.width ?? 1;
     }
   }
   return null;
+}
+
+/** the port exists on the child's agents in that direction — or the child is
+ *  not readable, in which case the pin itself is the only evidence */
+function knownPort(children: Children, subenv: string, port: string, dir: "out" | "in"): boolean {
+  const child = children?.[subenv];
+  if (!child) {
+    return true;
+  }
+  return (child.agents ?? []).some((a) =>
+    (dir === "out" ? a.ports?.outputs : a.ports?.inputs)?.some((x) => x.name === port)
+  );
 }
 
 /** the connection already driving `<subenv>.<port>`: its source, or null */
@@ -145,6 +159,9 @@ export function wireOriginOf(
       return null;
     }
     const dir = tp.side === "EAST" ? "out" : "in";
+    if (!tp.glyph || !knownPort(children, node.label, tp.port, dir)) {
+      return null; // an endpoint pin without a hotspot, or a port the child does not declare
+    }
     return {
       kind: "sub-port",
       nodeId,
@@ -248,22 +265,25 @@ export function wireTargets(
     if (n.id === origin.nodeId) {
       continue;
     }
-    if (n.inferred) {
-      out.set(n.id, "inferred by quick-uvm — declare a scoreboard or coverage first");
-      continue;
-    }
     if (origin.kind === "sub-port") {
       if (n.kind !== "tbsubenv") {
         out.set(n.id, "not a composed block — a connection joins two subenvs");
         continue;
       }
+      if (n.label === origin.subenv) {
+        // a duplicate-named subenv (hand-written YAML) shares the origin's
+        // name-keyed pins: lighting it would light the origin's own box
+        out.set(n.id, "the same block");
+        continue;
+      }
       // the opposite side of the other block: its inputs for an output origin
       const side = origin.dir === "out" ? "WEST" : "EAST";
+      const tdir = origin.dir === "out" ? "in" : "out";
       let first: string | null = null;
       let anyLegal = false;
       for (const p of n.ports) {
-        if (p.side !== side) {
-          continue;
+        if (p.side !== side || !p.glyph || !knownPort(children, n.label, p.port, tdir)) {
+          continue; // an endpoint pin without a hotspot / a port the child does not declare
         }
         const r = subPortReason(config, children, origin, n.label, p.port);
         out.set(p.id, r);
@@ -277,6 +297,10 @@ export function wireTargets(
         n.id,
         anyLegal ? null : first ?? `no ${origin.dir === "out" ? "input" : "output"} port on this block`
       );
+      continue;
+    }
+    if (n.inferred) {
+      out.set(n.id, "inferred by quick-uvm — declare a scoreboard or coverage first");
       continue;
     }
     if (origin.kind === "agent-ap") {
@@ -389,9 +413,12 @@ export function wireChoicesOnCanvas(
     // every legal port of every other block, as a menu (R11's menu form)
     const legal = wireTargets(scene, config, origin, children);
     const out: WireChoice[] = [];
+    const seen = new Set<string>();
     for (const n of scene.nodes) {
       for (const p of n.ports) {
-        if (legal.get(p.id) === null) {
+        const key = `${n.label}.${p.port}`;
+        if (legal.get(p.id) === null && !seen.has(key)) {
+          seen.add(key); // duplicate-named blocks share their pins: one row per pair
           out.push(connect(origin, n.label, p.port));
         }
       }

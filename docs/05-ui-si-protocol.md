@@ -267,7 +267,8 @@ mesajele tot aici, la implementare.
   with the reason on the rest; the reverse drag (from an input) targets the
   outputs, and an input already driven starts no legal wire ("remove that
   connection first"). A drop on a port writes ONE entry, on a box its legal
-  ports as a menu, on the canvas every legal port of every other block:
+  ports (one applies directly, several as a menu), on the canvas every legal
+  port of every other block:
   `addConnection {from, to}` (`from` = the output, `to` = the input, whichever
   end the drag started at). The host checks it again in the pure
   `singleConnection` (`src/compose.ts`, `test:compose`: a block OUTPUT to
@@ -277,6 +278,17 @@ mesajele tot aici, la implementare.
   `connections` on the top + the destination's agents set passive in their
   file, one WorkspaceEdit, previewed per R19 when more than one file changes).
   The rules live in `src/webview/wiring.ts` (`sub-port` origin, `test:wiring`).
+  From the adversarial review: the glyph is PROVENANCE — a cross-block
+  scoreboard's endpoint pin is an AGENT name drawn for its edge and gets no
+  glyph (no hotspot, no origin, no target), and a readable child's unknown
+  port is neither; a width the child cannot state (`width_param`,
+  `packed_dims`, `struct`, `type`) is unknown, never 1 (no false block); a
+  duplicate-named subenv shares the origin's name-keyed pins and is never a
+  target; the canonical `src`/`dst` connection keys are mirrored into
+  `from`/`to` by `parseQuvm`, so the "one driver per input" rule and the
+  scene see them. The gesture lives in the diagram PANEL: the per-file editor
+  has no children's configs (no agent ports on its `sub:` boxes) and answers
+  an `addConnection` with a message, not a write.
 - **Collapse, hide, preview** (docs/08 R18, Oct 2026): three view-state
   gestures, none of which touches the YAML. (1) A TB block **collapsed to its
   header** — `C` on the selection, "Collapse to header (C)" / "Expand (C)" in

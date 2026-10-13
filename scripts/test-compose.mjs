@@ -411,4 +411,17 @@ test("singleConnection: a width mismatch and an unreadable child are warnings â€
   assert.deepEqual(u.sinks, ["c"]);
 });
 
+test("review: singleConnection â€” a width the child cannot state is unknown (no mismatch), a src/dst entry still drives", () => {
+  const children = {
+    ...HAND_CHILDREN,
+    p: { agents: [{ name: "pa", ports: { outputs: [{ name: "data", width_param: "W" }, { name: "dout", width: 8 }] } }] },
+  };
+  const r = singleConnection("p.data", "c.din", HAND_CFG, children);
+  assert.deepEqual(r.warnings, [], "unknown vs 8b: nothing to claim");
+  assert.equal(r.connections[0].width, 8, "the known side's width");
+  // the canonical keys, as parseQuvm mirrors them into from/to
+  const cfg = { ...HAND_CFG, connections: [{ src: "p.dout", dst: "c.din", from: "p.dout", to: "c.din" }] };
+  assert.match(singleConnection("p.data", "c.din", cfg, children).error, /already driven by p\.dout/);
+});
+
 console.log(`\ntest-compose: ${passed} teste au trecut.`);

@@ -513,6 +513,19 @@ coliziunea de nume.
   A width mismatch is a WARNING that still wires (as `deriveConnections` does;
   quick-uvm has the last word), an unreadable child leaves direction and width
   unchecked with a warning; the gesture itself blocks a mismatch it can see.
+  From the review: the glyph is PROVENANCE — `addPin` takes it, a cross-block
+  scoreboard's endpoint pin (an AGENT name, drawn for its edge) gets `null`
+  (it started a wire and, on an unreadable child, wrote `from:
+  <subenv>.<agent>`), a real port found later UPGRADES an endpoint pin; a
+  port with `width_param` / `packed_dims` / `struct` / `type` has an UNKNOWN
+  width (`subPortWidth` and `singleConnection.lookup` return null, never 1 —
+  a false hard block otherwise); a duplicate-named subenv (`sub:x#2`) shares
+  the origin's name-keyed pins — skip by `label`, not only by id, or the
+  origin's own input lights; `parseQuvm` mirrors `src`/`dst` into `from`/`to`
+  and the text mutations (`addConnections`' dedup, `removeConnection`, the
+  rename retargets) read both; the per-file editor has no children (its `sub:`
+  boxes draw only the connection pins) and answers `addConnection` with a
+  message.
 - **Designer assistance (docs/08 R12)**: the proposals are computed on the HOST
   (`src/proposals.ts`, pure) and shipped as `proposals/full`; the webview never
   derives one — the connections proposal needs `deriveConnections` (compose.ts
