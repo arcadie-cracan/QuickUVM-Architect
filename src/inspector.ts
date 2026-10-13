@@ -18,6 +18,15 @@
 // A field that is neither irrelevant nor rare is `basic`. Anything blocked by a
 // choice made ELSEWHERE (a different section) keeps a visible hint instead — the user
 // cannot discover the fix from here.
+//
+//   PROVENANCE (docs/08 R16) — a third rule, orthogonal to the two above: where a
+//   row's VALUE comes from. A key the component's YAML mapping declares is shown
+//   FIRST, whatever relevance or rarity say (it is in the file, and a key the
+//   generator would refuse is a problem to see, not to hide), in bold when its
+//   value differs from the generator's default, with a reset that deletes the key;
+//   the relevant rows the YAML does not declare come next ("Common") with the
+//   default as a dimmed placeholder, never written; the rare ones last ("All").
+//   Android's Declared / Common / All attributes, Qt's bold-and-reset.
 
 import type { ModuleDef } from "./model";
 import type { QuvmAgent, QuvmPort, QuvmScoreboard } from "./quickuvm";
@@ -127,6 +136,162 @@ export function portRows(kind: "in" | "out" | "inout", port: QuvmPort): Rows {
     }
   }
   return { basic, advanced };
+}
+
+// ---------------------------------------------------------------- docs/08 R16
+
+/** what the editor knows about a component kind's fields */
+export interface FieldSpec {
+  /** every row id the editor can render (the relevance rules pick from these) */
+  rows: readonly string[];
+  /** the generator's default by row id (schema reference §1.5 / §1.6); a row
+   *  absent here has no default — "none" */
+  defaults: Readonly<Record<string, unknown>>;
+  /** keys the generator requires: declared always, never reset */
+  required: readonly string[];
+  /** top-level keys the panel shows elsewhere (the title, the ports): never "other" */
+  elsewhere: readonly string[];
+}
+
+export interface FieldInfo {
+  id: string;
+  /** the key is present in the YAML mapping */
+  declared: boolean;
+  /** declared, not required, and different from the generator's default: bold */
+  modified: boolean;
+  /** declared and not required: the reset (= delete the key) is offered */
+  resettable: boolean;
+  /** the generator's default as text, for the dimmed placeholder (undefined = none) */
+  placeholder: string | undefined;
+}
+
+/** a declared key the editor has no row for: shown read-only, value summarised */
+export interface OtherField {
+  key: string;
+  summary: string;
+  required: boolean;
+}
+
+export interface FieldGroups {
+  /** the declared rows, the editor's order first, the ones relevance hides last */
+  declared: FieldInfo[];
+  /** the relevant (`basic`) rows the YAML does not declare */
+  common: FieldInfo[];
+  /** the rare (`advanced`) rows the YAML does not declare */
+  all: FieldInfo[];
+  other: OtherField[];
+}
+
+export const AGENT_SPEC: FieldSpec = {
+  rows: [
+    "active", "mode", "seq_item_style", "respond", "request_valid", "request_ready",
+    "reorder_by", "reorder_policy", "proactive", "emit_when", "replicas", "clock", "reset",
+  ],
+  defaults: {
+    active: true,
+    mode: "initiator",
+    seq_item_style: "manual",
+    respond: "on_request",
+    reorder_policy: "priority",
+    proactive: false,
+    replicas: 1,
+  },
+  required: ["interface", "sequence_item"],
+  elsewhere: ["name", "ports"],
+};
+
+export const SCOREBOARD_SPEC: FieldSpec = {
+  rows: [
+    "source", "monitor", "match", "match_key", "max_latency",
+    "window.boundary", "window.length", "reference_model.language",
+  ],
+  defaults: { match: "in_order", "reference_model.language": "sv" },
+  required: ["source"],
+  elsewhere: ["name"],
+};
+
+export const PORT_SPEC: FieldSpec = {
+  rows: ["width", "randomize", "constraint", "enum", "open_drain", "pullup"],
+  defaults: { width: 1, randomize: true, open_drain: false },
+  // the pullup is mandatory once open drain is on (a statement, not a choice): no reset
+  required: ["pullup"],
+  elsewhere: ["name"],
+};
+
+/** the value at a dotted row id (`window.boundary`), undefined when absent */
+function valueAt(mapping: Record<string, unknown>, id: string): unknown {
+  let v: unknown = mapping;
+  for (const part of id.split(".")) {
+    if (v === null || typeof v !== "object") {
+      return undefined;
+    }
+    v = (v as Record<string, unknown>)[part];
+  }
+  return v === null ? undefined : v;
+}
+
+function sameValue(a: unknown, b: unknown): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
+}
+
+/** a short rendering of a value the editor has no control for */
+export function summarizeValue(v: unknown): string {
+  if (Array.isArray(v)) {
+    return `${v.length} item${v.length === 1 ? "" : "s"}`;
+  }
+  if (v !== null && typeof v === "object") {
+    const keys = Object.keys(v as object);
+    return keys.length ? `{${keys.join(", ")}}` : "{}";
+  }
+  return String(v);
+}
+
+/**
+ * The three groups of a component's property rows (the PROVENANCE rule). `rows`
+ * are the relevance/rarity verdicts for this component, `mapping` its parsed YAML
+ * entry, `spec` the editor's knowledge of the kind. A declared key is ALWAYS in
+ * `declared` — the ones relevance hid come after the visible ones; the `other`
+ * list holds the declared keys the editor has no row for (lists, nested models),
+ * so the panel still shows everything the file says.
+ */
+export function fieldGroups(
+  rows: Rows,
+  mapping: Record<string, unknown>,
+  spec: FieldSpec
+): FieldGroups {
+  const info = (id: string): FieldInfo => {
+    const v = valueAt(mapping, id);
+    const declared = v !== undefined;
+    const def = spec.defaults[id];
+    const required = spec.required.includes(id);
+    return {
+      id,
+      declared,
+      modified: declared && !required && !sameValue(v, def),
+      resettable: declared && !required,
+      placeholder: def === undefined ? undefined : String(def),
+    };
+  };
+  const visible = [...rows.basic, ...rows.advanced];
+  const hidden = spec.rows.filter((r) => !visible.includes(r));
+  const declared: FieldInfo[] = [];
+  for (const id of [...visible, ...hidden]) {
+    const f = info(id);
+    if (f.declared && !declared.some((d) => d.id === id)) {
+      declared.push(f);
+    }
+  }
+  const common = rows.basic.map(info).filter((f) => !f.declared);
+  const all = rows.advanced.map(info).filter((f) => !f.declared);
+  const covered = (key: string): boolean =>
+    spec.elsewhere.includes(key) || spec.rows.some((r) => r === key || r.startsWith(`${key}.`));
+  const other: OtherField[] = [];
+  for (const [key, v] of Object.entries(mapping)) {
+    if (v !== undefined && v !== null && !covered(key)) {
+      other.push({ key, summary: summarizeValue(v), required: spec.required.includes(key) });
+    }
+  }
+  return { declared, common, all, other };
 }
 
 /**

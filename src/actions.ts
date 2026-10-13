@@ -1531,7 +1531,8 @@ export class Actions {
       const f = args.field as ops.PortField;
       let value: string | boolean | Record<string, number> | undefined;
       if (f === "randomize" || f === "open_drain" || f === "pullup") {
-        value = raw === "true";
+        // docs/08 R16: "" is the reset — the key goes, the generator's default applies
+        value = raw === "" ? undefined : raw === "true";
       } else if (f === "enum") {
         // `NAME=value, NAME=value` — the editor's one-line form for a symbolic field
         const map: Record<string, number> = {};

@@ -289,6 +289,56 @@ body.sidebar #inspector {
   cursor: default;
 }
 
+/* docs/08 R16 — the provenance of a property: a declared key's label is bold when
+   its value differs from the generator's default, an undeclared one shows the
+   default dimmed (never written), the ⟲ removes the key */
+#inspector .prop-grouphead {
+  margin: 6px 0 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  opacity: 0.55;
+}
+
+#inspector .prop-row.declared .prop-label {
+  opacity: 0.95;
+}
+
+#inspector .prop-label.modified {
+  font-weight: 600;
+}
+
+#inspector .prop-dim {
+  color: var(--vscode-descriptionForeground, inherit);
+  opacity: 0.8;
+}
+
+#inspector .prop-ro {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: 12px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  opacity: 0.85;
+}
+
+#inspector .prop-reset {
+  flex: none;
+  padding: 0 5px;
+  font: inherit;
+  color: var(--vscode-foreground);
+  background: transparent;
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border));
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+#inspector .prop-reset:hover {
+  background: var(--vscode-toolbar-hoverBackground, rgba(128, 128, 128, 0.2));
+}
+
 /* the name of a repeated entry above its property rows (a test, docs/07 P2) */
 #inspector .prop-group {
   margin: 8px 0 2px;

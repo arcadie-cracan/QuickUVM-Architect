@@ -22,9 +22,10 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { agentRows, scoreboardRows, portRows, isBenchScope } = await import(
-  pathToFileURL(outFile)
-);
+const {
+  agentRows, scoreboardRows, portRows, isBenchScope,
+  fieldGroups, summarizeValue, AGENT_SPEC, SCOREBOARD_SPEC, PORT_SPEC,
+} = await import(pathToFileURL(outFile));
 
 let passed = 0;
 function test(name, fn) {
@@ -119,6 +120,85 @@ test("portRows: enum yields to a hand-written type specifier", () => {
   const packed = portRows("in", { name: "op", width: 2, packed_dims: [2, 4] });
   assert.ok(packed.advanced.includes("type_specifier_hint"));
   assert.ok(!all(packed).includes("enum"));
+});
+
+// docs/08 R16 — the PROVENANCE rule: declared first (bold + reset), then the
+// common rows with the default dimmed, then the rare ones
+test("fieldGroups: an agent's declared keys come first, in the editor's order, bold when off the default", () => {
+  const agent = {
+    name: "cmd", interface: "cmd_if", sequence_item: "cmd_item",
+    active: false, mode: "responder", request_valid: "req", replicas: 2,
+    ports: { inputs: [{ name: "a" }] },
+  };
+  const g = fieldGroups(agentRows(agent), agent, AGENT_SPEC);
+  assert.deepEqual(g.declared.map((f) => f.id), ["active", "mode", "request_valid", "replicas"]);
+  assert.deepEqual(g.common.map((f) => f.id), ["respond", "request_ready"], "the relevant rows not declared");
+  assert.deepEqual(g.all.map((f) => f.id), ["seq_item_style", "emit_when", "proactive"], "the rare rows not declared");
+  assert.deepEqual(g.other, [
+    { key: "interface", summary: "cmd_if", required: true },
+    { key: "sequence_item", summary: "cmd_item", required: true },
+  ], "declared keys without a row, read-only; name and ports live elsewhere");
+  const by = Object.fromEntries(g.declared.map((f) => [f.id, f]));
+  assert.equal(by.active.modified, true, "false differs from the default true");
+  assert.equal(by.request_valid.modified, true, "no default: any value is a change");
+  assert.ok(g.declared.every((f) => f.resettable), "none of them is required");
+  const respond = g.common.find((f) => f.id === "respond");
+  assert.equal(respond.placeholder, "on_request", "the generator's default, to be shown dimmed");
+  assert.equal(respond.declared, false);
+});
+
+test("fieldGroups: a declared key equal to the default is declared, not modified, still resettable", () => {
+  const agent = { name: "cmd", active: true, ports: {} };
+  const g = fieldGroups(agentRows(agent), agent, AGENT_SPEC);
+  assert.deepEqual(g.declared.map((f) => [f.id, f.modified, f.resettable]), [["active", false, true]]);
+  assert.deepEqual(g.common.map((f) => f.id), ["mode"]);
+});
+
+test("fieldGroups: a declared key relevance would HIDE still shows, after the visible ones", () => {
+  // `respond: pipelined` on an initiator — the generator refuses it; the file says it
+  const agent = { name: "cmd", mode: "initiator", respond: "pipelined", emit_when: "v" };
+  const g = fieldGroups(agentRows(agent), agent, AGENT_SPEC);
+  assert.deepEqual(g.declared.map((f) => f.id), ["mode", "emit_when", "respond"], "visible first (basic, advanced), hidden last");
+  assert.ok(!g.common.some((f) => f.id === "respond") && !g.all.some((f) => f.id === "respond"));
+});
+
+test("fieldGroups: a scoreboard's required source is declared but never reset; nested keys resolve", () => {
+  const sb = { name: "pkt_sb", source: "cmd", window: { boundary: "done", length: 4 }, reference_model: { language: "sv" } };
+  const g = fieldGroups(scoreboardRows(sb), sb, SCOREBOARD_SPEC);
+  const by = Object.fromEntries(g.declared.map((f) => [f.id, f]));
+  assert.deepEqual(Object.keys(by), ["source", "reference_model.language", "window.boundary", "window.length"], "the editor's order: basic, then advanced");
+  assert.equal(by.source.resettable, false);
+  assert.equal(by.source.modified, false, "required: there is no default to differ from");
+  assert.equal(by["reference_model.language"].modified, false, "sv is the default");
+  assert.equal(by["window.length"].modified, true);
+  assert.deepEqual(g.other, [], "window and reference_model are covered by their dotted rows");
+  assert.deepEqual(g.common.map((f) => f.id), ["monitor"]);
+  assert.deepEqual(g.all.map((f) => f.id), ["max_latency"]);
+  const two = { name: "sbd", source: "cmd", monitor: "rsp", match: "out_of_order", match_key: "id" };
+  const g2 = fieldGroups(scoreboardRows(two), two, SCOREBOARD_SPEC);
+  assert.deepEqual(g2.declared.map((f) => f.id), ["source", "monitor", "match", "match_key"]);
+  assert.equal(g2.common.find((f) => f.id === "match")?.placeholder, undefined, "match is declared");
+});
+
+test("fieldGroups: a port without a width shows the default 1 dimmed; a declared width is bold", () => {
+  const bare = { name: "a" };
+  const g = fieldGroups(portRows("in", bare), bare, PORT_SPEC);
+  assert.deepEqual(g.declared, []);
+  assert.equal(g.common.find((f) => f.id === "width")?.placeholder, "1");
+  const wide = { name: "d", width: 8, packed_dims: [2] };
+  const g2 = fieldGroups(portRows("in", wide), wide, PORT_SPEC);
+  assert.deepEqual(g2.declared.map((f) => [f.id, f.modified]), [["width", true]]);
+  assert.deepEqual(g2.other, [{ key: "packed_dims", summary: "1 item", required: false }]);
+  assert.ok(g2.all.some((f) => f.id === "type_specifier_hint"), "a hint row is never declared");
+});
+
+test("summarizeValue: scalars as text, lists by count, maps by keys", () => {
+  assert.equal(summarizeValue("x"), "x");
+  assert.equal(summarizeValue(3), "3");
+  assert.equal(summarizeValue(false), "false");
+  assert.equal(summarizeValue([1, 2]), "2 items");
+  assert.equal(summarizeValue({ a: 1, b: 2 }), "{a, b}");
+  assert.equal(summarizeValue({}), "{}");
 });
 
 test("isBenchScope: bench sections show only with NO component selected", () => {
