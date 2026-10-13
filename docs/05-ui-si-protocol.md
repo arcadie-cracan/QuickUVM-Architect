@@ -255,6 +255,28 @@ mesajele tot aici, la implementare.
   recent actions come first (`rankPalette` / `pushRecent` in `navfind.ts`,
   recency persisted in the webview state as `paletteRecent`). Enter runs,
   Escape closes, the arrows move. No protocol change.
+- **Declared / Common / All inspector** (docs/08 R16, Oct 2026): the agent,
+  scoreboard and port editors of the Properties panel are structured by the
+  PROVENANCE of each field — the third rule of the pure `src/inspector.ts`
+  (`fieldGroups` + the `AGENT_SPEC` / `SCOREBOARD_SPEC` / `PORT_SPEC`
+  defaults from the schema reference §1.5–1.6, `test:inspector`), next to
+  relevance and rarity. "Declared" lists the keys present in the component's
+  YAML mapping, in the editor's order, the ones relevance would hide last — a
+  declared key is always shown, since it is in the file and the generator will
+  refuse it; the label is bold when the value differs from the generator's
+  default, and ⟲ removes the key (the existing `editAgent` / `editScoreboard` /
+  `editAgentPort` actions with the empty value — `active` through its own op,
+  a port width through `1`; a port boolean's "" now deletes the key too). The
+  declared keys the editor has no control for (`interface`, `sequence_item`,
+  `packed_dims`, …) are read-only rows with the value summarised. "Common"
+  holds the relevant rows the YAML does not declare, their control dimmed and
+  the default as the placeholder — shown, never written; "All" (the former
+  "Advanced" disclosure, same persisted key) the rare ones. The ports section
+  stays open (the row's own rule), each port's declared and common rows open
+  and its rare ones under "All". The third provenance of the row — derived
+  from the model — is not surfaced: the TB webview has no model widths (the
+  overlay carries pin names only), and a width that disagrees with the design
+  is already a validation finding with its quick fix. No protocol change.
 - **Generated code next to the diagram** (docs/08 R20, Oct 2026): the
   selection in the TB view drives the generated code, and the generated code
   leads back to the view. Probed on quick-uvm 1.1.0: the generated files carry

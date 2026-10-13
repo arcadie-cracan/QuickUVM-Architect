@@ -666,6 +666,31 @@ coliziunea de nume.
   `src/preview.ts`): the character-level minimal edit of R4 over-counted a
   deletion at the end of a file without a final newline and counted an
   in-line insertion as +1 -0 (review finding; locked in `test:preview`).
+- **Declared / Common / All inspector (docs/08 R16)**: the third rule of
+  `src/inspector.ts`, PROVENANCE (`fieldGroups`, `test:inspector`), sits
+  NEXT to relevance/rarity, not instead: `agentRows`/`scoreboardRows`/
+  `portRows` still decide what is relevant; `fieldGroups` then lifts the
+  DECLARED keys out (always shown — a declared key relevance would hide is a
+  problem to see, not to hide; it comes last), keeps the undeclared relevant
+  ones as "Common" (the default dimmed as the placeholder) and the rare ones
+  as "All" (the persisted section key stays `agent.advanced` / `sb.advanced`).
+  The defaults are the schema reference's (§1.5, §1.5.1, §1.6) in
+  `AGENT_SPEC` / `SCOREBOARD_SPEC` / `PORT_SPEC` — a new editable key must be
+  added to the spec's `rows`, or a declared value of it lands among the
+  read-only "other" rows. The reset is the editors' "empty ⇒ default" path;
+  three exceptions, each a trap: `active` resets through `"true"`
+  (`setAgentActive(true)` DELETES the key; `""` would write `false`), a port
+  `width` through `"1"` (`setAgentPortWidth(1)` deletes; `""` is a silent
+  no-op in `editAgentPort`), and a port boolean's `""` must map to
+  `undefined` in `editAgentPort` (it mapped to `false` — a reset of
+  `randomize` wrote `randomize: false`). `pullup` is `required` in `PORT_SPEC`
+  only to deny the reset (mandatory once open drain is on). In the view the
+  row wrapper `prow` captures `cur` into a const BEFORE building the reset
+  closure — a closure over the mutable `cur` would reset the LAST rendered
+  row; and the `tbPropRow(` → `prow(` rename must not touch the wrapper's own
+  `return tbPropRow(...)` (a self-recursion the typecheck caught). A number
+  input of an undeclared key is EMPTY with the default as placeholder, not
+  pre-filled with the default (pre-filled reads as declared).
 - **Generated-code traceability (docs/08 R20)**: probed on quick-uvm 1.1.0 —
   the generated files carry NO element anchor (header only), so do not look
   for one: element ↔ owned file comes from the manifest (`ownerOfFile`, exact,
@@ -1013,6 +1038,10 @@ selection, recent first; `rankPalette` / `pushRecent` in `test:navfind`.
 destructive or multi-file gesture (`quickuvm.previewEdits` = ask / always /
 never; `src/preview.ts` + `test:preview`, `src/previewdiff.ts`,
 `TbEditTarget.readText`).
+**R16 (docs/08) is implemented** (Oct 2026): the Declared / Common / All
+inspector — provenance per field (`fieldGroups` + the schema defaults in
+`src/inspector.ts`, `test:inspector`), bold when off the default, ⟲ removes the
+key, dimmed placeholders for the generator's defaults.
 **R20 (docs/08) is implemented** (Oct 2026): the generated code next to the
 diagram — the selection lights the element's lines in the visible generated
 editors, `quickuvm.codeFollowsSelection` docks its primary file beside, a
