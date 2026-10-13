@@ -144,9 +144,11 @@ function tbPropRow(
       if (info.modified) {
         lab.classList.add("modified");
       }
-      lab.title = info.modified
-        ? "set in the YAML — differs from the generator's default"
-        : "set in the YAML — equal to the generator's default";
+      lab.title = info.required
+        ? "set in the YAML — required by the generator here"
+        : info.modified
+          ? "set in the YAML — differs from the generator's default"
+          : "set in the YAML — equal to the generator's default";
     } else {
       control.classList.add("prop-dim");
       lab.title =
@@ -166,7 +168,10 @@ function tbPropRow(
   if (info?.resettable && onReset) {
     const reset = h("button", "prop-reset", "⟲");
     reset.type = "button";
-    reset.title = "Reset to the generator's default (removes the key from the YAML)";
+    // the mutation may cascade (a select shows that choice, a glyph cannot): say so
+    reset.title =
+      "Reset to the generator's default (removes the key from the YAML)" +
+      (info.resetNote ? ` — ${info.resetNote}` : "");
     reset.addEventListener("click", onReset);
     row.append(reset);
   }
@@ -185,11 +190,13 @@ function tbOtherRow(o: OtherField): void {
   const row = tbPropRow(o.key, h("div", "prop-ro", o.summary), {
     id: o.key,
     declared: true,
-    modified: !o.required,
+    required: o.required,
+    modified: o.modified,
     resettable: false,
     placeholder: undefined,
   });
-  row.title = o.required ? "required by the generator" : "edit it in the YAML";
+  // the key may be wider than the label column (`sequence_item`): the row says it whole
+  row.title = `${o.key}: ${o.summary} — ${o.required ? "required by the generator" : "edit it in the YAML"}`;
   ctx.root.append(row);
 }
 
@@ -1578,7 +1585,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
         row(f.id, f);
       }
       for (const f of domainRows) {
-        row(f, { id: f, declared: false, modified: false, resettable: false, placeholder: undefined });
+        row(f, { id: f, declared: false, required: false, modified: false, resettable: false, placeholder: undefined });
       }
     });
   }

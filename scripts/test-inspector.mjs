@@ -135,8 +135,8 @@ test("fieldGroups: an agent's declared keys come first, in the editor's order, b
   assert.deepEqual(g.common.map((f) => f.id), ["respond", "request_ready"], "the relevant rows not declared");
   assert.deepEqual(g.all.map((f) => f.id), ["seq_item_style", "emit_when", "proactive"], "the rare rows not declared");
   assert.deepEqual(g.other, [
-    { key: "interface", summary: "cmd_if", required: true },
-    { key: "sequence_item", summary: "cmd_item", required: true },
+    { key: "interface", summary: "cmd_if", required: true, modified: false },
+    { key: "sequence_item", summary: "cmd_item", required: true, modified: false },
   ], "declared keys without a row, read-only; name and ports live elsewhere");
   const by = Object.fromEntries(g.declared.map((f) => [f.id, f]));
   assert.equal(by.active.modified, true, "false differs from the default true");
@@ -188,8 +188,45 @@ test("fieldGroups: a port without a width shows the default 1 dimmed; a declared
   const wide = { name: "d", width: 8, packed_dims: [2] };
   const g2 = fieldGroups(portRows("in", wide), wide, PORT_SPEC);
   assert.deepEqual(g2.declared.map((f) => [f.id, f.modified]), [["width", true]]);
-  assert.deepEqual(g2.other, [{ key: "packed_dims", summary: "1 item", required: false }]);
+  assert.deepEqual(g2.other, [{ key: "packed_dims", summary: "1 item", required: false, modified: true }]);
   assert.ok(g2.all.some((f) => f.id === "type_specifier_hint"), "a hint row is never declared");
+});
+
+test("review: a key another key REQUIRES is declared but never reset, nor bold; the enabler resets with a note", () => {
+  const r = { name: "cmd", mode: "responder", request_valid: "req", respond: "pipelined", reorder_by: "id" };
+  const g = fieldGroups(agentRows(r), r, AGENT_SPEC);
+  const by = Object.fromEntries(g.declared.map((f) => [f.id, f]));
+  assert.deepEqual([by.request_valid.resettable, by.request_valid.modified, by.request_valid.required], [false, false, true]);
+  assert.deepEqual([by.reorder_by.resettable, by.reorder_by.required], [false, true]);
+  assert.equal(by.mode.resettable, true, "the enabling key resets: its cascade drops the dependents");
+  assert.match(by.mode.resetNote, /responder-only keys/);
+  assert.match(by.respond.resetNote, /reorder_by/);
+  // an initiator with a stray request_valid: not required there, so it resets
+  const i = { name: "cmd", request_valid: "req" };
+  const gi = fieldGroups(agentRows(i), i, AGENT_SPEC);
+  assert.equal(gi.declared.find((f) => f.id === "request_valid")?.resettable, true);
+  const sb = { name: "s", source: "a", monitor: "b", match: "out_of_order", match_key: "k" };
+  const bs = Object.fromEntries(fieldGroups(scoreboardRows(sb), sb, SCOREBOARD_SPEC).declared.map((f) => [f.id, f]));
+  assert.equal(bs.match_key.resettable, false, "required by out_of_order");
+  assert.equal(bs.match.resettable, true);
+  assert.match(bs.match.resetNote, /match_key/);
+  const win = { name: "w", source: "a", window: { boundary: "done", length: 4 } };
+  const bw = Object.fromEntries(fieldGroups(scoreboardRows(win), win, SCOREBOARD_SPEC).declared.map((f) => [f.id, f]));
+  assert.equal(bw["window.length"].resettable, false, "a window without a length is invalid: no reset");
+  assert.equal(bw["window.boundary"].resettable, true);
+  assert.match(bw["window.boundary"].resetNote, /whole window/);
+});
+
+test("review: the read-only rows know the schema defaults — assertions: false and idle: {} are not modified", () => {
+  const a = { name: "cmd", assertions: false, idle: {}, sequences: [{ name: "s" }], interface: "i", rand: 1 };
+  const g = fieldGroups(agentRows(a), a, AGENT_SPEC);
+  assert.deepEqual(g.other.map((o) => [o.key, o.modified, o.required]), [
+    ["assertions", false, false],
+    ["idle", false, false],
+    ["sequences", true, false],
+    ["interface", false, true],
+    ["rand", true, false],
+  ], "a key with no known default is modified by any value");
 });
 
 test("summarizeValue: scalars as text, lists by count, maps by keys", () => {

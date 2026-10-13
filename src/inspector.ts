@@ -149,6 +149,12 @@ export interface FieldSpec {
   defaults: Readonly<Record<string, unknown>>;
   /** keys the generator requires: declared always, never reset */
   required: readonly string[];
+  /** keys ANOTHER key makes required (`request_valid` under `mode: responder`):
+   *  while the predicate holds, declared but never reset — deleting it alone
+   *  leaves a config the generator refuses, and no validation finding says so */
+  requiredWhen?: Readonly<Record<string, (mapping: Record<string, unknown>) => boolean>>;
+  /** what a reset ALSO removes (the mutation's cascade), for the ⟲ tooltip */
+  resetNotes?: Readonly<Record<string, string>>;
   /** top-level keys the panel shows elsewhere (the title, the ports): never "other" */
   elsewhere: readonly string[];
 }
@@ -157,6 +163,10 @@ export interface FieldInfo {
   id: string;
   /** the key is present in the YAML mapping */
   declared: boolean;
+  /** the generator requires it (always, or while another key's value holds) */
+  required: boolean;
+  /** what the reset also removes, when the mutation cascades */
+  resetNote?: string;
   /** declared, not required, and different from the generator's default: bold */
   modified: boolean;
   /** declared and not required: the reset (= delete the key) is offered */
@@ -170,6 +180,8 @@ export interface OtherField {
   key: string;
   summary: string;
   required: boolean;
+  /** differs from the schema default (unknown default = any value differs) */
+  modified: boolean;
 }
 
 export interface FieldGroups {
@@ -195,8 +207,24 @@ export const AGENT_SPEC: FieldSpec = {
     reorder_policy: "priority",
     proactive: false,
     replicas: 1,
+    // the keys without a row (read-only), so their rows know the default too
+    assertions: false,
+    idle: {},
+    sequences: [],
+    fields: [],
+    constraints: [],
+    parameters: [],
+    instances: [],
   },
   required: ["interface", "sequence_item"],
+  requiredWhen: {
+    request_valid: (m) => m.mode === "responder",
+    reorder_by: (m) => m.respond === "pipelined",
+  },
+  resetNotes: {
+    mode: "back to initiator, the responder-only keys go too (respond, request_valid, request_ready, reorder_by, reorder_policy, proactive, idle)",
+    respond: "back to on_request, reorder_by and reorder_policy go too",
+  },
   elsewhere: ["name", "ports"],
 };
 
@@ -207,14 +235,26 @@ export const SCOREBOARD_SPEC: FieldSpec = {
   ],
   defaults: { match: "in_order", "reference_model.language": "sv" },
   required: ["source"],
+  requiredWhen: {
+    match_key: (m) => m.match === "out_of_order",
+    // a window without a length is invalid: the length is edited, never reset
+    "window.length": (m) => valueAt(m, "window.boundary") !== undefined,
+  },
+  resetNotes: {
+    monitor: "single-stream again: match and match_key go too",
+    match: "back to in_order, match_key goes too",
+    "window.boundary": "removes the whole window (boundary and length)",
+    "reference_model.language": "removes the reference_model mapping",
+  },
   elsewhere: ["name"],
 };
 
 export const PORT_SPEC: FieldSpec = {
   rows: ["width", "randomize", "constraint", "enum", "open_drain", "pullup"],
-  defaults: { width: 1, randomize: true, open_drain: false },
+  defaults: { width: 1, randomize: true, rand_mode: true, open_drain: false },
   // the pullup is mandatory once open drain is on (a statement, not a choice): no reset
   required: ["pullup"],
+  resetNotes: { open_drain: "the pullup goes too" },
   elsewhere: ["name"],
 };
 
@@ -259,14 +299,18 @@ export function fieldGroups(
   mapping: Record<string, unknown>,
   spec: FieldSpec
 ): FieldGroups {
+  const isRequired = (id: string): boolean =>
+    spec.required.includes(id) || Boolean(spec.requiredWhen?.[id]?.(mapping));
   const info = (id: string): FieldInfo => {
     const v = valueAt(mapping, id);
     const declared = v !== undefined;
     const def = spec.defaults[id];
-    const required = spec.required.includes(id);
+    const required = isRequired(id);
     return {
       id,
       declared,
+      required,
+      resetNote: spec.resetNotes?.[id],
       modified: declared && !required && !sameValue(v, def),
       resettable: declared && !required,
       placeholder: def === undefined ? undefined : String(def),
@@ -288,7 +332,13 @@ export function fieldGroups(
   const other: OtherField[] = [];
   for (const [key, v] of Object.entries(mapping)) {
     if (v !== undefined && v !== null && !covered(key)) {
-      other.push({ key, summary: summarizeValue(v), required: spec.required.includes(key) });
+      const required = isRequired(key);
+      other.push({
+        key,
+        summary: summarizeValue(v),
+        required,
+        modified: !required && !(key in spec.defaults && sameValue(v, spec.defaults[key])),
+      });
     }
   }
   return { declared, common, all, other };

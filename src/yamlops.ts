@@ -352,9 +352,12 @@ export function setAgentActive(
     for (const item of agents.items) {
       if (isMap(item) && item.get("name") === agentName) {
         const cur = item.get("active");
-        const curActive = cur === undefined ? true : cur !== false;
-        if (curActive === active) {
-          return text; // already at the requested value -> text unchanged
+        // idempotent on the KEY, not on the effective value: a hand-written
+        // `active: true` is the default, and the inspector's reset (docs/08 R16)
+        // must still delete it — a value-based short-circuit made that reset a
+        // silent no-op (review finding). The H1 wiring's idempotence is kept.
+        if (active ? cur === undefined : cur === false) {
+          return text; // already canonical -> text unchanged
         }
         if (active) {
           item.delete("active");
@@ -2467,7 +2470,7 @@ export function setAgentPortWidth(
     if (!isMap(item) || item.get("name") !== agentName) {
       continue;
     }
-    for (const side of ["inputs", "outputs"]) {
+    for (const side of ["inputs", "outputs", "inouts"]) {
       const list = item.getIn(["ports", side]);
       if (!isSeq(list)) {
         continue;

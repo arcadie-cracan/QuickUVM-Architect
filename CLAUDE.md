@@ -677,14 +677,28 @@ coliziunea de nume.
   The defaults are the schema reference's (§1.5, §1.5.1, §1.6) in
   `AGENT_SPEC` / `SCOREBOARD_SPEC` / `PORT_SPEC` — a new editable key must be
   added to the spec's `rows`, or a declared value of it lands among the
-  read-only "other" rows. The reset is the editors' "empty ⇒ default" path;
-  three exceptions, each a trap: `active` resets through `"true"`
-  (`setAgentActive(true)` DELETES the key; `""` would write `false`), a port
-  `width` through `"1"` (`setAgentPortWidth(1)` deletes; `""` is a silent
-  no-op in `editAgentPort`), and a port boolean's `""` must map to
-  `undefined` in `editAgentPort` (it mapped to `false` — a reset of
-  `randomize` wrote `randomize: false`). `pullup` is `required` in `PORT_SPEC`
-  only to deny the reset (mandatory once open drain is on). In the view the
+  read-only "other" rows (which know the schema defaults of the row-less keys
+  — `assertions: false`, `idle: {}`, the lists — or they read as modified).
+  The reset is the editors' "empty ⇒ default" path; three exceptions, each a
+  trap: `active` resets through `"true"` (`setAgentActive(true)` deletes the
+  key — its idempotence is on the KEY's presence, not on the effective value:
+  a hand-written `active: true` made the reset a silent no-op, review
+  finding; `""` would write `false`), a port `width` through `"1"`
+  (`setAgentPortWidth(1)` deletes, and it must look in `inouts` too — it
+  iterated inputs/outputs only and THREW on an inout; `""` is a silent no-op
+  in `editAgentPort`), and a port boolean's `""` must map to `undefined` in
+  `editAgentPort` (it mapped to `false` — a reset of `randomize` wrote
+  `randomize: false`). A key ANOTHER key requires — `request_valid` under
+  `mode: responder`, `reorder_by` under `respond: pipelined`, `match_key`
+  under `match: out_of_order`, `window.length` next to a boundary — is
+  `requiredWhen` in the spec: declared, not bold, no ⟲, because deleting it
+  alone leaves a config the generator refuses and `checkConfig` has no
+  finding for it (the enabling key resets instead, its cascade drops the
+  dependents — the ⟲ tooltip names them through `resetNotes`: a select shows
+  its choice, a glyph does not). `pullup` is `required` in `PORT_SPEC` only
+  to deny the reset (mandatory once open drain is on). A focused ⟲ is a
+  BUTTON: the window `keydown` guard skips it like the inputs, or Tab + Delete
+  deleted the component. In the view the
   row wrapper `prow` captures `cur` into a const BEFORE building the reset
   closure — a closure over the mutable `cur` would reset the LAST rendered
   row; and the `tbPropRow(` → `prow(` rename must not touch the wrapper's own

@@ -222,6 +222,9 @@ body.sidebar #inspector {
 #inspector .prop-label {
   flex: none;
   width: 74px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   opacity: 0.75;
 }
 

@@ -266,7 +266,11 @@ mesajele tot aici, la implementare.
   refuse it; the label is bold when the value differs from the generator's
   default, and ⟲ removes the key (the existing `editAgent` / `editScoreboard` /
   `editAgentPort` actions with the empty value — `active` through its own op,
-  a port width through `1`; a port boolean's "" now deletes the key too). The
+  a port width through `1`; a port boolean's "" now deletes the key too; a key
+  another key requires — `request_valid` under `mode: responder`, `reorder_by`
+  under `respond: pipelined`, `match_key` under `match: out_of_order`, the
+  window's length — has no ⟲, the enabling key resets instead and its ⟲ names
+  the cascade). The
   declared keys the editor has no control for (`interface`, `sequence_item`,
   `packed_dims`, …) are read-only rows with the value summarised. "Common"
   holds the relevant rows the YAML does not declare, their control dimmed and
