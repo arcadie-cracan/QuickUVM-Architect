@@ -116,7 +116,9 @@
   const CHILD_B = {
     project: { name: "adder" },
     dut: { name: "adder", combinational: true, reset: "" },
-    agents: [{ name: "add_a", interface: "add_if" }],
+    agents: [
+      { name: "add_a", interface: "add_if", ports: { inputs: [{ name: "a", width: 16 }, { name: "b", width: 16 }, { name: "cin" }], outputs: [{ name: "s", width: 16 }] } },
+    ],
   };
   const COMPOSED_CONFIG = {
     project: { name: "demo" },
@@ -126,6 +128,8 @@
       { name: "ch0", config: "chan.quickuvm.yaml" },
       { name: "u_add", config: "adder.quickuvm.yaml" },
     ],
+    // one existing connection: `u_add.b` is already driven (docs/08 R11's legality)
+    connections: [{ from: "ch0.dout", to: "u_add.b" }],
   };
   const COMPOSED_CHILDREN = { ch0: CHILD_A, u_add: CHILD_B };
   const harnessState = {
