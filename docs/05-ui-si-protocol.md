@@ -77,11 +77,13 @@ mesajele tot aici, la implementare.
   arbore: deschide nivelul + selectează). Sincronizarea diagramă↔arbore se
   face pe identitatea `<focus>|<bloc>` (arborele și scena împart nivelurile
   și id-urile).
-- **Protocol**: host→webview `config/full {configPath, config, resolved?}` —
-  subsetul QuvmConfig parsat (agents, analysis, virtual_sequences, probes,
-  subenvs, connections, subenv_scoreboards), trimis la `ready` și la orice
-  schimbare a YAML-ului (ca `overlay/config`); `view/show {viewId: "tb:…",
-  mode: "tb"}`.
+- **Protocol**: host→webview `config/full {configPath, config, resolved?,
+  parseError?}` — the parsed QuvmConfig subset (agents, analysis,
+  virtual_sequences, probes, subenvs, connections), sent at `ready` and on
+  every change of the YAML (like `overlay/config`); `view/show {viewId:
+  "tb:…", mode: "tb"}`. `parseError` (docs/08 R8) is `{message, line}` when
+  the YAML does not parse — `config` is then only what could be read; see
+  "Invalid configuration and empty states" below.
 - **`resolved` — the effective topology** (Aug 2026): the output of `quick-uvm
   resolve` (>= 1.1.0), from which the view draws the **inferred** components
   (the ghosts — see docs/07). It travels on the SAME message as `config`, never
@@ -416,6 +418,70 @@ mesajele tot aici, la implementare.
   (+1 -1)`) comes from the pure `src/preview.ts` (`test:preview`), counted
   line-wise the way the diff editor counts the hunk. No protocol change: the
   webview sends the same actions.
+- **Level of detail on zoom** (docs/08 R6, Nov 2026): below
+  `quickuvm.lodZoomThreshold` (default 0.5 — a zoom of 50 %; 0 switches it
+  off) the schematic and the verification views draw the OVERVIEW: boxes,
+  titles, wires, boundary flags, junctions and the status / generation badges
+  (a problem is never hidden). Pin labels, net labels, connection notes, the
+  bus decorations, the module subtitle, the compartment text, the stereotypes,
+  the TB port labels and the inline widgets are not drawn, and each box's
+  title is enlarged until it fills its box (capped at 3x) and centred in it —
+  the compartments are gone, so the room is free. It is ONE attribute,
+  `data-lod="low"` on the root `<svg>`, and CSS rules behind
+  `#canvas[data-lod="low"]`: no re-layout and no re-render, so no box moves
+  when the level changes. `lodFor` (`src/webview/navfind.ts`, pure,
+  `test:navfind`) adds hysteresis — the view returns to full detail only above
+  threshold x 1.15, so a wheel hovering at the threshold does not flicker —
+  and `titleUpscale` fits a title to its box; the fit is measured once per
+  render and per switch to the overview, never per pan/zoom frame, and applied
+  by CSS through a `--lod-title` variable on the title. The threshold travels
+  on `ui/config.lodThreshold`. The symbol view is exempt (it is nothing but
+  its pin labels, and it always fits the window). A selected or cross-probed
+  pin and a selected net label keep their text. The SVG export always carries
+  full detail: the bounds are taken with the level lifted, and the export
+  clone has no canvas id, so no `#canvas[data-lod]` rule reaches it.
+- **Marquee modifiers and arrangement** (docs/08 R7, Nov 2026): the lasso's
+  modifiers are read at the press — none replaces the selection, **Shift**
+  adds, **Alt** subtracts, **Ctrl** toggles (unchanged: it is what Ctrl+click
+  does to one element, and one modifier must not mean two things; the row's
+  "Ctrl subtracts" became Alt, the Blueprints set). `quickuvm.lassoMode` gains
+  a third value, `direction`: dragged left-to-right the rectangle is a window
+  (only what it fully encloses), right-to-left a crossing (also what it
+  touches) — the CAD convention; a crossing rectangle is drawn long-dashed, a
+  subtracting one in the error colour. A multi-selection of blocks and flags
+  can be ARRANGED: align on the left / right / top / bottom edge or on a
+  centre line of the common bounding box, distribute with equal gaps (three or
+  more; the two outermost stay), and straighten the wires — each block wired
+  to an already-placed one is moved vertically until the two pin centres are
+  level, starting from the block the menu was opened on (from the palette: the
+  leftmost of each wired group). Straighten never stacks blocks: a move that
+  would land on another box, with one grid step of air, is refused and the
+  block stays (two agents in one column feeding one scoreboard cannot both get
+  a straight wire). The gestures are one row of icons at the top of the
+  context menu opened on a member of the selection, and the "Arrange" group of
+  the action palette (R17) — one list, `arrangeActions`. No new message: each
+  gesture is one position-undo entry and ONE `layout/snapshot` with ALL the
+  view's positions (D21), exactly like a drag end; a gesture with nothing to
+  move posts nothing and says so in a toast. The geometry is pure
+  (`src/webview/arrange.ts`, `test:arrange`).
+- **Multi-selection editing** (docs/08 R9, Nov 2026): with two or more
+  components selected in the verification view, the Properties panel shows
+  the fields they have in common instead of the first component's editor —
+  one group per kind with two or more EDITABLE components (a ghost, a VIP
+  reference, an unnamed or duplicate-named scoreboard are left out, as the
+  single editor leaves them without an edit). A field shows the shared value,
+  or "mixed" when the components differ; the value compared is the EFFECTIVE
+  one, so an undeclared key and a hand-written default agree. Choosing a value
+  sets it on all of them: `editAgents` / `editScoreboards {names, field,
+  value}` fold the single edit's mutation over the names into one text change
+  — one WorkspaceEdit, one undo step. The bulk fields are deliberately few
+  (`MULTI_FIELDS` in `src/inspector.ts`): agents `active` and
+  `seq_item_style`, scoreboards `max_latency`. `mode: responder` needs a
+  `request_valid` port of that agent and `match: out_of_order` a `match_key`
+  of that scoreboard; set in bulk they would leave configurations the
+  generator refuses and no validation finding reports. `multiGroups` is pure
+  (`test:inspector`); the action palette offers "Set N agents passive /
+  active" as one-shot rows.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
@@ -529,7 +595,7 @@ JSON, versionat (`v: 1`), tipat în TypeScript într-un singur fișier partajat
 | `proposals/full` | `{viewId, mode, items[]}` | docs/08 R12 — the designer-assistance proposals of the view the host shows (`src/proposals.ts`, pure, `test:proposals`): `items[]` = `{id, kind, label, detail?, action, args}`, every one an existing host action with its arguments filled in. Kinds: `agent-iface` (a DUT interface port without an agent → `createAgentFromIface {port, name}`), `agent-group` (DUT pins sharing a prefix — the name up to its LAST underscore, a trailing direction token `_i/_o/_io/_in/_out/_n/_ni/_no` stripped first, so PULP `src_valid_i` joins `src` while `valid_i`/`valid_o` make no group — two or more, none claimed, no clock/reset/waived/ref/unsized/unpacked port → `createAgentFromPins {pins, name}`; a lone pin is never proposed, and an agent of the prefix's name that claims nothing makes the group ambiguous → no proposal, the SmartDesign rule), `connections` (a subsystem of ≥2 subenvs whose blocks the design wires but the YAML does not, and whose children already have agents — the wire cables agent ports; ambiguous subenv names or a derivation warning = no proposal → `wireConnections`, through the same `deriveConnections`), `materialize` (on an implicit-mode bench — no `analysis:` key — the components quick-uvm infers, one row per ghost of `src/resolved.ts`). Sent by the panel after `view/show`, `model/full`, `overlay/config`, `config/full` and the drill, and by the per-file editor with its `config/full` (ghosts only — it has no model); an empty list clears the strip. The webview shows the strip only while `viewId` matches the view it displays |
 | `card/full` | `{id, yaml, files[], primary, manifest}` | docs/08 R15 — the answer to `card/request`: what a TB element will generate. `yaml` = the element's own entry, verbatim (the R4 map `elementRange` on the document text; null = no entry of its own), `files[]` = `{file, exists}` the element OWNS in the generated bench (the CACHED `quick-uvm manifest`, never a generator run; the aggregates are not listed), `primary` = the absolute path "Open generated code" opens (null = none yet), `manifest` = `ok` / `unavailable` (quick-uvm < 1.1.0, an invalid config — the card says "not resolved" instead of "no files") / `inactive` (the per-file editor's document is not the active config, whose manifest it is). The per-file editor answers from ITS document, with the files only when the document is the active config |
 | `probe/highlight` | `{targets[]}` | cross-probing editor→diagramă (reciproca hover-ului, faza 4): host-ul urmărește cursorul din sursele SV (debounced) și trimite ținta de sub cursor — `{kind: "instance", path}` \| `{kind: "port", module, port}` \| `{kind: "module", module}`; mai multe ținte doar la instanțele generate de pe aceeași linie sursă. **docs/08 R4:** a fourth target kind, `{kind: "tb", id, focus}`, comes from the caret in a `*.quickuvm.yaml` TEXT editor (`elementAtOffset`, `src/yamlmap.ts`, pure, `test:yamlmap`): the verification view lights the box with that id when it is on the current level — panel and per-file editors alike — never navigating. The reverse (a selected box reveals and flashes its YAML entry in the text editors that already show the file) and the per-gesture flash of the changed lines (`onGestureApplied` in `src/config.ts`, from the MINIMAL edit of `src/textedit.ts`, `test:textedit`) are host-side and need no message; the `quickuvm.openYamlBeside` setting (ask once / always / never) decides whether a gesture opens the YAML beside the diagram when no text editor shows it. Webview-ul le mapează pe id-urile vederii CURENTE (`probeIds` în `src/locmap.ts`, pur) și aplică un **halou de cross-probing** (`.xprobe`) persistent, DISTINCT de selecție — selecția de lucru nu e atinsă. Ținta absentă din vederea curentă = niciun halou (non-invaziv, fără navigare); listă goală = stinge. Navigarea explicită e comanda `quickuvm.revealInDiagram` (meniul contextual al editorului), care folosește `view/show` + `select/reveal` |
-| `ui/config` | `{lasso, decorations, codeFollow}` | the UI preferences from the extension settings, sent at `ready` and whenever they change; `lasso`: `contain` (default — the lasso selects only the objects it fully contains, "window selection") \| `intersect` (also the ones it touches, "crossing selection"; the `quickuvm.lassoMode` setting); `decorations`: the drawing vocabulary (slash+width on buses, junction dots) is visible (`quickuvm.schematicDecorations`, docs/04); `codeFollow` (docs/08 R20): the generated code follows the selection in the TB view (`quickuvm.codeFollowsSelection`) — the palette row that toggles it reads its label from here |
+| `ui/config` | `{lasso, decorations, codeFollow, lodThreshold}` | the UI preferences from the extension settings, sent at `ready` and whenever they change; `lasso`: `contain` (default — the lasso selects only the objects it fully contains, "window selection") \| `intersect` (also the ones it touches, "crossing selection") \| `direction` (docs/08 R7: left-to-right a window, right-to-left a crossing; the `quickuvm.lassoMode` setting); `lodThreshold` (docs/08 R6): the zoom below which a multi-node view draws the overview level of detail (`quickuvm.lodZoomThreshold`, default 0.5; 0 = never); `decorations`: the drawing vocabulary (slash+width on buses, junction dots) is visible (`quickuvm.schematicDecorations`, docs/04); `codeFollow` (docs/08 R20): the generated code follows the selection in the TB view (`quickuvm.codeFollowsSelection`) — the palette row that toggles it reads its label from here |
 | `export/request` | `{}` | cere serializarea SVG a vederii curente (comanda `quickuvm.exportSvg` din paletă); webview răspunde cu `export/result` |
 | `theme/changed` | `{}` | re-citește variabilele CSS |
 | `relay/flip` | `{nodeId, axis: "h"\|"v"}` | gest de desen venit din inspectorul din SIDEBAR, transmis mai departe de host către panou (vezi blocul `relay/*` de la webview→host). Panoul îl aplică pe vederea pe care o arată EL, ca și cum ar fi venit din propria diagramă |
@@ -554,7 +620,7 @@ JSON, versionat (`v: 1`), tipat în TypeScript într-un singur fișier partajat
 | `edge/override` | `{viewId, edgeId, patch}` | override de rutare (nivelurile 1–3) |
 | `net/render` | `{viewId, net, render: "wire"\|"label"}` | override-ul de nivel 4 (docs/04): comutarea unui net între fir și etichetă din inspector (netul se selectează prin click pe traseu sau pe eticheta lui). Webview-ul a aplicat deja local; host-ul persistă `nets[net].render` în sidecar — alegerea egală cu sugestia din model șterge override-ul; fără ecou |
 | `nav/drill` | `{instancePath, mode?}` | dublu-click pe instanță în vederea-schemă: webview-ul navighează local (schema dacă instanța are una, altfel simbolul), host-ul actualizează titlul panoului, vederea curentă și evidențiază instanța în ierarhie; `mode` (D24) distinge simbolul top-ului — reveal pe rădăcina sintetică „top module" — de schema lui — reveal pe nodul instanței (aceeași cale, vederi diferite) |
-| `action/request` | `{action, args}` | acțiuni care ating YAML sau sursele: `setDut`, `createAgentFromPins`, `createAgentFromIface`, `createSubenv`, `ignorePort`, `unignorePort`, `generate`, `openSource`, `addScoreboard`, `addCoverage`, `addVirtualSequence`, `deleteComponent {kind, name}`, `editScoreboard {name, field, value}`, `createProbe {net}`, `wireConnections {}`, `composeIntoParent {}`, `openSubenvConfig {config}` (deschide fișierul de config al unui subenv — calea din `subenvs[].config`, purtată de drill — cu editorul implicit), `openConfigBeside {}` (docs/08 R4: the "YAML" header button — the configuration as text beside the diagram, focus kept on the diagram; the host opens it, or the per-file editor opens its own document), `addPinsToAgent {agent, pins, viewId}` (docs/08 R10: a wire from a DUT pin dropped on a pin an agent already claims — the dragged pins join that agent through the `addAgentPorts` mutation, with the same port derivation as `createAgentFromPins`), `applyProposals {items: [{kind, args, accept?}]}` (docs/08 R12: the proposals the user CHECKED in the assistance strip, applied in order through the flows above — a preset agent name is used only when it is free, not an SV keyword and not a scoreboard/subenv/probe name, otherwise the input box asks; the `materialize` item carries the ghost ids to KEEP and the host writes `analysis:` from the RESOLVED inferred set through `materializeAnalysis` — the whole set at once, the unchecked members absent, `analysis: {}` when nothing is kept: docs/07's two sharp edges), `renameComponent {kind: agent|scoreboard|subenv, name, newName}` (docs/08 R14: in-place rename, validated on the host — an SV identifier, no keyword, free across agents/scoreboards/subenvs/probes — with the cascade of `renameAgent` / `renameScoreboard` / `renameSubenv`; a composed config gets a warning that the parent's `<subenv>.<agent>` references are not updated), `openGeneratedCode {id, label}` (docs/08 R15: the element's generated code BESIDE the diagram, focus kept — the `quickuvm.openGeneratedCode` flow, which offers to generate it first when it is missing), `addConnection {from, to}` (docs/08 R11: one hand-drawn connection between two composed blocks — checked by `singleConnection`, written through the multi-file wiring plan), `toggleCodeFollow {}` and `traceabilityReport {}` (docs/08 R20: the palette's View rows — the host flips `quickuvm.codeFollowsSelection` and re-posts `ui/config`, or opens the traceability report as a markdown document); `openConfigBeside` also takes an optional `id` (R15: the element's YAML entry is revealed and flashed after opening) — webview-ul NU scrie niciodată fișiere; cere host-ului. `openSource` acceptă și `peek: true` (cross-probing la hover, faza 4): host-ul doar **revelează** declarația în editoarele DEJA vizibile, cu o evidențiere tranzitorie a liniei (~1,2 s) — nu deschide tab-uri, nu fură focusul; setarea `quickuvm.hoverCrossProbe` (implicit on) îl stinge |
+| `action/request` | `{action, args}` | actions that touch the YAML or the sources: `setDut`, `createAgentFromPins`, `createAgentFromIface`, `createSubenv`, `ignorePort`, `unignorePort`, `generate`, `openSource`, `addScoreboard`, `addCoverage`, `addVirtualSequence`, `deleteComponent {kind, name}`, `editScoreboard {name, field, value}`, `createProbe {net}`, `wireConnections {}`, `composeIntoParent {}`, `openSubenvConfig {config}` (opens a subenv's config file — the path from `subenvs[].config`, carried by the drill — with the default editor), `openConfigBeside {}` (docs/08 R4: the "YAML" header button — the configuration as text beside the diagram, focus kept on the diagram; the host opens it, or the per-file editor opens its own document), `addPinsToAgent {agent, pins, viewId}` (docs/08 R10: a wire from a DUT pin dropped on a pin an agent already claims — the dragged pins join that agent through the `addAgentPorts` mutation, with the same port derivation as `createAgentFromPins`), `applyProposals {items: [{kind, args, accept?}]}` (docs/08 R12: the proposals the user CHECKED in the assistance strip, applied in order through the flows above — a preset agent name is used only when it is free, not an SV keyword and not a scoreboard/subenv/probe name, otherwise the input box asks; the `materialize` item carries the ghost ids to KEEP and the host writes `analysis:` from the RESOLVED inferred set through `materializeAnalysis` — the whole set at once, the unchecked members absent, `analysis: {}` when nothing is kept: docs/07's two sharp edges), `renameComponent {kind: agent|scoreboard|subenv, name, newName}` (docs/08 R14: in-place rename, validated on the host — an SV identifier, no keyword, free across agents/scoreboards/subenvs/probes — with the cascade of `renameAgent` / `renameScoreboard` / `renameSubenv`; a composed config gets a warning that the parent's `<subenv>.<agent>` references are not updated), `openGeneratedCode {id, label}` (docs/08 R15: the element's generated code BESIDE the diagram, focus kept — the `quickuvm.openGeneratedCode` flow, which offers to generate it first when it is missing), `addConnection {from, to}` (docs/08 R11: one hand-drawn connection between two composed blocks — checked by `singleConnection`, written through the multi-file wiring plan), `toggleCodeFollow {}` and `traceabilityReport {}` (docs/08 R20: the palette's View rows — the host flips `quickuvm.codeFollowsSelection` and re-posts `ui/config`, or opens the traceability report as a markdown document); `openConfigBeside` also takes an optional `id` (R15: the element's YAML entry is revealed and flashed after opening); `editAgents {names[], field, value}` and `editScoreboards {names[], field, value}` (docs/08 R9: one field on several components — only the fields of `MULTI_FIELDS`, only the names the config still has, one WorkspaceEdit); `openConfigAsText {}` (docs/08 R8: the banner's / empty state's "Open as text" — the per-file editor reopens its own tab with the built-in text editor through `vscode.openWith … "default"`, the panel opens the active configuration as text beside) and `setTop {}` (docs/08 R8: the no-model empty state's "Set top module…", the host's `quickuvm.setTop` input box) — the webview NEVER writes files; it asks the host. `openSource` also takes `peek: true` (hover cross-probing, phase 4): the host only **reveals** the declaration in the ALREADY visible editors, with a transient highlight of the line (~1.2 s) — it opens no tab and does not steal the focus; the `quickuvm.hoverCrossProbe` setting (on by default) turns it off |
 | `card/request` | `{id}` | docs/08 R15 — the hover card (a 450 ms dwell on a TB box, or `I` on the selected one) asks what the element will generate; the webview caches the answer until the next `config/full` or `status/decorations` |
 | `export/result` | `{viewId, svg}` | SVG-ul AUTONOM al vederii curente (faza 4): clonă cu stilurile calculate inline-uite (culorile temei VSCode sunt copiate în export — CSS-ul extern cu `var(--vscode-*)` nu călătorește), `viewBox` pe conținut (fără camera de sesiune), fundal copt din tema curentă. Emis la butonul ⤓ din header sau ca răspuns la `export/request`; host: save dialog + scriere pe disc |
 | `relay/flip` \| `relay/fold` \| `relay/netRender` \| `relay/selectPins` \| `relay/openTb` | `{nodeId, axis}` \| `{foldId}` \| `{net}` \| `{names[]}` \| `{}` | **gesturile de desen ale inspectorului din sidebar** (iul. 2026). Inspectorul NU mai stă în panou: aside-ul `#inspector` a fost SCOS, iar vederea „Properties" din sidebar e singurul inspector — de aici, un flip/pliaj/net-render nu are pânză pe care să acționeze, așa că se trimit host-ului, care le retrimite panoului (aceleași nume, sens invers). **Niciunul nu poartă `viewId`**: panoul le aplică pe vederea pe care o arată el, deliberat — sidebar-ul nu trebuie să poată muta o vedere pe care utilizatorul nu o privește. Fără panou deschis se pierd, ceea ce e corect: singurul lor efect e ce se desenează |
@@ -580,10 +646,45 @@ autoritate pe fișiere (YAML, sidecar); webview-ul e reconstruibil integral din
 `model/full` + `layout/full` + `overlay/config` (proprietate testabilă: kill +
 restore trebuie să dea aceeași imagine).
 
-## Degradare grațioasă și stări speciale
+## Graceful degradation and special states
 
-- compilare eșuată → `model/stale`, ultimul model rămâne interactiv;
-- port din YAML absent în model → pin marcat "orfan" în overlay + diagnostic;
-- selecție pe elemente pliate (`ch[0..2]`) → acțiunile se aplică pliajului
-  întreg sau cer expandare, explicit;
-- proiect fără Bender → sursa listei de fișiere din setări (glob sau `.f`).
+- a failed compilation → `model/stale`, the last model stays interactive;
+- a port in the YAML that the model does not have → the pin is marked
+  "orphan" in the overlay, plus a diagnostic;
+- a selection on folded elements (`ch[0..2]`) → the actions apply to the whole
+  fold or ask for it to be expanded, explicitly;
+- a project without Bender → the file list comes from the settings (a glob or
+  a `.f` file).
+
+### Invalid configuration and empty states (docs/08 R8, Nov 2026)
+
+`*.quickuvm.yaml` opens as a DIAGRAM by default (the per-file editor), so a
+file the diagram cannot draw needs a one-step route to its text.
+
+- **A configuration whose YAML does not parse.** `config/full.parseError` is
+  `{message, line}` — the parser's FIRST error (the later ones are usually its
+  echoes), without the parser's own "at line N, column M" tail, or "the top
+  level must be a mapping" for a file that is a list or a scalar
+  (`quvmParseError` / `docParseError` in `src/yamlops.ts`, pure,
+  `test:yamlops`). `config` still carries what could be read, and the view
+  draws it; the banner says that the diagram is partial ("the diagram shows
+  only what could be read"), or that nothing could be drawn, names the line,
+  and offers **Open as text**. A file that does not parse is never presented
+  as "empty".
+- **Open as text** (`openConfigAsText`): from the per-file editor the SAME tab
+  is reopened with the built-in text editor (`vscode.openWith(uri,
+  "default")`, the KIE fallback); from the panel the active configuration
+  opens as text beside the diagram. The commands `quickuvm.openConfigAsText`
+  and `quickuvm.openConfigAsDiagram` do the same from the palette, each with a
+  button in the editor title, so the route works both ways. The
+  layout-failure banner offers the text editor too.
+- **Empty states name the next action** and offer it as a button: no design
+  model → "Set top module…" (`setTop`), plus "Open verification view" when a
+  configuration exists (it needs no RTL); the verification view without a
+  configuration → "Open the design views" (where "Set as DUT" creates one); a
+  configuration that declares no DUT, agent or composed block → "Open the
+  design views" (with a model) and "Open as text". The text shown before the
+  webview's first render is the host's localized placeholder; the states
+  themselves are English, like the rest of the webview (D19).
+- A verification-view banner does not follow into the design views (a YAML
+  error says nothing about the RTL); `model/stale` is the design views' own.
