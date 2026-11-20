@@ -333,6 +333,20 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.value === "string" ? args.value : ""
           );
           break;
+        case "editAgents":
+        case "editScoreboards": {
+          // docs/08 R9 — the inspector's multi-selection editor: one field on
+          // several components, one WorkspaceEdit
+          const names = Array.isArray(args.names)
+            ? args.names.filter((n): n is string => typeof n === "string")
+            : [];
+          const field = typeof args.field === "string" ? args.field : "";
+          const value = typeof args.value === "string" ? args.value : "";
+          void (action === "editAgents"
+            ? actions.editAgents(names, field, value)
+            : actions.editScoreboards(names, field, value));
+          break;
+        }
         case "addRegisterModel":
           void actions.addRegisterModel();
           break;

@@ -400,6 +400,17 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "editAgent":
         void this.actions.editAgent(s("name"), s("field"), s("value"), target);
         break;
+      case "editAgents":
+      case "editScoreboards": {
+        // docs/08 R9 — the multi-selection editor, on THIS document
+        const names = Array.isArray(args.names)
+          ? args.names.filter((n): n is string => typeof n === "string")
+          : [];
+        void (action === "editAgents"
+          ? this.actions.editAgents(names, s("field"), s("value"), target)
+          : this.actions.editScoreboards(names, s("field"), s("value"), target));
+        break;
+      }
       case "addRegisterModel":
         void this.actions.addRegisterModel(target);
         break;

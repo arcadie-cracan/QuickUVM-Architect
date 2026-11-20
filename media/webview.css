@@ -1748,3 +1748,8 @@ text.split-sign {
   opacity: 0.7;
 }
 #empty .empty-actions { justify-content: center; }
+
+/* ------------------------- multi-selection editing (docs/08 R9) */
+/* a field whose value differs across the selected components: dimmed italic,
+   so "mixed" never reads as a value */
+#inspector .prop-mixed { font-style: italic; opacity: 0.8; }

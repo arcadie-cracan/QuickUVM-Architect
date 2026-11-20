@@ -1411,6 +1411,37 @@ test("docs/08 R8: quvmParseError — a top level that is not a mapping is not a 
   assert.ok(ops.quvmParseError(broken));
 });
 
+test("docs/08 R9: one field folded over several agents is ONE text change, comments kept, no-op byte-identical", () => {
+  const y = [
+    "# bench",
+    "agents:",
+    "  - name: cmd   # drives",
+    "    interface: cmd_if",
+    "  - name: rsp",
+    "    active: false",
+    "  - name: aux",
+    "    active: true   # hand-written default",
+    "",
+  ].join("\n");
+  // the host's fold: targets.reduce((acc, n) => op(acc, n), text)
+  const fold = (text, names, op) => names.reduce((acc, n) => op(acc, n), text);
+  const passive = fold(y, ["cmd", "rsp", "aux"], (t, n) => ops.setAgentActive(t, n, false));
+  assert.deepEqual(ops.parseQuvm(passive).agents.map((a) => a.active), [false, false, false]);
+  assert.ok(passive.includes("# drives") && passive.includes("# bench"), "comments survive the fold");
+  // back to active: every `active` key goes (true is the default, written nowhere)
+  const active = fold(passive, ["cmd", "rsp", "aux"], (t, n) => ops.setAgentActive(t, n, true));
+  assert.deepEqual(ops.parseQuvm(active).agents.map((a) => "active" in a), [false, false, false]);
+  // already what was asked: the fold returns the SAME text (no WorkspaceEdit at all)
+  assert.equal(fold(passive, ["cmd", "rsp", "aux"], (t, n) => ops.setAgentActive(t, n, false)), passive);
+  // another bulk field, and its reset
+  const macros = fold(y, ["cmd", "rsp"], (t, n) => ops.setAgentField(t, n, "seq_item_style", "field_macros"));
+  assert.deepEqual(ops.parseQuvm(macros).agents.map((a) => a.seq_item_style), ["field_macros", "field_macros", undefined]);
+  assert.equal(
+    ops.parseQuvm(fold(macros, ["cmd", "rsp"], (t, n) => ops.setAgentField(t, n, "seq_item_style", undefined))).agents[0].seq_item_style,
+    undefined
+  );
+});
+
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

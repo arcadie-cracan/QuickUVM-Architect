@@ -62,6 +62,11 @@ export type ActionKind =
   | "deleteComponent"
   | "editScoreboard"
   | "editAgent"
+  // docs/08 R9: one field on SEVERAL components at once, `{names[], field,
+  // value}` — the fields of `MULTI_FIELDS` (src/inspector.ts) only; ONE
+  // WorkspaceEdit, so one undo step
+  | "editAgents"
+  | "editScoreboards"
   // P2: bench-level configuration (RAL + regression)
   | "addRegisterModel"
   | "removeRegisterModel"

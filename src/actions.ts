@@ -19,6 +19,7 @@ import { ConfigService, TbEditTarget } from "./config";
 import { kindBlockers, layoutBlockers } from "./benchid";
 import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
 import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
+import { MULTI_FIELDS } from "./inspector";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import type { FileChange } from "./preview";
 import { confirmGesture, PreviewProvider } from "./previewdiff";
@@ -2111,17 +2112,27 @@ export class Actions {
     if (!cfg.configUri || !name) {
       return;
     }
+    const op = this.agentFieldOp(field, raw);
+    if (op && (await cfg.apply((t) => op(t, name)))) {
+      this.log.appendLine(`[actions] editAgent ${name}.${field} = ${raw || "(reset)"}`);
+    }
+  }
+
+  /** The text mutation behind an agent field edit, by agent name — ONE rule for
+   *  the single edit and the multi-selection edit (docs/08 R9); null = refused
+   *  (an unknown field, a value the field cannot take). */
+  private agentFieldOp(
+    field: string,
+    raw: string
+  ): ((text: string, name: string) => string) | null {
     if (field === "active") {
       // one path for `active` (the H1 wiring uses it too) — raw is "true"/"false"
-      if (await cfg.apply((t) => ops.setAgentActive(t, name, raw === "true"))) {
-        this.log.appendLine(`[actions] editAgent ${name}.active = ${raw}`);
-      }
-      return;
+      return (t, name) => ops.setAgentActive(t, name, raw === "true");
     }
     // derived from AGENT_DEFAULTS, not listed here: a hand-written copy silently
     // dropped `emit_when` for a whole release (see AGENT_FIELDS)
     if (!ops.AGENT_FIELDS.includes(field as ops.AgentField)) {
-      return;
+      return null;
     }
     const f = field as ops.AgentField;
     let value: string | number | boolean | undefined;
@@ -2131,7 +2142,7 @@ export class Actions {
       // replica count: integer >= 1 (the input has min=1)
       const n = Number(raw);
       if (!Number.isInteger(n) || n < 1) {
-        return;
+        return null;
       }
       value = n;
     } else if (f === "proactive") {
@@ -2139,8 +2150,37 @@ export class Actions {
     } else {
       value = raw;
     }
-    if (await cfg.apply((t) => ops.setAgentField(t, name, f, value))) {
-      this.log.appendLine(`[actions] editAgent ${name}.${field} = ${raw || "(reset)"}`);
+    return (t, name) => ops.setAgentField(t, name, f, value);
+  }
+
+  /**
+   * docs/08 R9 — one field on SEVERAL agents (the inspector's multi-selection
+   * editor): the same mutation as `editAgent`, folded over the names into ONE
+   * text change, so the gesture is one WorkspaceEdit and one undo step. Only the
+   * bulk-safe fields (`MULTI_FIELDS`), and only agents the config still has that
+   * are not VIP references — the same exclusions as the panel that sent this.
+   */
+  async editAgents(
+    names: string[],
+    field: string,
+    raw: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri || !(MULTI_FIELDS.agent as readonly string[]).includes(field)) {
+      return;
+    }
+    const op = this.agentFieldOp(field, raw);
+    const known = new Set(
+      (cfg.current.agents ?? []).filter((a) => !a.from_vip).map((a) => a.name)
+    );
+    const targets = [...new Set(names)].filter((n) => known.has(n));
+    if (!op || !targets.length) {
+      return;
+    }
+    if (await cfg.apply((t) => targets.reduce((acc, n) => op(acc, n), t))) {
+      this.log.appendLine(
+        `[actions] editAgents ${targets.join(",")} .${field} = ${raw || "(reset)"}`
+      );
     }
   }
 
@@ -2158,6 +2198,29 @@ export class Actions {
     if (!cfg.configUri || !name) {
       return;
     }
+    const op = this.scoreboardFieldOp(field, raw);
+    if (!op) {
+      return;
+    }
+    try {
+      if (await cfg.apply((t) => op(t, name))) {
+        this.log.appendLine(`[actions] editScoreboard ${name}.${field} = ${raw || "(reset)"}`);
+      }
+    } catch (e) {
+      // e.g. a window on a two-stream scoreboard — refused rather than written
+      void vscode.window.showWarningMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
+      );
+    }
+  }
+
+  /** The text mutation behind a scoreboard field edit, by scoreboard name — one
+   *  rule for the single and the multi-selection edit (docs/08 R9); null =
+   *  refused (an unknown field, a number the field cannot take). */
+  private scoreboardFieldOp(
+    field: string,
+    raw: string
+  ): ((text: string, name: string) => string) | null {
     const fields: ops.ScoreboardField[] = [
       "source",
       "monitor",
@@ -2169,7 +2232,7 @@ export class Actions {
       "reference_model.language",
     ];
     if (!fields.includes(field as ops.ScoreboardField)) {
-      return;
+      return null;
     }
     const f = field as ops.ScoreboardField;
     let value: string | number | undefined;
@@ -2180,18 +2243,49 @@ export class Actions {
       const n = Number(raw);
       // both >= 1: quick-uvm refuses `max_latency: 0` ("must be >= 1 cycle")
       if (!Number.isInteger(n) || n < 1) {
-        return;
+        return null;
       }
       value = n;
     } else {
       value = raw;
     }
+    return (t, name) => ops.setScoreboardField(t, name, f, value);
+  }
+
+  /**
+   * docs/08 R9 — one field on SEVERAL scoreboards, as ONE text change (one
+   * WorkspaceEdit, one undo step). Only the bulk-safe fields (`MULTI_FIELDS`),
+   * and only names the config has exactly once: `setScoreboardField` edits the
+   * FIRST scoreboard of a name, so a duplicate would be edited twice and its
+   * twin never.
+   */
+  async editScoreboards(
+    names: string[],
+    field: string,
+    raw: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (
+      !cfg.configUri ||
+      !(MULTI_FIELDS.scoreboard as readonly string[]).includes(field)
+    ) {
+      return;
+    }
+    const op = this.scoreboardFieldOp(field, raw);
+    const all = (cfg.current.analysis?.scoreboards ?? []).map((s) => s.name);
+    const targets = [...new Set(names)].filter(
+      (n) => all.filter((x) => x === n).length === 1
+    );
+    if (!op || !targets.length) {
+      return;
+    }
     try {
-      if (await cfg.apply((t) => ops.setScoreboardField(t, name, f, value))) {
-        this.log.appendLine(`[actions] editScoreboard ${name}.${field} = ${raw || "(reset)"}`);
+      if (await cfg.apply((t) => targets.reduce((acc, n) => op(acc, n), t))) {
+        this.log.appendLine(
+          `[actions] editScoreboards ${targets.join(",")} .${field} = ${raw || "(reset)"}`
+        );
       }
     } catch (e) {
-      // e.g. a window on a two-stream scoreboard — refused rather than written
       void vscode.window.showWarningMessage(
         vscode.l10n.t("QuickUVM Architect: {0}", (e as Error).message)
       );

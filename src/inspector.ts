@@ -29,7 +29,7 @@
 //   Android's Declared / Common / All attributes, Qt's bold-and-reset.
 
 import type { ModuleDef } from "./model";
-import type { QuvmAgent, QuvmPort, QuvmScoreboard } from "./quickuvm";
+import type { QuvmAgent, QuvmConfig, QuvmPort, QuvmScoreboard } from "./quickuvm";
 
 /**
  * The pin identities the inspector reasons about: a name and whether it is an
@@ -342,6 +342,133 @@ export function fieldGroups(
     }
   }
   return { declared, common, all, other };
+}
+
+// ---------------------------------------------------------------- docs/08 R9
+
+/**
+ * The fields a MULTI-SELECTION can edit in one step, per component kind (Qt's
+ * property editor: the properties common to the selected objects, a change
+ * applied to all of them). Deliberately few: a field belongs here only if a
+ * value makes sense on every component at once and needs nothing per component.
+ * `mode: responder` needs a `request_valid` port of that agent, `match:
+ * out_of_order` a `match_key` of that scoreboard — set in bulk they would leave
+ * configurations the generator refuses and no validation finding reports, so
+ * they stay single-component edits.
+ */
+export const MULTI_FIELDS = {
+  agent: ["active", "seq_item_style"],
+  scoreboard: ["max_latency"],
+} as const;
+
+export type MultiKind = keyof typeof MULTI_FIELDS;
+
+export interface MultiField {
+  id: string;
+  /** the value every selected component has, as the control reads it ("true",
+   *  "manual", "3"; "" = unset, no default) — or null when they differ: "mixed" */
+  value: string | null;
+}
+
+/** the components of one kind in a multi-selection and what they share */
+export interface MultiGroup {
+  kind: MultiKind;
+  /** the YAML names the edit applies to, in the selection's order */
+  names: string[];
+  fields: MultiField[];
+}
+
+/** what the inspector knows about a selected TB node */
+export interface SelectedNode {
+  id: string;
+  kind: string;
+  label: string;
+  inferred?: boolean;
+}
+
+/**
+ * The groups a multi-selection can be edited through: the selected agents, the
+ * selected scoreboards — each only when at least TWO of that kind are editable
+ * (one is the single editor's job). Left out, exactly as the single editor
+ * leaves them without an edit: a ghost (no YAML entry), a VIP reference (it
+ * takes `{name, from_vip}` only), an unnamed or duplicate-named scoreboard (the
+ * by-name mutation would hit the first of that name).
+ *
+ * A field is offered only when EVERY component of the group has it as a row;
+ * its value is the EFFECTIVE one (the generator's default when the key is
+ * absent), so "declared default" and "undeclared" agree instead of reading as
+ * mixed.
+ */
+export function multiGroups(
+  cfg: QuvmConfig | null | undefined,
+  selected: readonly SelectedNode[]
+): MultiGroup[] {
+  if (!cfg) {
+    return [];
+  }
+  const text = (v: unknown): string => (v === undefined || v === null ? "" : String(v));
+  const shared = (values: string[]): string | null =>
+    values.every((v) => v === values[0]) ? values[0] : null;
+  const group = (
+    kind: MultiKind,
+    members: Record<string, unknown>[],
+    rowsOf: (m: Record<string, unknown>) => Rows,
+    spec: FieldSpec
+  ): MultiGroup | null => {
+    if (members.length < 2) {
+      return null;
+    }
+    const fields: MultiField[] = [];
+    for (const id of MULTI_FIELDS[kind]) {
+      const everywhere = members.every((m) => {
+        const r = rowsOf(m);
+        return r.basic.includes(id) || r.advanced.includes(id);
+      });
+      if (everywhere) {
+        fields.push({
+          id,
+          value: shared(members.map((m) => text(valueAt(m, id) ?? spec.defaults[id]))),
+        });
+      }
+    }
+    return { kind, names: members.map((m) => String(m.name)), fields };
+  };
+
+  const agents: Record<string, unknown>[] = [];
+  const sbs: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const n of selected) {
+    if (n.inferred || seen.has(n.id)) {
+      continue;
+    }
+    seen.add(n.id);
+    if (n.kind === "tbagent") {
+      const a = (cfg.agents ?? []).find((x) => x.name === n.label);
+      if (a?.name && !a.from_vip && !agents.includes(a as Record<string, unknown>)) {
+        agents.push(a as unknown as Record<string, unknown>);
+      }
+    } else if (n.kind === "tbsb" && n.id.startsWith("sb:") && !n.id.includes("#")) {
+      const named = (cfg.analysis?.scoreboards ?? []).filter((x) => x.name === n.label);
+      if (named.length === 1 && named[0].name) {
+        sbs.push(named[0] as unknown as Record<string, unknown>);
+      }
+    }
+  }
+  const out: MultiGroup[] = [];
+  const ag = group("agent", agents, (m) => agentRows(m as QuvmAgent), AGENT_SPEC);
+  if (ag) {
+    out.push(ag);
+  }
+  const sg = group(
+    "scoreboard",
+    sbs,
+    (m) => scoreboardRows(m as QuvmScoreboard),
+    SCOREBOARD_SPEC
+  );
+  if (sg) {
+    out.push(sg);
+  }
+  return out;
 }
 
 /**

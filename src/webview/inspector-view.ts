@@ -25,6 +25,7 @@ import {
   agentRows,
   fieldGroups,
   isBenchScope,
+  multiGroups,
   portRows,
   scoreboardRows,
   type FieldInfo,
@@ -1748,7 +1749,12 @@ function tbScoreboardEditor(sb: QuvmScoreboard): void {
         latIn.min = "1"; // quick-uvm: max_latency >= 1 cycle
         latIn.value = sb.max_latency != null ? String(sb.max_latency) : "";
         latIn.placeholder = "unbounded";
-        latIn.addEventListener("change", () => send("max_latency", latIn.value));
+        latIn.addEventListener("change", () => {
+          // unparsable text reads as "" — a typo must not RESET (delete) the key
+          if (!latIn.validity.badInput) {
+            send("max_latency", latIn.value);
+          }
+        });
         ctx.root.append(prow("Max latency", latIn));
         break;
       }
@@ -1894,6 +1900,137 @@ export function tbRenameTarget(
   return null;
 }
 
+/**
+ * docs/08 R9 — the editor of a MULTI-SELECTION (Qt's property editor): for each
+ * kind with two or more editable components selected, the fields they have in
+ * common, each showing the shared value or "mixed" when they differ. Choosing a
+ * value sets it on ALL of them in one edit (`editAgents` / `editScoreboards`:
+ * one WorkspaceEdit, one undo step). Which fields, which components and what
+ * "mixed" means are decided by the pure `multiGroups` (src/inspector.ts).
+ */
+function tbMultiEditor(
+  nodes: TbScene["nodes"],
+  groups: ReturnType<typeof multiGroups>
+): void {
+  ctx.root.append(
+    h("h3", "", "Selection"),
+    h("div", "", `${nodes.length} components`),
+    h("div", "dim", nodes.map((n) => n.label).join(", "))
+  );
+  if (!groups.length) {
+    ctx.root.append(
+      h(
+        "div",
+        "note",
+        "No property in common. Select two or more agents, or two or more " +
+          "scoreboards, to edit them together."
+      )
+    );
+    return;
+  }
+  /** a select that can show "mixed": a disabled first option, never a value sent */
+  const select = (
+    options: readonly (readonly [string, string])[],
+    value: string | null,
+    onChange: (v: string) => void
+  ): HTMLSelectElement => {
+    const MIXED = "\u0000mixed";
+    const sel = tbSelect(
+      value === null ? [[MIXED, "— mixed —"], ...options] : options,
+      value ?? MIXED,
+      (v) => {
+        if (v !== MIXED) {
+          onChange(v);
+        }
+      }
+    );
+    if (value === null) {
+      sel.options[0].disabled = true;
+      sel.classList.add("prop-mixed");
+    }
+    return sel;
+  };
+  const row = (label: string, control: HTMLElement, mixed: boolean): void => {
+    const r = tbPropRow(label, control);
+    const lab = r.querySelector<HTMLElement>(".prop-label");
+    if (lab) {
+      lab.title = mixed
+        ? "The selected components differ. Choosing a value sets it on all of them."
+        : "The same on every selected component. A change applies to all of them.";
+    }
+    ctx.root.append(r);
+  };
+  for (const g of groups) {
+    const noun = g.kind === "agent" ? "agents" : "scoreboards";
+    ctx.root.append(h("h3", "", `${g.names.length} ${noun}`));
+    if (g.names.length !== nodes.length) {
+      // part of the selection is not in this group (another kind, a ghost, a
+      // VIP reference): say WHICH components the edit reaches
+      ctx.root.append(h("div", "dim", g.names.join(", ")));
+    }
+    const send = (field: string, value: string): void =>
+      ctx.postAction(g.kind === "agent" ? "editAgents" : "editScoreboards", {
+        names: g.names,
+        field,
+        value,
+      });
+    for (const f of g.fields) {
+      const mixed = f.value === null;
+      switch (f.id) {
+        case "active":
+          row(
+            "Role",
+            select(
+              [
+                ["true", "Active (drives + monitors)"],
+                ["false", "Passive (monitors only)"],
+              ],
+              f.value,
+              (v) => send("active", v)
+            ),
+            mixed
+          );
+          break;
+        case "seq_item_style":
+          row(
+            "Seq item style",
+            select(
+              [
+                ["manual", "Manual"],
+                ["field_macros", "Field macros"],
+              ],
+              f.value,
+              (v) => send("seq_item_style", v)
+            ),
+            mixed
+          );
+          break;
+        case "max_latency": {
+          const latIn = h("input", "prop");
+          latIn.type = "number";
+          latIn.min = "1"; // quick-uvm: max_latency >= 1 cycle
+          latIn.value = f.value ?? "";
+          latIn.placeholder = mixed ? "mixed" : "unbounded";
+          if (mixed) {
+            latIn.classList.add("prop-mixed");
+          }
+          latIn.addEventListener("change", () => {
+            // text the browser cannot parse reads as "" — which would RESET the
+            // key on every selected scoreboard: a typo is not a reset
+            if (!latIn.validity.badInput) {
+              send("max_latency", latIn.value);
+            }
+          });
+          row("Max latency", latIn, mixed);
+          break;
+        }
+        default:
+          break; // a field this renderer has no control for is simply not offered
+      }
+    }
+  }
+}
+
 /** The side inspector: configuration, DUT, agents, coverage, actions.
  *  Without own state: everything is derived from the model + overlay (invariant 2). */
 export function renderInspector(c: InspectorCtx): void {
@@ -2035,9 +2172,16 @@ export function renderInspector(c: InspectorCtx): void {
   }
 
   if (ctx.state.mode === "tb") {
-    const selNode = ctx.tbScene?.nodes.find((n) =>
+    // docs/08 R9 — two or more components selected: the multi-selection editor
+    // (the properties they share), not the first component's own editor
+    const selNodes = (ctx.tbScene?.nodes ?? []).filter((n) =>
       ctx.state.selection.has(n.id)
     );
+    const multi = selNodes.length >= 2;
+    const selNode = multi ? undefined : selNodes[0];
+    if (multi) {
+      tbMultiEditor(selNodes, multiGroups(ctx.state.config, selNodes));
+    }
     // the selected agent preloads the source of the add gestures (docs/05)
     const selAgent = selNode?.kind === "tbagent" ? selNode.label : undefined;
     if (selNode) {
@@ -2157,9 +2301,10 @@ export function renderInspector(c: InspectorCtx): void {
     // selected boundary flag: LOCAL horizontal flip (mirrors the
     // shape + moves the anchor to the opposite side of the flag, without changing its
     // ELK position/side). On an inout flag (hexagon) it moves only the anchored tip.
-    const selB = !selNode
-      ? ctx.tbScene?.boundary.find((b) => ctx.state.selection.has(b.id))
-      : undefined;
+    const selB =
+      !selNode && !multi
+        ? ctx.tbScene?.boundary.find((b) => ctx.state.selection.has(b.id))
+        : undefined;
     if (selB) {
       ctx.root.append(
         h("h3", "", "Boundary"),
@@ -2205,7 +2350,7 @@ export function renderInspector(c: InspectorCtx): void {
     // only in bench scope — no component selected, which is exactly what selecting the
     // verification tree's root node produces (its selectId is null). Previously they
     // rendered under every selection, which is what made the inspector a wall.
-    if (ctx.state.config && isBenchScope(selNode?.kind)) {
+    if (ctx.state.config && isBenchScope(multi ? "multi" : selNode?.kind)) {
       tbBenchSettings(ctx.state.config);
     }
     ctx.root.append(h("h3", "", "Actions"));

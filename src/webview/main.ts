@@ -25,6 +25,7 @@ import {
   tbDeleteTarget,
   tbRenameTarget,
 } from "./inspector-view";
+import { multiGroups } from "../inspector";
 import { SV_KEYWORDS } from "../heuristics";
 import type { State } from "./state";
 import type { TbNode, TbScene } from "./tbscene";
@@ -4757,6 +4758,26 @@ function paletteItems(): PaletteItem[] {
   // (the same list as the context menu's icon row)
   for (const a of arrangeActions()) {
     add("Arrange", a.label, a.run);
+  }
+  // docs/08 R9 — several agents selected: their role in one step (the panel's
+  // multi-selection editor, as a one-shot action)
+  if (state.mode === "tb") {
+    const selNodes = (currentTbScene?.nodes ?? []).filter((n) =>
+      state.selection.has(n.id)
+    );
+    for (const g of selNodes.length >= 2 ? multiGroups(state.config, selNodes) : []) {
+      const role = g.kind === "agent" ? g.fields.find((f) => f.id === "active") : undefined;
+      if (!role) {
+        continue;
+      }
+      for (const [value, word] of [["false", "passive"], ["true", "active"]] as const) {
+        if (role.value !== value) {
+          add("Selection", `Set ${g.names.length} agents ${word}`, () =>
+            postAction("editAgents", { names: g.names, field: "active", value })
+          );
+        }
+      }
+    }
   }
   for (const b of inspectorButtons()) {
     add(b.group, b.label, b.run);
