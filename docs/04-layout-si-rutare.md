@@ -153,8 +153,10 @@ documentație și materiale didactice). The gesture map: zoom on the wheel,
 lasso** (on the symbol it selects pins — the gesture behind "Agent from
 selection"; on a schematic it selects blocks and flags). The modifiers held
 when the lasso starts choose what it does to the existing selection (docs/08
-R7): none replaces it, **Shift** adds, **Alt** subtracts, **Ctrl** toggles —
-the same thing Ctrl+click does to one element. By default only the objects
+R7): none replaces it, **Shift** adds, **Ctrl** toggles — the same thing
+Ctrl+click does to one element — and **Ctrl+Shift** subtracts (not Alt: Alt
+held alone around a mouse gesture hands the focus to the workbench's menu bar
+on Windows and Linux). By default only the objects
 fully enclosed are picked; `quickuvm.lassoMode: intersect` switches to a
 crossing selection (also what the rectangle touches), and `direction` lets
 the drag choose — left-to-right a window, right-to-left a crossing, drawn
@@ -166,7 +168,9 @@ selection), hover shows a tooltip.
 centre line of the common bounding box, distribute with equal gaps, and
 straighten the wires between the selected blocks — from the icon row of the
 context menu or the action palette's "Arrange" group. All three are positions
-on the grid and nothing else: only the axis an operation works on is snapped,
+on the grid and nothing else: only the axis an operation works on is snapped
+(a centre line is pinned to the largest block sitting on the grid, so aligning
+twice moves nothing the second time; blocks that overlap are not distributed),
 the result is persisted as ONE total `layout/snapshot` (D21) with one
 position-undo entry, like a drag end, and an un-arranged view becomes the
 user's in that one step. Straighten moves a block only vertically, until the

@@ -43,7 +43,7 @@
   "config.lodZoomThreshold": "Factorul de zoom sub care vederea-schemă și vederea de verificare trec la nivelul de detaliu de ansamblu: etichetele pinilor, textul compartimentelor și widgeturile inline se ascund, iar titlurile blocurilor se măresc. 1 = 100%. Cu 0 se desenează mereu detaliul complet.",
   "config.hoverCrossProbe": "Staționarea pe un pin în diagramă evidențiază scurt declarația lui în editoarele deja vizibile (nu deschide tab-uri, nu fură focusul).",
   "config.labelThreshold": "Fan-out peste care un net se afișează ca etichetă, nu ca fir.",
-  "config.lassoMode": "Ce selectează lasso-ul. Modificatorii ținuți la începutul tragerii aleg ce face cu selecția curentă: niciunul o înlocuiește, Shift adaugă, Alt scade, Ctrl comută.",
+  "config.lassoMode": "Ce selectează lasso-ul. Modificatorii ținuți la începutul tragerii aleg ce face cu selecția curentă: niciunul o înlocuiește, Shift adaugă, Ctrl comută, Ctrl+Shift scade.",
   "config.schematicDecorations": "Arată vocabularul de desen al schemei: etichetele de lățime pe buse (/N), slash-urile și punctele de joncțiune. Gradarea grosimii firelor rămâne oricum.",
   "config.lassoMode.contain": "Doar obiectele complet cuprinse în dreptunghi (window selection).",
   "config.lassoMode.intersect": "Și obiectele doar atinse de dreptunghi (crossing selection).",

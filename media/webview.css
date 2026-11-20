@@ -1673,11 +1673,18 @@ text.split-sign {
   transform-origin: center;
   transform: var(--lod-title, none);
 }
+/* the enlarged title covers most of its box: it must not take the press there.
+   At full detail a double-click on the title renames (R14); at the overview
+   level the box's double-click is the DRILL, and the I-beam would lie */
+#canvas[data-lod="low"] .tbnode > .tb-name {
+  pointer-events: none;
+  cursor: inherit;
+}
 
 /* ------------------------- marquee modifiers + arrange row (docs/08 R7) */
 /* a crossing lasso (also what it merely touches) is drawn long-dashed, a
    window (only what it encloses) keeps the base stroke; a subtracting lasso
-   (Alt) takes the error colour, so the rectangle says what the release does */
+   (Ctrl+Shift) takes the error colour, so the rectangle says what the release does */
 .marquee.crossing { stroke-dasharray: 8 4; fill-opacity: 0.14; }
 .marquee.subtract {
   fill: var(--vscode-errorForeground, #f14c4c);

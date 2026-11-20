@@ -511,12 +511,14 @@ export function lassoSetting(cfg: vscode.WorkspaceConfiguration): LassoMode {
   return v === "intersect" || v === "direction" ? v : "contain";
 }
 
-/** docs/08 R6 — `quickuvm.lodZoomThreshold`, clamped to what the webview can
- *  act on (the zoom range is 0.2..5; 0 switches the overview level off). Shared
+/** docs/08 R6 — `quickuvm.lodZoomThreshold`, clamped to 2 (0 switches the
+ *  overview level off). The level is left only above threshold x 1.15 and the
+ *  zoom stops at 5, so a threshold near that cap could be entered and never
+ *  left; nothing above 100 % is a sensible "too small to read" anyway. Shared
  *  by the panel and the per-file editor, so the two read one rule. */
 export function lodThresholdSetting(cfg: vscode.WorkspaceConfiguration): number {
   const v = cfg.get<number>("lodZoomThreshold", 0.5);
-  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.min(v, 5) : 0;
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.min(v, 2) : 0;
 }
 
 /** The HTML of the diagram webview, shared by the panel and the CustomTextEditor. */

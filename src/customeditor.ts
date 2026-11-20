@@ -68,6 +68,54 @@ class DocumentEditTarget implements TbEditTarget {
   }
 }
 
+/**
+ * docs/08 R8 — a `*.quickuvm.yaml` tab REOPENED as text, or as the diagram.
+ *
+ * `vscode.openWith` alone does not replace anything: the text editor and the
+ * custom editor are different inputs for the same resource, so it ADDS a tab
+ * and leaves the other one behind it — the two then toggle, and "Open as
+ * text" reads as "nothing happened" when the text tab already existed (found
+ * at the review, in the VS Code sources). So: open the wanted editor in the
+ * group that shows the other kind, then close that other tab. The document is
+ * shared by both editors, so closing one of them loses nothing and asks
+ * nothing. `line` (1-based) puts the caret there in the text editor.
+ */
+export async function reopenConfigAs(
+  uri: vscode.Uri,
+  as: "text" | "diagram",
+  line?: number | null
+): Promise<void> {
+  const key = uri.toString();
+  const isOther = (t: vscode.Tab): boolean =>
+    as === "text"
+      ? t.input instanceof vscode.TabInputCustom &&
+        t.input.viewType === QuvmConfigEditor.viewType &&
+        t.input.uri.toString() === key
+      : t.input instanceof vscode.TabInputText && t.input.uri.toString() === key;
+  const groups = vscode.window.tabGroups;
+  const group =
+    [groups.activeTabGroup, ...groups.all].find((g) => g.tabs.some(isOther)) ??
+    groups.activeTabGroup;
+  const stale = group.tabs.filter(isOther);
+  await vscode.commands.executeCommand(
+    "vscode.openWith",
+    uri,
+    as === "text" ? "default" : QuvmConfigEditor.viewType,
+    group.viewColumn
+  );
+  if (stale.length) {
+    await groups.close(stale, true);
+  }
+  if (as === "text" && line) {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const at = new vscode.Position(Math.min(line, doc.lineCount) - 1, 0);
+    await vscode.window.showTextDocument(doc, {
+      viewColumn: group.viewColumn,
+      selection: new vscode.Range(at, at),
+    });
+  }
+}
+
 /** docs/08 R4 — the live per-file editors by document uri, so the host can
  *  light a box in them from the YAML caret (`probe/highlight`) the way it does
  *  in the panel; registered at resolve, forgotten at dispose */
@@ -317,14 +365,19 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         case "action/request":
           if (m.action === "openConfigAsText") {
             // docs/08 R8 — THIS tab reopened with the built-in text editor
-            // (the diagram is the default editor; "Reopen Editor With…" is the
-            // same route by hand)
-            void vscode.commands.executeCommand(
-              "vscode.openWith",
+            // (the diagram is the default editor), the caret on the line the
+            // banner named
+            void reopenConfigAs(
               document.uri,
-              "default",
-              webviewPanel.viewColumn
+              "text",
+              quvmParseError(document.getText())?.line
             );
+            break;
+          }
+          if (m.action === "setTop") {
+            // docs/08 R8 — the no-model empty state's button is a host command
+            // wherever the webview runs
+            void vscode.commands.executeCommand("quickuvm.setTop");
             break;
           }
           this.onAction(m.action, m.args, target);

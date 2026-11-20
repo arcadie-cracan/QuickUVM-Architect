@@ -15,7 +15,7 @@ import { postToConfigEditors } from "./customeditor";
 import { YamlLink } from "./yamllink";
 import { elementAtOffset, elementRange, entryText } from "./yamlmap";
 import { DirtyConfigStatus } from "./dirtystatus";
-import { QuvmConfigEditor } from "./customeditor";
+import { QuvmConfigEditor, reopenConfigAs } from "./customeditor";
 import { codeFollowSetting, TraceService } from "./trace-service";
 import { Generator } from "./generate";
 import { resolveLocPath } from "./filelistops";
@@ -457,8 +457,30 @@ export function activate(context: vscode.ExtensionContext): void {
           break;
         case "openConfigAsText":
           // docs/08 R8 — the banner's "Open as text": from the panel, the active
-          // configuration as text beside the diagram
-          void vscode.commands.executeCommand("quickuvm.openConfigBeside");
+          // configuration as text beside the diagram — FOCUSED, with the caret
+          // on the line the banner named (the user is going there to fix it;
+          // `openConfigBeside` keeps the focus on the diagram and, with the
+          // file already open beside, did nothing one could see)
+          void (async () => {
+            const uri = config.configUri;
+            if (!uri) {
+              await vscode.commands.executeCommand("quickuvm.openConfig");
+              return;
+            }
+            const editor = await yamlLink.openBeside(uri);
+            if (!editor) {
+              return;
+            }
+            const line = config.parseError?.line;
+            const at = new vscode.Position(
+              Math.min(line ?? 1, editor.document.lineCount) - 1,
+              0
+            );
+            await vscode.window.showTextDocument(editor.document, {
+              viewColumn: editor.viewColumn,
+              selection: line ? new vscode.Range(at, at) : undefined,
+            });
+          })();
           break;
         case "setTop":
           // docs/08 R8 — the empty state's next action without a design model
@@ -1185,7 +1207,7 @@ export function activate(context: vscode.ExtensionContext): void {
             : undefined;
         const uri = arg instanceof vscode.Uri ? arg : custom;
         if (uri) {
-          await vscode.commands.executeCommand("vscode.openWith", uri, "default");
+          await reopenConfigAs(uri, "text"); // replaces the diagram tab
           return;
         }
         await vscode.commands.executeCommand("quickuvm.openConfigBeside");
@@ -1199,11 +1221,7 @@ export function activate(context: vscode.ExtensionContext): void {
             ? arg
             : vscode.window.activeTextEditor?.document.uri;
         if (uri && /\.quickuvm\.yaml$/i.test(uri.path)) {
-          await vscode.commands.executeCommand(
-            "vscode.openWith",
-            uri,
-            QuvmConfigEditor.viewType
-          );
+          await reopenConfigAs(uri, "diagram"); // replaces the text tab
         } else {
           void vscode.window.showInformationMessage(
             vscode.l10n.t(

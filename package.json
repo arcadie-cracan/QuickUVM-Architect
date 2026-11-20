@@ -480,7 +480,7 @@
           "type": "number",
           "default": 0.5,
           "minimum": 0,
-          "maximum": 5,
+          "maximum": 2,
           "description": "%config.lodZoomThreshold%"
         }
       }

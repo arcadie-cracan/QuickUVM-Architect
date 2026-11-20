@@ -1411,6 +1411,32 @@ test("docs/08 R8: quvmParseError — a top level that is not a mapping is not a 
   assert.ok(ops.quvmParseError(broken));
 });
 
+test("docs/08 R8: quvmParseError — valid YAML whose shape no reader can walk (a bare dash, a non-list)", () => {
+  // a bare "-" typed as the start of a new entry parses — to null
+  const bare = "dut:\n  name: adder\nagents:\n  - name: cmd\n  -\n";
+  assert.deepEqual(ops.quvmParseError(bare), { message: "agents: entry 2 is empty", line: 5 });
+  assert.deepEqual(ops.quvmParseError("agents: foo\n"), { message: "agents must be a list", line: 1 });
+  assert.deepEqual(ops.quvmParseError("agents:\n  name: a\n"), { message: "agents must be a list", line: 2 });
+  assert.deepEqual(
+    ops.quvmParseError("agents:\n  - name: a\nanalysis:\n  scoreboards:\n    - name: s\n      source: a\n    - just text\n"),
+    { message: "analysis.scoreboards: entry 2 is not a mapping (key: value)", line: 7 }
+  );
+  for (const key of ["subenvs", "connections", "probes", "virtual_sequences", "tests"]) {
+    assert.ok(ops.quvmParseError(key + ":\n  -\n"), key + ": a null entry is reported");
+    assert.equal(ops.quvmParseError(key + ": []\n"), null, key + ": an empty list is fine");
+    assert.equal(ops.quvmParseError(key + ":\n"), null, key + ": a key with no value is fine");
+  }
+  // what the generator accepts is NOT reported: a list of names, a mapping section
+  assert.equal(ops.quvmParseError("analysis:\n  coverage: [cmd, rsp]\n"), null);
+  assert.equal(ops.quvmParseError("analysis: {}\n"), null);
+  assert.equal(ops.quvmParseError("analysis:\n"), null);
+  // parseQuvm no longer answers {} for a non-list "connections" (its own catch
+  // swallowed the iteration error and the DUT and agents went with it)
+  const c = ops.parseQuvm("dut:\n  name: adder\nagents:\n  - name: cmd\nconnections: 5\n");
+  assert.equal(c.dut?.name, "adder");
+  assert.equal(c.agents?.length, 1);
+});
+
 test("docs/08 R9: one field folded over several agents is ONE text change, comments kept, no-op byte-identical", () => {
   const y = [
     "# bench",

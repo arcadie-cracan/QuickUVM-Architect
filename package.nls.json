@@ -43,7 +43,7 @@
   "config.lodZoomThreshold": "Zoom factor below which the schematic and verification views switch to the overview level of detail: pin labels, compartment text and inline widgets are hidden and the block titles are enlarged. 1 = 100%. Set to 0 to always draw full detail.",
   "config.hoverCrossProbe": "Hovering a pin in the diagram briefly highlights its declaration in already-visible editors (never opens tabs or steals focus).",
   "config.labelThreshold": "Fan-out above which a net is drawn as a label instead of a wire.",
-  "config.lassoMode": "What the selection lasso picks up. The modifiers held when the drag starts choose what it does to the current selection: none replaces it, Shift adds, Alt subtracts, Ctrl toggles.",
+  "config.lassoMode": "What the selection lasso picks up. The modifiers held when the drag starts choose what it does to the current selection: none replaces it, Shift adds, Ctrl toggles, Ctrl+Shift subtracts.",
   "config.schematicDecorations": "Show the schematic drawing vocabulary: bus width labels (/N), slashes, and junction dots. Wire thickness grading stays either way.",
   "config.lassoMode.contain": "Only objects fully inside the rectangle (window selection).",
   "config.lassoMode.intersect": "Also objects the rectangle merely touches (crossing selection).",

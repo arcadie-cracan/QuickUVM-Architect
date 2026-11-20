@@ -40,14 +40,16 @@ const ids = (s) => [...s].sort().join(",");
 
 // ------------------------------------------------------------- the marquee
 
-test("marquee: plain replaces, Shift adds, Alt subtracts, Ctrl toggles", () => {
+test("marquee: plain replaces, Shift adds, Ctrl toggles, Ctrl+Shift subtracts — Alt is never read", () => {
   assert.equal(marqueeOp({}), "replace");
   assert.equal(marqueeOp({ shift: true }), "add");
-  assert.equal(marqueeOp({ alt: true }), "subtract");
   assert.equal(marqueeOp({ ctrl: true }), "toggle");
-  // several held: the most specific intent wins — Alt, then Shift, then Ctrl
-  assert.equal(marqueeOp({ shift: true, ctrl: true }), "add");
-  assert.equal(marqueeOp({ shift: true, alt: true, ctrl: true }), "subtract");
+  assert.equal(marqueeOp({ shift: true, ctrl: true }), "subtract");
+  // Alt alone around a mouse gesture hands the focus to the workbench menu bar
+  // (Windows/Linux): it must not be a lasso modifier, alone or combined
+  assert.equal(marqueeOp({ alt: true }), "replace");
+  assert.equal(marqueeOp({ alt: true, shift: true }), "add");
+  assert.equal(marqueeOp({ alt: true, ctrl: true }), "toggle");
 });
 
 test("marquee: the result of each operation over a frozen base", () => {
@@ -107,16 +109,57 @@ test("align: one edge of the common bounding box, the other axis untouched", () 
   assert.deepEqual(alignItems([A, B, C], "bottom"), { a: { x: 0, y: 224 }, b: { x: 200, y: 200 } });
 });
 
-test("align: the centre lines, snapped to the grid", () => {
-  // the box is x 0..320 (centre 160), y 0..264 (centre 132)
+test("align: the centre lines, pinned to the largest item on the grid", () => {
+  // the box is x 0..320 (centre 160), y 0..264 (centre 132). The widest item
+  // (b, 120) is put on the grid first: 160 - 60 = 100 -> 104, so the line is
+  // 164, and the others are snapped against THAT line
   assert.deepEqual(alignItems([A, B, C], "hcenter"), {
-    a: { x: 120, y: 0 }, b: { x: 104, y: 96 }, c: { x: 144, y: 240 },
+    a: { x: 128, y: 0 }, b: { x: 104, y: 96 }, c: { x: 144, y: 240 },
   }, "centres on one vertical line");
+  // the tallest (b, 64): 132 - 32 = 100 -> 104, line 136
   const v = alignItems([A, B, C], "vcenter");
-  assert.deepEqual(v, { a: { x: 0, y: 112 }, b: { x: 200, y: 104 }, c: { x: 96, y: 120 } });
+  assert.deepEqual(v, { a: { x: 0, y: 120 }, b: { x: 200, y: 104 }, c: { x: 96, y: 128 } });
   for (const p of Object.values(v)) {
     assert.equal(p.y % 8, 0, "on the grid");
   }
+});
+
+test("align: every operation is idempotent — a second run has nothing to move", () => {
+  // the review's case: heights 104 / 136 / 64, where the raw bounding-box line
+  // moved between two runs and the third block shifted again
+  const reviewCase = [
+    { id: "p", x: 0, y: 136, w: 96, h: 104 },
+    { id: "q", x: 200, y: 64, w: 96, h: 136 },
+    { id: "r", x: 400, y: 352, w: 96, h: 64 },
+  ];
+  const apply = (items, moved) => items.map((i) => (moved[i.id] ? { ...i, ...moved[i.id] } : i));
+  assert.deepEqual(alignItems(apply(reviewCase, alignItems(reviewCase, "vcenter")), "vcenter"), {});
+  // and in general, on-grid boxes of any size: a deterministic pseudo-random sweep
+  let seed = 12345;
+  const rnd = (n) => {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    return seed % n;
+  };
+  for (let round = 0; round < 400; round++) {
+    const items = Array.from({ length: 2 + rnd(5) }, (_, k) => ({
+      id: "n" + k,
+      x: 8 * rnd(100),
+      y: 8 * rnd(100),
+      w: 8 * (2 + rnd(30)),
+      h: 8 * (2 + rnd(30)),
+    }));
+    for (const op of ["left", "right", "top", "bottom", "hcenter", "vcenter"]) {
+      const once = apply(items, alignItems(items, op));
+      assert.deepEqual(alignItems(once, op), {}, op + " twice, round " + round + ": " + JSON.stringify(items));
+    }
+  }
+  // off-grid widths (a flag's measured text) settle in one run too
+  const odd = [
+    { id: "a", x: 0, y: 0, w: 93, h: 16 },
+    { id: "b", x: 300, y: 80, w: 61, h: 16 },
+    { id: "c", x: 120, y: 200, w: 128, h: 104 },
+  ];
+  assert.deepEqual(alignItems(apply(odd, alignItems(odd, "hcenter")), "hcenter"), {});
 });
 
 test("align: returns only what moves; one item aligns to nothing", () => {
@@ -137,6 +180,8 @@ test("distribute: equal gaps between neighbours, the outermost stay", () => {
   assert.deepEqual(distributeItems(items, "h"), {
     m1: { x: 120, y: 8 }, m2: { x: 240, y: 16 },
   }, "y untouched, ends untouched");
+  const spaced = items.map((i) => (i.id === "m1" ? { ...i, x: 120 } : i.id === "m2" ? { ...i, x: 240 } : i));
+  assert.deepEqual(distributeItems(spaced, "h"), {}, "a second run has nothing to move");
   // vertically the same rule on the other axis
   const col = items.map((i) => ({ ...i, x: i.y, y: i.x }));
   assert.deepEqual(distributeItems(col, "v"), {
@@ -156,15 +201,40 @@ test("distribute: needs three; the selection's order does not matter; a spanning
   assert.deepEqual(distributeItems([wide, m, r], "h"), {});
 });
 
-test("distribute: a wide box that starts early but ends last keeps the span", () => {
-  // `w` starts second but ends last: the row is s, m, w — s and w stay
+test("distribute: the last item is the one whose FAR edge is last, not the one that starts last", () => {
+  // `w` starts second but ends last (400); `m` starts last but ends at 160.
+  // The row is s, m, w: s and w stay, m goes between them
+  const s = { id: "s", x: 0, y: 0, w: 40, h: 40 };
+  const w = { id: "w", x: 100, y: 0, w: 300, h: 40 };
+  const m = { id: "m", x: 120, y: 0, w: 40, h: 40 };
+  const out = distributeItems([s, w, m], "h");
+  // span 0..400, sizes 380, gap 10: m at 40 + 10 = 50 -> 48
+  assert.deepEqual(out, { m: { x: 48, y: 0 } }, "the outermost stay");
+});
+
+test("distribute: items that do not fit in the span (they overlap) are left alone", () => {
+  // the review's case: an "equal overlap" pushed the third item past the last
+  // one's far edge — the outermost did not stay outermost, and a second run
+  // moved different items. There is no even spacing to give: nothing moves
+  const col = [
+    { id: "a", x: 0, y: 208, w: 80, h: 112 },
+    { id: "b", x: 0, y: 248, w: 80, h: 176 },
+    { id: "c", x: 0, y: 288, w: 80, h: 152 },
+    { id: "d", x: 0, y: 408, w: 80, h: 56 },
+  ];
+  assert.deepEqual(distributeItems(col, "v"), {});
+  // a wide box over the others is the same refusal
   const s = { id: "s", x: 0, y: 0, w: 40, h: 40 };
   const w = { id: "w", x: 8, y: 0, w: 392, h: 40 };
   const m = { id: "m", x: 16, y: 0, w: 40, h: 40 };
-  const out = distributeItems([s, w, m], "h");
-  assert.ok(!("s" in out) && !("w" in out), "the outermost stay");
-  // span 0..400, sizes 472, gap -36 (overlap, spread evenly): m at 40 - 36 = 4 -> 8
-  assert.deepEqual(out, { m: { x: 8, y: 0 } });
+  assert.deepEqual(distributeItems([s, w, m], "h"), {});
+  // exactly touching (gap 0) is still a distribution
+  const t = [
+    { id: "a", x: 0, y: 0, w: 40, h: 40 },
+    { id: "b", x: 8, y: 0, w: 40, h: 40 },
+    { id: "c", x: 80, y: 0, w: 40, h: 40 },
+  ];
+  assert.deepEqual(distributeItems(t, "h"), { b: { x: 40, y: 0 } });
 });
 
 // ---------------------------------------------------------------- straighten

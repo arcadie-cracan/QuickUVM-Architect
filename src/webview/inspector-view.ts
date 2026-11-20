@@ -1052,6 +1052,17 @@ function tbSection(
   }
 }
 
+/** the option lists the single agent editor and the multi-selection editor
+ *  (docs/08 R9) share — one list, so the two cannot name a value differently */
+const ROLE_OPTIONS = [
+  ["true", "Active (drives + monitors)"],
+  ["false", "Passive (monitors only)"],
+] as const;
+const SEQ_STYLE_OPTIONS = [
+  ["manual", "Manual"],
+  ["field_macros", "Field macros"],
+] as const;
+
 /** A `<select>` bound to one agent field: options `[value, label]`, `cur` preselected. */
 function tbSelect(
   options: readonly (readonly [string, string])[],
@@ -1321,10 +1332,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
           prow(
             "Role",
             tbSelect(
-              [
-                ["true", "Active (drives + monitors)"],
-                ["false", "Passive (monitors only)"],
-              ],
+              ROLE_OPTIONS,
               agent.active === false ? "false" : "true",
               (v) => send("active", v)
             )
@@ -1361,10 +1369,7 @@ function tbAgentEditor(agent: QuvmAgent): void {
           prow(
             "Seq item style",
             tbSelect(
-              [
-                ["manual", "Manual"],
-                ["field_macros", "Field macros"],
-              ],
+              SEQ_STYLE_OPTIONS,
               agent.seq_item_style ?? "manual",
               (v) => send("seq_item_style", v)
             )
@@ -1981,10 +1986,7 @@ function tbMultiEditor(
           row(
             "Role",
             select(
-              [
-                ["true", "Active (drives + monitors)"],
-                ["false", "Passive (monitors only)"],
-              ],
+              ROLE_OPTIONS,
               f.value,
               (v) => send("active", v)
             ),
@@ -1995,10 +1997,7 @@ function tbMultiEditor(
           row(
             "Seq item style",
             select(
-              [
-                ["manual", "Manual"],
-                ["field_macros", "Field macros"],
-              ],
+              SEQ_STYLE_OPTIONS,
               f.value,
               (v) => send("seq_item_style", v)
             ),

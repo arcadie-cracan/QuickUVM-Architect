@@ -397,7 +397,7 @@ export class ConfigService implements vscode.Disposable {
     }
 
     this.current = (ydoc.toJS() as QuvmConfig) ?? {};
-    this.parseError = docParseError(ydoc); // docs/08 R8: the view says "partial"
+    this.parseError = docParseError(ydoc, text); // docs/08 R8: the view says "partial"
     await this.loadChildAgents();
     // the validation core is PURE (configcheck.ts, tested); here we only map
     // findings -> vscode.Diagnostic with the localized messages (D19)

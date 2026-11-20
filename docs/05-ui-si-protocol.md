@@ -435,23 +435,39 @@ mesajele tot aici, la implementare.
   and `titleUpscale` fits a title to its box; the fit is measured once per
   render and per switch to the overview, never per pan/zoom frame, and applied
   by CSS through a `--lod-title` variable on the title. The threshold travels
-  on `ui/config.lodThreshold`. The symbol view is exempt (it is nothing but
+  on `ui/config.lodThreshold` (the setting is capped at 2: the level is left
+  only above threshold x 1.15 and the zoom stops at 5). The hysteresis is PER
+  VIEW — a view entered fresh decides from the threshold alone, whatever level
+  the previous view was at. Whatever is MEASURED from the DOM depends on the
+  level (a hidden label is outside a box's bounds), so a level change re-places
+  the status / generation badges and re-centres the chip signs. At the
+  overview level the enlarged title takes no pointer events: it covers most of
+  its box, and a double-click there must stay the DRILL, not the in-place
+  rename (F2 still renames). The symbol view is exempt (it is nothing but
   its pin labels, and it always fits the window). A selected or cross-probed
   pin and a selected net label keep their text. The SVG export always carries
   full detail: the bounds are taken with the level lifted, and the export
   clone has no canvas id, so no `#canvas[data-lod]` rule reaches it.
 - **Marquee modifiers and arrangement** (docs/08 R7, Nov 2026): the lasso's
   modifiers are read at the press — none replaces the selection, **Shift**
-  adds, **Alt** subtracts, **Ctrl** toggles (unchanged: it is what Ctrl+click
-  does to one element, and one modifier must not mean two things; the row's
-  "Ctrl subtracts" became Alt, the Blueprints set). `quickuvm.lassoMode` gains
+  adds, **Ctrl** toggles (unchanged: it is what Ctrl+click does to one
+  element, and one modifier must not mean two things), **Ctrl+Shift**
+  subtracts. The row's "Ctrl subtracts" did not become Alt: a webview forwards
+  its key events to the workbench, where Alt pressed and released around a
+  mouse-only gesture reads as "Alt alone" and focuses the menu bar on Windows
+  and Linux (found at the review, in the VS Code sources — not run; Alt is
+  ignored by the lasso). `quickuvm.lassoMode` gains
   a third value, `direction`: dragged left-to-right the rectangle is a window
   (only what it fully encloses), right-to-left a crossing (also what it
   touches) — the CAD convention; a crossing rectangle is drawn long-dashed, a
   subtracting one in the error colour. A multi-selection of blocks and flags
   can be ARRANGED: align on the left / right / top / bottom edge or on a
-  centre line of the common bounding box, distribute with equal gaps (three or
-  more; the two outermost stay), and straighten the wires — each block wired
+  centre line of the common bounding box (the line is pinned to the largest
+  block sitting on the grid, so the operation is idempotent — a raw
+  bounding-box centre moved when the snapped result was measured again),
+  distribute with equal gaps (three or more; the two outermost stay; blocks
+  that overlap, which have no even spacing, are left alone), and straighten
+  the wires — each block wired
   to an already-placed one is moved vertically until the two pin centres are
   level, starting from the block the menu was opened on (from the palette: the
   leftmost of each wired group). Straighten never stacks blocks: a move that
@@ -481,7 +497,9 @@ mesajele tot aici, la implementare.
   of that scoreboard; set in bulk they would leave configurations the
   generator refuses and no validation finding reports. `multiGroups` is pure
   (`test:inspector`); the action palette offers "Set N agents passive /
-  active" as one-shot rows.
+  active" as one-shot rows. The Properties sidebar mirrors the PANEL's
+  selection and the active configuration, so in a per-file editor the
+  multi-selection edit is reached through those palette rows.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
@@ -666,16 +684,30 @@ file the diagram cannot draw needs a one-step route to its text.
   echoes), without the parser's own "at line N, column M" tail, or "the top
   level must be a mapping" for a file that is a list or a scalar
   (`quvmParseError` / `docParseError` in `src/yamlops.ts`, pure,
-  `test:yamlops`). `config` still carries what could be read, and the view
+  `test:yamlops`). The same field reports valid YAML whose SHAPE no reader of
+  a config can walk: a section that must be a list of mappings (`agents`,
+  `subenvs`, `connections`, `probes`, `virtual_sequences`, `tests`,
+  `analysis.scoreboards`) that is not a list, or an entry that is not a
+  mapping — a bare `-` typed as the start of a new entry parses, to `null`
+  ("agents: entry 2 is empty", with its line). Behind it the view has a wall
+  of its own: a scene builder that throws is caught, the canvas is cleared and
+  the banner says the file has an entry the diagram cannot read — before, the
+  PREVIOUS diagram stayed on screen with no banner and gestures acted on boxes
+  the file no longer had. `config` still carries what could be read, and the view
   draws it; the banner says that the diagram is partial ("the diagram shows
   only what could be read"), or that nothing could be drawn, names the line,
   and offers **Open as text**. A file that does not parse is never presented
   as "empty".
-- **Open as text** (`openConfigAsText`): from the per-file editor the SAME tab
-  is reopened with the built-in text editor (`vscode.openWith(uri,
-  "default")`, the KIE fallback); from the panel the active configuration
-  opens as text beside the diagram. The commands `quickuvm.openConfigAsText`
-  and `quickuvm.openConfigAsDiagram` do the same from the palette, each with a
+- **Open as text** (`openConfigAsText`): from the per-file editor the tab is
+  REPLACED by the built-in text editor, the caret on the line the banner
+  named. `vscode.openWith(uri, "default")` alone only ADDS a text tab next to
+  the diagram tab (two inputs for one resource — the tabs then toggle), so
+  `reopenConfigAs` (`src/customeditor.ts`) opens the wanted editor in the
+  group that shows the other kind and closes that other tab; the document is
+  shared, so nothing is lost and nothing is asked. From the panel the active
+  configuration opens as text beside the diagram, focused, on the error's
+  line. The commands `quickuvm.openConfigAsText` and
+  `quickuvm.openConfigAsDiagram` do the same from the palette, each with a
   button in the editor title, so the route works both ways. The
   layout-failure banner offers the text editor too.
 - **Empty states name the next action** and offer it as a button: no design
@@ -683,8 +715,11 @@ file the diagram cannot draw needs a one-step route to its text.
   configuration exists (it needs no RTL); the verification view without a
   configuration → "Open the design views" (where "Set as DUT" creates one); a
   configuration that declares no DUT, agent or composed block → "Open the
-  design views" (with a model) and "Open as text". The text shown before the
-  webview's first render is the host's localized placeholder; the states
-  themselves are English, like the rest of the webview (D19).
+  design views" (with a model) and "Open as text". The no-model state waits
+  1.5 s after the webview starts (every open passes through "no model yet",
+  and the state flashed on each of them) and is re-rendered on `config/full`,
+  which is posted after the `overlay/config` that first renders it. Until
+  then the host's localized placeholder is shown; the states themselves are
+  English, like the rest of the webview (D19).
 - A verification-view banner does not follow into the design views (a YAML
   error says nothing about the RTL); `model/stale` is the design views' own.

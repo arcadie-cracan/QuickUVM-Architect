@@ -118,10 +118,11 @@ npm run test:router      # ruterul A* pe grila + obstacolele din etichetele pini
 npm run test:minimap     # matematica minimapului (incadrare, U = M ∘ V⁻¹, salt)
 npm run test:locmap      # cross-probing editor->diagrama: loc->tinta + tinta->id-uri
 npm run test:status      # decoratiile de stare: findings->decoratii + decoratii->id-uri
-npm run test:navfind     # keyboard navigation (docs/08 R5): view history, Ctrl+F ranking, up-level, fit bounds
+npm run test:navfind     # keyboard navigation (docs/08 R5): view history, Ctrl+F ranking, up-level, fit bounds; level of detail (R6): hysteresis, title fit
 npm run test:textedit    # the MINIMAL edit between two YAML texts + the span to highlight (docs/08 R4)
 npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (docs/08 R4)
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
+npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
 npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
 npm run test:preview     # the diff preview (docs/08 R19): the +/- line summary of a gesture, the files that change
 npm run test:trace       # diagram <-> generated code (docs/08 R20): file owner, identifier pattern, lit lines, lenses, report
@@ -822,6 +823,134 @@ coliziunea de nume.
   resolve). `trace` is constructed BEFORE the `genState.onDidChange` closure
   that references it (a TDZ otherwise).
 
+- **Level of detail on zoom (docs/08 R6)**: the level is ONE attribute,
+  `data-lod` on the root `<svg>`, and every rule sits behind
+  `#canvas[data-lod="low"]` — the id is load-bearing: `exportSvg` clones the
+  canvas WITHOUT its id, so no rule reaches the clone, and it takes
+  `viewport.getBBox()` with the attribute lifted (the bounds ignore
+  `display: none` text, so an export at the overview level would be cropped to
+  the boxes). The enlarged title is a CSS transform read from a `--lod-title`
+  variable on the title, applied only under the low level — a `transform`
+  attribute would enlarge it at full detail too. The fit (`applyLodTitles`) is
+  measured once per DOM and per switch (`lodTitlesDirty`, set by `resetCanvas`
+  and by a level change), never per frame from `applyTransform`; `getBBox` on
+  the title excludes its own transform, so re-measuring a fitted title is
+  stable. A hover preview's boxes have no `data-id` and are skipped. The
+  symbol view is exempt (`updateLod` forces `full` there — do not key the
+  level on `state.k` alone). The hysteresis lives in `lodFor`; a threshold of
+  0 / NaN means off and must also LEAVE the overview (a setting change while
+  zoomed out — locked in `test:navfind`). What is hidden is text nobody can
+  read; badges, junctions, flags and a SELECTED pin's label stay — the diagram
+  never hides a problem, and the selection says which pin was asked about.
+  From the adversarial review: the enlarged `.tb-name` takes NO pointer events
+  at the overview level (it takes them for R14's double-click rename, and
+  scaled 3x it covered a third of its box — a double-click on the box renamed
+  instead of drilling, with an I-beam cursor); the hysteresis is PER VIEW
+  (`lodKey`: a view entered fresh passes `"full"`, or a zoom inside the band
+  drew either level depending on the view visited before); everything
+  MEASURED from the DOM depends on the level — `applyStatusBadges` /
+  `applyGenBadges` place from a group's `getBBox()` (the hidden port labels
+  are outside the box) and `centerChipSigns` measures glyphs that are
+  `display: none` at the overview — so `updateLod` redoes all three on a
+  change; the setting is capped at 2 (left only above threshold x 1.15, the
+  zoom stops at 5: a threshold near the cap could never be left).
+- **Marquee modifiers and arrangement (docs/08 R7)**: the lasso's operation is
+  frozen at the press together with `base` (`marqueeOp`): plain replaces,
+  Shift adds, Ctrl TOGGLES, Ctrl+Shift subtracts — Ctrl stays what Ctrl+click
+  is; do not make it "subtract" (the row's wording). And NOT Alt: a webview
+  forwards its key events to the workbench, whose `ModifierKeyEmitter` clears
+  "Alt alone" only on a mousedown in ITS document — Alt down, a drag inside
+  the iframe, Alt up reads as a lone Alt and focuses the menu bar on
+  Windows/Linux (`window.customMenuBarAltFocus`), blurring the webview. Read
+  in the VS Code bundle at the review, never run; Alt+arrows (R5) is safe, the
+  arrow keydown resets the emitter. No new mouse-only gesture on Alt. `lassoMode: direction` reads the
+  drag's `dx` per frame, so the rectangle's class (`crossing`) and the rule
+  flip together when the pointer crosses the press point. `alignItems` snaps
+  ONLY the axis it works on — the first cut snapped both and moved an
+  off-grid item on the axis the user did not ask about (caught by the suite).
+  A centre line is pinned to the LARGEST item on the grid (`centreLine`), not
+  taken raw from the bounding box: every item is snapped on its own, so the
+  raw line moved once the result was measured again and a second "align
+  centres" shifted a third of random layouts (review; the 400-round sweep in
+  `test:arrange` locks idempotence for all six operations).
+  `distributeItems` takes the LAST item by its far edge, not by position (a
+  wide box that starts early), a box spanning all the others is a no-op, and
+  items that do not fit in the span (a negative gap) are left alone — an
+  "equal overlap" pushed a middle item past the last one's far edge.
+  `pinCenterY` must agree with the routers' anchors (the TB view calls
+  `anchor()` itself; in RTL an end without a port is a wire only on a boundary
+  flag), or "straighten" is offered for a link that is not drawn.
+  `straightenItems` refuses a move that would land on another box, with one
+  grid step of air, checking against everything where it stands at that moment
+  (the items already moved AND `others`, every rect of the view): found in the
+  harness, where two agents in one column feeding one scoreboard were stacked
+  on top of each other — their target pins are one pin pitch apart, the boxes
+  far taller, so both wires cannot be straight. `applyArrange` is
+  `nudgeSelection`'s path: `capturePositions` (total) merged with the changes
+  → one undo entry + ONE total `layout/snapshot` (D21); an empty change set
+  posts nothing, pushes no undo entry, and says so in a toast (a gesture that
+  does nothing silently reads as a broken button). The context menu's icon row
+  and the palette's "Arrange" group are both `arrangeActions` — one list.
+- **Invalid configuration and empty states (docs/08 R8)**: `parseQuvm` never
+  throws and returns whatever could be read, so a file that does not parse
+  used to look like an empty or partial bench under "use Set as DUT first".
+  The reason travels separately, on `config/full.parseError` (`docParseError`
+  on the document ConfigService already parsed, `quvmParseError` on a text) —
+  the FIRST parser error only, its "at line N, column M" tail cut (the line is
+  a field), plus "the top level must be a mapping" for a list or a scalar. An
+  EMPTY file is not an error. It also reports a SHAPE no reader can walk
+  (`shapeError`, the sections of `MAPPING_LISTS`): valid YAML is not enough —
+  a bare `-` typed as the start of a new entry parses to `null`, `agents: foo`
+  to a string — and `buildTbScene`, the inspector and `multiGroups` all
+  dereference the entries. A throw in `renderTb` used to leave the PREVIOUS
+  diagram on screen with no banner (review, reproduced in the harness), so
+  the scene builder is called in a try/catch that clears the canvas, the two
+  inspector renders are guarded, and `parseQuvm` walks `connections` only when
+  it is a list (`connections: 5` threw into its own catch and answered `{}` —
+  a file with a DUT and agents read as empty). `analysis.coverage` is a list
+  of NAMES: never add it to `MAPPING_LISTS`. The banner belongs to a view family
+  (`bannerIsTb`): the RTL render hides a TB banner on the way in, and
+  `model/stale` stays the design views' own. `showEmpty` replaces `#empty`'s
+  children (the host's localized text is only the pre-render placeholder);
+  `exportSvg` still gates on `!empty.hidden`, so every path that shows the
+  empty state must be undone by `empty.hidden = true` on the next good render.
+  `#empty` is `position: absolute; inset: … 0` — it needs `box-sizing:
+  border-box` once it has padding, or the page scrolls horizontally (seen in
+  the harness). "Open as text" must REPLACE the tab: `vscode.openWith(uri,
+  "default")` only adds a text tab beside the diagram tab (a text input never
+  matches a custom editor input; read in the VS Code sources at the review),
+  so `reopenConfigAs` opens the wanted editor in the group showing the other
+  kind and closes that tab through `tabGroups.close` — both ways, or the two
+  tabs toggle. From the panel the text opens beside FOCUSED on the error's
+  line (`openConfigBeside` keeps the focus on the diagram and, with the file
+  already beside, did nothing one could see). The `editor/title` buttons are
+  gated on `activeCustomEditorId`. The no-model empty state waits
+  `EMPTY_GRACE_MS` after the webview starts (every open passes through "no
+  model yet") and re-renders on `config/full`, which arrives after the
+  `overlay/config` that first renders it.
+- **Multi-selection editing (docs/08 R9)**: `MULTI_FIELDS` (`src/inspector.ts`)
+  is the contract on BOTH sides — `multiGroups` offers only those fields and
+  the host's `editAgents` / `editScoreboards` refuse any other, and re-filter
+  the names against the live config (no VIP reference, no scoreboard name that
+  is not unique). Do not add `mode` or `match`: `mode: responder` needs a
+  per-agent `request_valid`, `match: out_of_order` a per-scoreboard
+  `match_key`, and `checkConfig` has no finding for either gap. The compared
+  value is the EFFECTIVE one (declared ?? schema default), or an undeclared
+  `active` next to a hand-written `active: true` reads as "mixed". The edit is
+  the single edit's mutation folded over the names inside ONE `cfg.apply` (one
+  WorkspaceEdit, one undo step) — `agentFieldOp` / `scoreboardFieldOp` are the
+  one field rule for both paths; the fold must return the SAME text when every
+  component already has the value (the no-op invariant, `test:yamlops`). With
+  two or more selected the panel's `selNode` is undefined: the single editor,
+  the boundary section and the bench sections (`isBenchScope("multi")`) are
+  all off. A number input reads `""` for text the browser cannot parse — check
+  `validity.badInput` before treating `""` as a reset (the single scoreboard
+  editor's latency field deleted the key on a typo; fixed with the multi one).
+  The Role / Seq-item-style option lists are shared constants
+  (`ROLE_OPTIONS`, `SEQ_STYLE_OPTIONS`). The sidebar mirrors the PANEL's
+  selection, so a per-file editor reaches the multi edit only through the
+  palette rows.
+
 
 ## Faza curentă
 
@@ -1136,4 +1265,13 @@ editors, `quickuvm.codeFollowsSelection` docks its primary file beside, a
 CodeLens per generated file leads back to the verification view (inferred
 elements flagged), `quickuvm.traceabilityReport`; `src/trace.ts` +
 `test:trace`, `src/trace-service.ts`.
+**Sprint R6–R9 (docs/08) is implemented** (Nov 2026): level of detail on zoom
+(`lodFor` / `titleUpscale` in `test:navfind`, `quickuvm.lodZoomThreshold`),
+marquee modifiers + align / distribute / straighten (`src/webview/arrange.ts`,
+`test:arrange`, `quickuvm.lassoMode: direction`), the invalid-config banner
+with "Open as text" and the empty states that name the next action
+(`quvmParseError` in `test:yamlops`, `config/full.parseError`,
+`quickuvm.openConfigAsText` / `openConfigAsDiagram`), multi-selection editing
+in the inspector (`multiGroups` in `test:inspector`, the `editAgents` /
+`editScoreboards` actions). R1–R20 of docs/08 are shipped; R21–R25 are open.
 Planul complet: `docs/06-plan-mvp.md`.

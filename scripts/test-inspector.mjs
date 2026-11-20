@@ -357,6 +357,21 @@ test("R9: scoreboards share max_latency; an unset one makes it mixed, a duplicat
   );
 });
 
+test("R9: a config with a null list entry or a non-list section does not throw", () => {
+  const holes = {
+    agents: [{ name: "cmd" }, null, { name: "rsp" }],
+    analysis: { scoreboards: [null, { name: "x", source: "cmd" }, { name: "y", source: "cmd" }] },
+  };
+  const g = multiGroups(holes, [
+    node("agent:cmd", "tbagent", "cmd"), node("agent:rsp", "tbagent", "rsp"),
+    node("sb:x", "tbsb", "x"), node("sb:y", "tbsb", "y"),
+  ]);
+  assert.deepEqual(g.map((x) => x.names), [["cmd", "rsp"], ["x", "y"]]);
+  assert.deepEqual(multiGroups({ agents: "foo", analysis: { scoreboards: 5 } }, [
+    node("agent:cmd", "tbagent", "cmd"), node("agent:rsp", "tbagent", "rsp"),
+  ]), []);
+});
+
 test("R9: a mixed-kind selection gives one group per kind that has two", () => {
   const g = multiGroups(MCFG, [
     node("agent:cmd", "tbagent", "cmd"),

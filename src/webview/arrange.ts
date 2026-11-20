@@ -19,19 +19,19 @@
 export type MarqueeOp = "replace" | "add" | "subtract" | "toggle";
 
 /**
- * The lasso's operation from the modifiers held at the press — the Blueprints
- * set: plain = replace, Shift = add, Alt = subtract, Ctrl/Cmd = toggle.
+ * The lasso's operation from the modifiers held at the press: plain = replace,
+ * Shift = add, Ctrl/Cmd = toggle, Ctrl+Shift = subtract.
  *
  * Ctrl TOGGLES (it does not subtract) because Ctrl+click already toggles one
- * element, and one modifier must not mean two things. Subtract is Alt. With
- * several held, the most specific intent wins: Alt, then Shift, then Ctrl.
+ * element, and one modifier must not mean two things. Subtract is the two
+ * together — NOT Alt: a webview forwards its key events to the workbench, and
+ * on Windows/Linux Alt pressed and released around a mouse-only gesture reads
+ * there as "Alt alone", which hands the keyboard focus to the menu bar (the
+ * workbench clears that state on a mousedown in ITS document, which a drag
+ * inside the webview's iframe never produces). Alt is ignored here.
  */
-export function marqueeOp(mods: {
-  shift?: boolean;
-  ctrl?: boolean;
-  alt?: boolean;
-}): MarqueeOp {
-  if (mods.alt) {
+export function marqueeOp(mods: { shift?: boolean; ctrl?: boolean }): MarqueeOp {
+  if (mods.shift && mods.ctrl) {
     return "subtract";
   }
   if (mods.shift) {
@@ -143,6 +143,13 @@ const snap = (v: number, grid: number): number => Math.round(v / grid) * grid;
  * the other axis is untouched. `hcenter` puts the centres on one VERTICAL line
  * (same x centre), `vcenter` on one HORIZONTAL line. Returns only the items
  * that move; fewer than two items align to nothing.
+ *
+ * The centre line is pinned to the LARGEST item (along that axis) sitting on
+ * the grid, not taken raw from the bounding box: each item is snapped on its
+ * own, so a raw line moved when the snapped result was measured again, and a
+ * second "align centres" shifted blocks the first one had just placed (two
+ * undo entries where "already aligned" was the answer). Aligned once, the
+ * largest item IS the bounding box, so the same line comes back.
  */
 export function alignItems(
   items: readonly ArrangeItem[],
@@ -157,6 +164,15 @@ export function alignItems(
   const maxX = Math.max(...items.map((i) => i.x + i.w));
   const minY = Math.min(...items.map((i) => i.y));
   const maxY = Math.max(...items.map((i) => i.y + i.h));
+  /** the centre line through `mid`, with the largest item (size) on the grid */
+  const centreLine = (mid: number, size: (i: ArrangeItem) => number): number => {
+    const big = items.reduce((m, i) =>
+      size(i) > size(m) || (size(i) === size(m) && i.id < m.id) ? i : m
+    );
+    return snap(mid - size(big) / 2, grid) + size(big) / 2;
+  };
+  const lineX = centreLine((minX + maxX) / 2, (i) => i.w);
+  const lineY = centreLine((minY + maxY) / 2, (i) => i.h);
   for (const it of items) {
     // only the axis the operation works on is snapped: the other one is the
     // user's, exactly as it is
@@ -176,10 +192,10 @@ export function alignItems(
         y = snap(maxY - it.h, grid);
         break;
       case "hcenter":
-        x = snap((minX + maxX) / 2 - it.w / 2, grid);
+        x = snap(lineX - it.w / 2, grid);
         break;
       case "vcenter":
-        y = snap((minY + maxY) / 2 - it.h / 2, grid);
+        y = snap(lineY - it.h / 2, grid);
         break;
     }
     if (x !== it.x || y !== it.y) {
@@ -192,8 +208,12 @@ export function alignItems(
 /**
  * Distributes the items along one axis with EQUAL GAPS between neighbours: the
  * two outermost stay where they are, the ones between are spaced out. Needs
- * three items (two have nothing between them). Overlapping items get an equal
- * (negative) gap rather than a refusal. The other axis is untouched.
+ * three items (two have nothing between them). The other axis is untouched.
+ *
+ * Items that do not FIT in the span (they overlap: the gap would be negative)
+ * are left alone. An "equal overlap" moved a middle item past the last one's
+ * far edge, so the outermost did not stay outermost, the span grew, and a
+ * second run moved different items — there is no even spacing to give them.
  */
 export function distributeItems(
   items: readonly ArrangeItem[],
@@ -222,6 +242,9 @@ export function distributeItems(
   const span = pos(last) + size(last) - pos(first);
   const total = row.reduce((s, i) => s + size(i), 0);
   const gap = (span - total) / (row.length - 1);
+  if (gap < 0) {
+    return out; // the items overlap: nothing to space out
+  }
   let cursor = pos(first);
   for (let k = 0; k < row.length; k++) {
     const it = row[k];

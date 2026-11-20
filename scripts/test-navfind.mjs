@@ -192,6 +192,14 @@ test("docs/08 R6: the level of detail drops below the threshold and returns only
   assert.equal(changes, 2, "one drop, one return — no flicker in between");
 });
 
+test("docs/08 R6: a view entered fresh (previous level 'full') decides from the threshold alone", () => {
+  // the hysteresis is per view: main.ts passes "full" for a view it has not
+  // decided yet, so the band never carries over from another view
+  assert.equal(lodFor(0.55, "full", 0.5), "full", "inside the band, fresh: full detail");
+  assert.equal(lodFor(0.55, "low", 0.5), "low", "inside the band, came from below: the overview");
+  assert.equal(lodFor(0.45, "full", 0.5), "low");
+});
+
 test("docs/08 R6: a threshold of 0 (or a non-number) switches the overview level off", () => {
   for (const t of [0, -1, NaN, Infinity, undefined]) {
     assert.equal(lodFor(0.2, "full", t), "full", `threshold ${t}`);

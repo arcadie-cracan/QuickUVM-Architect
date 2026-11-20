@@ -289,7 +289,13 @@ function renderInspectorHere(): void {
   if (!inspector) {
     return;
   }
-  renderInspectorInto(inspectorCtx(inspector));
+  try {
+    renderInspectorInto(inspectorCtx(inspector));
+  } catch {
+    // a config whose shape cannot be read (docs/08 R8): the banner says why;
+    // a half-built aside must not take the render down with it
+    inspector.replaceChildren();
+  }
   // With the config editors on the sidebar, the aside is often empty (a TB view with
   // nothing selected). An empty 250px column is exactly the space the diagram wanted
   // back, so it collapses rather than sitting there blank.
@@ -488,6 +494,11 @@ window.addEventListener("message", (e: MessageEvent) => {
           postSelection();
           persistState();
         }
+        void render();
+      } else if (!state.model) {
+        // the no-model empty state offers the verification view only when a
+        // configuration has something to draw: it must follow THIS message
+        // (overlay/config, which renders, is posted before it)
         void render();
       }
       break;
@@ -1237,16 +1248,36 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
 // when the level changes. The symbol view is exempt: it is nothing BUT its pin
 // labels, and it always fits the window.
 let lod: Lod = "full";
+/** the layout key `lod` was decided for: the hysteresis is PER VIEW */
+let lodKey: string | undefined;
 /** the titles of the current DOM have not been fitted to their boxes yet */
 let lodTitlesDirty = true;
 
 function updateLod(): void {
+  // the hysteresis band remembers which side the zoom came from — in THIS
+  // view. Carried over from another view, a zoom inside the band drew the
+  // overview or full detail depending on where the user had been before
+  const key = layoutKey();
+  const prev: Lod = key === lodKey ? lod : "full";
+  lodKey = key;
   const next: Lod =
-    state.mode === "symbol" ? "full" : lodFor(state.k, lod, uiConfig.lodThreshold);
-  if (next !== lod || canvas.getAttribute("data-lod") !== next) {
+    state.mode === "symbol" ? "full" : lodFor(state.k, prev, uiConfig.lodThreshold);
+  const flipped = canvas.getAttribute("data-lod") !== next;
+  if (next !== lod || flipped) {
     lod = next;
     canvas.setAttribute("data-lod", next);
     lodTitlesDirty = true;
+  }
+  if (flipped && viewport?.hasChildNodes()) {
+    // what is MEASURED from the DOM depends on the level (a hidden label is
+    // not in a box's bounds, a hidden glyph measures zero): redo it on a
+    // change, or the badges sit beside their boxes and the chip signs stay
+    // off-centre until the next render
+    applyStatusBadges();
+    applyGenBadges();
+    if (state.mode === "schematic") {
+      centerChipSigns(canvas);
+    }
   }
   if (lod === "low" && lodTitlesDirty) {
     applyLodTitles();
@@ -2024,7 +2055,9 @@ canvas.addEventListener("dblclick", (e) => {
     const titled = titleBox?.dataset.id
       ? currentTbScene?.nodes.find((n) => n.id === titleBox.dataset.id)
       : undefined;
-    if (titled && tbRenameTarget(titled)) {
+    // not at the overview level: the enlarged title covers most of its box
+    // there, and the box's double-click is the drill (F2 still renames)
+    if (lod !== "low" && titled && tbRenameTarget(titled)) {
       startRename(titled.id);
       return;
     }
@@ -2148,8 +2181,8 @@ let suppressClick = false;
 // lasso: a selection rectangle started with a left-click on the background (docs/04);
 // on the symbol it selects pins (the gesture for "Agent from selection"), on the
 // schematic it selects blocks and flags. The modifiers held at the press choose
-// what it does to the selection it started from (docs/08 R7, the Blueprints
-// set): plain = replace, Shift = add, Alt = subtract, Ctrl = toggle
+// what it does to the selection it started from (docs/08 R7): plain = replace,
+// Shift = add, Ctrl = toggle, Ctrl+Shift = subtract (never Alt — see marqueeOp)
 interface Marquee {
   x0: number; // pointer, screen px
   y0: number;
@@ -3754,11 +3787,7 @@ canvas.addEventListener("pointerdown", (e) => {
   // the middle button
   const onElement = (e.target as Element).closest("[data-id]");
   if (e.button === 0 && !onElement) {
-    const op = marqueeOp({
-      shift: e.shiftKey,
-      ctrl: e.ctrlKey || e.metaKey,
-      alt: e.altKey,
-    });
+    const op = marqueeOp({ shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
     marquee = {
       x0: e.clientX,
       y0: e.clientY,
@@ -3870,8 +3899,8 @@ canvas.addEventListener("pointermove", (e) => {
     //
     // Ctrl TOGGLES, it does not merely add: an enclosed element already in the base
     // is removed. That is what Ctrl+click already does (`selection.delete(id)` or
-    // add), and one modifier must not mean two things. Shift only adds, Alt only
-    // subtracts (docs/08 R7).
+    // add), and one modifier must not mean two things. Shift only adds,
+    // Ctrl+Shift only subtracts (docs/08 R7).
     //
     // `base` is frozen for the whole drag, so this is stable while the pointer moves:
     // sweeping OVER an already-selected element removes it, sweeping back OFF restores
@@ -4364,24 +4393,28 @@ function arrangeSelection(): ArrangeItem[] {
 }
 
 /** the y of a pin's centre relative to its node's origin — where a wire meets
- *  the block (a flag has one anchor, at mid-height); null for an unknown end */
+ *  the block; null for an end the ROUTER draws no wire to. It must agree with
+ *  the routers' own anchors, or "straighten" is offered (and moves a block)
+ *  for a link that is not on screen: the TB view asks `anchor` itself; in RTL
+ *  an end without a port is a wire only on a boundary flag (`routeEdges`). */
 function pinCenterY(nodeId: string, portId: string | null): number | null {
   if (state.mode === "tb") {
-    if (currentTbLayout?.boundary.has(nodeId)) {
-      return 8; // BPORT_H / 2
-    }
-    const n = currentTbLayout?.nodes.get(nodeId);
-    if (!n) {
+    if (!currentTbLayout) {
       return null;
     }
-    return portId ? n.ports.get(portId)?.y ?? null : n.h / 2;
+    const a = anchor(currentTbLayout, nodeId, portId);
+    const origin =
+      currentTbLayout.nodes.get(nodeId) ?? currentTbLayout.boundary.get(nodeId);
+    return a && origin ? a.y - origin.y : null;
   }
   const c = currentLayout?.children?.find((k) => k.id === nodeId);
   if (!c) {
     return null;
   }
   if (!portId) {
-    return (c.height ?? 0) / 2;
+    return currentScene?.boundary.some((b) => b.id === nodeId)
+      ? (c.height ?? 0) / 2
+      : null;
   }
   const port = (c.ports ?? []).find((p) => p.id === portId);
   return port ? (port.y ?? 0) + (port.height ?? 0) / 2 : null;
@@ -4486,7 +4519,7 @@ function arrangeActions(anchor: string | null = null): ArrangeAction[] {
         run: () =>
           applyArrange(
             distributeItems(arrangeSelection(), "h", GRID),
-            "Already evenly spaced"
+            "Nothing moved: already evenly spaced, or the blocks overlap"
           ),
       },
       {
@@ -4495,7 +4528,7 @@ function arrangeActions(anchor: string | null = null): ArrangeAction[] {
         run: () =>
           applyArrange(
             distributeItems(arrangeSelection(), "v", GRID),
-            "Already evenly spaced"
+            "Nothing moved: already evenly spaced, or the blocks overlap"
           ),
       }
     );
@@ -5544,6 +5577,12 @@ function showBanner(text: string, actions: NextAction[] = [], tb = false): void 
   bannerIsTb = tb;
 }
 
+/** the no-model empty state waits this long after the webview starts: the
+ *  model and the first view arrive within it on a normal open */
+const EMPTY_GRACE_MS = 1500;
+const bootAt = performance.now();
+let emptyTimer: ReturnType<typeof setTimeout> | undefined;
+
 /** docs/08 R8 — the empty state names the NEXT ACTION (and offers it as a
  *  button) instead of only saying that there is nothing here */
 function showEmpty(title: string, hint: string, actions: NextAction[] = []): void {
@@ -5568,7 +5607,7 @@ function configErrorText(tail: string): string {
   if (!e) {
     return "";
   }
-  return `The configuration is not valid YAML${
+  return `The configuration cannot be read${
     e.line ? ` (line ${e.line})` : ""
   }: ${e.message} — ${tail}`;
 }
@@ -5593,11 +5632,27 @@ async function render(refit = false): Promise<void> {
   }
   if (!state.model || !state.viewId) {
     // docs/08 R8 — no design model: the next action is the top module (or, with
-    // a configuration already there, the verification view, which needs no RTL)
+    // a configuration already there, the verification view, which needs no RTL).
+    // Not in the first moments: every open passes through here before its
+    // model / view arrives, and a "set the top module" flashed on each of them
+    // (the host's placeholder stays up until the grace period is over)
+    const wait = EMPTY_GRACE_MS - (performance.now() - bootAt);
+    if (wait > 0) {
+      empty.hidden = false;
+      clearTimeout(emptyTimer);
+      emptyTimer = setTimeout(() => {
+        if (state.mode !== "tb" && (!state.model || !state.viewId)) {
+          void render();
+        }
+      }, wait + 20);
+      renderInspectorHere();
+      return;
+    }
     showEmpty(
       "No design to show yet",
-      "Set the top module to elaborate the design. If it is set, the " +
-        '"QuickUVM Architect" output channel says why the elaboration failed.',
+      "The design appears here once it is elaborated. Set the top module if " +
+        'it is not set; if it is, the "QuickUVM Architect" output channel says ' +
+        "why the elaboration failed.",
       [
         {
           label: "Set top module…",
@@ -5996,13 +6051,26 @@ async function renderTb(refit: boolean): Promise<void> {
   currentPins = [];
   // the current level (D24): "" testbench, "env", "agent:X". On a nonexistent
   // focus (config changed), it falls onto the root.
-  let scene = buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved, childConfigs);
-  if (!scene && state.tbFocus !== "") {
-    // the focus level disappeared (config changed): it falls onto the root and
-    // notifies the host, so that the reveal from the tree does not stay on the old level
-    state.tbFocus = "";
-    post({ v: 1, type: "tb/focus", focus: "", select: null });
-    scene = buildTbScene(state.config, "", state.configPath, state.resolved, childConfigs);
+  // docs/08 R8 — the scene builder trusts the config's SHAPE (lists of
+  // mappings). Valid YAML can break that — a bare `-` is a null entry, `agents:
+  // foo` a string — and a throw here used to leave the previous diagram on
+  // screen with no banner, gestures acting on boxes the file no longer has.
+  // The host names the entry in `parseError` when it can; this is the wall for
+  // any shape it does not check.
+  let scene: ReturnType<typeof buildTbScene> = null;
+  let unreadable = false;
+  try {
+    scene = buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved, childConfigs);
+    if (!scene && state.tbFocus !== "") {
+      // the focus level disappeared (config changed): it falls onto the root and
+      // notifies the host, so that the reveal from the tree does not stay on the old level
+      state.tbFocus = "";
+      post({ v: 1, type: "tb/focus", focus: "", select: null });
+      scene = buildTbScene(state.config, "", state.configPath, state.resolved, childConfigs);
+    }
+  } catch {
+    scene = null;
+    unreadable = true;
   }
   if (!scene) {
     currentScene = null;
@@ -6012,10 +6080,18 @@ async function renderTb(refit: boolean): Promise<void> {
     currentTbLayout = null;
     renderTbHeader(null);
     resetCanvas();
-    if (configError) {
+    if (configError || unreadable) {
       // docs/08 R8 — a file that does not parse is not "empty": say what is
       // wrong and where, and offer the editor that can fix it
-      showBanner(configErrorText("nothing could be drawn."), [OPEN_AS_TEXT], true);
+      showBanner(
+        configError
+          ? configErrorText("nothing could be drawn.")
+          : "The configuration has an entry the diagram cannot read (an empty " +
+              "list item?) — nothing could be drawn.",
+        [OPEN_AS_TEXT],
+        true
+      );
+      empty.hidden = true;
     } else {
       hideBanner();
       showEmpty(

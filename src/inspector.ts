@@ -407,6 +407,7 @@ export function multiGroups(
     return [];
   }
   const text = (v: unknown): string => (v === undefined || v === null ? "" : String(v));
+  const list = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
   const shared = (values: string[]): string | null =>
     values.every((v) => v === values[0]) ? values[0] : null;
   const group = (
@@ -443,12 +444,15 @@ export function multiGroups(
     }
     seen.add(n.id);
     if (n.kind === "tbagent") {
-      const a = (cfg.agents ?? []).find((x) => x.name === n.label);
+      // a hand-edited config can hold a null entry (a bare `-`) or a non-list
+      const a = list<QuvmAgent>(cfg.agents).find((x) => x?.name === n.label);
       if (a?.name && !a.from_vip && !agents.includes(a as Record<string, unknown>)) {
         agents.push(a as unknown as Record<string, unknown>);
       }
     } else if (n.kind === "tbsb" && n.id.startsWith("sb:") && !n.id.includes("#")) {
-      const named = (cfg.analysis?.scoreboards ?? []).filter((x) => x.name === n.label);
+      const named = list<QuvmScoreboard>(cfg.analysis?.scoreboards).filter(
+        (x) => x?.name === n.label
+      );
       if (named.length === 1 && named[0].name) {
         sbs.push(named[0] as unknown as Record<string, unknown>);
       }
