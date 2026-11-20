@@ -240,6 +240,10 @@ function leaveTbView(): void {
   void render(true);
 }
 
+/** docs/08 R8 — why the configuration's YAML does not parse (`config/full`);
+ *  the TB view then draws what could be read and says so in its banner */
+let configError: { message: string; line: number | null } | null = null;
+
 /** the UI preferences from the extension settings (the ui/config message, docs/05) */
 let uiConfig: UiConfig = {
   lasso: "contain",
@@ -465,6 +469,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       cardCache.clear(); // docs/08 R15 — the YAML changed: the cards are stale
       cardRequested.clear();
       state.config = m.config;
+      configError = m.parseError ?? null; // docs/08 R8
       state.configPath = m.configPath;
       state.childAgents = m.childAgents ?? {};
       childConfigs = m.children ?? {}; // docs/08 R18: the hover preview of a subenv
@@ -5485,13 +5490,71 @@ function postAction(action: ActionKind, args: Record<string, unknown>): void {
 
 // ---------------------------------------------------------------- render
 
-function showBanner(text: string): void {
-  banner.textContent = text;
+/** an action offered next to a message: a banner's or an empty state's button */
+interface NextAction {
+  label: string;
+  title?: string;
+  run: () => void;
+}
+
+function actionRow(actions: NextAction[], cls: string): HTMLElement {
+  const row = h("span", cls);
+  for (const a of actions) {
+    const b = h("button", "nextbtn", a.label);
+    if (a.title) {
+      b.title = a.title;
+    }
+    b.addEventListener("click", a.run);
+    row.append(b);
+  }
+  return row;
+}
+
+/** the banner on screen speaks about the verification (TB) view: a design
+ *  view must not inherit it (a YAML error is not a statement about the RTL) */
+let bannerIsTb = false;
+
+function showBanner(text: string, actions: NextAction[] = [], tb = false): void {
+  banner.replaceChildren(h("span", "banner-text", text));
+  if (actions.length) {
+    banner.append(actionRow(actions, "banner-actions"));
+  }
   banner.hidden = false;
+  bannerIsTb = tb;
+}
+
+/** docs/08 R8 — the empty state names the NEXT ACTION (and offers it as a
+ *  button) instead of only saying that there is nothing here */
+function showEmpty(title: string, hint: string, actions: NextAction[] = []): void {
+  empty.replaceChildren(h("div", "empty-title", title), h("div", "empty-hint", hint));
+  if (actions.length) {
+    empty.append(actionRow(actions, "empty-actions"));
+  }
+  empty.hidden = false;
+}
+
+/** docs/08 R8 — the configuration as text: the per-file editor reopens its own
+ *  tab with the text editor, the panel opens the active configuration beside */
+const OPEN_AS_TEXT: NextAction = {
+  label: "Open as text",
+  title: "Open the configuration file in the text editor",
+  run: () => postAction("openConfigAsText", {}),
+};
+
+/** the banner's sentence for a configuration whose YAML does not parse */
+function configErrorText(tail: string): string {
+  const e = configError;
+  if (!e) {
+    return "";
+  }
+  return `The configuration is not valid YAML${
+    e.line ? ` (line ${e.line})` : ""
+  }: ${e.message} — ${tail}`;
 }
 
 function hideBanner(): void {
   banner.hidden = true;
+  bannerIsTb = false;
 }
 
 async function render(refit = false): Promise<void> {
@@ -5504,8 +5567,26 @@ async function render(refit = false): Promise<void> {
   if (state.mode === "tb") {
     return renderTb(refit);
   }
+  if (bannerIsTb) {
+    hideBanner(); // back in a design view: the TB view's banner does not follow
+  }
   if (!state.model || !state.viewId) {
-    empty.hidden = false;
+    // docs/08 R8 — no design model: the next action is the top module (or, with
+    // a configuration already there, the verification view, which needs no RTL)
+    showEmpty(
+      "No design to show yet",
+      "Set the top module to elaborate the design. If it is set, the " +
+        '"QuickUVM Architect" output channel says why the elaboration failed.',
+      [
+        {
+          label: "Set top module…",
+          run: () => postAction("setTop", {}),
+        },
+        ...(tbAvailable()
+          ? [{ label: "Open verification view", run: openTbView }]
+          : []),
+      ]
+    );
     renderInspectorHere();
     return;
   }
@@ -5880,7 +5961,12 @@ async function renderTb(refit: boolean): Promise<void> {
     return render(true);
   }
   if (!state.viewId || !state.config) {
-    empty.hidden = false;
+    showEmpty(
+      "No QuickUVM configuration yet",
+      'Select the module to verify in the design view and use "Set as DUT" ' +
+        "— it creates the configuration.",
+      state.model ? [{ label: "Open the design views", run: leaveTbView }] : []
+    );
     renderInspectorHere();
     return;
   }
@@ -5905,14 +5991,42 @@ async function renderTb(refit: boolean): Promise<void> {
     currentTbLayout = null;
     renderTbHeader(null);
     resetCanvas();
-    showBanner(
-      'The QuickUVM configuration has nothing to draw yet — use "Set as DUT" first.'
-    );
+    if (configError) {
+      // docs/08 R8 — a file that does not parse is not "empty": say what is
+      // wrong and where, and offer the editor that can fix it
+      showBanner(configErrorText("nothing could be drawn."), [OPEN_AS_TEXT], true);
+    } else {
+      hideBanner();
+      showEmpty(
+        "Nothing to draw yet",
+        "This configuration declares no DUT, agent or composed block. " +
+          (state.model
+            ? 'Select the module to verify in the design view and use "Set as DUT"'
+            : 'Use "Set as DUT" on a module in the design view') +
+          ", or write the dut: section by hand.",
+        [
+          ...(state.model
+            ? [{ label: "Open the design views", run: leaveTbView }]
+            : []),
+          OPEN_AS_TEXT,
+        ]
+      );
+    }
     renderInspectorHere();
     return;
   }
   renderTbHeader(scene);
-  hideBanner();
+  if (configError) {
+    // docs/08 R8 — the YAML is broken but part of it reads: the diagram shows
+    // that part, and says it is not the whole file
+    showBanner(
+      configErrorText("the diagram shows only what could be read."),
+      [OPEN_AS_TEXT],
+      true
+    );
+  } else {
+    hideBanner();
+  }
   applyPendingRename(scene); // docs/08 R14: the carried seeds must exist before they are read
   // the user-owned positions (per level) become seeds for interactive
   // ELK (docs/04, the same D21 mechanics as the RTL schematic view)
@@ -5954,7 +6068,11 @@ async function renderTb(refit: boolean): Promise<void> {
     if (gen !== renderGen) {
       return;
     }
-    showBanner("Could not lay out the verification view for this configuration.");
+    showBanner(
+      "Could not lay out the verification view for this configuration.",
+      [OPEN_AS_TEXT],
+      true
+    );
     return;
   }
   if (gen !== renderGen) {

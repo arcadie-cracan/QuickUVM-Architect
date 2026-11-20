@@ -107,7 +107,14 @@ export type ActionKind =
   // docs/08 R20: the code view follows the selection (a host setting toggle);
   // the traceability report (a markdown document)
   | "toggleCodeFollow"
-  | "traceabilityReport";
+  | "traceabilityReport"
+  // docs/08 R8: the configuration in the TEXT editor — from the per-file editor
+  // its own tab is reopened as text (`vscode.openWith … "default"`), from the
+  // panel the active configuration opens beside; no args
+  | "openConfigAsText"
+  // docs/08 R8: the empty state's next action when there is no design model —
+  // the host's `quickuvm.setTop` input box; no args
+  | "setTop";
 
 // ------------------------------------------- "what will this generate" (R15)
 
@@ -323,6 +330,10 @@ export type HostMessage =
        *  cross-block scoreboard's endpoints are `<subenv>.<agent>`, and the child's
        *  agents live in another file, so they cannot come from `config`. */
       childAgents?: Record<string, string[]>;
+      /** docs/08 R8 — the YAML does not parse (a syntax error, or a top level
+       *  that is not a mapping): `config` is only what could be read. The view
+       *  says so in its banner and offers the text editor. Absent/null = valid. */
+      parseError?: { message: string; line: number | null } | null;
     }
   | ({ v: 1; type: "overlay/config" } & OverlayConfig)
   | { v: 1; type: "view/show"; viewId: string; mode?: ViewMode }

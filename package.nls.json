@@ -16,6 +16,8 @@
   "cmd.ignoreSelection": "Ignore Selected Ports",
   "cmd.openConfig": "Open QuickUVM Configuration",
   "cmd.openConfigBeside": "Open QuickUVM Configuration Beside the Diagram",
+  "cmd.openConfigAsText": "Open Configuration as Text",
+  "cmd.openConfigAsDiagram": "Open Configuration as Diagram",
   "cmd.openSchematicView": "Open Schematic View",
   "cmd.openSource": "Go to Source",
   "cmd.openSymbolView": "Open Symbol View",

@@ -26,7 +26,7 @@ import type { ActionKind, HostMessage, ProposalApply, WebviewMessage } from "./p
 import { ghostProposals } from "./proposals";
 import type { QuvmConfig } from "./quickuvm";
 import { elementRange, entryText } from "./yamlmap";
-import { parseQuvm } from "./yamlops";
+import { parseQuvm, quvmParseError } from "./yamlops";
 import type { LayoutStore } from "./sidecar";
 
 /** `TbEditTarget` bound to a TextDocument: the config is its current text,
@@ -136,9 +136,20 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
 
     const postConfig = (): void => {
       if (ready) {
-        const config = parseQuvm(document.getText());
+        const text = document.getText();
+        const config = parseQuvm(text);
         const resolved = this.resolve?.resolvedFor(document.uri) ?? null;
-        void webview.postMessage({ v: 1, type: "config/full", configPath, config, resolved });
+        void webview.postMessage({
+          v: 1,
+          type: "config/full",
+          configPath,
+          config,
+          resolved,
+          // docs/08 R8 — this editor is the DEFAULT one for the file: a document
+          // that does not parse must say so and offer its text, not sit there
+          // as an unexplained empty diagram
+          parseError: quvmParseError(text),
+        });
         // docs/08 R12 — the per-file editor has no model: only the inferred
         // components can be proposed here (materialise them into THIS document)
         void webview.postMessage({
@@ -304,6 +315,18 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           }
           break;
         case "action/request":
+          if (m.action === "openConfigAsText") {
+            // docs/08 R8 — THIS tab reopened with the built-in text editor
+            // (the diagram is the default editor; "Reopen Editor With…" is the
+            // same route by hand)
+            void vscode.commands.executeCommand(
+              "vscode.openWith",
+              document.uri,
+              "default",
+              webviewPanel.viewColumn
+            );
+            break;
+          }
           this.onAction(m.action, m.args, target);
           break;
         case "select/changed":

@@ -16,6 +16,8 @@
   "cmd.ignoreSelection": "Ignoră porturile selectate",
   "cmd.openConfig": "Deschide configurația QuickUVM",
   "cmd.openConfigBeside": "Deschide configurația QuickUVM lângă diagramă",
+  "cmd.openConfigAsText": "Deschide configurația ca text",
+  "cmd.openConfigAsDiagram": "Deschide configurația ca diagramă",
   "cmd.openSchematicView": "Deschide schema",
   "cmd.openSource": "Deschide sursa",
   "cmd.openSymbolView": "Deschide vederea-simbol",

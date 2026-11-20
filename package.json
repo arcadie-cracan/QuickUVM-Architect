@@ -194,6 +194,18 @@
         "category": "QuickUVM Architect"
       },
       {
+        "command": "quickuvm.openConfigAsText",
+        "title": "%cmd.openConfigAsText%",
+        "category": "QuickUVM Architect",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "quickuvm.openConfigAsDiagram",
+        "title": "%cmd.openConfigAsDiagram%",
+        "category": "QuickUVM Architect",
+        "icon": "$(type-hierarchy)"
+      },
+      {
         "command": "quickuvm.openVerificationView",
         "title": "%cmd.openVerificationView%",
         "category": "QuickUVM Architect"
@@ -230,6 +242,18 @@
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "quickuvm.openConfigAsText",
+          "when": "activeCustomEditorId == 'quickuvm.configEditor'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "quickuvm.openConfigAsDiagram",
+          "when": "resourceFilename =~ /\\.quickuvm\\.yaml$/ && activeCustomEditorId != 'quickuvm.configEditor' && !isInDiffEditor",
+          "group": "navigation@1"
+        }
+      ],
       "editor/context": [
         {
           "command": "quickuvm.revealInDiagram",

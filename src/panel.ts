@@ -54,6 +54,8 @@ export interface PanelDeps {
     /** docs/07 — the effective topology from `quick-uvm resolve`, which is what
      *  lets the view draw the components the generator infers (src/resolved.ts) */
     resolved?: ResolvedConfig | null;
+    /** docs/08 R8 — the YAML does not parse: `config` is what could be read */
+    parseError?: { message: string; line: number | null } | null;
   };
   /** the quick-uvm status decorations (docs/05): validations + the last generate;
    *  plus the generation-state element ids (docs/07 line 1) */

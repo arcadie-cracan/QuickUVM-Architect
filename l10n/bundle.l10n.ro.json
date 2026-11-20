@@ -64,6 +64,7 @@
   "QuickUVM Architect: modport \"{0}\" has no usable signals ({1}).": "QuickUVM Architect: modportul „{0}\" nu are semnale utilizabile ({1}).",
   "QuickUVM Architect: no DUT is configured yet.": "QuickUVM Architect: nu există încă un DUT configurat.",
   "QuickUVM Architect: no configuration exists yet — use \"Set as DUT\".": "QuickUVM Architect: nu există încă o configurație — folosește „Setează ca DUT”.",
+  "QuickUVM Architect: open a *.quickuvm.yaml file first.": "QuickUVM Architect: deschide întâi un fișier *.quickuvm.yaml.",
   "QuickUVM Architect: no design element found at the cursor.": "QuickUVM Architect: niciun element de design la cursor.",
   "QuickUVM Architect: no orphaned layout overrides.": "QuickUVM Architect: nu există override-uri orfane de layout.",
   "QuickUVM Architect: no usable pin in the selection ({0}).": "QuickUVM Architect: niciun pin utilizabil în selecție ({0}).",

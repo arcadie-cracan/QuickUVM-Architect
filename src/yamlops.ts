@@ -70,6 +70,57 @@ export function parseQuvm(text: string): QuvmConfig {
   }
 }
 
+/** docs/08 R8 — why a configuration text cannot be read as a QuickUVM config */
+export interface QuvmParseError {
+  /** one line, without the parser's own "at line N, column M" tail */
+  message: string;
+  /** 1-based line of the problem, when the parser knows it */
+  line: number | null;
+}
+
+/**
+ * The first reason `text` is not a readable QuickUVM configuration, or null:
+ * a YAML syntax error (the parser's first one — the later ones are usually its
+ * echoes), or a top level that is not a mapping. `parseQuvm` still returns
+ * whatever could be read; this is what tells the diagram to SAY that what it
+ * draws is partial, and to offer the text editor (docs/08 R8).
+ */
+export function quvmParseError(text: string): QuvmParseError | null {
+  let doc: ReturnType<typeof parseDocument>;
+  try {
+    doc = parseDocument(text);
+  } catch (e) {
+    return { message: e instanceof Error ? e.message : String(e), line: null };
+  }
+  return docParseError(doc);
+}
+
+/** `quvmParseError` on an already parsed document (ConfigService parses once) */
+export function docParseError(
+  doc: ReturnType<typeof parseDocument>
+): QuvmParseError | null {
+  const err = doc.errors[0];
+  if (err) {
+    return {
+      message: err.message
+        .split("\n")[0]
+        .replace(/\s+at line \d+, column \d+:?\s*$/, "")
+        .trim(),
+      line: err.linePos?.[0]?.line ?? null,
+    };
+  }
+  let js: unknown;
+  try {
+    js = doc.toJS();
+  } catch (e) {
+    return { message: e instanceof Error ? e.message : String(e), line: null };
+  }
+  if (js !== null && js !== undefined && (typeof js !== "object" || Array.isArray(js))) {
+    return { message: "the top level must be a mapping (key: value)", line: 1 };
+  }
+  return null;
+}
+
 /** The skeleton of a new configuration; dut/agents come from the dedicated operations. */
 export function newConfigText(projectName: string): string {
   return [

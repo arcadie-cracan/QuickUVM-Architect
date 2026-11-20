@@ -1378,6 +1378,39 @@ test("renameScoreboard / renameSubenv: the key, and for a subenv the endpoints t
   assert.equal(ops.renameSubenv(y, "u_zz", "q"), y);
   assert.throws(() => ops.renameSubenv(y, "u_a", "u_b"), /already exists/);
 });
+test("docs/08 R8: quvmParseError — null on a valid config, the FIRST syntax error with its line otherwise", () => {
+  assert.equal(ops.quvmParseError("dut:\n  name: adder\nagents:\n  - name: cmd\n"), null);
+  assert.equal(ops.quvmParseError(""), null, "an empty file is empty, not invalid");
+  assert.equal(ops.quvmParseError("# only a comment\n"), null);
+  // a tab used for indentation, on line 2
+  const tab = ops.quvmParseError("dut:\n\tname: adder\n");
+  assert.ok(tab, "a tab indent is a YAML error");
+  assert.equal(tab.line, 2);
+  assert.ok(!/at line \d+, column/.test(tab.message), "the parser's own position tail is cut: " + tab.message);
+  assert.ok(!tab.message.includes("\n"), "one line");
+  assert.ok(tab.message.length > 0);
+  // an unclosed flow sequence further down
+  const flow = ops.quvmParseError("dut:\n  name: adder\nagents:\n  - {name: cmd\ntests: []\n");
+  assert.ok(flow && flow.line >= 4, "reported at or after the line that opens it: " + JSON.stringify(flow));
+  // two errors: only the first is reported (the later ones are usually its echoes)
+  const two = ops.quvmParseError("a: [1\nb: }\n");
+  assert.ok(two && two.line === 1 || two.line === 2);
+});
+
+test("docs/08 R8: quvmParseError — a top level that is not a mapping is not a configuration", () => {
+  assert.deepEqual(ops.quvmParseError("- a\n- b\n"), {
+    message: "the top level must be a mapping (key: value)",
+    line: 1,
+  });
+  assert.ok(ops.quvmParseError("just a sentence\n"));
+  assert.ok(ops.quvmParseError("42\n"));
+  // parseQuvm still answers with what it could read — the view draws that,
+  // the error says it is partial
+  const broken = "dut:\n  name: adder\nagents:\n  - {name: cmd\n";
+  assert.equal(ops.parseQuvm(broken).dut?.name, "adder", "the readable part survives");
+  assert.ok(ops.quvmParseError(broken));
+});
+
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

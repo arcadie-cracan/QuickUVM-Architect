@@ -1708,3 +1708,43 @@ text.split-sign {
 .ctxicon:hover { background: var(--vscode-list-hoverBackground); }
 .ctxicon svg line { stroke: currentColor; stroke-width: 1.2; }
 .ctxicon svg rect { fill: currentColor; opacity: 0.75; }
+
+/* --------------------- banner actions + empty state (docs/08 R8) */
+/* a banner can offer its way out ("Open as text" on a configuration that does
+   not parse); an empty state names the next action and offers it as a button */
+#banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#banner[hidden] { display: none; }
+#banner .banner-text { flex: 1 1 240px; min-width: 0; }
+#banner .banner-actions,
+#empty .empty-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+.nextbtn {
+  padding: 2px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.nextbtn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+#empty { opacity: 1; padding: 0 24px; box-sizing: border-box; }
+#empty .empty-title { font-size: 14px; font-weight: 600; opacity: 0.85; }
+#empty .empty-hint {
+  max-width: 520px;
+  margin: 6px auto 12px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+#empty .empty-actions { justify-content: center; }

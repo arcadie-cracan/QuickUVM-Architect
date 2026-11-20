@@ -13,7 +13,7 @@ import { AGENT_PALETTE, OverlayConfig, PortRole, StatusDeco } from "./protocol";
 import { decosFromFindings, statusIdsTree, type ElementStatus } from "./status";
 import { changedSpan, minimalEdit, wholeLines } from "./textedit";
 import { agentPorts, QuvmConfig } from "./quickuvm";
-import { parseQuvm } from "./yamlops";
+import { docParseError, parseQuvm, type QuvmParseError } from "./yamlops";
 import { newConfigText, topConfigPaths } from "./yamlops";
 
 // re-export: the width quick-fix code lives in the pure core
@@ -127,6 +127,9 @@ export class ConfigService implements vscode.Disposable {
   treeStatus: Map<string, ElementStatus> = new Map();
   /** the last parsed configuration (for commands and validations) */
   current: QuvmConfig = {};
+  /** docs/08 R8 — why the active configuration does not parse (then `current`
+   *  is only what could be read); null when it is valid YAML, or absent */
+  parseError: QuvmParseError | null = null;
   /** docs/07 P3c — the agents of each composed child block, keyed by subenv name.
    *  A cross-block scoreboard's endpoints are `<subenv>.<agent>`, and the child's
    *  agents live in ANOTHER file, so the endpoint picker cannot be derived from
@@ -362,6 +365,7 @@ export class ConfigService implements vscode.Disposable {
     }
     if (!this.uri) {
       this.current = {};
+      this.parseError = null;
       this.publish(null, []);
       return;
     }
@@ -371,6 +375,7 @@ export class ConfigService implements vscode.Disposable {
     } catch {
       // deleted or unreadable file: the configuration disappears, and so does the overlay
       this.uri = undefined;
+      this.parseError = null;
       this.publish(null, []);
       return;
     }
@@ -392,6 +397,7 @@ export class ConfigService implements vscode.Disposable {
     }
 
     this.current = (ydoc.toJS() as QuvmConfig) ?? {};
+    this.parseError = docParseError(ydoc); // docs/08 R8: the view says "partial"
     await this.loadChildAgents();
     // the validation core is PURE (configcheck.ts, tested); here we only map
     // findings -> vscode.Diagnostic with the localized messages (D19)
