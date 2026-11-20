@@ -25,7 +25,10 @@ export type ViewMode = "symbol" | "schematic" | "tb";
 
 /** the lasso semantics (docs/05): only the objects fully contained
  *  ("window selection", the default) or also the ones touched ("crossing") */
-export type LassoMode = "contain" | "intersect";
+/** what the selection lasso picks: only the fully enclosed, also the touched,
+ *  or — docs/08 R7 — by the drag's direction (left-to-right encloses,
+ *  right-to-left touches; the CAD convention) */
+export type LassoMode = "contain" | "intersect" | "direction";
 
 /** the UI preferences from the extension settings (the ui/config message) */
 export interface UiConfig {

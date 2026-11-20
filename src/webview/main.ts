@@ -42,6 +42,20 @@ import {
 } from "./wiring";
 import { el, measurer, SVG_NS } from "./svg";
 import {
+  alignItems,
+  distributeItems,
+  hasLinks,
+  lassoHits,
+  lassoRule,
+  marqueeOp,
+  marqueeSelection,
+  straightenItems,
+  type AlignOp,
+  type ArrangeItem,
+  type MarqueeOp,
+  type PinLink,
+} from "./arrange";
+import {
   findMatches,
   lodFor,
   NavHistory,
@@ -2127,11 +2141,16 @@ let suppressClick = false;
 
 // lasso: a selection rectangle started with a left-click on the background (docs/04);
 // on the symbol it selects pins (the gesture for "Agent from selection"), on the
-// schematic it selects blocks and flags; Ctrl = add to the selection
+// schematic it selects blocks and flags. The modifiers held at the press choose
+// what it does to the selection it started from (docs/08 R7, the Blueprints
+// set): plain = replace, Shift = add, Alt = subtract, Ctrl = toggle
 interface Marquee {
   x0: number; // pointer, screen px
   y0: number;
-  /** the base of the selection: the existing one with Ctrl, empty otherwise */
+  /** what the lasso does to `base` (frozen at the press, like the base) */
+  op: MarqueeOp;
+  /** the selection at the press — what the lasso's result is computed against;
+   *  empty for a plain (replace) lasso */
   base: Set<string>;
   /** the SVG rectangle, created only after the DRAG_MIN threshold */
   rect: SVGRectElement | null;
@@ -3531,8 +3550,9 @@ function wireEnd(): void {
 }
 
 /** a transient message at the pointer (an illegal drop's reason) */
-function wireToast(text: string, cx: number, cy: number): void {
-  const d = h("div", "wirehint toast", text);
+function wireToast(text: string, cx: number, cy: number, note = false): void {
+  // `note`: information, not a refusal (docs/08 R7 — "already aligned")
+  const d = h("div", `wirehint toast${note ? " note" : ""}`, text);
   d.style.left = `${cx + 14}px`;
   d.style.top = `${cy + 14}px`;
   document.body.append(d);
@@ -3728,10 +3748,16 @@ canvas.addEventListener("pointerdown", (e) => {
   // the middle button
   const onElement = (e.target as Element).closest("[data-id]");
   if (e.button === 0 && !onElement) {
+    const op = marqueeOp({
+      shift: e.shiftKey,
+      ctrl: e.ctrlKey || e.metaKey,
+      alt: e.altKey,
+    });
     marquee = {
       x0: e.clientX,
       y0: e.clientY,
-      base: e.ctrlKey || e.metaKey ? new Set(state.selection) : new Set(),
+      op,
+      base: op === "replace" ? new Set() : new Set(state.selection),
       rect: null,
       candidates: null,
     };
@@ -3829,34 +3855,37 @@ canvas.addEventListener("pointermove", (e) => {
     marquee.rect.setAttribute("y", String(y1 - cb.top));
     marquee.rect.setAttribute("width", String(x2 - x1));
     marquee.rect.setAttribute("height", String(y2 - y1));
-    // the live selection: the base (Ctrl) combined with the rectangle's targets — by
-    // default only those completely enclosed ("window selection"); with
-    // quickuvm.lassoMode=intersect, also those merely touched ("crossing").
+    // the live selection (src/webview/arrange.ts, pure — test:arrange): the
+    // rectangle's targets, combined with the selection at the press by the
+    // lasso's operation. By default only the targets completely enclosed
+    // ("window"); with quickuvm.lassoMode=intersect also those merely touched
+    // ("crossing"); with =direction the drag chooses — left-to-right a window,
+    // right-to-left a crossing (the CAD convention), drawn solid vs. dashed.
     //
     // Ctrl TOGGLES, it does not merely add: an enclosed element already in the base
     // is removed. That is what Ctrl+click already does (`selection.delete(id)` or
-    // add), and one modifier must not mean two things — the add-only lasso taught the
-    // opposite of the click and left no gesture for deselecting a region at all.
-    // Toggle subsumes add: over an unselected region the result is identical.
+    // add), and one modifier must not mean two things. Shift only adds, Alt only
+    // subtracts (docs/08 R7).
     //
     // `base` is frozen for the whole drag, so this is stable while the pointer moves:
     // sweeping OVER an already-selected element removes it, sweeping back OFF restores
     // it. Computing against the live selection instead would flip it on every frame.
-    const hit = new Set(marquee.base);
-    for (const c of marquee.candidates ?? []) {
-      const inside =
-        uiConfig.lasso === "intersect"
-          ? c.r.left < x2 && c.r.right > x1 && c.r.top < y2 && c.r.bottom > y1
-          : c.r.left >= x1 && c.r.right <= x2 && c.r.top >= y1 && c.r.bottom <= y2;
-      if (inside) {
-        if (marquee.base.has(c.id)) {
-          hit.delete(c.id);
-        } else {
-          hit.add(c.id);
-        }
-      }
-    }
-    state.selection = hit;
+    const rule = lassoRule(uiConfig.lasso, dx);
+    marquee.rect.setAttribute(
+      "class",
+      `marquee${rule === "intersect" ? " crossing" : ""}${
+        marquee.op === "subtract" ? " subtract" : ""
+      }`
+    );
+    state.selection = marqueeSelection(
+      marquee.base,
+      lassoHits(
+        { left: x1, top: y1, right: x2, bottom: y2 },
+        marquee.candidates ?? [],
+        rule
+      ),
+      marquee.op
+    );
     applySelectionClasses();
     return;
   }
@@ -4309,6 +4338,185 @@ function nudgeSelection(dx: number, dy: number): void {
   applyPositions(key, next);
 }
 
+// --- align / distribute / straighten (docs/08 R7) ---------------------------
+//
+// Pure geometry on the grid (src/webview/arrange.ts, test:arrange) over the
+// selected blocks and flags, applied the way a drag end is: one undo entry and
+// one TOTAL snapshot (D21), so an un-arranged view becomes the user's in one
+// step and Ctrl+Z takes the whole gesture back.
+
+/** the selected blocks/flags with their rectangles (pins and nets have none) */
+function arrangeSelection(): ArrangeItem[] {
+  const out: ArrangeItem[] = [];
+  for (const id of state.selection) {
+    const r = rectOf(id);
+    if (r) {
+      out.push({ id, ...r });
+    }
+  }
+  return out;
+}
+
+/** the y of a pin's centre relative to its node's origin — where a wire meets
+ *  the block (a flag has one anchor, at mid-height); null for an unknown end */
+function pinCenterY(nodeId: string, portId: string | null): number | null {
+  if (state.mode === "tb") {
+    if (currentTbLayout?.boundary.has(nodeId)) {
+      return 8; // BPORT_H / 2
+    }
+    const n = currentTbLayout?.nodes.get(nodeId);
+    if (!n) {
+      return null;
+    }
+    return portId ? n.ports.get(portId)?.y ?? null : n.h / 2;
+  }
+  const c = currentLayout?.children?.find((k) => k.id === nodeId);
+  if (!c) {
+    return null;
+  }
+  if (!portId) {
+    return (c.height ?? 0) / 2;
+  }
+  const port = (c.ports ?? []).find((p) => p.id === portId);
+  return port ? (port.y ?? 0) + (port.height ?? 0) / 2 : null;
+}
+
+/** the wires of the current view as pin-centre pairs, in the scene's edge order */
+function pinLinks(): PinLink[] {
+  const edges = state.mode === "tb" ? currentTbScene?.edges : currentScene?.edges;
+  const out: PinLink[] = [];
+  for (const e of edges ?? []) {
+    const ay = pinCenterY(e.source, e.sourcePort);
+    const by = pinCenterY(e.target, e.targetPort);
+    if (ay !== null && by !== null) {
+      out.push({ a: e.source, ay, b: e.target, by });
+    }
+  }
+  return out;
+}
+
+function applyArrange(
+  changes: Record<string, { x: number; y: number }>,
+  none: string
+): void {
+  const key = layoutKey();
+  const before = capturePositions();
+  if (!key || !before) {
+    return;
+  }
+  if (!Object.keys(changes).length) {
+    // nothing to move: no snapshot, no undo entry — but SAY so, a gesture that
+    // does nothing without a word reads as a broken button
+    const r = canvas.getBoundingClientRect();
+    wireToast(none, r.left + r.width / 2 - 90, r.top + 6, true);
+    return;
+  }
+  pushPosUndo(before);
+  applyPositions(key, { ...before, ...changes });
+}
+
+/** an arrangement gesture offered for the current multi-selection */
+interface ArrangeAction {
+  label: string;
+  /** the 16x16 icon of the context menu's compact row: lines and bars */
+  icon: { lines: number[][]; rects: number[][] };
+  run: () => void;
+}
+
+/**
+ * The arrangement gestures legal for the selection — the ONE list behind the
+ * context menu's icon row and the action palette's "Arrange" group. Align needs
+ * two blocks/flags, distribute three, straighten a wire between two of them.
+ * `anchor` is the block the menu was opened on: it stays when the wires are
+ * straightened (from the palette, the leftmost of each wired group stays).
+ */
+function arrangeActions(anchor: string | null = null): ArrangeAction[] {
+  if (!draggable()) {
+    return [];
+  }
+  const items = arrangeSelection();
+  if (items.length < 2) {
+    return [];
+  }
+  const align = (op: AlignOp) => (): void =>
+    applyArrange(alignItems(arrangeSelection(), op, GRID), "Already aligned");
+  const out: ArrangeAction[] = [
+    {
+      label: "Align left",
+      icon: { lines: [[2, 1, 2, 15]], rects: [[4, 3, 9, 4], [4, 9, 5, 4]] },
+      run: align("left"),
+    },
+    {
+      label: "Align right",
+      icon: { lines: [[14, 1, 14, 15]], rects: [[3, 3, 9, 4], [7, 9, 5, 4]] },
+      run: align("right"),
+    },
+    {
+      label: "Align top",
+      icon: { lines: [[1, 2, 15, 2]], rects: [[3, 4, 4, 9], [9, 4, 4, 5]] },
+      run: align("top"),
+    },
+    {
+      label: "Align bottom",
+      icon: { lines: [[1, 14, 15, 14]], rects: [[3, 3, 4, 9], [9, 7, 4, 5]] },
+      run: align("bottom"),
+    },
+    {
+      label: "Align centers on a vertical line",
+      icon: { lines: [[8, 1, 8, 15]], rects: [[3, 3, 10, 4], [5, 9, 6, 4]] },
+      run: align("hcenter"),
+    },
+    {
+      label: "Align centers on a horizontal line",
+      icon: { lines: [[1, 8, 15, 8]], rects: [[3, 3, 4, 10], [9, 5, 4, 6]] },
+      run: align("vcenter"),
+    },
+  ];
+  if (items.length >= 3) {
+    out.push(
+      {
+        label: "Distribute horizontally",
+        icon: { lines: [[2, 1, 2, 15], [14, 1, 14, 15]], rects: [[6, 4, 4, 8]] },
+        run: () =>
+          applyArrange(
+            distributeItems(arrangeSelection(), "h", GRID),
+            "Already evenly spaced"
+          ),
+      },
+      {
+        label: "Distribute vertically",
+        icon: { lines: [[1, 2, 15, 2], [1, 14, 15, 14]], rects: [[4, 6, 8, 4]] },
+        run: () =>
+          applyArrange(
+            distributeItems(arrangeSelection(), "v", GRID),
+            "Already evenly spaced"
+          ),
+      }
+    );
+  }
+  if (hasLinks(items, pinLinks())) {
+    out.push({
+      label: "Straighten the wires",
+      icon: { lines: [[5, 8, 11, 8]], rects: [[1, 6, 4, 4], [11, 6, 4, 4]] },
+      run: () => {
+        // every block and flag of the view: a straightened block never lands on one
+        const all: ArrangeItem[] = [];
+        dragEachPos((id) => {
+          const r = rectOf(id);
+          if (r) {
+            all.push({ id, ...r });
+          }
+        });
+        applyArrange(
+          straightenItems(arrangeSelection(), pinLinks(), anchor, GRID, all),
+          "Nothing moved: the wires are straight, or another block is in the way"
+        );
+      },
+    });
+  }
+  return out;
+}
+
 function setQuickMark(slot: number): void {
   const key = layoutKey();
   if (key) {
@@ -4539,6 +4747,11 @@ function paletteItems(): PaletteItem[] {
         add("Selection", "What will this generate (I)", () => openCard(selId, true));
       }
     }
+  }
+  // docs/08 R7 — a multi-selection of blocks: align / distribute / straighten
+  // (the same list as the context menu's icon row)
+  for (const a of arrangeActions()) {
+    add("Arrange", a.label, a.run);
   }
   for (const b of inspectorButtons()) {
     add(b.group, b.label, b.run);
@@ -4974,12 +5187,46 @@ function problemItems(id: string): CtxItem[] {
   return items;
 }
 
-function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
+function openCtxMenu(
+  x: number,
+  y: number,
+  items: CtxItem[],
+  arrange: ArrangeAction[] = []
+): void {
   closeCtxMenu();
-  if (!items.length) {
+  if (!items.length && !arrange.length) {
     return;
   }
   const m = h("div", "ctxmenu");
+  if (arrange.length) {
+    // docs/08 R7 — the arrangement gestures of a multi-selection as ONE compact
+    // row of icons (nine more text rows would bury the element's own actions);
+    // the full names are the tooltips, and the palette lists them as text
+    const row = h("div", "ctxrow");
+    for (const a of arrange) {
+      const b = h("button", "ctxicon");
+      b.title = a.label;
+      b.setAttribute("aria-label", a.label);
+      const svg = el("svg", { viewBox: "0 0 16 16", width: "16", height: "16" });
+      for (const [x1, y1, x2, y2] of a.icon.lines) {
+        svg.append(
+          el("line", { x1: String(x1), y1: String(y1), x2: String(x2), y2: String(y2) })
+        );
+      }
+      for (const [rx, ry, rw, rh] of a.icon.rects) {
+        svg.append(
+          el("rect", { x: String(rx), y: String(ry), width: String(rw), height: String(rh) })
+        );
+      }
+      b.append(svg);
+      b.addEventListener("click", () => {
+        closeCtxMenu();
+        a.run();
+      });
+      row.append(b);
+    }
+    m.append(row);
+  }
   for (const it of items) {
     if (it.info) {
       m.append(h("div", "ctxitem info", it.label)); // a message, not an action
@@ -5018,7 +5265,8 @@ function rtlContextMenu(e: MouseEvent): void {
     postSelection();
     renderInspectorHere();
   }
-  openCtxMenu(e.clientX, e.clientY, items);
+  // docs/08 R7: on a member of a multi-selection, the arrangement row too
+  openCtxMenu(e.clientX, e.clientY, items, arrangeActions(selectId));
 }
 
 /** the actions of an RTL element under `t` (a pin, a block, a fold, the symbol):
@@ -5123,7 +5371,9 @@ canvas.addEventListener("contextmenu", (e) => {
     postSelection();
     renderInspectorHere();
   }
-  openCtxMenu(e.clientX, e.clientY, tbMenuItems(id));
+  // docs/08 R7: on a member of a multi-selection, the arrangement row too
+  // (the clicked block is the one that stays when the wires are straightened)
+  openCtxMenu(e.clientX, e.clientY, tbMenuItems(id), arrangeActions(id));
 });
 
 /** the actions of a TB element — the context menu's items, also the action

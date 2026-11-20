@@ -1422,6 +1422,8 @@ text.split-sign {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .wirehint.toast { animation: wirehint-fade 1.8s forwards; }
+/* a notice, not a refusal (docs/08 R7: "already aligned") */
+.wirehint.note { color: var(--vscode-foreground); }
 @keyframes wirehint-fade {
   0%, 70% { opacity: 1; }
   100% { opacity: 0; }
@@ -1671,3 +1673,38 @@ text.split-sign {
   transform-origin: center;
   transform: var(--lod-title, none);
 }
+
+/* ------------------------- marquee modifiers + arrange row (docs/08 R7) */
+/* a crossing lasso (also what it merely touches) is drawn long-dashed, a
+   window (only what it encloses) keeps the base stroke; a subtracting lasso
+   (Alt) takes the error colour, so the rectangle says what the release does */
+.marquee.crossing { stroke-dasharray: 8 4; fill-opacity: 0.14; }
+.marquee.subtract {
+  fill: var(--vscode-errorForeground, #f14c4c);
+  stroke: var(--vscode-errorForeground, #f14c4c);
+}
+/* the arrangement gestures of a multi-selection: one row of icon buttons at
+   the top of the context menu (the full names are the tooltips) */
+.ctxrow {
+  display: flex;
+  gap: 2px;
+  padding: 2px 4px 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+}
+.ctxicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+.ctxicon:hover { background: var(--vscode-list-hoverBackground); }
+.ctxicon svg line { stroke: currentColor; stroke-width: 1.2; }
+.ctxicon svg rect { fill: currentColor; opacity: 0.75; }

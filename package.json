@@ -380,13 +380,15 @@
           "type": "string",
           "enum": [
             "contain",
-            "intersect"
+            "intersect",
+            "direction"
           ],
           "default": "contain",
           "description": "%config.lassoMode%",
           "enumDescriptions": [
             "%config.lassoMode.contain%",
-            "%config.lassoMode.intersect%"
+            "%config.lassoMode.intersect%",
+            "%config.lassoMode.direction%"
           ]
         },
         "quickuvm.quickUvm": {
@@ -491,6 +493,7 @@
     "test:textedit": "node scripts/test-textedit.mjs",
     "test:yamlmap": "node scripts/test-yamlmap.mjs",
     "test:wiring": "node scripts/test-wiring.mjs",
+    "test:arrange": "node scripts/test-arrange.mjs",
     "test:proposals": "node scripts/test-proposals.mjs",
     "test:preview": "node scripts/test-preview.mjs",
     "test:trace": "node scripts/test-trace.mjs"

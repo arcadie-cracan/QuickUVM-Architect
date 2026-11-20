@@ -17,11 +17,12 @@ import type { YamlLink } from "./yamllink";
 import {
   clearActiveExporter,
   diagramHtml,
+  lassoSetting,
   lodThresholdSetting,
   saveExportedSvg,
   setActiveExporter,
 } from "./panel";
-import type { ActionKind, HostMessage, LassoMode, ProposalApply, WebviewMessage } from "./protocol";
+import type { ActionKind, HostMessage, ProposalApply, WebviewMessage } from "./protocol";
 import { ghostProposals } from "./proposals";
 import type { QuvmConfig } from "./quickuvm";
 import { elementRange, entryText } from "./yamlmap";
@@ -156,8 +157,7 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
     // only at ready, the row's second click switched the mode back off)
     const postUi = (): void => {
       const quvm = vscode.workspace.getConfiguration("quickuvm");
-      const lasso: LassoMode =
-        quvm.get<string>("lassoMode", "contain") === "intersect" ? "intersect" : "contain";
+      const lasso = lassoSetting(quvm);
       const decorations = quvm.get<boolean>("schematicDecorations", true);
       const codeFollow = quvm.get<boolean>("codeFollowsSelection", false);
       const lodThreshold = lodThresholdSetting(quvm);

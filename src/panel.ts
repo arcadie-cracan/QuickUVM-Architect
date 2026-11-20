@@ -278,10 +278,7 @@ export class DiagramPanel {
   postUiConfig(): void {
     if (this.ready) {
       const cfg = vscode.workspace.getConfiguration("quickuvm");
-      const lasso: LassoMode =
-        cfg.get<string>("lassoMode", "contain") === "intersect"
-          ? "intersect"
-          : "contain";
+      const lasso = lassoSetting(cfg);
       const decorations = cfg.get<boolean>("schematicDecorations", true);
       const codeFollow = cfg.get<boolean>("codeFollowsSelection", false);
       const lodThreshold = lodThresholdSetting(cfg);
@@ -503,6 +500,13 @@ export class DiagramPanel {
   private html(): string {
     return diagramHtml(this.panel.webview, this.context.extensionUri);
   }
+}
+
+/** `quickuvm.lassoMode` as the webview's `LassoMode`; anything unknown is the
+ *  default. Shared by the panel and the per-file editor (one rule, two hosts). */
+export function lassoSetting(cfg: vscode.WorkspaceConfiguration): LassoMode {
+  const v = cfg.get<string>("lassoMode", "contain");
+  return v === "intersect" || v === "direction" ? v : "contain";
 }
 
 /** docs/08 R6 — `quickuvm.lodZoomThreshold`, clamped to what the webview can
