@@ -38,6 +38,7 @@
   "config.previewEdits.always": "Open the diff preview first; a notification confirms.",
   "config.previewEdits.never": "No preview: destructive gestures keep their confirmation, multi-file gestures apply directly.",
   "config.codeFollowsSelection": "Selecting a component in the verification view opens its generated file in a preview tab beside the diagram (the next selection replaces it). The lines of the selected component are highlighted in the visible generated files either way.",
+  "config.lodZoomThreshold": "Zoom factor below which the schematic and verification views switch to the overview level of detail: pin labels, compartment text and inline widgets are hidden and the block titles are enlarged. 1 = 100%. Set to 0 to always draw full detail.",
   "config.hoverCrossProbe": "Hovering a pin in the diagram briefly highlights its declaration in already-visible editors (never opens tabs or steals focus).",
   "config.labelThreshold": "Fan-out above which a net is drawn as a label instead of a wire.",
   "config.lassoMode": "What the selection lasso picks up.",

@@ -449,6 +449,13 @@
           "type": "boolean",
           "default": false,
           "description": "%config.codeFollowsSelection%"
+        },
+        "quickuvm.lodZoomThreshold": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 5,
+          "description": "%config.lodZoomThreshold%"
         }
       }
     }

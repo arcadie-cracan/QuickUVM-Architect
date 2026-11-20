@@ -38,6 +38,7 @@
   "config.previewEdits.always": "Deschide întâi previzualizarea diff; o notificare confirmă.",
   "config.previewEdits.never": "Fără previzualizare: gesturile distructive își păstrează confirmarea, cele multi-fișier se aplică direct.",
   "config.codeFollowsSelection": "Selectarea unei componente în vederea de verificare deschide fișierul ei generat într-un tab de previzualizare lângă diagramă (următoarea selecție îl înlocuiește). Liniile componentei selectate se evidențiază oricum în fișierele generate vizibile.",
+  "config.lodZoomThreshold": "Factorul de zoom sub care vederea-schemă și vederea de verificare trec la nivelul de detaliu de ansamblu: etichetele pinilor, textul compartimentelor și widgeturile inline se ascund, iar titlurile blocurilor se măresc. 1 = 100%. Cu 0 se desenează mereu detaliul complet.",
   "config.hoverCrossProbe": "Staționarea pe un pin în diagramă evidențiază scurt declarația lui în editoarele deja vizibile (nu deschide tab-uri, nu fură focusul).",
   "config.labelThreshold": "Fan-out peste care un net se afișează ca etichetă, nu ca fir.",
   "config.lassoMode": "Ce selectează lasso-ul.",

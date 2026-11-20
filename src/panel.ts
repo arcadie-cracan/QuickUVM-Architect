@@ -284,7 +284,8 @@ export class DiagramPanel {
           : "contain";
       const decorations = cfg.get<boolean>("schematicDecorations", true);
       const codeFollow = cfg.get<boolean>("codeFollowsSelection", false);
-      this.post({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
+      const lodThreshold = lodThresholdSetting(cfg);
+      this.post({ v: 1, type: "ui/config", lasso, decorations, codeFollow, lodThreshold });
     }
   }
 
@@ -502,6 +503,14 @@ export class DiagramPanel {
   private html(): string {
     return diagramHtml(this.panel.webview, this.context.extensionUri);
   }
+}
+
+/** docs/08 R6 — `quickuvm.lodZoomThreshold`, clamped to what the webview can
+ *  act on (the zoom range is 0.2..5; 0 switches the overview level off). Shared
+ *  by the panel and the per-file editor, so the two read one rule. */
+export function lodThresholdSetting(cfg: vscode.WorkspaceConfiguration): number {
+  const v = cfg.get<number>("lodZoomThreshold", 0.5);
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.min(v, 5) : 0;
 }
 
 /** The HTML of the diagram webview, shared by the panel and the CustomTextEditor. */

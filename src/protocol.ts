@@ -36,6 +36,9 @@ export interface UiConfig {
   /** docs/08 R20: the generated code follows the selection in the TB view
    *  (the quickuvm.codeFollowsSelection setting; the palette row toggles it) */
   codeFollow: boolean;
+  /** docs/08 R6: the zoom below which a multi-node view drops to the overview
+   *  level of detail (the quickuvm.lodZoomThreshold setting; 0 = never) */
+  lodThreshold: number;
 }
 
 /** Actions requested by the webview that touch the YAML or the sources (doc. 05). */

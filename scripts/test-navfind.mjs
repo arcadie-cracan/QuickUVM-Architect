@@ -171,4 +171,49 @@ test("docs/08 R17: the palette lists the recent actions first, then the rest in 
   assert.equal(pushRecent(["1", "2", "3", "4", "5", "6", "7", "8"], "9").length, 8, "capped at 8");
 });
 
+const { lodFor, titleUpscale, LOD_HYSTERESIS, LOD_TITLE_MAX } = await import(pathToFileURL(outFile));
+test("docs/08 R6: the level of detail drops below the threshold and returns only past the hysteresis band", () => {
+  assert.equal(lodFor(1, "full", 0.5), "full");
+  assert.equal(lodFor(0.5, "full", 0.5), "full", "AT the threshold is still full detail");
+  assert.equal(lodFor(0.49, "full", 0.5), "low");
+  // a wheel hovering around the threshold must not flicker the labels
+  assert.equal(lodFor(0.5, "low", 0.5), "low", "back at the threshold: still the overview");
+  assert.equal(lodFor(0.55, "low", 0.5), "low", "inside the band");
+  assert.equal(lodFor(0.5 * LOD_HYSTERESIS, "low", 0.5), "full", "the band's upper edge returns");
+  assert.equal(lodFor(0.6, "low", 0.5), "full");
+  // walked down and up, the level changes exactly twice
+  let lod = "full";
+  let changes = 0;
+  for (const k of [0.6, 0.52, 0.49, 0.51, 0.49, 0.53, 0.57, 0.58, 0.56]) {
+    const next = lodFor(k, lod, 0.5);
+    changes += next === lod ? 0 : 1;
+    lod = next;
+  }
+  assert.equal(changes, 2, "one drop, one return — no flicker in between");
+});
+
+test("docs/08 R6: a threshold of 0 (or a non-number) switches the overview level off", () => {
+  for (const t of [0, -1, NaN, Infinity, undefined]) {
+    assert.equal(lodFor(0.2, "full", t), "full", `threshold ${t}`);
+    assert.equal(lodFor(0.2, "low", t), "full", `threshold ${t} also LEAVES the overview`);
+  }
+});
+
+test("docs/08 R6: an overview title fills its box, is capped, and never shrinks", () => {
+  // a 60x14 title at the top of a 160x120 box: width allows 2.4, height 8, cap 3
+  const a = titleUpscale({ y: 4, w: 60, h: 14 }, { w: 160, h: 120 });
+  assert.equal(a.scale, 2.4);
+  assert.equal(a.dy, 60 - 11, "moved to the box's vertical centre");
+  // a short title in a big box stops at the cap
+  assert.equal(titleUpscale({ y: 4, w: 20, h: 14 }, { w: 400, h: 300 }).scale, LOD_TITLE_MAX);
+  // a flat box (a collapsed header): the HEIGHT limits it
+  const flat = titleUpscale({ y: 4, w: 40, h: 14 }, { w: 200, h: 32 });
+  assert.equal(flat.scale, 1.71, "(32 - 8) / 14, floored to 2 decimals — never past the box");
+  assert.ok(flat.scale * 14 <= 32 - 8);
+  // a title already wider than its box is left exactly where it is drawn
+  assert.deepEqual(titleUpscale({ y: 4, w: 200, h: 14 }, { w: 120, h: 80 }), { scale: 1, dy: 0 });
+  // an unmeasurable title (not rendered yet) is left alone too
+  assert.deepEqual(titleUpscale({ y: 0, w: 0, h: 0 }, { w: 120, h: 80 }), { scale: 1, dy: 0 });
+});
+
 console.log(`\ntest-navfind: ${passed} tests passed.`);

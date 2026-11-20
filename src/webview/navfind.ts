@@ -242,3 +242,59 @@ export class QuickMarks {
     return c ? { ...c } : null;
   }
 }
+
+// ------------------------------------------------ level of detail (docs/08 R6)
+
+/** the detail a multi-node view draws at the current zoom: everything, or the
+ *  overview (boxes, titles, wires — no pin labels, no compartment text) */
+export type Lod = "full" | "low";
+
+/** the band above the threshold in which the level does not change back */
+export const LOD_HYSTERESIS = 1.15;
+
+/**
+ * The level of detail for zoom `k`, given the level in force. Below
+ * `threshold` the view drops to "low"; it returns to "full" only once the
+ * zoom is back above `threshold * LOD_HYSTERESIS` — a wheel that hovers around
+ * the threshold must not flicker the labels on and off. A threshold of 0 (or
+ * anything not a positive number) switches the feature off.
+ */
+export function lodFor(k: number, prev: Lod, threshold: number): Lod {
+  if (!(threshold > 0) || !Number.isFinite(threshold)) {
+    return "full";
+  }
+  if (prev === "low") {
+    return k >= threshold * LOD_HYSTERESIS ? "full" : "low";
+  }
+  return k < threshold ? "low" : "full";
+}
+
+/** the largest title upscale at the overview level (Houdini's "Large" badge) */
+export const LOD_TITLE_MAX = 3;
+
+/**
+ * How a box's title is redrawn at the overview level: scaled up about its own
+ * centre until it fills the box (never past `LOD_TITLE_MAX`, never below 1 —
+ * a title already wider than its box is left alone), and moved to the box's
+ * vertical centre, which the hidden compartments have freed. `title` is the
+ * text's bounding box in the box's own coordinates.
+ */
+export function titleUpscale(
+  title: { y: number; w: number; h: number },
+  box: { w: number; h: number },
+  pad = 8
+): { scale: number; dy: number } {
+  if (!(title.w > 0) || !(title.h > 0)) {
+    return { scale: 1, dy: 0 };
+  }
+  const fit = Math.min(
+    (box.w - 2 * pad) / title.w,
+    (box.h - pad) / title.h,
+    LOD_TITLE_MAX
+  );
+  const scale = Math.max(1, Math.floor(fit * 100) / 100);
+  if (scale === 1) {
+    return { scale: 1, dy: 0 }; // nothing to gain: the title stays where it is drawn
+  }
+  return { scale, dy: box.h / 2 - (title.y + title.h / 2) };
+}

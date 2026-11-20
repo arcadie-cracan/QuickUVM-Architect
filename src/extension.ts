@@ -1309,7 +1309,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (
         e.affectsConfiguration("quickuvm.lassoMode") ||
         e.affectsConfiguration("quickuvm.schematicDecorations") ||
-        e.affectsConfiguration("quickuvm.codeFollowsSelection")
+        e.affectsConfiguration("quickuvm.codeFollowsSelection") ||
+        e.affectsConfiguration("quickuvm.lodZoomThreshold")
       ) {
         // purely UI settings: they are resent to the webview, without re-elaboration
         DiagramPanel.current?.postUiConfig();

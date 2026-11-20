@@ -17,6 +17,7 @@ import type { YamlLink } from "./yamllink";
 import {
   clearActiveExporter,
   diagramHtml,
+  lodThresholdSetting,
   saveExportedSvg,
   setActiveExporter,
 } from "./panel";
@@ -159,7 +160,15 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         quvm.get<string>("lassoMode", "contain") === "intersect" ? "intersect" : "contain";
       const decorations = quvm.get<boolean>("schematicDecorations", true);
       const codeFollow = quvm.get<boolean>("codeFollowsSelection", false);
-      void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
+      const lodThreshold = lodThresholdSetting(quvm);
+      void webview.postMessage({
+        v: 1,
+        type: "ui/config",
+        lasso,
+        decorations,
+        codeFollow,
+        lodThreshold,
+      });
     };
 
     // Any change to the document (text editing, undo/redo, or a gesture's own
@@ -220,7 +229,8 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         if (
           e.affectsConfiguration("quickuvm.lassoMode") ||
           e.affectsConfiguration("quickuvm.schematicDecorations") ||
-          e.affectsConfiguration("quickuvm.codeFollowsSelection")
+          e.affectsConfiguration("quickuvm.codeFollowsSelection") ||
+          e.affectsConfiguration("quickuvm.lodZoomThreshold")
         ) {
           postUi();
         }

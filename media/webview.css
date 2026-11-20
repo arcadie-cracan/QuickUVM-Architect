@@ -1631,3 +1631,43 @@ text.split-sign {
   fill: var(--vscode-descriptionForeground, #999);
   stroke: none;
 }
+
+/* --------------------------------- level of detail on zoom (docs/08 R6) */
+/* Below the zoom threshold main.ts sets `data-lod="low"` on the canvas (with
+   hysteresis) and a multi-node view draws the overview: boxes, titles, wires,
+   boundary flags, junctions and the status / generation badges — a problem is
+   never hidden. What goes is the text nobody can read at that size.
+   `#canvas` is in every selector on purpose: the SVG export clones the canvas
+   WITHOUT its id, so a file exported at the overview level still carries the
+   full detail. `display: none`, not opacity: nothing is re-laid out either way
+   (SVG text is positioned absolutely), and hidden text must take no pointer
+   events. A selected or cross-probed pin, and a selected net label, keep their
+   text: the selection says which one you asked about. */
+#canvas[data-lod="low"] .pin:not(.selected):not(.xprobe) text.pin-label,
+#canvas[data-lod="low"] text.netlabel:not(.selected),
+#canvas[data-lod="low"] text.conn-note,
+#canvas[data-lod="low"] .const-box,
+#canvas[data-lod="low"] .const-val,
+#canvas[data-lod="low"] .split-join,
+#canvas[data-lod="low"] .split-sign,
+#canvas[data-lod="low"] .bus-slash,
+#canvas[data-lod="low"] .mult,
+#canvas[data-lod="low"] .nc,
+#canvas[data-lod="low"] .inode-sub,
+#canvas[data-lod="low"] .tb-comp,
+#canvas[data-lod="low"] .tb-comp-title,
+#canvas[data-lod="low"] .tb-sep,
+#canvas[data-lod="low"] .tb-stereotype,
+#canvas[data-lod="low"] .tb-pin,
+#canvas[data-lod="low"] .tb-widget {
+  display: none;
+}
+/* the title, enlarged to fill its box and centred in it: the transform comes
+   per title from main.ts (`--lod-title`, fitted to the box), and applies only
+   at the overview level */
+#canvas[data-lod="low"] .tbnode > .tb-name,
+#canvas[data-lod="low"] .inode > .inode-name {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: var(--lod-title, none);
+}

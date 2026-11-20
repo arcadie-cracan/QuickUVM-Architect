@@ -43,14 +43,17 @@ import {
 import { el, measurer, SVG_NS } from "./svg";
 import {
   findMatches,
+  lodFor,
   NavHistory,
   pushRecent,
   QuickMarks,
   rankPalette,
   rtlParentPath,
   tbParentFocus,
+  titleUpscale,
   unionBounds,
   type FindItem,
+  type Lod,
   type Rect,
 } from "./navfind";
 
@@ -224,7 +227,12 @@ function leaveTbView(): void {
 }
 
 /** the UI preferences from the extension settings (the ui/config message, docs/05) */
-let uiConfig: UiConfig = { lasso: "contain", decorations: true, codeFollow: false };
+let uiConfig: UiConfig = {
+  lasso: "contain",
+  decorations: true,
+  codeFollow: false,
+  lodThreshold: 0.5,
+};
 
 /** the cameras per view — SESSION state, not project state (docs/04): the first
  *  opening of a view always fits into the window; the frame is
@@ -475,6 +483,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       // the drawing vocabulary is hidden through a class on the canvas (CSS), without
       // re-rendering — slash+width, junction dots (docs/04)
       canvas.classList.toggle("decor-off", uiConfig.decorations === false);
+      updateLod(); // docs/08 R6: the threshold is a setting
       break;
     }
     case "layout/full":
@@ -1067,6 +1076,7 @@ function drawPin(
  */
 function resetCanvas(): SVGGElement {
   canvas.replaceChildren();
+  lodTitlesDirty = true; // docs/08 R6: new titles, none fitted to its box yet
   const defs = el("defs", {});
   const hatch = el("pattern", {
     id: "hatch",
@@ -1198,12 +1208,65 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
 
 // ------------------------------------------------------------ interaction
 
+// docs/08 R6 — level of detail on zoom. Below `quickuvm.lodZoomThreshold` a
+// multi-node view (the RTL schematic, the TB view) draws the overview: boxes,
+// titles, wires, flags and badges; the pin labels, the compartment text and
+// the inline widgets go (unreadable at that size, and most of the drawing
+// cost). It is ONE attribute on the root `<svg>` and CSS rules behind it
+// (media/webview.css): no re-layout, no re-render, so the boxes do not move
+// when the level changes. The symbol view is exempt: it is nothing BUT its pin
+// labels, and it always fits the window.
+let lod: Lod = "full";
+/** the titles of the current DOM have not been fitted to their boxes yet */
+let lodTitlesDirty = true;
+
+function updateLod(): void {
+  const next: Lod =
+    state.mode === "symbol" ? "full" : lodFor(state.k, lod, uiConfig.lodThreshold);
+  if (next !== lod || canvas.getAttribute("data-lod") !== next) {
+    lod = next;
+    canvas.setAttribute("data-lod", next);
+    lodTitlesDirty = true;
+  }
+  if (lod === "low" && lodTitlesDirty) {
+    applyLodTitles();
+  }
+}
+
+/** At the overview level a box's title is enlarged until it fills the box and
+ *  moved to its centre (the compartments are hidden, so the room is free) —
+ *  Houdini's "Large" badge. Measured once per DOM (a render) and per switch to
+ *  the overview, never per pan/zoom frame; the transform itself is applied by
+ *  CSS, only under `data-lod="low"`, through a variable on the title. */
+function applyLodTitles(): void {
+  lodTitlesDirty = false;
+  canvas
+    .querySelectorAll<SVGTextElement>(".tbnode > .tb-name, .inode > .inode-name")
+    .forEach((t) => {
+      const id = (t.parentElement as unknown as SVGElement | null)?.dataset.id;
+      const box = id ? rectOf(id) : null; // a hover preview's boxes have no id: left alone
+      if (!box) {
+        return;
+      }
+      const bb = t.getBBox(); // the text's own box: its CSS transform is not in it
+      const { scale, dy } = titleUpscale(
+        { y: bb.y, w: bb.width, h: bb.height },
+        { w: box.w, h: box.h }
+      );
+      t.style.setProperty(
+        "--lod-title",
+        scale === 1 ? "none" : `translate(0px, ${dy}px) scale(${scale})`
+      );
+    });
+}
+
 function applyTransform(): void {
   cancelRename(); // docs/08 R14: a fixed-position editor would detach from its title
   viewport?.setAttribute(
     "transform",
     `translate(${state.tx},${state.ty}) scale(${state.k})`
   );
+  updateLod(); // docs/08 R6: the level of detail follows the zoom
   updateMinimap();
   positionNodeTools(); // docs/08 R1: the "+" strip rides along with its node
   repositionCard(); // docs/08 R15: a pinned card follows its box — AFTER the new transform
@@ -1500,8 +1563,17 @@ function exportSvg(): void {
   const MARGIN = 16;
   // the content's bbox in world space (getBBox ignores the viewport's
   // own transform = exactly the camera we are discarding)
+  // docs/08 R6 — the export always carries full detail: the bounds are taken
+  // with the overview level lifted (its hidden labels count), and the clone
+  // loses the canvas id, so no `#canvas[data-lod]` rule reaches it
+  const lodAttr = canvas.getAttribute("data-lod");
+  canvas.removeAttribute("data-lod");
   const bb = viewport.getBBox();
+  if (lodAttr) {
+    canvas.setAttribute("data-lod", lodAttr);
+  }
   const clone = canvas.cloneNode(true) as SVGSVGElement;
+  clone.removeAttribute("data-lod");
   clone.querySelectorAll(".selected").forEach((n) =>
     n.classList.remove("selected")
   );
