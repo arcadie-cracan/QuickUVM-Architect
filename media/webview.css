@@ -1625,3 +1625,9 @@ text.split-sign {
   fill: var(--vscode-descriptionForeground, #999);
 }
 
+/* docs/08 R11 — a composed block's signal port: a small filled square, unlike
+   the hollow TLM glyphs (it is a `connections` endpoint, not a TLM port) */
+.tb-glyph.signal {
+  fill: var(--vscode-descriptionForeground, #999);
+  stroke: none;
+}

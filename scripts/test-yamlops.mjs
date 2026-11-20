@@ -1181,6 +1181,15 @@ test("removeConnection: sterge perechea, curata lista goala, idempotent", () => 
   assert.equal(ops.removeConnection(before, "x.a", "y.b"), before);
 });
 
+test("docs/08 R11 review: parseQuvm mirrors the canonical src/dst keys into from/to; the text mutations read both", () => {
+  const text = "subenvs:\n  - { name: p, config: p.yaml }\n  - { name: c, config: c.yaml }\nconnections:\n  - { src: p.q, dst: c.d }\n";
+  const cfg = ops.parseQuvm(text);
+  assert.deepEqual(cfg.connections, [{ src: "p.q", dst: "c.d", from: "p.q", to: "c.d" }]);
+  assert.equal(ops.addConnections(text, [{ from: "p.q", to: "c.d" }]), text, "already there under src/dst: a no-op");
+  const out = ops.removeConnection(text, "p.q", "c.d");
+  assert.ok(!/p\.q/.test(out), "removed by the mirrored pair");
+});
+
 test("setAgentActive: a hand-written `active: true` is deleted by the reset (docs/08 R16)", () => {
   const text = "agents:\n  - name: cmd\n    active: true\n    ports: {}\n";
   const out = ops.setAgentActive(text, "cmd", true);

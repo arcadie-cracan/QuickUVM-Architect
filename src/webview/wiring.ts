@@ -16,6 +16,13 @@
 //              dropped on empty canvas it creates an agent (from the pin, from
 //              the selected pins, from the interface); dropped on a pin an agent
 //              already claims, the pins JOIN that agent (`addPinsToAgent`).
+//   sub-port — a composed block's signal port (its child agents' ports, from
+//              `config/full.children`): an output dropped on another block's
+//              input — or the reverse — writes a `connections` entry
+//              (`addConnection`, the same multi-file plan as "Wire connections
+//              from design": the destination's agents go passive). Legality:
+//              another block, one driver per input, equal widths when both
+//              are known (R11 for the composition).
 // Every outcome is an existing host action with its args filled in — the same
 // mutation the inspector would send — so the YAML write path does not change.
 // Legality is computed ONCE at pointer-down and shown before the drop (Simulink
@@ -38,7 +45,60 @@ export type WireOrigin =
        *  retargeted — the reason, or null when it can */
       blocked: string | null;
       field: "source" | "monitor";
+    }
+  | {
+      kind: "sub-port";
+      nodeId: string;
+      /** the composed block (`subenvs[].name`) and its port, as `connections` name them */
+      subenv: string;
+      port: string;
+      /** `out` = the block's output (a source, east); `in` = its input (a target, west) */
+      dir: "out" | "in";
+      /** the port's width from the child config; null when unknown */
+      width: number | null;
+      /** an input already driven by a connection: by whom (no second driver) */
+      drivenBy: string | null;
     };
+
+type Children = Readonly<Record<string, QuvmConfig>> | undefined;
+
+/** the width of a block's port from its child config — the agents' `outputs`
+ *  for `out`, `inputs` for `in`; null when the child or the port is unknown */
+export function subPortWidth(
+  children: Children,
+  subenv: string,
+  port: string,
+  dir: "out" | "in"
+): number | null {
+  for (const a of children?.[subenv]?.agents ?? []) {
+    const list = dir === "out" ? a.ports?.outputs : a.ports?.inputs;
+    const p = list?.find((x) => x.name === port);
+    if (p) {
+      // a width from a parameter, packed dims, a struct or a user type: the
+      // effective width is not `width` — unknown, never "1" (review finding)
+      return p.width_param || p.packed_dims || p.struct || p.type ? null : p.width ?? 1;
+    }
+  }
+  return null;
+}
+
+/** the port exists on the child's agents in that direction — or the child is
+ *  not readable, in which case the pin itself is the only evidence */
+function knownPort(children: Children, subenv: string, port: string, dir: "out" | "in"): boolean {
+  const child = children?.[subenv];
+  if (!child) {
+    return true;
+  }
+  return (child.agents ?? []).some((a) =>
+    (dir === "out" ? a.ports?.outputs : a.ports?.inputs)?.some((x) => x.name === port)
+  );
+}
+
+/** the connection already driving `<subenv>.<port>`: its source, or null */
+function drivenBy(config: QuvmConfig, subenv: string, port: string): string | null {
+  const to = `${subenv}.${port}`;
+  return (config.connections ?? []).find((c) => c.to === to && c.from)?.from ?? null;
+}
 
 export interface WireChoice {
   label: string;
@@ -67,7 +127,8 @@ function nodeOf(scene: TbScene, id: string): TbNode | undefined {
 export function wireOriginOf(
   scene: TbScene,
   config: QuvmConfig,
-  portId: string
+  portId: string,
+  children?: Children
 ): WireOrigin | null {
   const dot = portId.lastIndexOf(".");
   if (dot < 0) {
@@ -92,7 +153,61 @@ export function wireOriginOf(
       field: port,
     };
   }
+  if (node.kind === "tbsubenv") {
+    const tp = node.ports.find((p) => p.id === portId);
+    if (!tp) {
+      return null;
+    }
+    const dir = tp.side === "EAST" ? "out" : "in";
+    if (!tp.glyph || !knownPort(children, node.label, tp.port, dir)) {
+      return null; // an endpoint pin without a hotspot, or a port the child does not declare
+    }
+    return {
+      kind: "sub-port",
+      nodeId,
+      subenv: node.label,
+      port: tp.port,
+      dir,
+      width: subPortWidth(children, node.label, tp.port, dir),
+      drivenBy: dir === "in" ? drivenBy(config, node.label, tp.port) : null,
+    };
+  }
   return null;
+}
+
+/** per block port, for a sub-port origin: null = a legal endpoint, else why not */
+function subPortReason(
+  config: QuvmConfig,
+  children: Children,
+  origin: Extract<WireOrigin, { kind: "sub-port" }>,
+  subenv: string,
+  port: string
+): string | null {
+  if (origin.dir === "in" && origin.drivenBy) {
+    return `${origin.subenv}.${origin.port} is already driven by ${origin.drivenBy} — remove that connection first`;
+  }
+  if (origin.dir === "out") {
+    const d = drivenBy(config, subenv, port);
+    if (d) {
+      return `already driven by ${d} — one driver per input`;
+    }
+  }
+  const w = subPortWidth(children, subenv, port, origin.dir === "out" ? "in" : "out");
+  if (origin.width !== null && w !== null && origin.width !== w) {
+    return `width ${origin.width} ≠ ${w} — quick-uvm requires equal widths`;
+  }
+  return null;
+}
+
+function connect(
+  origin: Extract<WireOrigin, { kind: "sub-port" }>,
+  subenv: string,
+  port: string
+): WireChoice {
+  const mine = `${origin.subenv}.${origin.port}`;
+  const theirs = `${subenv}.${port}`;
+  const [from, to] = origin.dir === "out" ? [mine, theirs] : [theirs, mine];
+  return { label: `Connect ${from} → ${to}`, action: "addConnection", args: { from, to } };
 }
 
 const NAME_FIRST = "name the scoreboard first — endpoints are set by name";
@@ -142,11 +257,46 @@ function sbPortReason(
 export function wireTargets(
   scene: TbScene,
   config: QuvmConfig,
-  origin: WireOrigin
+  origin: WireOrigin,
+  children?: Children
 ): Map<string, string | null> {
   const out = new Map<string, string | null>();
   for (const n of scene.nodes) {
     if (n.id === origin.nodeId) {
+      continue;
+    }
+    if (origin.kind === "sub-port") {
+      if (n.kind !== "tbsubenv") {
+        out.set(n.id, "not a composed block — a connection joins two subenvs");
+        continue;
+      }
+      if (n.label === origin.subenv) {
+        // a duplicate-named subenv (hand-written YAML) shares the origin's
+        // name-keyed pins: lighting it would light the origin's own box
+        out.set(n.id, "the same block");
+        continue;
+      }
+      // the opposite side of the other block: its inputs for an output origin
+      const side = origin.dir === "out" ? "WEST" : "EAST";
+      const tdir = origin.dir === "out" ? "in" : "out";
+      let first: string | null = null;
+      let anyLegal = false;
+      for (const p of n.ports) {
+        if (p.side !== side || !p.glyph || !knownPort(children, n.label, p.port, tdir)) {
+          continue; // an endpoint pin without a hotspot / a port the child does not declare
+        }
+        const r = subPortReason(config, children, origin, n.label, p.port);
+        out.set(p.id, r);
+        if (r === null) {
+          anyLegal = true;
+        } else if (first === null) {
+          first = r;
+        }
+      }
+      out.set(
+        n.id,
+        anyLegal ? null : first ?? `no ${origin.dir === "out" ? "input" : "output"} port on this block`
+      );
       continue;
     }
     if (n.inferred) {
@@ -213,11 +363,24 @@ export function wireChoices(
   scene: TbScene,
   config: QuvmConfig,
   origin: WireOrigin,
-  targetId: string
+  targetId: string,
+  children?: Children
 ): WireChoice[] {
-  const legal = wireTargets(scene, config, origin);
+  const legal = wireTargets(scene, config, origin, children);
   if (!legal.has(targetId) || legal.get(targetId) !== null) {
     return [];
+  }
+  if (origin.kind === "sub-port") {
+    const box = nodeOf(scene, targetId);
+    if (box) {
+      // dropped on the block: every legal port of it (one applies directly, several ask)
+      return box.ports
+        .filter((p) => legal.get(p.id) === null)
+        .map((p) => connect(origin, box.label, p.port));
+    }
+    const dot = targetId.lastIndexOf(".");
+    const owner = dot >= 0 ? nodeOf(scene, targetId.slice(0, dot)) : undefined;
+    return owner ? [connect(origin, owner.label, targetId.slice(dot + 1))] : [];
   }
   if (origin.kind === "agent-ap") {
     const dot = targetId.lastIndexOf(".");
@@ -243,8 +406,25 @@ export function wireChoices(
 export function wireChoicesOnCanvas(
   scene: TbScene,
   config: QuvmConfig,
-  origin: WireOrigin
+  origin: WireOrigin,
+  children?: Children
 ): WireChoice[] {
+  if (origin.kind === "sub-port") {
+    // every legal port of every other block, as a menu (R11's menu form)
+    const legal = wireTargets(scene, config, origin, children);
+    const out: WireChoice[] = [];
+    const seen = new Set<string>();
+    for (const n of scene.nodes) {
+      for (const p of n.ports) {
+        const key = `${n.label}.${p.port}`;
+        if (legal.get(p.id) === null && !seen.has(key)) {
+          seen.add(key); // duplicate-named blocks share their pins: one row per pair
+          out.push(connect(origin, n.label, p.port));
+        }
+      }
+    }
+    return out;
+  }
   if (origin.kind === "agent-ap") {
     const out: WireChoice[] = [
       {

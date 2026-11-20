@@ -131,6 +131,25 @@ test("nivel inexistent -> null; config gol -> null", () => {
   assert.equal(buildTbScene({}, "", null), null);
 });
 
+test("docs/08 R11: the children's agent ports become the sub boxes' ports (outputs east, inputs west), with a hotspot glyph", () => {
+  const cfg = {
+    dut: { name: "top" },
+    subenvs: [{ name: "u_a", config: "a.yaml" }, { name: "u_b", config: "b.yaml" }],
+    connections: [{ from: "u_a.q", to: "u_b.d" }],
+  };
+  const children = {
+    u_a: { agents: [{ name: "a", ports: { inputs: [{ name: "x" }], outputs: [{ name: "q", width: 8 }] } }] },
+    u_b: { agents: [{ name: "b", ports: { inputs: [{ name: "d", width: 8 }, { name: "en" }] } }] },
+  };
+  const s = buildTbScene(cfg, "env", "t.yaml", null, children);
+  const a = nodeById(s, "sub:u_a");
+  assert.deepEqual(a.ports.map((p) => [p.port, p.side, p.glyph]), [["q", "EAST", "signal"], ["x", "WEST", "signal"]], "the connection's pin keeps its seat, the rest follow");
+  assert.deepEqual(nodeById(s, "sub:u_b").ports.map((p) => [p.port, p.side]), [["d", "WEST"], ["en", "WEST"]]);
+  assert.ok(s.edges.some((e) => e.sourcePort === "sub:u_a.q" && e.targetPort === "sub:u_b.d"));
+  const bare = buildTbScene(cfg, "env", "t.yaml", null);
+  assert.deepEqual(nodeById(bare, "sub:u_a").ports.map((p) => p.port), ["q"], "without children: the connection pins only, as before");
+});
+
 test("bench subsystem: DUT prefix de clasa, nu se deseneaza; Env cu subenvs", () => {
   const s = buildTbScene(
     {

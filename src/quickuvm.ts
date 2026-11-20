@@ -12,6 +12,13 @@ export interface QuvmPort {
   /** defaults to 1 in QuickUVM; the extension omits width on 1-bit ports */
   width?: number;
   randomize?: boolean;
+  /** the shapes whose effective width is NOT `width` (schema reference §1.5.1):
+   *  a width from a declared parameter, packed dimensions, an inline struct, a
+   *  user type — a reader must treat the width as unknown, not as 1 */
+  width_param?: string;
+  packed_dims?: unknown;
+  struct?: unknown;
+  type?: string;
 }
 
 export interface QuvmAgent {
@@ -133,6 +140,10 @@ export interface QuvmProbe {
 export interface QuvmConnection {
   from?: string;
   to?: string;
+  /** the canonical keys of quick-uvm 1.x (`from`/`to` are still accepted);
+   *  `parseQuvm` mirrors them into `from`/`to`, so every reader sees one shape */
+  src?: string;
+  dst?: string;
 }
 
 /** composition H1: a child block referenced through its config path (docs/03) */

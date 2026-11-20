@@ -414,6 +414,12 @@ export function activate(context: vscode.ExtensionContext): void {
         case "wireConnections":
           void actions.wireConnections(target);
           break;
+        case "addConnection":
+          void actions.addConnection(
+            typeof args.from === "string" ? args.from : "",
+            typeof args.to === "string" ? args.to : ""
+          );
+          break;
         case "composeIntoParent":
           void actions.composeIntoParent(target);
           break;

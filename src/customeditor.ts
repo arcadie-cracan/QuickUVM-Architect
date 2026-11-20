@@ -471,6 +471,16 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "traceabilityReport":
         void vscode.commands.executeCommand("quickuvm.traceabilityReport");
         break;
+      case "addConnection":
+        // the children's configs (and the multi-file plan) belong to the ACTIVE
+        // configuration's service: this editor draws the connection pins but
+        // cannot wire — say so instead of a silent log (review finding)
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t(
+            "QuickUVM Architect: connections are wired from the diagram panel of the active configuration."
+          )
+        );
+        break;
       default:
         this.log.appendLine(
           `[customeditor] action not available in the config editor: ${action}`

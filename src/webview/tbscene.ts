@@ -72,7 +72,10 @@ export interface TbCompartment {
  * from Accellera, Doulos and Verification Academy; the view speaks it instead of
  * a text suffix. null = not a TLM port (an interface, a sequencer reference).
  */
-export type PortGlyph = "port" | "export" | "analysis";
+/** `signal` (docs/08 R11): a composed block's signal-level port (a `connections`
+ *  endpoint), drawn as a small filled square — not a TLM glyph, but it gives
+ *  the port a hotspot so a wire can start or land on it */
+export type PortGlyph = "port" | "export" | "analysis" | "signal";
 
 export interface TbPort {
   id: string;
@@ -332,7 +335,10 @@ export function buildTbScene(
   config: QuvmConfig,
   focus: string,
   configPath: string | null,
-  resolved?: ResolvedConfig | null
+  resolved?: ResolvedConfig | null,
+  /** docs/08 R11/R18 — the composed children's configs by subenv name: their
+   *  agents' ports become the `sub:` boxes' ports (the wire's endpoints) */
+  children?: Readonly<Record<string, QuvmConfig>>
 ): TbScene | null {
   const viewId = `tb:${configPath ?? ""}`;
   const agents = (config.agents ?? []).filter((a) => a.name);
@@ -355,7 +361,7 @@ export function buildTbScene(
   if (focus === "") {
     level = levelTop(config, hasDut, dutName, agents, subenvs);
   } else if (focus === "env") {
-    level = levelEnv(config, hasDut, agents, subenvs, resolved);
+    level = levelEnv(config, hasDut, agents, subenvs, resolved, children);
   } else if (focus.startsWith("agent:")) {
     const name = focus.slice("agent:".length);
     const a = agents.find((x) => x.name === name);
@@ -505,7 +511,8 @@ function levelEnv(
   hasDut: boolean,
   agents: NonNullable<QuvmConfig["agents"]>,
   subenvs: NonNullable<QuvmConfig["subenvs"]>,
-  resolved?: ResolvedConfig | null
+  resolved?: ResolvedConfig | null,
+  children?: Readonly<Record<string, QuvmConfig>>
 ): { nodes: TbNode[]; boundary: TbBoundary[]; edges: TbEdge[] } {
   const nodes: TbNode[] = [];
   const edges: TbEdge[] = [];
@@ -767,7 +774,7 @@ function levelEnv(
   }
 
   // subenvs (H1) — UML boxes with info; drill = opening the child config
-  addSubenvs(config, subenvs, nodes, edges);
+  addSubenvs(config, subenvs, nodes, edges, children);
 
   // probes
   if (probes.length) {
@@ -931,17 +938,34 @@ function addSubenvs(
   config: QuvmConfig,
   subenvs: NonNullable<QuvmConfig["subenvs"]>,
   nodes: TbNode[],
-  edges: TbEdge[]
+  edges: TbEdge[],
+  children?: Readonly<Record<string, QuvmConfig>>
 ): void {
   const subenvNames = new Set(subenvs.map((s) => s.name as string));
   const pinsByBlock = new Map<string, TbPort[]>();
-  const addPin = (block: string, p: string, side: "WEST" | "EAST"): void => {
+  // the glyph is PROVENANCE: a `signal` glyph means "a port a wire may start or
+  // land on" (a hotspot exists only for a glyph, `drawBox`). A connection's
+  // endpoint is a port; a cross-block scoreboard's endpoint is an AGENT name
+  // drawn as a pin for its edge — no glyph, so no wire can start from it (review
+  // finding: it wrote `from: <subenv>.<agent>` on an unreadable child). A real
+  // port found later in the child upgrades an endpoint pin to a hotspot.
+  const addPin = (
+    block: string,
+    p: string,
+    side: "WEST" | "EAST",
+    glyph: PortGlyph | null
+  ): void => {
     const id = subId(block);
     const pins = pinsByBlock.get(id) ?? [];
-    if (!pins.some((pp) => pp.port === p)) {
-      pins.push(port(id, p, side, p));
-      pinsByBlock.set(id, pins);
+    const existing = pins.find((pp) => pp.port === p);
+    if (existing) {
+      if (glyph && !existing.glyph) {
+        existing.glyph = glyph;
+      }
+      return;
     }
+    pins.push(port(id, p, side, p, glyph ? { glyph } : undefined));
+    pinsByBlock.set(id, pins);
   };
   const endpoint = (s: string | undefined): [string, string] | null => {
     if (!s) return null;
@@ -953,15 +977,31 @@ function addSubenvs(
   for (const c of connections) {
     const from = endpoint(c.from);
     const to = endpoint(c.to);
-    if (from) addPin(from[0], from[1], "EAST");
-    if (to) addPin(to[0], to[1], "WEST");
+    if (from) addPin(from[0], from[1], "EAST", "signal");
+    if (to) addPin(to[0], to[1], "WEST", "signal");
   }
   const xsbs = crossSbs(config).filter((s) => s.name);
   for (const sb of xsbs) {
     const src = endpoint(sb.source);
     const mon = endpoint(sb.monitor ?? undefined);
-    if (src) addPin(src[0], src[1], "EAST");
-    if (mon) addPin(mon[0], mon[1], "EAST");
+    if (src) addPin(src[0], src[1], "EAST", null);
+    if (mon) addPin(mon[0], mon[1], "EAST", null);
+  }
+  // docs/08 R11 — the children's agent ports, so a wire can be drawn between
+  // blocks: a block's OUTPUTS (what its agents sample) on the east are the
+  // sources of `connections`, its INPUTS (what its agents drive) on the west the
+  // targets. The connection-derived pins above keep their seat (same name =
+  // same pin); a block whose config the host could not read shows only those.
+  for (const s of subenvs) {
+    const child = children?.[s.name as string];
+    for (const a of child?.agents ?? []) {
+      for (const p of a.ports?.outputs ?? []) {
+        if (p.name) addPin(s.name as string, p.name, "EAST", "signal");
+      }
+      for (const p of a.ports?.inputs ?? []) {
+        if (p.name) addPin(s.name as string, p.name, "WEST", "signal");
+      }
+    }
   }
   const usedSub = new Set<string>();
   for (const s of subenvs) {

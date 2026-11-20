@@ -49,7 +49,22 @@ function parse(text: string): Document {
 
 export function parseQuvm(text: string): QuvmConfig {
   try {
-    return (parseDocument(text).toJS() as QuvmConfig) ?? {};
+    const cfg = (parseDocument(text).toJS() as QuvmConfig) ?? {};
+    // quick-uvm's canonical connection keys are `src`/`dst` (`from`/`to` are
+    // still accepted): mirrored here, so the scene, the wire's "one driver per
+    // input" rule and the composition planner read ONE shape (review finding —
+    // a hand-written `src/dst` entry was invisible to all three)
+    for (const c of cfg.connections ?? []) {
+      if (c && typeof c === "object") {
+        if (c.from === undefined && typeof c.src === "string") {
+          c.from = c.src;
+        }
+        if (c.to === undefined && typeof c.dst === "string") {
+          c.to = c.dst;
+        }
+      }
+    }
+    return cfg;
   } catch {
     return {};
   }
@@ -314,7 +329,8 @@ export function addConnections(text: string, conns: ConnSpec[]): string {
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if (isMap(item)) {
-        seen.add(`${item.get("from")}\0${item.get("to")}`);
+        // the canonical `src`/`dst` keys count too (one shape, see parseQuvm)
+        seen.add(`${item.get("from") ?? item.get("src")}\0${item.get("to") ?? item.get("dst")}`);
       }
     }
   }
@@ -379,7 +395,10 @@ export function removeConnection(text: string, from: string, to: string): string
     return text;
   }
   const idx = seq.items.findIndex(
-    (i) => isMap(i) && i.get("from") === from && i.get("to") === to
+    (i) =>
+      isMap(i) &&
+      (i.get("from") ?? i.get("src")) === from &&
+      (i.get("to") ?? i.get("dst")) === to
   );
   if (idx < 0) {
     return text;
@@ -804,6 +823,8 @@ export function renameAgent(text: string, oldName: string, newName: string): str
       if (isMap(c)) {
         retargetPrefix(c, "from", oldName, newName);
         retargetPrefix(c, "to", oldName, newName);
+        retargetPrefix(c, "src", oldName, newName);
+        retargetPrefix(c, "dst", oldName, newName);
       }
     }
   }
@@ -887,6 +908,8 @@ export function renameSubenv(text: string, oldName: string, newName: string): st
       if (isMap(c)) {
         retargetPrefix(c, "from", oldName, newName);
         retargetPrefix(c, "to", oldName, newName);
+        retargetPrefix(c, "src", oldName, newName);
+        retargetPrefix(c, "dst", oldName, newName);
       }
     }
   }
