@@ -1,744 +1,786 @@
-# 06 — Plan pe faze, riscuri și jurnalul deciziilor
+# 06 — Phased plan, risks and the decision journal
 
-## Faze
+## Phases
 
-### Faza 0 — validarea backend-ului (ÎNCHEIATĂ)
+### Phase 0 — backend validation (CLOSED)
 
-Extractor pyslang funcțional (`backend/svmodel.py`) care produce modelul de
-proiect complet, validat pe `examples/soc_top.sv` (design de regresie derivat
-din exemplele QuickUVM, cu parametri propagați, generate, tablou unpacked,
-interfață cu modporturi, conexiuni concat/select). Criteriile de verificare:
-CLAUDE.md.
+A working pyslang extractor (`backend/svmodel.py`) that produces the complete
+project model, validated on `examples/soc_top.sv` (a regression design derived
+from the QuickUVM examples, with propagated parameters, generate, an unpacked
+array, an interface with modports, concat/select connections). The
+verification criteria: CLAUDE.md.
 
-### Faza 1 — schelet de extensie + vederea-simbol read-only (ÎNCHEIATĂ)
+### Phase 1 — extension skeleton + read-only symbol view (CLOSED)
 
-Închisă în iul. 2026: implementată și verificată pe designul de regresie
-(pytest verde, webview validat pe model real), iar criteriul de încheiere a
-fost bifat interactiv pe un proiect Bender real — common_cells, top
-`cdc_fifo_gray` (`examples-bender/`): ierarhie, vederea-simbol,
-salt-la-sursă din pin.
+Closed in Jul 2026: implemented and verified on the regression design
+(pytest green, the webview validated on a real model), and the closure
+criterion was ticked interactively on a real Bender project — common_cells,
+top `cdc_fifo_gray` (`examples-bender/`): hierarchy, the symbol view,
+jump-to-source from a pin.
 
-- schelet `yo code` TypeScript; pornirea backend-ului ca proces copil, cu
-  debounce la salvare; parsarea modelului contra schemei;
-- tree view de ierarhie (nativ) din `instances[]`;
-- webview cu vederea-simbol a unui modul: layout ELK complet, pini pe
-  laturi, lățimi, pan/zoom, selecție simplă; temă VSCode;
-- integrare Bender (`bender script flist-plus`, cu +incdir/+define) cu
-  fallback glob/.f;
-- teste: pytest pe extractor (criteriile din CLAUDE.md), snapshot pe modelul
-  JSON al exemplului.
+- a `yo code` TypeScript skeleton; the backend started as a child process,
+  with a debounce on save; the model parsed against the schema;
+- the hierarchy tree view (native) from `instances[]`;
+- a webview with the symbol view of a module: full ELK layout, pins on the
+  sides, widths, pan/zoom, simple selection; the VSCode theme;
+- Bender integration (`bender script flist-plus`, with +incdir/+define) with
+  a glob/.f fallback;
+- tests: pytest on the extractor (the criteria in CLAUDE.md), a snapshot of
+  the example's JSON model.
 
-Criteriu de încheiere: deschizi un proiect Bender real, vezi ierarhia și
-diagrama-simbol a oricărui modul, cu salt-la-sursă din pin.
+Closure criterion: you open a real Bender project, you see the hierarchy and
+the symbol diagram of any module, with jump-to-source from a pin.
 
-### Faza 2 — configurare QuickUVM (nucleul valoric) (ÎNCHEIATĂ)
+### Phase 2 — QuickUVM configuration (the core of the value) (CLOSED)
 
-Închisă în iul. 2026: mutațiile YAML au teste Node (`npm run test:yamlops`),
-fluxul DUT→agent→generate rulează cap-coadă pe `examples/` contra quick-uvm
-0.9.1 real (`npm run test:e2e`), overlay-ul + inspectorul sunt validate pe
-model real în harness de browser, iar criteriul de încheiere a fost bifat
-interactiv în Extension Development Host: DUT setat din diagramă, agent din
-selecție de pini, port ignorat, testbench generat — fără YAML scris de mână.
+Closed in Jul 2026: the YAML mutations have Node tests (`npm run test:yamlops`),
+the DUT→agent→generate flow runs end to end on `examples/` against the real
+quick-uvm 0.9.1 (`npm run test:e2e`), the overlay + the inspector are validated
+on a real model in a browser harness, and the closure criterion was ticked
+interactively in the Extension Development Host: the DUT set from the diagram,
+an agent from a pin selection, an ignored port, a generated testbench — with no
+hand-written YAML.
 
-- overlay de configurare din YAML (parsare, culori agenți, indicator de
-  acoperire); `WorkspaceEdit` pentru: setDut, createAgentFromPins,
-  ignorePort; validările din doc. 03 ca diagnostice;
-- inspectorul lateral (agenți, teste, project/clock);
-- task `quick-uvm generate` + parsarea erorilor;
-- agent din interfață (desfacerea modportului).
+- the configuration overlay from the YAML (parsing, agent colours, the
+  coverage indicator); `WorkspaceEdit` for: setDut, createAgentFromPins,
+  ignorePort; the validations of doc. 03 as diagnostics;
+- the side inspector (agents, tests, project/clock);
+- the `quick-uvm generate` task + parsing of the errors;
+- an agent from an interface (expanding the modport).
 
-Criteriu de încheiere: de la un DUT real la un testbench QuickUVM care rulează,
-fără a scrie YAML de mână (dar cu YAML-ul lizibil și corect la final).
+Closure criterion: from a real DUT to a QuickUVM testbench that runs, without
+writing YAML by hand (but with the YAML readable and correct at the end).
 
-### Faza 3 — vederea-schemă + poziții deținute de utilizator (ÎNCHEIATĂ)
+### Phase 3 — the schematic view + user-owned positions (CLOSED)
 
-Închisă în iul. 2026. Criteriul bifat pe common_cells (`examples-bender/`,
-top `cdc_fifo_gray`): partea automată prin măturarea din harness pe modelul
-real (8/8 vederi-schemă și 24/24 simboluri fără excepții, zero muchii prin
-blocuri, drag → snapshot total D21, redeschidere exactă), iar partea
-interactivă de utilizator în Extension Development Host — care a prins și a
-dus la remedierea a cinci regresii reale (descoperirea config-ului activ,
-avortul tăcut din checkDut, euristica `_ni`, fluxul recursiv al
-compunerii, gesturile pe vederile ne-DUT) — vezi jurnalul de mai jos și
-notele din secțiune.
+Closed in Jul 2026. The criterion was ticked on common_cells
+(`examples-bender/`, top `cdc_fifo_gray`): the automatic part by the harness
+sweep on the real model (8/8 schematic views and 24/24 symbols without
+exceptions, zero edges through blocks, drag → total snapshot D21, exact
+reopening), and the interactive part by the user in the Extension Development
+Host — which caught, and led to the fixing of, five real regressions (the
+discovery of the active config, the silent abort in checkDut, the `_ni`
+heuristic, the recursive flow of the composition, the gestures on the non-DUT
+views) — see the journal below and the notes in this section.
 
-- vederea-schemă din `views` (instanțe, interconect, pliaj generate) —
-  **implementată read-only** (iul. 2026): scenă pură testată în Node
-  (`test:scene`), layout ELK layered cu porturi de graniță pe straturi
-  dedicate, navigare drill/breadcrumb/comutator, harness de browser;
-- drag de noduri + sidecar — **implementate** (iul. 2026): mutații pure în
-  `src/sidecarops.ts` (`test:sidecar`), serviciu host cu scriere atomică
-  (temp+rename), watcher pentru editări externe, invalidare grațioasă cu
-  restaurarea orfanelor reapărute, comanda „Clean Orphaned Layout Overrides",
-  drag cu snap pe grilă și re-rutare naivă ortogonală a muchiilor (traseele
-  ELK rămân doar pe vederi fără override-uri), pliaje persistate (camera e
-  stare de sesiune — prima deschidere se încadrează mereu);
-  pinii pe grilă prin construcție (porturi `FIXED_POS`, pas 16 — pin aliniat
-  = fir drept) și răsturnare H/V per nod (reatribuirea sloturilor de pini,
-  persistată în sidecar, tastele H/V + inspector);
-- ELK interactiv pentru elemente noi + „Re-aranjează tot" explicit —
-  **implementate** (iul. 2026): pozițiile utilizatorului devin semințe
-  (strategii INTERACTIVE, fără cycleBreaking — conflict cu LAST_SEPARATE),
-  se forțează exact după layout, doar elementele noi primesc poziții;
-  butonul ⟲ + `relayout/request` șterg pozițiile vederii (pliaje/răsturnări
-  rămân). Tot blocul de mai sus (drag, grilă, flip, lasso, fit, ELK
-  interactiv, orfane) **bifat interactiv** în Extension Development Host pe
-  examples/ (iul. 2026);
-- ruter de interconexiuni: **prototipul propriu Lee/A* pe grilă implementat**
-  (iul. 2026) — `src/webview/router.ts` (modul pur, `test:router`), interfața
-  fixă `route(obstacles, requests, constraints) -> polilinii`, A* cu stare
-  (celulă, direcție), penalizare pe coturi, obstacole umflate, culoar liber
-  la ancore; ortogonalitate strictă pe grilă (ancorele se inserează, nu
-  înlocuiesc punctele de grilă) și ocupanță pe celule pe orientări:
-  suprapunerea paralelă cu alt net e practic interzisă (penalizare 8/celulă),
-  traversarea perpendiculară permisă dar rară (2), doar cutiile blocurilor sunt
-  ziduri absolute — haloul e cost mare (6/celulă), traversabil când blocurile
-  stau mai aproape decât două halouri (firul se strecoară prin gol, nu prin
-  blocuri); penalizare de
-  proximitate pe inelul din jurul haloului (1/celulă — la egalitate de cost,
-  traseul preferă canalul larg, nu lipirea de blocuri), muchiile aceluiași net
-  împart liber trunchiul (fan-out); cererile se rutează scurte-întâi;
-  halou configurabil în jurul obstacolelor (implicit 16px, cu culoar propriu
-  la ancore) plus obstacole de text pentru etichetele/adnotările pinilor —
-  traseele altor net-uri nu trec peste numele porturilor: textele sunt
-  obstacole MOI (cost 10/celulă la traversare, nu zid — în canale strâmte
-  ruterul trece peste o etichetă în loc să cadă pe fallback prin blocuri),
-  intră ca margini `elk.margins` în layout, iar spațierile ELK sunt
-  corelate cu haloul (88 între straturi, 48 între noduri — între două
-  halouri încape mereu un culoar de fir); ruterul e sursa
-  unică de trasee în toate vederile-schemă (lumea pe grilă e universală,
-  ELK dă doar pozițiile), cu fallback naiv per muchie fără drum; ~2ms/re-rutare completă la drag pe
-  designul de regresie. Decizia libavoid vs. propriu: închisă — D20 (ruterul
-  propriu). Nivelul de override 4 (fir↔etichetă per net) implementat
-  (iul. 2026): click pe traseu sau pe eticheta netului → secțiunea Net din
-  inspector cu comutatorul „Show as label"/„Show as wire"; mesajul
-  `net/render` (docs/05), persistență în sidecar sub `nets.<net>.render`
-  doar la abatere de la sugestia din model, invalidare grațioasă cu
-  `kind: net` (docs/04); teste în `test:sidecar` și `test:scene`. Nivelul 1
-  (stil) amânat: există un singur stil (ortogonal), override-ul ar fi o
-  setare fără opțiuni;
-- createSubenv din instanță — implementat (iul. 2026, maparea în docs/03):
-  butonul „Create subenv" din inspector pe blocurile selectate în
-  vederea-schemă (+ comanda `quickuvm.createSubenv` din paletă), pliajele se
-  desfac în membri, confirmare multi-select cu rezumatul config-urilor noi
-  (schelet + dut euristic) și al constrângerilor H1 din QuickUVM (`params`
-  cer `parameters:` în agentul blocului; copiii cu ceas acceptați din
-  slice-ul M1 clocked-subenv — single-clock, cel mult un reset); mutația
-  `createSubenvs` în yamlops (nume SV sanitizate, `params` doar întregi,
-  `layout: packaged` asigurat, duplicate refuzate); teste în `test:yamlops`
-  și scenariul 3 de compunere în `test:e2e` (top + 2 blocuri combinaționale
-  + 1 bloc cu ceas, construite exclusiv prin yamlops → `quick-uvm generate`
-  produce pachetele env per bloc, env-ul top, virtual sequencer-ul și
-  tb_top; validat pe QuickUVM HEAD, iul. 2026); `createSubenv` bifat
-  interactiv (sumar) în Extension Development Host — care a și prins o
-  regresie: scaffold-urile de bloc câștigau alfabetic descoperirea
-  config-ului activ și „furau" overlay-ul/acțiunile; remediat prin
-  descoperire stabilă + excluderea copiilor referiți ca `subenvs[].config`
-  (`topConfigPaths`, docs/03; tooltip pe butoanele dezactivate cu motivul).
-  Validarea pe common_cells a mai prins trei: (1) `ConfigService.apply`
-  împrospăta debounced, deci `checkDut` citea stare veche imediat după „Set
-  this module as DUT" și acțiunea avorta tăcut — acum apply împrospătează
-  sincron; (2) euristica activ-jos rata sufixele PULP `_ni`/`_bi`
-  (`src_rst_ni` propus activ-sus) — regex extins; (3) fluxul recursiv nu
-  avea cale curată: „Set as DUT" pe alt modul suprascria DUT-ul config-ului
-  activ — acum întreabă explicit (suprascriere vs. config nou de bloc), iar
-  comanda „Choose Active Config" comută între config-uri prin
-  `quickuvm.configFile` (docs/03). În plus, gestul „Create subenv" e acum
-  autonom pe vederile ne-DUT: butonul e activ oricând sunt blocuri
-  selectate, iar nepotrivirea de DUT se rezolvă în flux (oferta de config
-  dedicat blocului + Set as DUT, apoi propunerile continuă în același gest).
-  Tot de aici: gesturile de agent funcționează și în vederea-schemă, pe
-  steagurile de graniță ȘI pe pinii blocurilor copil (pinii unui bloc =
-  porturile modulului lui — agentul se creează pentru config-ul blocului,
-  cu `viewId`-ul blocului în `args` și rezolvarea DUT-ului în flux, ca la
-  subenv; restricția la vederea-simbol era moștenire de fază 2, nu
-  decizie); selecția mixtă dezactivează gestul, acțiunile pe pini primesc
-  doar pinii rezolvați (blocurile se filtrează), inclusiv Ignore/Un-ignore.
+- the schematic view from `views` (instances, interconnect, generate fold) —
+  **implemented read-only** (Jul 2026): a pure scene tested in Node
+  (`test:scene`), ELK layered layout with the boundary ports on dedicated
+  layers, drill/breadcrumb/switch navigation, a browser harness;
+- node drag + the sidecar — **implemented** (Jul 2026): pure mutations in
+  `src/sidecarops.ts` (`test:sidecar`), a host service with atomic writing
+  (temp+rename), a watcher for external edits, graceful invalidation with the
+  restoring of orphans that reappear, the command "Clean Orphaned Layout
+  Overrides", drag with snap to the grid and naive orthogonal re-routing of the
+  edges (the ELK routes remain only on views without overrides), persisted
+  folds (the camera is session state — the first opening always fits the view);
+  the pins on the grid by construction (`FIXED_POS` ports, pitch 16 — an
+  aligned pin = a straight wire) and H/V flip per node (reassigning the pin
+  slots, persisted in the sidecar, the H/V keys + the inspector);
+- interactive ELK for new elements + an explicit "Re-arrange all" —
+  **implemented** (Jul 2026): the user's positions become seeds
+  (INTERACTIVE strategies, without cycleBreaking — a conflict with
+  LAST_SEPARATE), they are forced exactly after the layout, only the new
+  elements receive positions; the ⟲ button + `relayout/request` delete the
+  view's positions (folds/flips remain). The whole block above (drag, grid,
+  flip, lasso, fit, interactive ELK, orphans) **ticked interactively** in the
+  Extension Development Host on examples/ (Jul 2026);
+- the interconnect router: **the own Lee/A* grid prototype implemented**
+  (Jul 2026) — `src/webview/router.ts` (a pure module, `test:router`), the
+  fixed interface `route(obstacles, requests, constraints) -> polylines`, A*
+  with the state (cell, direction), a penalty on bends, inflated obstacles, a
+  free corridor at the anchors; strict orthogonality on the grid (the anchors
+  are inserted, they do not replace the grid points) and per-cell occupancy by
+  orientation: a parallel overlap with another net is practically forbidden
+  (penalty 8/cell), a perpendicular crossing is allowed but rare (2), only the
+  block boxes are absolute walls — the halo is a high cost (6/cell),
+  traversable when the blocks stand closer than two halos (the wire squeezes
+  through the gap, not through the blocks); a
+  proximity penalty on the ring around the halo (1/cell — at equal cost, the
+  route prefers the wide channel, not hugging the blocks), the edges of the
+  same net share the trunk freely (fan-out); the requests are routed
+  shortest-first; a configurable halo around the obstacles (16px by default,
+  with its own corridor at the anchors) plus text obstacles for the pins'
+  labels/annotations — the routes of other nets do not pass over the port
+  names: the texts are SOFT obstacles (cost 10/cell when crossed, not a wall —
+  in tight channels the router passes over a label instead of falling back
+  through the blocks), they enter the layout as `elk.margins` margins, and the
+  ELK spacings are correlated with the halo (88 between layers, 48 between
+  nodes — between two halos a wire corridor always fits); the router is the
+  single source of routes in all the schematic views (the world on the grid is
+  universal, ELK gives only the positions), with a naive per-edge fallback
+  when there is no path; ~2ms per full re-route during a drag on the
+  regression design. The libavoid vs. own decision: closed — D20 (the own
+  router). Override level 4 (wire↔label per net) implemented
+  (Jul 2026): a click on the route or on the net's label → the Net section of
+  the inspector with the "Show as label"/"Show as wire" switch; the message
+  `net/render` (docs/05), persistence in the sidecar under `nets.<net>.render`
+  only when it departs from the model's suggestion, graceful invalidation with
+  `kind: net` (docs/04); tests in `test:sidecar` and `test:scene`. Level 1
+  (style) postponed: there is a single style (orthogonal), the override would
+  be a setting without options;
+- createSubenv from an instance — implemented (Jul 2026, the mapping in
+  docs/03): the "Create subenv" button of the inspector on the blocks selected
+  in the schematic view (+ the command `quickuvm.createSubenv` in the palette),
+  the folds are expanded into their members, a multi-select confirmation with
+  the summary of the new configs (skeleton + heuristic dut) and of QuickUVM's
+  H1 constraints (`params` require `parameters:` in the block's agent; clocked
+  children accepted since the M1 clocked-subenv slice — single-clock, at most
+  one reset); the `createSubenvs` mutation in yamlops (sanitized SV names,
+  `params` integers only, `layout: packaged` ensured, duplicates refused);
+  tests in `test:yamlops` and composition scenario 3 in `test:e2e` (a top + 2
+  combinational blocks + 1 clocked block, built exclusively through yamlops →
+  `quick-uvm generate` produces the per-block env packages, the top env, the
+  virtual sequencer and tb_top; validated on QuickUVM HEAD, Jul 2026);
+  `createSubenv` ticked interactively (summary) in the Extension Development
+  Host — which also caught a regression: the block scaffolds won the discovery
+  of the active config alphabetically and "stole" the overlay/the actions;
+  fixed by stable discovery + excluding the children referenced as
+  `subenvs[].config` (`topConfigPaths`, docs/03; a tooltip on the disabled
+  buttons with the reason).
+  The validation on common_cells caught three more: (1) `ConfigService.apply`
+  refreshed debounced, so `checkDut` read stale state right after "Set this
+  module as DUT" and the action aborted silently — apply now refreshes
+  synchronously; (2) the active-low heuristic missed the PULP suffixes
+  `_ni`/`_bi` (`src_rst_ni` proposed active-high) — the regex was extended;
+  (3) the recursive flow had no clean path: "Set as DUT" on another module
+  overwrote the DUT of the active config — it now asks explicitly (overwrite
+  vs. a new block config), and the command "Choose Active Config" switches
+  between configs through `quickuvm.configFile` (docs/03). In addition, the
+  "Create subenv" gesture is now autonomous on the non-DUT views: the button
+  is active whenever blocks are selected, and the DUT mismatch is resolved in
+  the flow (the offer of a config dedicated to the block + Set as DUT, then
+  the proposals continue in the same gesture).
+  Also from here: the agent gestures work in the schematic view too, on the
+  boundary flags AND on the pins of the child blocks (a block's pins = the
+  ports of its module — the agent is created for the block's config, with the
+  block's `viewId` in `args` and the DUT resolved in the flow, as for a
+  subenv; the restriction to the symbol view was a phase 2 inheritance, not a
+  decision); a mixed selection disables the gesture, the pin actions receive
+  only the resolved pins (the blocks are filtered out), Ignore/Un-ignore
+  included.
 
-Validarea de închidere pe common_cells (`examples-bender/`, top
-`cdc_fifo_gray`, iul. 2026) — partea automată, prin harness pe modelul real
-(`bender script flist-plus` → `svmodel` → `examples-bender/model-cdc.json`,
-regenerabil oricând): toate cele 8 vederi-schemă randează fără nicio
-excepție și cu **zero segmente de muchie prin blocuri** (metrica de calitate
-a ruterului), toate cele 24 de simboluri randează, drag-ul persistă
-snapshot-ul total (10/10 elemente — D21 pe model real), comutarea
-fir↔etichetă funcționează cu mesajul de persistență corect; designul nu are
-pliaje generate (comportamentul pliajelor rămâne acoperit de demo_top).
-Pasul interactiv rămas: configurația de lansare „Rulează extensia (Bender:
-common_cells)" — drag + redeschidere (sidecar), navigare, apoi faza 3 se
-poate declara încheiată.
+The closing validation on common_cells (`examples-bender/`, top
+`cdc_fifo_gray`, Jul 2026) — the automatic part, through the harness on the
+real model (`bender script flist-plus` → `svmodel` →
+`examples-bender/model-cdc.json`, regenerable at any time): all 8 schematic
+views render without any exception and with **zero edge segments through
+blocks** (the router's quality metric), all 24 symbols render, the drag
+persists the total snapshot (10/10 elements — D21 on a real model), the
+wire↔label switch works with the correct persistence message; the design has
+no generated folds (the behaviour of the folds stays covered by demo_top).
+The interactive step that remains: the launch configuration "Run the
+extension (Bender: common_cells)" — drag + reopening (sidecar), navigation,
+then phase 3 can be declared closed.
 
-Criteriu de încheiere: pe un proiect Bender real, orice vedere-schemă se
-deschide curată (fără muchii prin blocuri), pozițiile aranjate supraviețuiesc
-redeschiderii, iar acțiunile de configurare (agenți, subenvs) funcționează
-din diagramă.
+Closure criterion: on a real Bender project, every schematic view opens clean
+(no edges through blocks), the arranged positions survive reopening, and the
+configuration actions (agents, subenvs) work from the diagram.
 
-### Faza 3b — vederea de verificare: editor grafic al configurației QuickUVM (ÎNCHEIATĂ)
+### Phase 3b — the verification view: a graphical editor of the QuickUVM configuration (CLOSED)
 
-Obiectiv (adăugat în iul. 2026, decizia D16): a treia vedere a extensiei — pe
-lângă simbol și schemă (ambele ale RTL-ului) — este diagrama **mediului de
-verificare însuși**, derivată din YAML: DUT-ul cu porturile mapate, agenții
-(activ/pasiv, culorile overlay-ului), scoreboard-urile cu fluxurile
-sursă/monitor, colectoarele de coverage, virtual sequencer-ul, iar pentru
-bench-urile compuse (H1) subenv-urile cu `connections` și scoreboard-urile
-trans-bloc. Editare **directă pe diagramă**, nu doar vizualizare:
+Objective (added in Jul 2026, decision D16): the third view of the extension —
+besides symbol and schematic (both of the RTL) — is the diagram of **the
+verification environment itself**, derived from the YAML: the DUT with the
+mapped ports, the agents (active/passive, the overlay's colours), the
+scoreboards with the source/monitor flows, the coverage collectors, the
+virtual sequencer, and for the composed benches (H1) the subenvs with
+`connections` and the cross-block scoreboards. Editing **directly on the
+diagram**, not only visualization:
 
-- paletă de componente: scoreboard, coverage, virtual sequence — inserție prin
-  drag pe diagramă → editare YAML (yamlops noi pentru `analysis`, `tests`,
+- a component palette: scoreboard, coverage, virtual sequence — insertion by
+  drag onto the diagram → a YAML edit (new yamlops for `analysis`, `tests`,
   `virtual_sequences`);
-- conectare cu mouse-ul: muchie agent→scoreboard (source/monitor),
-  agent→coverage; proprietățile muchiei/componentei (match, match_key,
-  max_latency…) în inspector;
-- ștergere cu confirmare; orice gest = un `WorkspaceEdit` (undo/redo nativ);
-- ID-uri stabile: numele agenților/scoreboard-urilor; cheia vederii
-  `tb:<cale-config>`; pozițiile nodurilor în sidecar, ca la celelalte vederi;
-- validări live în ConfigService (referință la agent inexistent, monitor ==
-  source etc.) ca diagnostice pe YAML;
-- probe whitebox din diagramă (QuickUVM 0.9.2, slice-ul K2, iul. 2026):
-  `probes: [{name, path, width, enum?, clock?, coverage?}]` observă
-  OBSERVE-only semnale interne prin XMR, cu `path` relativ la instanța DUT
-  — proiectat explicit ca uneltele externe să-l emită. Gestul extensiei:
-  selectezi un net (în orice vedere sub DUT) → „Create probe"; calea =
-  calea elaborată a netului minus calea instanței DUT (invariantul 4 o dă
-  direct), lățimea din model. Golul de model: svmodel nu emite azi
-  tipurile enum ale net-urilor — probele tipizate (coverage simbolic pe
-  FSM) cer extinderea extractorului; început cu width-only. Constrângere
-  QuickUVM: probes nu merg încă pe bench-uri subsystem (H1);
-- compunerea derivată din model (idee din validarea fazei 3, iul. 2026):
-  net-urile dintre instanțele copil din vederea-schemă a părintelui sunt
-  exact intrările `connections: [{from: bloc.port, to: bloc.port}]` ale
-  compoziției H1 (și candidatele de `subenv_scoreboards` trans-bloc) —
-  extensia le poate genera din model în loc să fie scrise de mână; plus
-  pasul opțional „Compose into parent bench" la crearea unui bench de bloc
-  (asigură config + intrarea `subenvs` pe fiecare nivel intermediar, pe
-  calea cunoscută de la bench-ul rădăcină la vederea curentă);
-- ambalaj final: `CustomEditor` pe `*.quickuvm.yaml` (diagrama TB ca editor
-  implicit al fișierului, cu fallback text).
+- connecting with the mouse: an agent→scoreboard edge (source/monitor),
+  agent→coverage; the properties of the edge/component (match, match_key,
+  max_latency…) in the inspector;
+- deletion with confirmation; every gesture = one `WorkspaceEdit` (native
+  undo/redo);
+- stable IDs: the names of the agents/scoreboards; the view key
+  `tb:<config-path>`; the node positions in the sidecar, as for the other
+  views;
+- live validations in ConfigService (a reference to a non-existent agent,
+  monitor == source etc.) as diagnostics on the YAML;
+- whitebox probes from the diagram (QuickUVM 0.9.2, the K2 slice, Jul 2026):
+  `probes: [{name, path, width, enum?, clock?, coverage?}]` observes,
+  OBSERVE-only, internal signals through XMR, with `path` relative to the DUT
+  instance — designed explicitly for external tools to emit it. The
+  extension's gesture: you select a net (in any view under the DUT) → "Create
+  probe"; the path = the elaborated path of the net minus the path of the DUT
+  instance (invariant 4 gives it directly), the width from the model. The
+  model gap: svmodel does not emit the enum types of the nets today — typed
+  probes (symbolic coverage on an FSM) require extending the extractor;
+  started with width-only. A QuickUVM constraint: probes do not work yet on
+  subsystem benches (H1);
+- the composition derived from the model (an idea from the validation of
+  phase 3, Jul 2026): the nets between the child instances in the parent's
+  schematic view are exactly the entries
+  `connections: [{from: block.port, to: block.port}]` of the H1 composition (and
+  the candidates for cross-block `subenv_scoreboards`) — the extension can
+  generate them from the model instead of having them written by hand; plus
+  the optional step "Compose into parent bench" when a block bench is created
+  (it ensures the config + the `subenvs` entry on every intermediate level, on
+  the known path from the root bench to the current view);
+- the final packaging: a `CustomEditor` on `*.quickuvm.yaml` (the TB diagram
+  as the default editor of the file, with a text fallback).
 
-Dependență tare de faza 3: refolosește randarea multi-nod, ruterul de
-interconexiuni, drag-ul cu persistență și invalidarea grațioasă — de aceea
-vine după ea. YAML-ul rămâne sursa de adevăr; diagrama e o proiecție
-editabilă, la fel ca overlay-ul din faza 2.
+A hard dependency on phase 3: it reuses the multi-node rendering, the
+interconnect router, the drag with persistence and the graceful invalidation
+— which is why it comes after it. The YAML remains the source of truth; the
+diagram is an editable projection, just like the overlay of phase 2.
 
-Referințe de design: jurnalul D22 — bigUML ca hartă de patternuri
-(handleri generici conduși de metadate, edge type hints, property palette,
-sincronizare text↔diagramă), GLSP/Sprotty respins ca stack; precedentele
-externe validate acolo (AWS Workflow Studio, drawio, Structurizr/LikeC4)
-confirmă combinația `CustomTextEditorProvider` + `WorkspaceEdit` minimal +
-sidecar de geometrie.
+Design references: journal entry D22 — bigUML as a map of patterns
+(generic handlers driven by metadata, edge type hints, property palette,
+text↔diagram synchronization), GLSP/Sprotty rejected as a stack; the external
+precedents validated there (AWS Workflow Studio, drawio, Structurizr/LikeC4)
+confirm the combination `CustomTextEditorProvider` + minimal `WorkspaceEdit` +
+geometry sidecar.
 
-Referințe suplimentare (sondaj iul. 2026, patru investigații paralele):
+Additional references (a survey of Jul 2026, four parallel investigations):
 
-- **Kaoto + Apache KIE Tools** (Red Hat) — singurul designer grafic de
-  producție peste YAML întreținut manual în VSCode; wiring-ul de copiat:
-  gest → `WorkspaceEdit.replace` pe TextDocument (VSCode deține undo),
-  supresie de ecou stop-listening/resubscribe, orice `onDidChangeTextDocument`
-  → re-randare. Slăbiciunile lor (re-serializare integrală; păstrează doar
-  comentariile de început) sunt exact punctele forte ale `yamlops.ts`.
-- **Notația canonică Accellera UVM 1.2** (+ dialectul cookbook
-  ClueLogic/ChipVerify): pătrat = port pe producător, cerc = export pe
-  consumator, romb = analysis port pe monitor, sequencer desenat peste
-  driver, pasiv = doar monitor, referințe punctate de la virtual sequencer
-  la sequencerii agenților — glifele obligatorii ca diagrama să fie
-  instantaneu familiară inginerilor de verificare.
-- **DVT / Sigasi / Questa Visualizer** — principiul „doar informația
-  vitală" (fără interne uvm_root/phase); detaliile de config/factory în
-  inspector (aspect views, Verdi), nu pe canvas; click pe muchia de
-  analysis → liniile YAML care au creat-o (Sigasi); porturi obligatorii
-  neconectate în stil de eroare cu quick-fix (Riviera-PRO).
-- **UVMF `yaml2uvmf`** (Siemens) — checklist-ul semantic al obiectelor pe
-  care editorul 3b trebuie să le exprime (agenți activ/pasiv +
-  initiator/responder, predictori, scoreboards cu exporturi numite
-  expected/actual, conexiuni analysis explicite, subenv-uri imbricate);
-  plasarea agentului în env (propriu/top/partajat) ca proprietate, nu ca
-  gest (Doulos Easier UVM).
-- **Gesturi**: pin-drop create menu (Unreal Blueprints — drag din pin pe
-  canvas gol → meniu filtrat de creații legale, nodul apare gata conectat;
-  gestul de bază al lui 3b: din pinii DUT → „New active/passive agent /
-  Connect to scoreboard"); splice de nod pe fir + heal la ștergere
-  (Node-RED/Blender); matricea de conectivitate monitor×scoreboard ca
-  alternativă bulk la desenarea muchiilor (DVCon 2021); validare live la
-  drag (`isValidConnection`, React Flow); undo la nivel de gest cu
-  Escape = anulare (tldraw): un gest = un WorkspaceEdit = un pas de undo.
+- **Kaoto + Apache KIE Tools** (Red Hat) — the only production graphical
+  designer over hand-maintained YAML in VSCode; the wiring to copy:
+  gesture → `WorkspaceEdit.replace` on the TextDocument (VSCode owns the undo),
+  echo suppression by stop-listening/resubscribe, any
+  `onDidChangeTextDocument` → re-render. Their weaknesses (full
+  re-serialization; they keep only the leading comments) are exactly the
+  strengths of `yamlops.ts`.
+- **The canonical Accellera UVM 1.2 notation** (+ the ClueLogic/ChipVerify
+  cookbook dialect): square = a port on the producer, circle = an export on
+  the consumer, diamond = an analysis port on the monitor, the sequencer drawn
+  above the driver, passive = monitor only, dotted references from the virtual
+  sequencer to the agents' sequencers — the glyphs that are mandatory for the
+  diagram to be instantly familiar to verification engineers.
+- **DVT / Sigasi / Questa Visualizer** — the principle "only the vital
+  information" (no uvm_root/phase internals); the config/factory details in
+  the inspector (aspect views, Verdi), not on the canvas; a click on the
+  analysis edge → the YAML lines that created it (Sigasi); mandatory
+  unconnected ports in an error style with a quick-fix (Riviera-PRO).
+- **UVMF `yaml2uvmf`** (Siemens) — the semantic checklist of the objects that
+  the 3b editor must express (active/passive + initiator/responder agents,
+  predictors, scoreboards with exports named expected/actual, explicit
+  analysis connections, nested subenvs); the placement of the agent in the env
+  (own/top/shared) as a property, not as a gesture (Doulos Easier UVM).
+- **Gestures**: the pin-drop create menu (Unreal Blueprints — a drag from a
+  pin onto empty canvas → a filtered menu of legal creations, the node appears
+  already connected; the basic gesture of 3b: from the DUT pins → "New
+  active/passive agent / Connect to scoreboard"); splicing a node onto a wire
+  + heal on deletion (Node-RED/Blender); the monitor×scoreboard connectivity
+  matrix as a bulk alternative to drawing edges (DVCon 2021); live validation
+  during the drag (`isValidConnection`, React Flow); undo at gesture level
+  with Escape = cancel (tldraw): one gesture = one WorkspaceEdit = one undo
+  step.
 
-Ordinea de implementare (începută în iul. 2026):
+The order of implementation (started in Jul 2026):
 
-1. **Felia 1 — vederea read-only** (implementată, iul. 2026): scena TB
-   **ierarhică** (`src/webview/tbscene.ts` → `TbScene` cu containment UVM
-   canonic; layout+desen ierarhic în `src/webview/tbschematic.ts` — ELK
-   compound `INCLUDE_CHILDREN`, aplatizare la grilă, ruterul A* refolosit cu
-   frunzele ca obstacole), mesajul `config/full`, `ViewMode: "tb"`, cheia
-   `tb:<cale-config>`, comanda `openVerificationView`; teste `test:tbscene`.
+1. **Slice 1 — the read-only view** (implemented, Jul 2026): the
+   **hierarchical** TB scene (`src/webview/tbscene.ts` → `TbScene` with the
+   canonical UVM containment; hierarchical layout+drawing in
+   `src/webview/tbschematic.ts` — ELK compound `INCLUDE_CHILDREN`, flattening
+   onto the grid, the A* router reused with the leaves as obstacles), the
+   message `config/full`, `ViewMode: "tb"`, the key `tb:<config-path>`, the
+   command `openVerificationView`; tests `test:tbscene`.
    Containment: Testbench › {DUT, Env › {agent › {sequencer/driver/monitor},
-   scoreboard, coverage, vsqr, subenv, probes}} — agentul e în Env, nu în
-   DUT (răspuns la observația utilizatorului: agentul se CONECTEAZĂ la DUT,
-   nu îl conține). **Drag + poziții TB implementate** (iul. 2026): aceeași
-   mecanică ca RTL, cheiată per nivel (`tb:<config>|<focus>`), semințe ELK
-   interactive, D21 total, ⟲.
-2. Felia 2 — editarea. **Adăugarea implementată** (iul. 2026): paleta „Add
-   component" din inspectorul TB (coverage/scoreboard/virtual sequence),
-   agentul selectat preîncarcă sursa; conexiunile nu sunt muchii libere în
-   QuickUVM (source/monitor sunt câmpuri), deci gestul creează componenta
-   deja conectată; mutații yamlops `addScoreboard`/`addCoverage`/
-   `addVirtualSequence` (flow maps, nume unice, idempotent) prin
-   `WorkspaceEdit`; QuickPick-uri native pentru parametri (source/monitor/
-   match+key, agenți, mod); teste `test:yamlops` + scenariul e2e extins
-   (coverage + scoreboard adăugate → `generate` produce fișierele lor).
-   **Ștergerea + editarea proprietăților implementate** (iul. 2026): mutații
-   pure `removeScoreboard`/`removeCoverage`/`removeVirtualSequence`,
-   `removeAgent` (cascadă: coverage-ul agentului, scoreboard-urile cu
-   `source`/`monitor`==agent, pașii de vseq + secvențele rămase goale) și
-   `setScoreboardField` (source/monitor/match/match_key/max_latency, cu
-   curățare în cascadă: monitor gol → single-stream șterge match+match_key;
-   match=in_order șterge match_key), toate cu curățarea blocurilor golite
-   (`pruneEmptySeq`/`pruneEmptyMap`) și idempotente la țintă lipsă (`test:yamlops`).
-   Acțiunile host `deleteComponent` (confirmare **modală** cu rezumatul
-   cascadei la agent) și `editScoreboard` (editare **inline** în inspector:
-   `<select>`/`<input>` per câmp → un `WorkspaceEdit` per schimbare). Inspectorul
-   TB: buton Delete per componentă selectată (scoreboard/coverage/agent; vsqr →
-   Delete per secvență) + editorul de proprietăți al scoreboard-ului. **Trei
-   căi spre aceeași ștergere**, toate prin `tbDeleteTarget` (sursă unică de
-   rezoluție id→nume) și aceeași confirmare modală a host-ului: butonul din
-   inspector, **tasta** `Delete`/`Backspace` pe componenta selectată, și
-   **meniul contextual** (clic-dreapta → Open / Flip H / Flip V / Delete, cu
-   ștergerea marcată cromatic; pe `vsqr` câte o intrare per secvență; pe un
-   steag de graniță doar Flip H; pe DUT/Env fără Delete). Handler-ul de taste e
-   blindat să NU se declanșeze cât timp editezi un câmp din inspector
-   (`INPUT`/`SELECT`/`TEXTAREA`). Validat în
-   `scripts/harness.html?mode=tb` (mesajele `deleteComponent`/`editScoreboard`
-   corecte pe toate tipurile, Delete pe DUT = no-op, tastele blocate în câmpuri,
-   meniul se închide la Escape/clic-în-afară/zoom).
-   **Scenariul e2e de ștergere** (`test:e2e`, scenariul 4) închide felia contra
-   generatorului real: `removeAgent` cu cascadă → `quick-uvm generate` iese 0
-   (o referință moartă — scoreboard cu `monitor` == agentul șters — ar fi fost
-   refuzată de Pydantic) și artefactele agentului dispar. **A prins o regresie
-   pe care testele pure n-o puteau vedea**: blocul `analysis:` comută QuickUVM
-   între mod implicit (fără cheie → auto-cablează scoreboard + coverage la
-   „primary agent") și declarat (cu cheie, chiar `{}` → cablează exact ce e
-   listat). Curățarea blocului golit ar fi *reînviat* componentele tocmai
-   șterse; mutațiile păstrează acum `analysis: {}` (vezi `keepAnalysis` în
-   `yamlops.ts` și capcana din CLAUDE.md).
-   **Ierarhia verificării** (a doua secțiune din sidebar, iul. 2026):
-   „Verification Hierarchy" lângă „Design Hierarchy" — arborele mediului TB
-   derivat din config (`tbtree-build.ts` pur + `tbtree.ts`), oglinda
-   diagramei TB, cu navigare simetrică arbore↔diagramă (id-uri comune din
-   `buildTbScene`); test `test:tbtree`.
-3. Felia 3 — gesturile derivate din model. **Proba whitebox (K2) implementată**
-   (iul. 2026): net selectat în vederea-schemă → „Create probe" (`createProbe
-   {net}`); toată deducerea stă în modulul **pur** `src/probe.ts`
-   (`proposeProbe`): rezolvă instanța DUT (YAML dă numele de MODUL, nu calea),
-   calculează calea XMR relativă la ea, derivă lățimea și refuză cu motiv
-   explicit exact acolo unde generatorul ar refuza (H1 subsistem, unpacked,
-   interfață, port deja mapat pe agent, vedere din afara DUT-ului); mutații
-   `addProbe`/`removeProbe`; teste `test:probe` (15, pe modelul real) +
-   `test:e2e` scenariul 5 (XMR-ul `assign probe_if.x = dut_inst.<path>` ajunge
-   în tb_top; `coverage: true` → `probe_monitor`; H1 confirmat empiric).
-   **Două limite reale, descoperite prin sondarea generatorului** (detaliate în
-   CLAUDE.md): lățimea nu e în model și derivarea naivă e greșită (`select`/
-   `concat` mint), iar semnalele interne PURE (registre de stare, fire din
-   `assign`) nu sunt sondabile — modelul emite net-uri doar din conexiunile
-   porturilor instanțelor-copil; extinderea ar cere schimbarea extractorului.
-   **Compunerea derivată implementată** (iul. 2026): `deriveConnections` în
-   modulul **pur** `src/compose.ts` (`test:compose`) transformă net-urile
-   inter-bloc ale vederii-schemă a subsistemului (un net fără capăt `<port>.X`,
-   cu o ieșire → una+ intrări între subenv-uri) în `connections: [{from, to}]`,
-   cu direcția din `port.dir` și lățimea din model; refuză multi-driver și
-   nepotrivirile de lățime. Gestul „Wire connections from design" (buton în
-   Actions la subsistem) scrie `connections` prin `addConnections` ȘI **pune
-   automat pasivi** agenții blocurilor-destinație (`setAgentActive(false)` pe
-   config-urile copil) — un `WorkspaceEdit` ATOMIC pe mai multe fișiere (un
-   singur undo); dacă un copil n-are încă agent, avertizează să-l configureze
-   pasiv. E un gest SEPARAT de `createSubenv` fiindcă firele cablează porturi de
-   interfață de agent, deci copiii trebuie să aibă agenți întâi. `test:e2e`
-   scenariul 6: `addConnections` → `assign` fizic inter-bloc în tb_top; **un
-   agent-destinație ACTIV e refuzat de generator, iar `setAgentActive(pasiv) îl
-   repară** (dovadă că flip-ul produce un bench care se generează);
-   `removeConnection` → firul dispare. Contractul (endpoint = `<subenv>.<port>`,
-   dest pasiv, lățimi egale) a fost re-sondat empiric pe build-ul curent
-   (capcane în CLAUDE.md). **„Compose into parent bench" implementat** (iul.
-   2026), dar RECONCILIAT cu regulile de compunere călite din quick-uvm (sondate
-   empiric): (a) un subsistem cere **≥2 subenv-uri** (1 → refuzat), deci
-   „compune calea cu un subenv per nivel" din planul original e INVALID; (b) un
-   bench cu `subenvs` **nu poate avea agenți proprii** (hibridul e interzis — un
-   nivel de compunere e subsistem PUR); (c) nesting-ul FUNCȚIONEAZĂ (un subenv
-   poate fi el însuși subsistem). Decizia (aleasă de utilizator): gestul e „un
-   nivel, din copil" — din vederea unui bloc, compune blocul + FRAȚII lui de
-   bloc în părintele imediat (`parentComposition` pur în `src/compose.ts`,
-   `test:compose`; deleagă la `createSubenv`), refuzând când părintele are <2
-   blocuri componibile. Fără cascadă recursivă (ar lovi ≥2 la nivelurile cu un
-   singur copil). **Divergența „hibrid interzis" atacată** (iul. 2026): fiindcă
-   quick-uvm curent respinge un bench cu `subenvs` + agenți proprii (`agents: []`
-   e OK, doar nevid + subenvs e refuzat — sondat), extensia (a) pune un
-   **diagnostic dur** pe blocul `agents` când un config e hibrid (`ConfigService`,
-   detecție universală: și pentru YAML scris de mână), (b) **avertizează modal**
-   în `createSubenv`/`composeIntoParent` înainte să compună într-un config care
-   are deja agenți, (c) corectează comentariile care descriau hibridul ca valid
-   (`hasDut`, CLAUDE.md). `test:e2e` blochează regula (hibrid → `generate`
-   eșuează). **Felia 3 e ÎNCHEIATĂ.**
-4. Felia 4 — ambalajul `CustomTextEditorProvider` pe `*.quickuvm.yaml`
-   (wiring-ul Kaoto/KIE din D22) + validarea de închidere. **Implementat** (iul.
-   2026): `QuvmConfigEditor` (`src/customeditor.ts`) e editorul IMPLICIT
-   (`priority: default`) al `*.quickuvm.yaml` — deschizi fișierul → vezi diagrama
-   de verificare TB, cu fallback text nativ („Reopen Editor With… → Text
-   Editor"). Diagrama TB e config-driven (`renderTb` nu atinge modelul RTL),
-   deci se randează din textul documentului; layout-ul (drag/flip/pliaj) merge
-   prin sidecar-ul COMUN (cheiat `tb:<cale>`), iar gesturile de editare
-   (add/delete/edit) aplică pe DOCUMENT prin `WorkspaceEdit` — undo/diff/editare
-   text native (invariantul 2). Cheia refactorului: interfața **`TbEditTarget`**
-   (`current`/`configUri`/`apply`) pe care ConfigService o satisface (config-ul
-   ACTIV) și `DocumentEditTarget` o implementează (documentul deschis), iar
-   gesturile de editare TB din `actions.ts` iau un parametru `cfg: TbEditTarget =
-   this.config` — deci ACELEAȘI metode (inclusiv QuickPick-urile) merg pe oricare
-   țintă, zero duplicare. Orice schimbare de text (editare, undo, gestul propriu)
-   → `config/full` → re-randare (idempotent, fără buclă). Validat în harness cu
-   `?nomodel=1` (vederea TB + editarea funcționează DOAR din config).
-   **Tutorial pas-cu-pas pentru validarea manuală**:
-   `docs/tutorial-yapp-buffer.md` (fixtura `examples-yapp/yapp_buffer.sv` +
-   configurația de lansare „tutorial: yapp_buffer"; ambele se numeau
-   `yapp_router` până în iul. 2026, în coliziune cu demuxul real din
-   `QuickUVM/examples/yapp`); pașii sunt verificați
-   empiric — designul se parsează cu svmodel și config-ul rezultat generează
-   curat cu quick-uvm (ambele variante de scoreboard). **Pasul manual de
-   închidere e BIFAT** (16 iul. 2026): utilizatorul a parcurs integral
-   tutorialul în Extension Development Host; pe parcurs au ieșit și două
-   rafinări reale (alinierea constantă a etichetelor de pin la flip;
-   suprapunerea fan-out/fan-in lângă capătul comun în ruter — `fanoutRadius`,
-   docs/04), ambele implementate și testate.
+   scoreboard, coverage, vsqr, subenv, probes}} — the agent is in the Env, not
+   in the DUT (the answer to the user's remark: the agent CONNECTS to the DUT,
+   it does not contain it). **Drag + TB positions implemented** (Jul 2026):
+   the same mechanics as RTL, keyed per level (`tb:<config>|<focus>`),
+   interactive ELK seeds, total D21, ⟲.
+2. Slice 2 — editing. **Adding implemented** (Jul 2026): the "Add component"
+   palette of the TB inspector (coverage/scoreboard/virtual sequence), the
+   selected agent preloads the source; connections are not free edges in
+   QuickUVM (source/monitor are fields), so the gesture creates the component
+   already connected; the yamlops mutations `addScoreboard`/`addCoverage`/
+   `addVirtualSequence` (flow maps, unique names, idempotent) through
+   `WorkspaceEdit`; native QuickPicks for the parameters (source/monitor/
+   match+key, agents, mode); tests `test:yamlops` + the extended e2e scenario
+   (coverage + scoreboard added → `generate` produces their files).
+   **Deletion + property editing implemented** (Jul 2026): the pure mutations
+   `removeScoreboard`/`removeCoverage`/`removeVirtualSequence`,
+   `removeAgent` (cascade: the agent's coverage, the scoreboards with
+   `source`/`monitor`==agent, the vseq steps + the sequences left empty) and
+   `setScoreboardField` (source/monitor/match/match_key/max_latency, with a
+   cascading cleanup: an empty monitor → single-stream deletes match+match_key;
+   match=in_order deletes match_key), all with the cleanup of the emptied
+   blocks (`pruneEmptySeq`/`pruneEmptyMap`) and idempotent on a missing target
+   (`test:yamlops`).
+   The host actions `deleteComponent` (a **modal** confirmation with the
+   summary of the cascade for an agent) and `editScoreboard` (**inline**
+   editing in the inspector: a `<select>`/`<input>` per field → one
+   `WorkspaceEdit` per change). The TB inspector: a Delete button per selected
+   component (scoreboard/coverage/agent; vsqr → a Delete per sequence) + the
+   scoreboard's property editor. **Three paths to the same deletion**, all
+   through `tbDeleteTarget` (the single source of id→name resolution) and the
+   same modal confirmation of the host: the inspector's button, the
+   `Delete`/`Backspace` **key** on the selected component, and the **context
+   menu** (right-click → Open / Flip H / Flip V / Delete, with the deletion
+   marked by colour; on `vsqr` one entry per sequence; on a boundary flag only
+   Flip H; on DUT/Env no Delete). The key handler is armoured NOT to fire
+   while you are editing a field of the inspector
+   (`INPUT`/`SELECT`/`TEXTAREA`). Validated in
+   `scripts/harness.html?mode=tb` (the `deleteComponent`/`editScoreboard`
+   messages correct on all the types, Delete on the DUT = a no-op, the keys
+   blocked in fields, the menu closes on Escape/click-outside/zoom).
+   **The e2e deletion scenario** (`test:e2e`, scenario 4) closes the slice
+   against the real generator: `removeAgent` with its cascade → `quick-uvm
+   generate` exits 0 (a dead reference — a scoreboard with `monitor` == the
+   deleted agent — would have been refused by Pydantic) and the agent's
+   artefacts disappear. **It caught a regression that the pure tests could not
+   see**: the `analysis:` block switches QuickUVM between implicit mode (no
+   key → it auto-wires a scoreboard + coverage onto the "primary agent") and
+   declared mode (with the key, even `{}` → it wires exactly what is listed).
+   Cleaning away the emptied block would have *resurrected* the components
+   just deleted; the mutations now keep `analysis: {}` (see `keepAnalysis` in
+   `yamlops.ts` and the pitfall in CLAUDE.md).
+   **The verification hierarchy** (the second section of the sidebar, Jul
+   2026): "Verification Hierarchy" next to "Design Hierarchy" — the tree of
+   the TB environment derived from the config (the pure `tbtree-build.ts` +
+   `tbtree.ts`), the mirror of the TB diagram, with symmetric tree↔diagram
+   navigation (common ids from `buildTbScene`); test `test:tbtree`.
+3. Slice 3 — the gestures derived from the model. **The whitebox probe (K2)
+   implemented** (Jul 2026): a net selected in the schematic view → "Create
+   probe" (`createProbe {net}`); all the deduction lives in the **pure** module
+   `src/probe.ts` (`proposeProbe`): it resolves the DUT instance (the YAML
+   gives the MODULE name, not the path), computes the XMR path relative to it,
+   derives the width and refuses with an explicit reason exactly where the
+   generator would refuse (an H1 subsystem, unpacked, an interface, a port
+   already mapped onto an agent, a view outside the DUT); the mutations
+   `addProbe`/`removeProbe`; tests `test:probe` (15, on the real model) +
+   `test:e2e` scenario 5 (the XMR `assign probe_if.x = dut_inst.<path>` reaches
+   tb_top; `coverage: true` → `probe_monitor`; H1 confirmed empirically).
+   **Two real limits, discovered by probing the generator** (detailed in
+   CLAUDE.md): the width is not in the model and the naive derivation is wrong
+   (`select`/`concat` lie), and the PURE internal signals (state registers,
+   wires from an `assign`) cannot be probed — the model emits nets only from
+   the port connections of the child instances; extending this would require
+   changing the extractor.
+   **The derived composition implemented** (Jul 2026): `deriveConnections` in
+   the **pure** module `src/compose.ts` (`test:compose`) turns the inter-block
+   nets of the subsystem's schematic view (a net without a `<port>.X` endpoint,
+   with one output → one+ inputs between subenvs) into
+   `connections: [{from, to}]`, with the direction from `port.dir` and the
+   width from the model; it refuses multi-driver nets and width mismatches. The
+   gesture "Wire connections from design" (a button in Actions on a subsystem)
+   writes `connections` through `addConnections` AND **automatically sets
+   passive** the agents of the destination blocks (`setAgentActive(false)` on
+   the child configs) — one ATOMIC `WorkspaceEdit` over several files (a
+   single undo); if a child does not have an agent yet, it warns you to
+   configure it passive. It is a gesture SEPARATE from `createSubenv` because
+   the wires connect agent interface ports, so the children must have agents
+   first. `test:e2e` scenario 6: `addConnections` → a physical inter-block
+   `assign` in tb_top; **an ACTIVE destination agent is refused by the
+   generator, and `setAgentActive(passive)` repairs it** (the proof that the
+   flip produces a bench that generates); `removeConnection` → the wire
+   disappears. The contract (endpoint = `<subenv>.<port>`, passive dest, equal
+   widths) was re-probed empirically on the current build (pitfalls in
+   CLAUDE.md). **"Compose into parent bench" implemented** (Jul 2026), but
+   RECONCILED with the hardened composition rules of quick-uvm (probed
+   empirically): (a) a subsystem requires **≥2 subenvs** (1 → refused), so
+   "compose the path with one subenv per level" of the original plan is
+   INVALID; (b) a bench with `subenvs` **cannot have agents of its own** (the
+   hybrid is forbidden — a composition level is a PURE subsystem); (c) nesting
+   WORKS (a subenv can itself be a subsystem). The decision (chosen by the
+   user): the gesture is "one level, from the child" — from a block's view, it
+   composes the block + its block SIBLINGS into the immediate parent (the pure
+   `parentComposition` in `src/compose.ts`, `test:compose`; it delegates to
+   `createSubenv`), refusing when the parent has <2 composable blocks. No
+   recursive cascade (it would hit ≥2 at the levels with a single child).
+   **The "hybrid forbidden" divergence tackled** (Jul 2026): because the
+   current quick-uvm rejects a bench with `subenvs` + agents of its own
+   (`agents: []` is OK, only non-empty + subenvs is refused — probed), the
+   extension (a) puts a **hard diagnostic** on the `agents` block when a
+   config is a hybrid (`ConfigService`, universal detection: for hand-written
+   YAML too), (b) **warns modally** in `createSubenv`/`composeIntoParent`
+   before it composes into a config that already has agents, (c) corrects the
+   comments that described the hybrid as valid (`hasDut`, CLAUDE.md).
+   `test:e2e` locks the rule (hybrid → `generate` fails). **Slice 3 is
+   CLOSED.**
+4. Slice 4 — the `CustomTextEditorProvider` packaging on `*.quickuvm.yaml`
+   (the Kaoto/KIE wiring of D22) + the closing validation. **Implemented** (Jul
+   2026): `QuvmConfigEditor` (`src/customeditor.ts`) is the DEFAULT editor
+   (`priority: default`) of `*.quickuvm.yaml` — you open the file → you see the
+   TB verification diagram, with the native text fallback ("Reopen Editor
+   With… → Text Editor"). The TB diagram is config-driven (`renderTb` does not
+   touch the RTL model), so it is rendered from the document's text; the layout
+   (drag/flip/fold) goes through the COMMON sidecar (keyed `tb:<path>`), and
+   the editing gestures (add/delete/edit) apply to the DOCUMENT through
+   `WorkspaceEdit` — native undo/diff/text editing (invariant 2). The key of
+   the refactor: the **`TbEditTarget`** interface
+   (`current`/`configUri`/`apply`), which ConfigService satisfies (the ACTIVE
+   config) and `DocumentEditTarget` implements (the open document), while the
+   TB editing gestures in `actions.ts` take a parameter `cfg: TbEditTarget =
+   this.config` — so THE SAME methods (the QuickPicks included) work on either
+   target, zero duplication. Any text change (an edit, an undo, the own
+   gesture) → `config/full` → re-render (idempotent, no loop). Validated in the
+   harness with `?nomodel=1` (the TB view + the editing work from the config
+   ALONE).
+   **A step-by-step tutorial for the manual validation**:
+   `docs/tutorial-yapp-buffer.md` (the fixture `examples-yapp/yapp_buffer.sv` +
+   the launch configuration "tutorial: yapp_buffer"; both were named
+   `yapp_router` until Jul 2026, colliding with the real demux in
+   `QuickUVM/examples/yapp`); the steps are verified
+   empirically — the design parses with svmodel and the resulting config
+   generates clean with quick-uvm (both scoreboard variants). **The manual
+   closing step is TICKED** (16 Jul 2026): the user went through the whole
+   tutorial in the Extension Development Host; along the way two real
+   refinements came out as well (the constant alignment of the pin labels on a
+   flip; the fan-out/fan-in overlap near the common end in the router —
+   `fanoutRadius`, docs/04), both implemented and tested.
 
-Criteriu de încheiere: un mediu cu ≥2 agenți, un scoreboard two-stream și un
-colector de coverage, construit și re-aranjat integral grafic (fără editor de
-text), cu YAML lizibil la final și `quick-uvm generate` curat. **Bifat —
-MVP-ul e validat** (16 iul. 2026, tutorialul yapp_buffer).
+Closure criterion: an environment with ≥2 agents, a two-stream scoreboard and a
+coverage collector, built and re-arranged entirely graphically (without a text
+editor), with readable YAML at the end and a clean `quick-uvm generate`.
+**Ticked — the MVP is validated** (16 Jul 2026, the yapp_buffer tutorial).
 
-După închidere a rulat o **trecere de călire a plasei de teste** (16 iul.
-2026, audit multi-agent + recenzie adversarială): golul sistematic era că
-orchestrarea care importă `vscode` nu avea nicio acoperire, iar câteva
-regresii DOVEDITE reale nu aveau gardă. Remediat prin extrageri-la-pur, fără
-schimbări de comportament: `filelistops.ts` (quotarea .f, excluderea
-outputDir, `resolveLocPath` — `test:filelist`), `heuristics.ts` (regexurile
-de nume, inclusiv capcana `_ni/_bi` — `test:heuristics`), `configcheck.ts`
-(nucleul validărilor model↔YAML ca findings structurate, mesajele l10n rămân
-în host per D19 — `test:configcheck`), `subenvMapping`+`planWireEdits` în
-`compose.ts` (maparea rel→subenv + planul editului multi-fișier al cablării
-H1, cu invarianții #3/#4 blocați în teste — `test:compose`), `edgeObstacles`
-în `schematic.ts` (capcanele 13/14 — `test:router`), `probeCoverageAllowed`
-(`test:probe`) și `isComposedChild` (`test:yamlops`, cu comparație de căi
-normalizată — vechiul `includes(fsPath)` rata diferențele de caz pe Windows).
-Recenzia adversarială a refactorurilor a confirmat echivalența semantică
-(diff pe codul vechi, două suspiciuni respinse cu probe) și a găsit **un bug
-real pre-existent**, dublu-confirmat pe generatorul instalat: pasivizarea
-cabla doar PRIMUL agent al unui bloc destinație — cu porturi conduse
-deținute de agenți diferiți, al doilea rămânea activ, `generate` refuza, iar
-gestul raporta succes. Remediat în `planWireEdits` (`filter`, nu `find`;
-toți agenții proprietari devin pasivi) + test de regresie; capcana în
-CLAUDE.md (invariantul #5 al compunerii).
+After the closure a **hardening pass over the test net** was run (16 Jul
+2026, a multi-agent audit + adversarial review): the systematic gap was that
+the orchestration that imports `vscode` had no coverage at all, and a few
+regressions PROVEN real had no guard. Fixed by extractions-to-pure, without
+changes of behaviour: `filelistops.ts` (the .f quoting, the outputDir
+exclusion, `resolveLocPath` — `test:filelist`), `heuristics.ts` (the name
+regexes, including the `_ni/_bi` pitfall — `test:heuristics`),
+`configcheck.ts` (the core of the model↔YAML validations as structured
+findings, the l10n messages stay in the host per D19 — `test:configcheck`),
+`subenvMapping`+`planWireEdits` in `compose.ts` (the rel→subenv mapping + the
+plan of the multi-file edit of the H1 wiring, with invariants #3/#4 locked in
+tests — `test:compose`), `edgeObstacles` in `schematic.ts` (pitfalls 13/14 —
+`test:router`), `probeCoverageAllowed` (`test:probe`) and `isComposedChild`
+(`test:yamlops`, with a normalized path comparison — the old
+`includes(fsPath)` missed the case differences on Windows).
+The adversarial review of the refactors confirmed the semantic equivalence
+(a diff against the old code, two suspicions rejected with evidence) and found
+**one real pre-existing bug**, double-confirmed on the installed generator:
+the passivation handled only the FIRST agent of a destination block — with
+driven ports owned by different agents, the second one stayed active,
+`generate` refused, and the gesture reported success. Fixed in
+`planWireEdits` (`filter`, not `find`; all the owning agents become passive)
++ a regression test; the pitfall is in CLAUDE.md (invariant #5 of the
+composition).
 
-După călire a urmat o **trecere de curățenie a loose-end-urilor** (16 iul.
-2026, dintr-un audit paralel al stării MVP): (a) mesajul `node/moved` a fost
-**retras din contract** — mort după D21 (drag-ul trimite doar
-`layout/snapshot`), scos din protocol/panel/customeditor/sidecar/harness +
-docs/05; (b) antetul `protocol.ts` (contractul) și comentariile „not
-implemented" rămase au fost aduse la zi, iar `default`-ul din `onAction`
-(host) e acum o **gardă de exhaustivitate** (`never`) care prinde la
-compilare un `ActionKind` nou fără handler; (c) resturile de nume „QuickXray"
-post-D17 (interfața `QuvmXQuickuvmArchitect`, nota D15); (d) **drill-ul în
-subenv** — singura lipsă reală de navigare: un bloc `«subenv»` cu config e
-drillabil, iar dublu-clic/Open trimite `openSubenvConfig` cu **calea
-config-ului** (nu numele), pe care host-ul o deschide cu editorul implicit
-(diagrama TB per-fișier, felia 4); merge din panel și din editorul
-per-fișier (nesting H1). Recenzia adversarială a confirmat 3 defecte reale,
-toate remediate: drill-ul purta numele (nume duplicate → deschidea tăcut
-fișierul greșit) — acum poartă calea + id de nod deduplicat (`#n`, ca
-`usedSb`); căile absolute erau lipite ca relative (`Uri.joinPath`) — acum
-`path.isAbsolute` → `Uri.file`, ca `pathlib` în quick-uvm; și o referință
-stale la `node/moved` în CLAUDE.md. Toate cele 12 suite + typecheck/build
-verzi; drill-ul validat în harness (nume duplicat + cale absolută).
+After the hardening came a **cleanup pass over the loose ends** (16 Jul
+2026, from a parallel audit of the MVP's state): (a) the `node/moved` message
+was **withdrawn from the contract** — dead after D21 (the drag sends only
+`layout/snapshot`), removed from protocol/panel/customeditor/sidecar/harness +
+docs/05; (b) the header of `protocol.ts` (the contract) and the remaining
+"not implemented" comments were brought up to date, and the `default` in
+`onAction` (host) is now an **exhaustiveness guard** (`never`) that catches at
+compile time a new `ActionKind` without a handler; (c) the leftovers of the
+"QuickXray" name after D17 (the `QuvmXQuickuvmArchitect` interface, the D15
+note); (d) **the drill into a subenv** — the only real navigation gap: a
+`«subenv»` block with a config is drillable, and double-click/Open sends
+`openSubenvConfig` with **the path of the config** (not the name), which the
+host opens with the default editor (the per-file TB diagram, slice 4); it
+works from the panel and from the per-file editor (H1 nesting). The
+adversarial review confirmed 3 real defects, all fixed: the drill carried the
+name (duplicate names → it silently opened the wrong file) — it now carries
+the path + a deduplicated node id (`#n`, like `usedSb`); the absolute paths
+were glued on as relative (`Uri.joinPath`) — now `path.isAbsolute` →
+`Uri.file`, like `pathlib` in quick-uvm; and a stale reference to
+`node/moved` in CLAUDE.md. All 12 suites + typecheck/build green; the drill
+validated in the harness (a duplicate name + an absolute path).
 
-### Faza 4 — finisaj
+### Phase 4 — polish
 
 - level-2 overrides (the pin order) — still open; level 3 (routes relative to
   the pins) only on demonstrated demand — **IMPLEMENTED** (Nov 2026, D27: wires
   dragged by hand in the schematic and verification views; docs/04);
-- vocabular de desen îmbogățit — **core-ul IMPLEMENTAT** (iul. 2026, ales de
-  utilizator din audit): **etichete slash+lățime pe buse cu gradare pe clase**
-  (`ScenePin`/`SceneBPort`/`SceneEdge` poartă `width`; pinul/steagul arată
-  `/N` — combinat `/16×3` la unpacked —, iar firul/stub-ul se îngroașă pe
-  clase w-s/w-m/w-l prin `widthClass`; lățimea netului pe muchie e derivată
-  prin `netWidth` din `probe.ts`, DOAR de la un capăt cu același semnal,
-  niciodată prin select/concat) și **junction dots doar la T** (`junctionDots`
-  pur în `schematic.ts`, consumat în `routeEdges`: pentru fiecare vârf al
-  netului numără direcțiile cardinale distincte — T = exact 3, niciodată 2=cot
-  sau 4=încrucișare; grupat pe net, deci încrucișările a două net-uri diferite
-  nu produc punct; `test:scene`+`test:router`). **Rămân**: glife split/join
-  pentru slice/concat + cutii de constante (netlistsvg — cer câmpuri
-  structurate pe `ScenePin`), secțiuni de pini cu titlu în vederea-simbol
-  (symbolator — cer o taxonomie ne-modelată, decizie de design). **Glifele de
-  adnotare — IMPLEMENTATE** (iul. 2026): `ScenePin.noteKind` (discriminator
-  pur, `noteOf` în scene.ts) alege glifa — `const` = cutie tie-cell, slice/
-  concat = **chip de accent cu parantezele SV** (`{}` concat / `[]` select),
-  `nc` = cerc; `estPinText` rezervă `GLYPH_W` în margini ȘI obstacole;
-  `test:scene` (noteKind pe model real). Chip-ul a înlocuit pana split/join
-  netlistsvg inițială la finisaj (iul. 2026): pana era plină și converge spre
-  bloc, deci se citea ca un al doilea **cap de săgeată** peste săgeata de
-  direcție a firelor. Triaj adversarial pe 8 familii de rezolvare (workflow
-  multi-agent, scor „arrow-confusability"): concluzia — vinovatul e vârful plin
-  orientat de-a lungul firului, nu forma în sine; scapă doar formele fără vârf /
-  categoric ne-fir. Prima iterație a fost un romb cu semn de lățime `+`/`−`, dar
-  semnul cerea un mnemonic; înlocuit cu **parantezele SV literale** (`{}`/`[]`)
-  într-un chip de accent — sintaxa însăși, zero mnemonic. Textul `{…}`/`[hi:lo]`
-  rămâne purtătorul de sens la „decorations off" (chip-ul e decorație, ascuns
-  acolo; nota nu se scoate). Tot la finisaj s-au reparat centrarea verticală a
-  parantezelor pe fir (`dominant-baseline: central`) și lizibilitatea (chip cu
-  fundal OPAC — `color-mix` cu `editor-background`, nu `transparent` — care
-  maschează firul de dedesubt, ca tie-cell-ul de constantă). **Eticheta
-  portului** a trecut la ordinea de declarare SystemVerilog (`portLabel` pur,
-  `test:scene`): dimensiunile packed înaintea numelui (din `elem_width`),
-  unpacked după (din sufixul `type` de după `$`) — `[15:0]ch_out[0:2]` în loc
-  de `ch_out[15:0]`, care prezenta un tablou unpacked ca vector plat de 16 biți
-  și contrazicea selecturile `[0]`/`[1]`/`[2]`; tooltip-ul s-a curățat de
-  separatorul intern `$`. Adnotarea de lățime de pe fir rămâne (`16×3`, alegerea
-  utilizatorului — lățimea totală vizibilă la o privire). Eticheta e **compactă
-  (fără spații)** cu **dimensiunile colorate discret** (`portLabelText` +
-  `splitLabel` puri; tspan `.dim` cu `fill-opacity: 0.55` care urmează culoarea
-  numelui) — economisește lățime fără să piardă lizibilitatea (cererea
-  utilizatorului). La aceeași trecere s-a prins și un bug de lățime: `measurer`
-  măsura etichetele monospace cu fontul UI proporțional (mai îngust) →
-  subestimare → porturi vest/est suprapuse; `measurer(mono)` măsoară acum cu
-  fontul editorului. Ambele vederi (schemă + simbol) folosesc `portLabel`.
-  Rafinări ulterioare ale chip-ului concat/select (cererea utilizatorului): `GAP`
-  față de port (nu se mai suprapune cu eticheta de lățime / nota), fundal opac
-  (maschează firul), și `centerChipSigns` — o trecere post-randare care măsoară
-  cutiile reale și centrează semnul `{}`/`[]` în dreptunghi, independent de
-  metrica fontului. **Săgeata de direcție a firelor RTL a fost scoasă**
-  (`marker-end` din `edgeElement`) — direcția e implicită din latura portului
-  (vest=intrare, est=ieșire); în vederea TB săgețile rămân (in/out/inout).
-  **Firul traversează marcatorul concat/select ORIZONTAL** (cererea
-  utilizatorului): pinii cu marcator au stub extins la `MARKER_STUB` și ancora de
-  rutare mutată tot acolo, deci trunchiul fanout-ului se leagă dincolo de chip
-  (nu-l mai taie vertical) și doar stub-ul orizontal îl traversează. Prima
-  încercare (obstacol de rutare care să împingă trunchiul) a fost respinsă —
-  obstacolul respingea și ramura orizontală, firul ocolea chip-ul. **Pinul
-  străpunge vizibil chip-ul** (cererea utilizatorului, 19 iul. 2026):
-  `MARKER_TAIL` (=12px) prelungește stub-ul dincolo de marginea exterioară a
-  chip-ului (36→48, multiplu de 8 — vârf/ancoră PE GRILĂ); înainte stub-ul se
-  oprea exact la margine și părea ascuns sub dreptunghi, firul părea să
-  izvorască din chip. Tranziția de grosime stub→net cade acum la vârf,
-  coliniară (fără colț), deci fără îmbinări rupte (docs/04). **Steagurile
-  de graniță s-au compactat** (padding 26→16 la lățime), margini mai strânse
-  între etichetă și margini. **Junction dots la contopire** (cererea
-  utilizatorului): `junctionDots` marchează acum ≥3 direcții la un vârf (T sau
-  contopire 4-way a aceluiași net), nu doar T-uri, iar **fan-in-ul unei
-  magistrale se desenează ca PIEPTENE** (`combPolys` pur, `test:router`): un
-  trunchi vertical + o priză orizontală per capăt, cu punct la fiecare T
-  interior — în loc de o STEA care converge în sink (un 4-way). Se aplică doar
-  când prizele nu taie blocuri (`combClear`). Spina (priza de sus + trunchi +
-  priza de jos) e o singură polilinie, ca colțurile de capăt să aibă jonctiune
-  (miter), fără gol la îmbinare. **Navigare & aranjare** (cererea utilizatorului):
-  **săgețile derulează** viewport-ul (pan din tastatură, convenție de scroll, pas
-  mare cu Shift, persistă ca la mouse), iar la **drag apar ghidaje de aliniere pe
-  CAPETELE PINILOR** (`alignSnap`+`pinTipOffsets` pur, `test:router`; cererea
-  utilizatorului): capetele pinilor (vârfurile stub-urilor, cu marcajele
-  `{}`/`[]`) blocului apucat se aliniază la cel mai apropiat capăt de pin al
-  altui bloc (~6px ecran, peste snap-ul de grilă) cu o linie punctată
-  `.align-guide` — două capete la același y ⇒ fir orizontal drept, iar ghidajul
-  vertical trece prin vârfurile pinilor, NU prin marginile blocului.
-  **Minimap** (cererea utilizatorului, 19 iul. 2026): navigator de ansamblu în
-  colțul dreapta-jos (RTL + TB) — miniatura scenei prin `<use href="#viewport">`
-  (copie vie, zero re-randare) + dreptunghiul zonei vizibile; click/drag
-  centrează camera, tasta M comută; nu intră în exportul SVG. Geometria pură în
-  `src/webview/minimap.ts` (`test:minimap`, 6 teste — încadrare, transformul
-  `U = M ∘ V⁻¹`, dus-întors salt↔dreptunghi de vedere). **Recenzia adversarială
-  a minimapului** (19 iul. 2026, 5 dimensiuni × verificatori sceptici): 7
-  descoperiri brute → 3 defecte reale confirmate, toate reparate + verificate
-  empiric în harness (nu le reintroduce): (1) `mmDragging` rămânea blocat
-  `true` fără `pointercancel`/`lostpointercapture` și când hit-rect-ul (singurul
-  care-l reseta la pointerup) dispărea mid-drag la re-randare/toggle M — hover
-  fără buton pana camera; flag-ul se resetează acum pe toate căile de anulare
-  ȘI la reconstrucția/scoaterea minimapului. (2) `stopPropagation` pe
-  `pointerup` era necondiționat: un gest de canvas sub-prag (lasso/drag <
-  DRAG_MIN, încă fără captură) eliberat peste minimap își pierdea curățarea →
-  marquee/drag fantomă; acum se oprește propagarea DOAR când gestul e al
-  minimapului (`mmDragging`). (3) drag-end actualiza minimapul dar lăsa
-  `contentBounds` pe limitele pre-drag → un resize cu autoCam încadra divergent
-  de minimap; drag-end recalculează acum și `contentBounds` (ca `fitView`).
-  Matematica pură a ieșit curată (compunerea `U = M ∘ V⁻¹` verificată algebric
-  de recenzent). **Sincronizarea editor→diagramă** (cererea utilizatorului, 19
-  iul. 2026; deciziile prin AskUserQuestion: doar evidențiere + comandă,
-  halou separat persistent): urmărirea cursorului din sursele SV aprinde un
-  halou `.xprobe` (galben, distinct de selecție, doar în vederea curentă —
-  non-invaziv), iar comanda „Reveal in Diagram" (meniul contextual al
-  editorului) navighează la element. Mesaj nou `probe/highlight` (docs/05);
-  rezoluția (fișier,linie)→țintă și maparea țintă→id-uri de vedere sunt pure
-  (`src/locmap.ts`: `buildLocIndex`/`resolveLoc`/`probeIds`; `test:locmap`,
-  14 teste pe modelul real — exact-pe-linie cu port>instanță>modul,
-  cuprindere de deasupra, instanțele generate de pe aceeași linie, pliaje
-  prin `memberPaths`); haloul se recalculează în `applySelectionClasses`,
-  deci supraviețuiește re-randărilor și se remapează la expandarea pliajului.
-  **Recenzia adversarială a sincronizării** (19 iul. 2026, 5 dimensiuni ×
-  sceptici): 13 brute → 8 defecte distincte confirmate, toate reparate (nu le
-  reintroduce): (1) exportul SVG cocea haloul `.xprobe` în fișier — scos de pe
-  clonă ca `.selected`; (2) „Reveal in Diagram" pe linia generate naviga dar
-  selecta NIMIC cu pliajul închis — `remapSelection` (pur) în `presentScene`
-  remapează rel-urile membrilor pe pliaj; (3) `select/reveal` nu făcea ecou —
-  `postSelection()` ține host-ul sincron; (4) fixtura `examples/model.json`
-  era DEJA învechită față de soc_top.sv (deriva pre-existentă: linia goală 22
-  adăugată pe 11 iul.; poarta pytest a backend-ului era roșie) — regenerată,
-  test-locmap actualizat (g_ch pe 24), pytest verde; (5) `lastProbe` nu se
-  reseta la reîncărcarea webview-ului — halou pierdut la ținte identice; (6)
-  antetul top-ului dezvăluia simbolul deși avea schemă; (7) regexul meniului
-  era sensibil la caz (`.SV` fără intrare); (8) harta cale→modul se
-  reconstruia per `applySelectionClasses` (per pointermove la lasso) —
-  memoizată pe referința modelului. Limitare cunoscută, documentată în
-  docs/04: cuprinderea nu vede granițele dintre module (fără end-loc în
-  model). **Decorațiile de stare quick-uvm** (cererea utilizatorului, 19 iul.
-  2026; deciziile prin AskUserQuestion: ambele surse, badge în colț +
-  tooltip): validările model↔YAML ca badge-uri ⚠/✕ pe elementele vizate
-  (pini RTL ai DUT-ului, blocuri de agent TB, Env cu bubble-up la rădăcină)
-  + rezultatul ultimului generate ca cip `✓/✕ generate` în antet (inclusiv
-  ENOENT). Mesaj nou `status/decorations` (docs/05); derivarea
-  findings→decorații și maparea decorații→id-uri sunt pure (`src/status.ts`,
-  `test:status`, 6 teste); `checkConfig` emite acum și `agent` în params la
-  `width-mismatch`/`port-orphan` (țintirea blocului de agent). Badge-urile
-  nu intră în exportul SVG; detaliile în docs/04. Seria de
-  finisaj a trecut o **recenzie adversarială multi-agent** (19 iul. 2026: 6
-  dimensiuni — consistența stub/ancoră/capăt, pieptene+joncțiuni, ghidaje,
-  etichete+măsurare, interacțiune/cameră, invarianți — fiecare descoperire
-  contra-verificată de un sceptic independent): 4 descoperiri brute, toate
-  refuzate, 0 confirmate. Limitare CUNOSCUTĂ și acceptată (by design, nu bug):
-  o aliniere pe X între capete cu stub-uri DIFERITE (marcator 36 vs normal 10,
-  sau vest↔est) cade off-grid și se așază la următoarea randare cu ≤4px
-  (lumea pe grilă e universală — rotunjirea la GRID e invariantul, nu
-  fidelitatea sub-grilă); alinierile uzuale (același stub, aceeași latură) și
-  TOATE alinierile pe Y rămân exacte (offseturile y sunt multipli de 8).
-  **Secțiuni de pini pe rol — IMPLEMENTATE** (iul. 2026): în vederea-simbol,
-  grupul ceas/reset (deja separat de `buildPins`) primește gap + divizor punctat
-  + eticheta „clock / reset" (`draw` deplasează grupul, mărește cutia); doar
-  când modulul are ceas/reset. **Vocabularul de desen e ÎNCHEIAT.**
-  **Validat**
-  vizual în EDH** (iul. 2026), cu patru rafinări: (a) firul folosește o culoare
-  OPACĂ amestecată cu fundalul, nu `opacity` — firele aceluiași net care împart
-  trunchiul (waive-ul de fan-out) își cumulau transparența și dădeau un efect
-  de gradient la suprapunere; (b) setarea `quickuvm.schematicDecorations`
-  (implicit pornit) ascunde slash/`/N`/junction dots prin clasa `decor-off` pe
-  canvas (gradarea grosimii rămâne); (c) comutatorul fir/etichetă e
-  descoperibil de pe orice pin/steag (inspectorul derivă netul din
-  muchii/etichetă); (d) nudge anti-suprapunere la expandarea unui pliaj pe
-  vederi aranjate (D21 pinuiește vecinii → membrii noi se mută la loc liber
-  cu `freeSpot`, fără să atingă blocurile utilizatorului);
-- trasare interactivă: **Shift+click = conul amonte/aval — IMPLEMENTAT**
-  (iul. 2026): `netCone`+`coneOf` puri în `scene.ts` (BFS pe muchii wire după
-  direcție + iface în ambele sensuri + net-uri `render=label` prin
-  `pin.nets`/`bport.nets`; `test:scene`), gest Shift(+Alt) în vederea-schemă;
-  **cross-probing la hover — IMPLEMENTAT** (staționare ~300 ms → revelare
-  ne-intruzivă în editoarele deja vizibile, `openSource {peek}`, setarea
-  `quickuvm.hoverCrossProbe`); ghiduri de aliniere echidistante și minimap la
-  vederi mari — rămân;
-- **export SVG — IMPLEMENTAT** (iul. 2026): butonul ⤓ / comanda
-  `quickuvm.exportSvg` → SVG autonom (stiluri calculate inline-uite pe o clonă
-  atașată off-screen — fără `:hover`/`:selected` copt; `viewBox` pe conținut;
-  fundal copt); **PDF amânat** — SVG-ul se convertește curat cu unelte externe,
-  iar o bibliotecă PDF în webview nu-și justifică greutatea (D5 anticipa
-  exportul vectorial „trivial" — corect pe fond, dar trivial doar după
-  inline-area stilurilor);
-- sincronizare editor→diagramă (reveal din poziția cursorului) — rămâne;
-- vocabular de desen îmbogățit, ghiduri de aliniere, minimap, decorații
-  `quick-uvm status` — rămân;
-- override-uri nivel 2/3 — nivelul 2 rămâne; **level 3 (hand-routed wires) is
+- an enriched drawing vocabulary — **the core IMPLEMENTED** (Jul 2026, chosen
+  by the user from the audit): **slash+width labels on buses with grading by
+  class** (`ScenePin`/`SceneBPort`/`SceneEdge` carry `width`; the pin/flag
+  shows `/N` — combined `/16×3` for unpacked —, and the wire/stub thickens by
+  the classes w-s/w-m/w-l through `widthClass`; the net's width on the edge is
+  derived through `netWidth` from `probe.ts`, ONLY from an end with the same
+  signal, never through select/concat) and **junction dots only at a T**
+  (the pure `junctionDots` in `schematic.ts`, consumed in `routeEdges`: for
+  each vertex of the net it counts the distinct cardinal directions — T =
+  exactly 3, never 2=bend or 4=crossing; grouped per net, so the crossings of
+  two different nets produce no dot; `test:scene`+`test:router`). **What
+  remains**: split/join glyphs for slice/concat + constant boxes (netlistsvg —
+  they require structured fields on `ScenePin`), titled pin sections in the
+  symbol view (symbolator — they require an un-modelled taxonomy, a design
+  decision). **The annotation glyphs — IMPLEMENTED** (Jul 2026):
+  `ScenePin.noteKind` (a pure discriminator, `noteOf` in scene.ts) chooses the
+  glyph — `const` = a tie-cell box, slice/concat = **an accent chip with the
+  SV brackets** (`{}` concat / `[]` select), `nc` = a circle; `estPinText`
+  reserves `GLYPH_W` in the margins AND the obstacles; `test:scene` (noteKind
+  on the real model). The chip replaced the initial netlistsvg split/join
+  wedge during the polish (Jul 2026): the wedge was filled and converges
+  towards the block, so it read as a second **arrowhead** on top of the wires'
+  direction arrow. An adversarial triage over 8 families of solutions (a
+  multi-agent workflow, an "arrow-confusability" score): the conclusion — the
+  culprit is the filled tip oriented along the wire, not the shape in itself;
+  only the shapes without a tip / categorically non-wire escape. The first
+  iteration was a diamond with a width sign `+`/`−`, but the sign required a
+  mnemonic; replaced with **the literal SV brackets** (`{}`/`[]`) in an accent
+  chip — the syntax itself, zero mnemonic. The text `{…}`/`[hi:lo]` remains
+  the carrier of meaning under "decorations off" (the chip is decoration,
+  hidden there; the note is not removed). Also during the polish, the vertical
+  centring of the brackets on the wire (`dominant-baseline: central`) and the
+  legibility (a chip with an OPAQUE background — `color-mix` with
+  `editor-background`, not `transparent` — which masks the wire underneath,
+  like the constant's tie-cell) were repaired. **The port label** moved to the
+  SystemVerilog declaration order (the pure `portLabel`, `test:scene`): the
+  packed dimensions before the name (from `elem_width`), the unpacked ones
+  after it (from the `type` suffix after `$`) — `[15:0]ch_out[0:2]` instead of
+  `ch_out[15:0]`, which presented an unpacked array as a flat 16-bit vector
+  and contradicted the selects `[0]`/`[1]`/`[2]`; the tooltip was cleaned of
+  the internal `$` separator. The width annotation on the wire stays (`16×3`,
+  the user's choice — the total width visible at a glance). The label is
+  **compact (no spaces)** with **the dimensions coloured discreetly** (the
+  pure `portLabelText` + `splitLabel`; a `.dim` tspan with
+  `fill-opacity: 0.55` that follows the colour of the name) — it saves width
+  without losing legibility (the user's request). In the same pass a width bug
+  was caught too: `measurer` measured the monospace labels with the
+  proportional UI font (narrower) → underestimation → overlapping west/east
+  ports; `measurer(mono)` now measures with the editor's font. Both views
+  (schematic + symbol) use `portLabel`.
+  Later refinements of the concat/select chip (the user's request): a `GAP`
+  from the port (it no longer overlaps the width label / the note), an opaque
+  background (it masks the wire), and `centerChipSigns` — a post-render pass
+  that measures the real boxes and centres the `{}`/`[]` sign in the
+  rectangle, independently of the font's metrics. **The direction arrow of the
+  RTL wires was removed** (`marker-end` from `edgeElement`) — the direction is
+  implicit from the port's side (west=input, east=output); in the TB view the
+  arrows stay (in/out/inout).
+  **The wire crosses the concat/select marker HORIZONTALLY** (the user's
+  request): the pins with a marker have their stub extended to `MARKER_STUB`
+  and the routing anchor moved there as well, so the trunk of the fan-out
+  joins beyond the chip (it no longer cuts it vertically) and only the
+  horizontal stub crosses it. The first attempt (a routing obstacle to push
+  the trunk away) was rejected — the obstacle also repelled the horizontal
+  branch, the wire went around the chip. **The pin visibly pierces the chip**
+  (the user's request, 19 Jul 2026): `MARKER_TAIL` (=12px) extends the stub
+  beyond the outer edge of the chip (36→48, a multiple of 8 — tip/anchor ON
+  THE GRID); before, the stub stopped exactly at the edge and seemed hidden
+  under the rectangle, the wire seemed to spring from the chip. The stub→net
+  thickness transition now falls at the tip, collinear (no corner), so without
+  broken joins (docs/04). **The boundary flags were compacted** (padding 26→16
+  in width), tighter margins between the label and the edges. **Junction dots
+  at a merge** (the user's request): `junctionDots` now marks ≥3 directions at
+  a vertex (a T or a 4-way merge of the same net), not only Ts, and **the
+  fan-in of a bus is drawn as a COMB** (the pure `combPolys`, `test:router`):
+  a vertical trunk + one horizontal tap per end, with a dot at every interior
+  T — instead of a STAR that converges in the sink (a 4-way). It is applied
+  only when the taps do not cut through blocks (`combClear`). The spine (the
+  top tap + the trunk + the bottom tap) is a single polyline, so that the end
+  corners have a join (miter), with no gap at the joint. **Navigation &
+  arrangement** (the user's request): **the arrow keys scroll** the viewport
+  (pan from the keyboard, the scroll convention, a large step with Shift,
+  persisted as for the mouse), and during a **drag, alignment guides appear on
+  the PIN TIPS** (the pure `alignSnap`+`pinTipOffsets`, `test:router`; the
+  user's request): the pin tips (the ends of the stubs, with the `{}`/`[]`
+  markers) of the grabbed block align to the nearest pin tip of another block
+  (~6px on screen, on top of the grid snap) with a dotted line `.align-guide`
+  — two tips at the same y ⇒ a straight horizontal wire, and the vertical
+  guide passes through the pin tips, NOT through the block's edges.
+  **Minimap** (the user's request, 19 Jul 2026): an overview navigator in the
+  bottom-right corner (RTL + TB) — the thumbnail of the scene through
+  `<use href="#viewport">` (a live copy, zero re-rendering) + the rectangle of
+  the visible area; click/drag centres the camera, the M key toggles it; it
+  does not enter the SVG export. The pure geometry is in
+  `src/webview/minimap.ts` (`test:minimap`, 6 tests — fitting, the transform
+  `U = M ∘ V⁻¹`, the round trip jump↔view rectangle). **The adversarial review
+  of the minimap** (19 Jul 2026, 5 dimensions × sceptical verifiers): 7 raw
+  findings → 3 real defects confirmed, all repaired + verified empirically in
+  the harness (do not reintroduce them): (1) `mmDragging` stayed stuck at
+  `true` without `pointercancel`/`lostpointercapture` and when the hit rect
+  (the only one that reset it at pointerup) disappeared mid-drag on a
+  re-render/M toggle — a hover without a button panned the camera; the flag is
+  now reset on all the cancellation paths AND when the minimap is
+  rebuilt/removed. (2) `stopPropagation` on `pointerup` was unconditional: a
+  below-threshold canvas gesture (lasso/drag < DRAG_MIN, not yet captured)
+  released over the minimap lost its cleanup → a phantom marquee/drag; the
+  propagation is now stopped ONLY when the gesture is the minimap's
+  (`mmDragging`). (3) drag-end updated the minimap but left `contentBounds` at
+  the pre-drag bounds → a resize with autoCam fitted differently from the
+  minimap; drag-end now recomputes `contentBounds` too (like `fitView`).
+  The pure maths came out clean (the composition `U = M ∘ V⁻¹` verified
+  algebraically by the reviewer). **The editor→diagram synchronization** (the
+  user's request, 19 Jul 2026; the decisions through AskUserQuestion:
+  highlighting only + a command, a separate persistent halo): following the
+  cursor in the SV sources lights an `.xprobe` halo (yellow, distinct from the
+  selection, only in the current view — non-invasive), and the command "Reveal
+  in Diagram" (the editor's context menu) navigates to the element. A new
+  message `probe/highlight` (docs/05); the (file,line)→target resolution and
+  the target→view-ids mapping are pure (`src/locmap.ts`:
+  `buildLocIndex`/`resolveLoc`/`probeIds`; `test:locmap`, 14 tests on the real
+  model — exact-on-line with port>instance>module, enclosure from above, the
+  generated instances on the same line, folds through `memberPaths`); the halo
+  is recomputed in `applySelectionClasses`, so it survives re-renders and is
+  remapped when the fold is expanded.
+  **The adversarial review of the synchronization** (19 Jul 2026, 5
+  dimensions × sceptics): 13 raw → 8 distinct defects confirmed, all repaired
+  (do not reintroduce them): (1) the SVG export baked the `.xprobe` halo into
+  the file — removed from the clone like `.selected`; (2) "Reveal in Diagram"
+  on the generate line navigated but selected NOTHING with the fold closed —
+  `remapSelection` (pure) in `presentScene` remaps the members' rels onto the
+  fold; (3) `select/reveal` did not echo — `postSelection()` keeps the host in
+  sync; (4) the fixture `examples/model.json` was ALREADY out of date against
+  soc_top.sv (a pre-existing drift: the empty line 22 added on 11 Jul; the
+  backend's pytest gate was red) — regenerated, test-locmap updated (g_ch on
+  24), pytest green; (5) `lastProbe` was not reset when the webview reloaded —
+  the halo lost on identical targets; (6) the top's header revealed the symbol
+  although it had a schematic; (7) the menu's regex was case-sensitive (`.SV`
+  without an entry); (8) the path→module map was rebuilt per
+  `applySelectionClasses` (per pointermove during a lasso) — memoized on the
+  model's reference. A known limitation, documented in docs/04: the enclosure
+  does not see the boundaries between modules (no end-loc in the model).
+  **The quick-uvm status decorations** (the user's request, 19 Jul 2026; the
+  decisions through AskUserQuestion: both sources, a badge in the corner + a
+  tooltip): the model↔YAML validations as ⚠/✕ badges on the targeted elements
+  (the DUT's RTL pins, the TB agent blocks, Env with bubble-up to the root) +
+  the result of the last generate as a `✓/✕ generate` chip in the header
+  (ENOENT included). A new message `status/decorations` (docs/05); the
+  findings→decorations derivation and the decorations→ids mapping are pure
+  (`src/status.ts`, `test:status`, 6 tests); `checkConfig` now also emits
+  `agent` in the params for `width-mismatch`/`port-orphan` (targeting the
+  agent block). The badges do not enter the SVG export; the details are in
+  docs/04. The polish series went through a **multi-agent adversarial review**
+  (19 Jul 2026: 6 dimensions — the stub/anchor/tip consistency,
+  comb+junctions, guides, labels+measuring, interaction/camera, invariants —
+  every finding counter-verified by an independent sceptic): 4 raw findings,
+  all refuted, 0 confirmed. A KNOWN and accepted limitation (by design, not a
+  bug): an alignment on X between tips with DIFFERENT stubs (marker 36 vs
+  normal 10, or west↔east) falls off-grid and settles at the next render
+  within ≤4px (the world on the grid is universal — rounding to GRID is the
+  invariant, not sub-grid fidelity); the usual alignments (the same stub, the
+  same side) and ALL the alignments on Y stay exact (the y offsets are
+  multiples of 8).
+  **Pin sections by role — IMPLEMENTED** (Jul 2026): in the symbol view, the
+  clock/reset group (already separated by `buildPins`) gets a gap + a dotted
+  divider + the label "clock / reset" (`draw` shifts the group, enlarges the
+  box); only when the module has a clock/reset. **The drawing vocabulary is
+  CLOSED.**
+  **Validated
+  visually in the EDH** (Jul 2026), with four refinements: (a) the wire uses
+  an OPAQUE colour mixed with the background, not `opacity` — the wires of the
+  same net that share the trunk (the fan-out waiver) accumulated their
+  transparency and gave a gradient effect where they overlapped; (b) the
+  setting `quickuvm.schematicDecorations` (on by default) hides the
+  slash/`/N`/junction dots through the `decor-off` class on the canvas (the
+  thickness grading stays); (c) the wire/label switch is discoverable from any
+  pin/flag (the inspector derives the net from the edges/the label); (d) an
+  anti-overlap nudge when a fold is expanded on arranged views (D21 pins the
+  neighbours → the new members move to a free place with `freeSpot`, without
+  touching the user's blocks);
+- interactive tracing: **Shift+click = the upstream/downstream cone —
+  IMPLEMENTED** (Jul 2026): the pure `netCone`+`coneOf` in `scene.ts` (a BFS
+  over the wire edges by direction + iface in both directions + `render=label`
+  nets through `pin.nets`/`bport.nets`; `test:scene`), the Shift(+Alt) gesture
+  in the schematic view; **cross-probing on hover — IMPLEMENTED** (a dwell of
+  ~300 ms → a non-intrusive reveal in the already visible editors,
+  `openSource {peek}`, the setting `quickuvm.hoverCrossProbe`); equidistant
+  alignment guides and a minimap for large views — remain;
+- **SVG export — IMPLEMENTED** (Jul 2026): the ⤓ button / the command
+  `quickuvm.exportSvg` → a standalone SVG (computed styles inlined on a clone
+  attached off-screen — no baked `:hover`/`:selected`; `viewBox` on the
+  content; a baked background); **PDF postponed** — the SVG converts cleanly
+  with external tools, and a PDF library in the webview does not justify its
+  weight (D5 anticipated the "trivial" vector export — right in substance, but
+  trivial only after the inlining of the styles);
+- editor→diagram synchronization (reveal from the cursor position) — remains;
+- an enriched drawing vocabulary, alignment guides, a minimap, `quick-uvm
+  status` decorations — remain;
+- level 2/3 overrides — level 2 remains; **level 3 (hand-routed wires) is
   implemented** (Nov 2026, D27 — the demand D7 waited for came from the user
   arranging diagrams by hand; docs/04, "Level 3 — hand-routed wires");
-- performanță pe proiecte mari (măsurare înainte de optimizare).
+- performance on large projects (measuring before optimizing).
 
-**Validarea manuală a quick wins-urilor** (Extension Development Host, 16
-iul. 2026) a confirmat gesturile și a adus trei constatări, toate rezolvate:
-(1) exportul de pe ecranul de bun-venit deschidea dialogul de salvare —
-`render()` lasă viewport-ul populat sub overlay, deci gate-ul de gol se ia
-acum după overlay-ul vizibil, nu doar după DOM (sub un **banner** exportul
-rămâne permis: dedesubt e ultimul desen valid, invariantul 5); (2) **meniu
-contextual în vederile RTL** — clic-dreapta oferă „Go to source" pe
-blocuri/pini/steaguri (aceeași rezoluție ca dublu-click-ul), „Open schematic"
-pe blocurile cu schemă, Expand/Re-fold pe pliaje și Flip H/V (docs/05); (3)
-**undo/redo de poziții** — Ctrl+Z/Ctrl+Shift+Z (sau Ctrl+Y): istoric de
-sesiune per cheie de layout (RTL per vedere, TB per nivel) care anulează
-mutările de blocuri și ⟲, fiecare pas restaurat persistându-se prin
-`layout/snapshot` (docs/04); validate în harness (drag simulat → undo la
-poziția exactă → redo; meniul pe toate țintele; exportul gol pe welcome).
+**The manual validation of the quick wins** (Extension Development Host, 16
+Jul 2026) confirmed the gestures and brought three findings, all resolved:
+(1) the export from the welcome screen opened the save dialog —
+`render()` leaves the viewport populated under the overlay, so the emptiness
+gate is now taken from the visible overlay, not only from the DOM (under a
+**banner** the export stays allowed: underneath is the last valid drawing,
+invariant 5); (2) **a context menu in the RTL views** — a right-click offers
+"Go to source" on blocks/pins/flags (the same resolution as the double-click),
+"Open schematic" on the blocks with a schematic, Expand/Re-fold on folds and
+Flip H/V (docs/05); (3) **undo/redo of positions** — Ctrl+Z/Ctrl+Shift+Z (or
+Ctrl+Y): a session history per layout key (RTL per view, TB per level) that
+undoes the block moves and ⟲, every restored step being persisted through
+`layout/snapshot` (docs/04); validated in the harness (a simulated drag → undo
+to the exact position → redo; the menu on all the targets; the empty export on
+the welcome screen).
 
-Cele trei quick wins au trecut prin **recenzie adversarială** (iul. 2026, 3
-recenzori × verificatori): 7 defecte reale confirmate, toate remediate — cel
-mai important, conul prin net-uri `render=label` nu vedea steagurile de
-graniță (`SceneBPort` a primit `nets`, `netCone` le traversează cu regula
-inversă: portul de INTRARE al vederii conduce), iar Shift+click pe interiorul
-unui pin devenea un net inexistent care distrugea selecția (`coneOf`
-clasifică robust ținta). Plus la export: `text-transform`/`text-decoration`
-lipseau din stilurile inline-uite (titluri TB lowercase, porturi ignorate
-fără line-through), `:hover` se cocea în artefact (rezolvat prin citirea pe
-clona off-screen), și anularea peek-ului la `pointerdown`/`pointerleave`.
+The three quick wins went through an **adversarial review** (Jul 2026, 3
+reviewers × verifiers): 7 real defects confirmed, all fixed — the most
+important one, the cone through `render=label` nets did not see the boundary
+flags (`SceneBPort` got `nets`, `netCone` traverses them with the inverse
+rule: the view's INPUT port drives), and Shift+click on the inside of a pin
+became a non-existent net that destroyed the selection (`coneOf` classifies
+the target robustly). Plus, in the export: `text-transform`/`text-decoration`
+were missing from the inlined styles (lowercase TB titles, ignored ports
+without the line-through), `:hover` was baked into the artefact (solved by
+reading on the off-screen clone), and the cancelling of the peek on
+`pointerdown`/`pointerleave`.
 
-**A doua rundă de validare** (Extension Development Host) a mai adus trei:
-(1) exportul din paletă mergea și cu tab-ul Welcome/sursă activ — comanda
-țintește acum **exporter-ul ACTIV** (registru de sesiune în `panel.ts`:
-panoul RTL/TB și editorul per-fișier se înregistrează pe `onDidChangeViewState`
-când sunt `active`, se scot la blur/dispose; comanda exportă doar tab-ul de
-diagramă vizibil); (2) meniul contextual RTL rămânea deschis când schimbai
-selecția în Design Hierarchy — clic în arbore e în afara iframe-ului, deci nu
-produce pointerdown în webview; se închide acum și la `blur` (docs/05); (3)
-„Go to source" lipsea pe **pliaje** (nu au `instPath` propriu) — membrii unui
-pliaj împart același modul (criteriul plierii), deci definiția se deschide
-prin primul membru derivat din id (`g_ch[0..2].u_ch` → `g_ch[0].u_ch`).
-Fixtură nouă pentru cross-probing: `examples-probe/deep_pipe.sv` — 8 module
-într-un singur fișier (porturi la liniile 19…195), instanțiate în lanț de
-`deep_pipe`, ca hover-ul pe pinii `u_a…u_h` să deruleze vizibil sursa
-(configurația de lansare „cross-probing: deep_pipe").
+**The second round of validation** (Extension Development Host) brought three
+more: (1) the export from the palette also worked with the Welcome/source tab
+active — the command now targets **the ACTIVE exporter** (a session registry
+in `panel.ts`: the RTL/TB panel and the per-file editor register on
+`onDidChangeViewState` when they are `active`, they are removed on
+blur/dispose; the command exports only the visible diagram tab); (2) the RTL
+context menu stayed open when you changed the selection in Design Hierarchy —
+a click in the tree is outside the iframe, so it produces no pointerdown in
+the webview; it now also closes on `blur` (docs/05); (3) "Go to source" was
+missing on **folds** (they have no `instPath` of their own) — the members of
+a fold share the same module (the criterion of folding), so the definition is
+opened through the first member derived from the id (`g_ch[0..2].u_ch` →
+`g_ch[0].u_ch`).
+A new fixture for cross-probing: `examples-probe/deep_pipe.sv` — 8 modules in
+a single file (ports at lines 19…195), instantiated in a chain by
+`deep_pipe`, so that the hover on the pins `u_a…u_h` visibly scrolls the
+source (the launch configuration "cross-probing: deep_pipe").
 
-### Faza 5 — post-MVP (bucla de feedback a generării + paritate de schemă)
+### Phase 5 — post-MVP (the generation feedback loop + schema parity)
 
-MVP-ul (Fazele 0–4) e închis. Continuarea planului — trei direcții cerute de
-utilizator (decorația elementelor negenerate, generarea incrementală per-element,
-paritatea GUI ↔ schema QuickUVM) — e detaliată separat în
-[`docs/07-plan-post-mvp.md`](07-plan-post-mvp.md): o fundație comună (manifestul de
-generare QuickUVM) deblochează liniile 1–2, iar linia 3 (paritate) merge în paralel,
-începând cu reparațiile de paritate negativă (agenți inout/hibrizi blocați de gărzi
-stale de la 1.0).
+The MVP (Phases 0–4) is closed. The continuation of the plan — three
+directions requested by the user (decorating the ungenerated elements,
+incremental per-element generation, the GUI ↔ QuickUVM schema parity) — is
+detailed separately in [`docs/07-plan-post-mvp.md`](07-plan-post-mvp.md): a
+common foundation (the QuickUVM generation manifest) unblocks lines 1–2, and
+line 3 (parity) proceeds in parallel, starting with the negative-parity
+repairs (inout/hybrid agents blocked by guards gone stale since 1.0).
 
-## Riscuri principale și atenuări
+## Main risks and mitigations
 
-| Risc | Atenuare |
+| Risk | Mitigation |
 |---|---|
-| dump/model mare pe designuri industriale | modelul e deja compact (nu AST-ul brut); la nevoie, emitere per-vedere la cerere |
-| slang whole-design la fiecare salvare | debounce + măsurare; slang e rapid; abia apoi cache/incremental |
-| schema AST/API pyslang se schimbă între versiuni | versiune pinuită în `requirements.txt`; testele de regresie prind divergențele |
-| cod care nu compilează în timpul editării | `model/stale`: ultimul model valid rămâne; nu e blocant pentru MVP |
-| rutarea devine gaură de timp | ordinea 1→4→2→(3); nivelul 4 (etichete) taie majoritatea cazurilor grele |
-| suprapunere funcțională cu TerosHDL percepută ca duplicare | poziționare clară: bucla diagramă→config e diferențiatorul; vizualizarea e mijloc |
+| a large dump/model on industrial designs | the model is already compact (not the raw AST); if needed, per-view emission on request |
+| slang whole-design on every save | debounce + measuring; slang is fast; only then a cache/incremental |
+| the pyslang AST/API schema changes between versions | a version pinned in `requirements.txt`; the regression tests catch the divergences |
+| code that does not compile while being edited | `model/stale`: the last valid model stays; not blocking for the MVP |
+| routing becomes a time sink | the order 1→4→2→(3); level 4 (labels) cuts most of the hard cases |
+| a functional overlap with TerosHDL perceived as duplication | clear positioning: the diagram→config loop is the differentiator; the visualization is a means |
 
-## Jurnalul deciziilor
+## Decision journal
 
-| # | Decizie | Motiv (rezumat) | Alternativa respinsă |
+| # | Decision | Reason (summary) | Rejected alternative |
 |---|---|---|---|
-| D1 | backend semantic = slang (pyslang) | elaborare completă: lățimi numerice, generate desfăcut, parametri per instanță, interfețe/modporturi semantice; robust pe cod incomplet; cel mai rapid/conform (suita ChipsAlliance) | sv-parser+svinst: parse-only, lățimi simbolice ar fi cerut evaluator propriu; svinst neîntreținut din 2022. Verible: fără elaborare, CST declarat instabil. Surelog/UHDM: integrare grea (Cap'n Proto/VPI), mai lent |
-| D2 | model de proiect JSON ca contract stabil, backend în spatele unui adaptor | backend înlocuibil fără a atinge UI; prototipul pyslang nu blochează un viitor tool C++ pe libslang | cuplare directă UI↔API slang |
-| D3 | Bender ca sursă a listei de fișiere | manifest+lock deja standard în fluxul vizat; separă RTL de mediul generat prin target-uri | ghicirea prin glob (rămâne fallback) |
-| D4 | layout: ELK layered inițial + poziții deținute de utilizator + ELK interactiv pentru elemente noi | modelul mental din schematics (unealta propune, omul dispune); memoria spațială protejată | re-layout automat continuu; yFiles/GoJS (licență); React Flow (dependență React, fără rutare ortogonală nativă); JointJS (model de date propriu — reevaluabil dacă apare nevoia de rutare interactivă) |
-| D5 | randare SVG proprie în webview | hit-testing nativ, overlay prin CSS, export vectorial; modelul de date rămâne al nostru | canvas; framework-uri de diagramming |
-| D6 | ruter de interconexiuni separat de layout | pozițiile libere invalidează rutarea ELK | rutare doar la re-layout total |
-| D7 | override-uri de rutare pe 4 niveluri, implementate 1→4→2→(3) | nivelul 4 (fir↔etichetă) e practica EDA și elimină majoritatea cazurilor grele ieftin; waypoints doar relative | waypoints absolute (fragile); doar rutare automată |
-| D8 | YAML QuickUVM = sursă de adevăr; UI editează prin WorkspaceEdit | fără stare ascunsă; undo/diff/colaborare gratuite; validarea rămâne în QuickUVM (Pydantic) | format propriu de proiect al extensiei |
-| D9 | ID-uri stabile = căi ierarhice elaborate | chei pentru sidecar, overlay, protocol; stabile la re-parsare | ID-uri sintetice per sesiune |
-| D10 | invalidare grațioasă (orphans) pentru override-uri și pentru compilări eșuate | un typo nu distruge munca de aranjare; coerent cu fail-closed din QuickUVM | curățare automată agresivă |
-| D11 | numele extensiei = QuickXray (id `quickxray`) | familia Quick* leagă extensia de brandul QuickUVM existent; metafora radiografiei descrie exact vederea de interior; fără coliziuni la verificare (iul. 2026); scurt, pronunțabil identic în RO/EN; găsibilitatea se asigură prin subtitlu și `keywords` | QuickInspect (2 produse comerciale active, ™), QuickBench (tool EDA istoric Chronology + benchmark de discuri), QuickSchem (marcă ™ Trace Software, software de scheme electrice — coliziune directă de categorie, care slăbește și QuickSchematic prin proximitate), QuickEnv (tool Rust existent + "env" = variabile de mediu pentru publicul larg), QuickScope (slang de gaming + Mitutoyo), QuickRTL/QuickHDL (proximitate cu fosta familie Mentor), DUTscope și RTL Canvas (bune, dar în afara familiei de brand) |
-| D12 | build cu esbuild: host CJS (`dist/extension.js`) + webview IIFE (`dist/webview.js`), elkjs legat static în bundle-ul webview-ului | două ținte dintr-o singură comandă; formatul folosit de șabloanele oficiale de extensii; webview-ul fără framework are nevoie doar de bundling, iar varianta `elk.bundled.js` (fără worker) evită orice infrastructură suplimentară | doar `tsc` (nu leagă elkjs pentru browser); webpack (configurare mai grea, fără câștig la scara asta); încărcarea elkjs ca `<script>` separat (două artefacte de sincronizat) |
-| D13 | validarea modelului în host = poartă pe `schema_version` + verificare structurală ușoară (`validateModel`); validarea completă contra schemei JSON rămâne în testele pytest ale backend-ului | contractul e păzit la sursă (backend-ul e testat cu `jsonschema` la fiecare rulare pytest); host-ul trebuie doar să refuze versiuni necunoscute (docs/02) și forme evident rupte, fără dependență de runtime | `ajv` în extensie (dependență în plus și validare duplicată; de reevaluat dacă apar backend-uri terțe care emit modelul) |
-| D14 | editarea YAML-ului QuickUVM prin biblioteca `yaml` (eemeli), pe `Document` cu păstrarea comentariilor; aplicare ca un singur `WorkspaceEdit` | mutațiile ating doar nodurile vizate — comentariile, formatarea și câmpurile pe care extensia nu le înțelege rămân intacte (cerința de „editări chirurgicale" din docs/03); undo/redo rămâne nativ | serializare completă cu js-yaml (pierde comentarii și format); editări regex pe text (fragile la stilurile YAML echivalente) |
-| D15 | starea „ignorat explicit" a porturilor se persistă în YAML-ul QuickUVM, sub blocul propriu `x_quickuvm_architect.ignored_ports` (numit inițial `x_quickxray`, redenumit mecanic prin D17) | e o decizie de configurare a verificării, deci aparține sursei de adevăr (nu sidecar-ului de layout); Pydantic v2 din QuickUVM ignoră câmpurile necunoscute — validat empiric cu `generate --dry-run` pe 0.9.1 | sidecar-ul de layout (ar amesteca verificarea cu geometria); comentarii YAML ca purtător de date (fragile la editare manuală) |
-| D16 | editor grafic complet al configurației QuickUVM ca fază dedicată (3b): „vederea de verificare" — diagrama mediului TB (agenți, scoreboards, coverage, vsqr, subenvs) cu editare directă (paletă, conectare cu mouse-ul), după faza 3 | obiectiv exprimat de utilizator (iul. 2026); configurația dincolo de maparea pe porturi (analysis, subenvs) nu are azi nicio reprezentare geometrică — doar formular; faza 3 aduce exact infrastructura necesară (multi-nod, ruter, drag, sidecar), deci ordinea 3→3b minimizează rework; `CustomEditor` pe `*.quickuvm.yaml` (menționat post-MVP în doc 05) devine ambalajul acestei vederi | doar vedere read-only cu editare în formular (acoperă ~80% din valoare, dar nu obiectivul cerut); editor înainte de faza 3 (muchii fără ruter → rework); unealtă separată în afara extensiei |
-| D20 | ruterul de interconexiuni = **ruterul propriu A\* pe grilă** (`src/webview/router.ts`); comparația libavoid-WASM închisă pe bază de dovezi, fără prototip complet | prototipul propriu a fost călit pe trei scenarii reale găsite la validarea interactivă (fiecare a devenit test de regresie): canale zidite de halouri+texte, pini față în față cu blocuri adiacente, blocuri mai apropiate decât două halouri; ~2ms/re-rutare completă pe designul de regresie; zero dependențe; teren cu costuri calibrabile într-un singur loc (coturi 4, suprapunere 8, intersecție 2, halou 6, etichete 10, proximitate 1) — exact „controlul total al esteticii" anticipat în docs/04; un prototip libavoid-WASM ar fi cerut buildchain Emscripten + ~400KB WASM doar pentru confirmare. **Condiții de reevaluare**: nudging-ul matur al segmentelor paralele sau joncțiunile devin cerință; performanță degradată pe designuri mari; scenarii sistematic nerutabile | libavoid-WASM (integrare grea, dependență mare, costuri necalibrabile fin); amânarea deciziei (ruterul e în drumul critic al fazei 3b) |
-| D21 | semințele ELK interactiv sunt **totale sau deloc**: primul gest de poziție persistă snapshot-ul întregii vederi (`layout/snapshot` — noduri, pliaje, steaguri de graniță), iar la randarea unei vederi aranjate, elementele fără sămânță se pin-uiesc imediat la poziția inserată de ELK; vederile nevizitate de niciun gest rămân complet automate | regresie reală raportată la validarea interactivă: cu semințe parțiale (doar elementele trase), modul INTERACTIVE re-plasează elementele nepersistate altfel decât layoutul complet văzut de utilizator — dovedit headless: steagurile granițelor săreau cu până la 384px pe verticală la redeschidere, deterministic (repro `scratchpad/repro-port-drift.mjs`); auditul căilor de re-randare a arătat că ORICE trigger (overlay, temă, fold, net/render, recompilare) putea muta elementele neatinse odată ce semințele erau parțiale; docs/04 promitea deja „pozițiile (calculate sau mutate) se persistă" — implementarea persista doar cele mutate | persistarea doar a elementelor trase (bugul); snapshot la prima deschidere a oricărei vederi (umple sidecar-ul pentru vederi doar vizitate); re-layout complet la fiecare redeschidere (încalcă invariantul 3) |
-| D22 | referințe de design pentru faza 3b (cercetare iul. 2026, trei investigații paralele): **bigUML ca hartă de patternuri UX și arhitectură declarativă; GLSP/Sprotty respins ca stack tehnic** | GLSP e server-autoritar: modelul viu stă în `ModelState` pe server, undo/redo e command stack-ul propriu al serverului, integrarea VSCode e custom editor **non-text** (Ctrl+Z delegat ca `UndoAction` spre server — verificat în `glsp-vscode-connector`), salvarea = rescriere integrală; fișierul e „mort" cât e diagrama deschisă — opusul frontal al invariantului 2 (YAML sursă de adevăr, `WorkspaceEdit` minimal, undo text nativ, editare manuală concurentă). Adoptarea ar înlocui D5/D20/D21 fără capabilitate nouă (~6–9MB, ~15 pachete, Inversify pe ambele părți, snabbdom în webview) și nu poate exprima despărțirea noastră: diagrama e proiecția designului SV, editările țintesc ALT fișier. **Ce împrumutăm din bigUML**: handleri generici de operații conduși de metadate (paletă, căi de creare, default-uri, reguli de legalitate generate dintr-o sursă declarativă — la noi schema YAML QuickUVM), edge type hints cu feedback de legalitate la conectarea în doi pași, contoare de versiune text-vs-diagramă pentru sincronizare, property palette ca view VSCode separat gated pe context key, keybindings în `package.json` cu when-clauses. **Precedente externe**: AWS Workflow Studio dovedește `CustomTextEditorProvider`+`WorkspaceEdit` la scară de producție, dar cu înlocuire integrală și round-trip YAML→JSON→YAML care pierde comentariile — editările chirurgicale prin CST din `yamlops.ts` rămân diferențiatorul, nerezolvat de nicio unealtă din sondaj; Structurizr/LikeC4 validează independent sidecar-ul de geometrie (LikeC4 a migrat de la comentarii în sursă la fișiere `.snap` separate); drawio arată supresia de ecou (flag + normalizare) la editarea duală text+diagramă și forward-ul explicit al undo-ului din webview spre host. Consecință pentru D16: ambalajul 3b e `CustomTextEditorProvider` pe `*.quickuvm.yaml`, nu custom editor non-text | adoptarea GLSP+Sprotty (rescrierea randării, protocolului și ruterului; undo non-text); sprotty client-only fără server GLSP (tot ar înlocui SVG-ul propriu D5 și ruterul D20); custom editor non-text cu undo propriu (pierde undo/diff/editarea manuală nativă a YAML-ului) |
-| D23 | **draw.io / mxGraph respins ca motor de editare pentru vederea de verificare; păstrat ca referință de UX** (întrebare de principiu, iul. 2026) | aceeași rațiune de fond ca D22 (GLSP), plus specific draw.io: (1) **ar inversa sursa de adevăr** — mxGraph e proiectat să dețină modelul (cell model) și să-l serializeze în XML propriu; ori mxGraph devine autoritatea (YAML derivat → `quick-uvm generate` din XML, se pierde editarea manuală/diff/comentariile, încalcă invariantul 2), ori YAML rămâne canonic și trebuie sincronizat bidirecțional cu un motor care vrea să fie autoritatea („fighting the framework"); (2) **diagrama TB e o proiecție semantică, nu un desen liber** — nodurile/muchiile derivă din config, iar „conexiunea" în QuickUVM e câmpul `source`/`monitor`, nu o muchie liberă; gestul e „adaugă scoreboard" = mutație YAML, nu „trage un dreptunghi"; draw.io e editor de desen generic, ar trebui constrâns masiv (shapes custom, validare de conexiuni, blocarea desenului liber); (3) **ar arunca infrastructura călită fără câștig net** — layout ELK ierarhic (containment UVM), ruter A* pe grilă (D20), drag+sidecar cu semințe totale (D21), protocol versionat; draw.io are layout/rutare proprii generice, ori le accept (pierd controlul estetic D5/D20), ori le dezactivez impunând pozițiile noastre (draw.io devine renderer greu ~1–2MB, fără motiv de a-l folosi); contravine D5. **Ce împrumutăm** (ca la bigUML): patternuri de interacțiune draw.io — endpoints fixed/floating color-codate, editarea waypoints prin segment-drag, connection points, meniul de clonare direcțională. **Condiție de reevaluare**: doar dacă vederea TB ar deveni un canvas de desen liber-formă unde utilizatorul plasează geometrie care NU mapează 1:1 pe YAML — dar acela ar fi alt produs, care sacrifică diferențiatorul „YAML e sursa de adevăr" | draw.io ca aplicație-editor completă (înlocuiește webview-ul; mxGraph autoritate pe model); mxGraph ca bibliotecă de diagramming pe care construim (dependență mare, deține modelul, contra D5); formatul `.drawio` ca stocare (irelevant — YAML e formatul) |
+| D1 | semantic backend = slang (pyslang) | full elaboration: numeric widths, generate unrolled, parameters per instance, semantic interfaces/modports; robust on incomplete code; the fastest/most conformant (the ChipsAlliance suite) | sv-parser+svinst: parse-only, symbolic widths would have required an evaluator of our own; svinst unmaintained since 2022. Verible: no elaboration, the CST declared unstable. Surelog/UHDM: heavy integration (Cap'n Proto/VPI), slower |
+| D2 | the JSON project model as the stable contract, the backend behind an adapter | the backend is replaceable without touching the UI; the pyslang prototype does not block a future C++ tool on libslang | direct coupling UI↔slang API |
+| D3 | Bender as the source of the file list | manifest+lock already standard in the targeted flow; it separates the RTL from the generated environment through targets | guessing by glob (it remains the fallback) |
+| D4 | layout: ELK layered initially + user-owned positions + interactive ELK for new elements | the mental model of schematics (the tool proposes, the human disposes); the spatial memory protected | continuous automatic re-layout; yFiles/GoJS (licence); React Flow (a React dependency, no native orthogonal routing); JointJS (a data model of its own — to be re-evaluated if the need for interactive routing appears) |
+| D5 | our own SVG rendering in the webview | native hit-testing, overlay through CSS, vector export; the data model stays ours | canvas; diagramming frameworks |
+| D6 | an interconnect router separate from the layout | free positions invalidate the ELK routing | routing only at a total re-layout |
+| D7 | routing overrides on 4 levels, implemented 1→4→2→(3) | level 4 (wire↔label) is the EDA practice and eliminates most of the hard cases cheaply; waypoints only relative | absolute waypoints (fragile); automatic routing only |
+| D8 | the QuickUVM YAML = the source of truth; the UI edits through WorkspaceEdit | no hidden state; undo/diff/collaboration for free; the validation stays in QuickUVM (Pydantic) | a project format of the extension's own |
+| D9 | stable IDs = elaborated hierarchical paths | keys for the sidecar, the overlay, the protocol; stable across re-parsing | synthetic per-session IDs |
+| D10 | graceful invalidation (orphans) for overrides and for failed compilations | a typo does not destroy the arranging work; consistent with the fail-closed of QuickUVM | aggressive automatic cleanup |
+| D11 | the name of the extension = QuickXray (id `quickxray`) | the Quick* family ties the extension to the existing QuickUVM brand; the X-ray metaphor describes exactly the interior view; no collisions at verification (Jul 2026); short, pronounced identically in RO/EN; findability is ensured through the subtitle and `keywords` | QuickInspect (2 active commercial products, ™), QuickBench (the historical EDA tool of Chronology + a disk benchmark), QuickSchem (a ™ mark of Trace Software, electrical schematics software — a direct category collision, which also weakens QuickSchematic by proximity), QuickEnv (an existing Rust tool + "env" = environment variables for the general public), QuickScope (gaming slang + Mitutoyo), QuickRTL/QuickHDL (proximity to the former Mentor family), DUTscope and RTL Canvas (good, but outside the brand family) |
+| D12 | build with esbuild: CJS host (`dist/extension.js`) + IIFE webview (`dist/webview.js`), elkjs linked statically into the webview's bundle | two targets from a single command; the format used by the official extension templates; the framework-less webview needs only bundling, and the `elk.bundled.js` variant (without a worker) avoids any additional infrastructure | `tsc` only (it does not link elkjs for the browser); webpack (heavier configuration, no gain at this scale); loading elkjs as a separate `<script>` (two artefacts to keep in sync) |
+| D13 | the validation of the model in the host = a gate on `schema_version` + a light structural check (`validateModel`); the full validation against the JSON schema stays in the backend's pytest tests | the contract is guarded at the source (the backend is tested with `jsonschema` on every pytest run); the host only has to refuse unknown versions (docs/02) and obviously broken shapes, without a runtime dependency | `ajv` in the extension (an extra dependency and duplicated validation; to be re-evaluated if third-party backends that emit the model appear) |
+| D14 | editing the QuickUVM YAML through the `yaml` library (eemeli), on a `Document` with the comments preserved; applied as a single `WorkspaceEdit` | the mutations touch only the targeted nodes — the comments, the formatting and the fields the extension does not understand stay intact (the "surgical edits" requirement of docs/03); undo/redo stays native | full serialization with js-yaml (it loses comments and format); regex edits on the text (fragile against the equivalent YAML styles) |
+| D15 | the "explicitly ignored" state of the ports is persisted in the QuickUVM YAML, under the own block `x_quickuvm_architect.ignored_ports` (initially named `x_quickxray`, renamed mechanically by D17) | it is a decision of the verification's configuration, so it belongs to the source of truth (not to the layout sidecar); the Pydantic v2 of QuickUVM ignores unknown fields — validated empirically with `generate --dry-run` on 0.9.1 | the layout sidecar (it would mix verification with geometry); YAML comments as a data carrier (fragile under manual editing) |
+| D16 | a complete graphical editor of the QuickUVM configuration as a dedicated phase (3b): "the verification view" — the diagram of the TB environment (agents, scoreboards, coverage, vsqr, subenvs) with direct editing (palette, connecting with the mouse), after phase 3 | an objective expressed by the user (Jul 2026); the configuration beyond the mapping onto ports (analysis, subenvs) has no geometric representation today — only a form; phase 3 brings exactly the necessary infrastructure (multi-node, router, drag, sidecar), so the order 3→3b minimizes rework; the `CustomEditor` on `*.quickuvm.yaml` (mentioned as post-MVP in doc 05) becomes the packaging of this view | only a read-only view with editing in a form (it covers ~80% of the value, but not the requested objective); an editor before phase 3 (edges without a router → rework); a separate tool outside the extension |
+| D20 | the interconnect router = **our own A\* grid router** (`src/webview/router.ts`); the libavoid-WASM comparison closed on the basis of evidence, without a complete prototype | our own prototype was hardened on three real scenarios found at the interactive validation (each became a regression test): channels walled in by halos+texts, pins facing each other with adjacent blocks, blocks closer than two halos; ~2ms per full re-route on the regression design; zero dependencies; a terrain with costs that can be calibrated in a single place (bends 4, overlap 8, crossing 2, halo 6, labels 10, proximity 1) — exactly the "total control of the aesthetics" anticipated in docs/04; a libavoid-WASM prototype would have required an Emscripten buildchain + ~400KB of WASM just for confirmation. **Conditions for re-evaluation**: mature nudging of the parallel segments, or junctions, become a requirement; degraded performance on large designs; systematically unroutable scenarios | libavoid-WASM (heavy integration, a large dependency, costs that cannot be finely calibrated); postponing the decision (the router is on the critical path of phase 3b) |
+| D21 | the seeds of interactive ELK are **total or none**: the first position gesture persists the snapshot of the whole view (`layout/snapshot` — nodes, folds, boundary flags), and when an arranged view is rendered, the elements without a seed are pinned immediately at the position inserted by ELK; the views not visited by any gesture stay completely automatic | a real regression reported at the interactive validation: with partial seeds (only the dragged elements), INTERACTIVE mode re-places the non-persisted elements differently from the full layout the user saw — proven headless: the boundary flags jumped by up to 384px vertically on reopening, deterministically (the repro `scratchpad/repro-port-drift.mjs`); the audit of the re-render paths showed that ANY trigger (overlay, theme, fold, net/render, recompilation) could move the untouched elements once the seeds were partial; docs/04 already promised "the positions (computed or moved) are persisted" — the implementation persisted only the moved ones | persisting only the dragged elements (the bug); a snapshot at the first opening of any view (it fills the sidecar for views that were only visited); a full re-layout at every reopening (it breaks invariant 3) |
+| D22 | design references for phase 3b (research of Jul 2026, three parallel investigations): **bigUML as a map of UX patterns and declarative architecture; GLSP/Sprotty rejected as a technical stack** | GLSP is server-authoritative: the live model sits in `ModelState` on the server, undo/redo is the server's own command stack, the VSCode integration is a **non-text** custom editor (Ctrl+Z delegated as an `UndoAction` to the server — verified in `glsp-vscode-connector`), saving = a full rewrite; the file is "dead" while the diagram is open — the head-on opposite of invariant 2 (the YAML as the source of truth, minimal `WorkspaceEdit`, native text undo, concurrent manual editing). Adopting it would replace D5/D20/D21 without any new capability (~6–9MB, ~15 packages, Inversify on both sides, snabbdom in the webview) and cannot express our split: the diagram is the projection of the SV design, the edits target ANOTHER file. **What we borrow from bigUML**: generic operation handlers driven by metadata (palette, creation paths, defaults, legality rules generated from a declarative source — for us the QuickUVM YAML schema), edge type hints with legality feedback during two-step connecting, text-vs-diagram version counters for synchronization, the property palette as a separate VSCode view gated on a context key, keybindings in `package.json` with when-clauses. **External precedents**: AWS Workflow Studio proves `CustomTextEditorProvider`+`WorkspaceEdit` at production scale, but with full replacement and a YAML→JSON→YAML round trip that loses the comments — the surgical edits through the CST in `yamlops.ts` remain the differentiator, unsolved by any tool in the survey; Structurizr/LikeC4 independently validate the geometry sidecar (LikeC4 migrated from comments in the source to separate `.snap` files); drawio shows the echo suppression (flag + normalization) in dual text+diagram editing and the explicit forwarding of the undo from the webview to the host. The consequence for D16: the packaging of 3b is a `CustomTextEditorProvider` on `*.quickuvm.yaml`, not a non-text custom editor | adopting GLSP+Sprotty (rewriting the rendering, the protocol and the router; non-text undo); client-only sprotty without a GLSP server (it would still replace our own SVG of D5 and the router of D20); a non-text custom editor with an undo of its own (it loses the native undo/diff/manual editing of the YAML) |
+| D23 | **draw.io / mxGraph rejected as the editing engine for the verification view; kept as a UX reference** (a question of principle, Jul 2026) | the same underlying rationale as D22 (GLSP), plus what is specific to draw.io: (1) **it would invert the source of truth** — mxGraph is designed to own the model (the cell model) and to serialize it into its own XML; either mxGraph becomes the authority (the YAML derived → `quick-uvm generate` from XML, the manual editing/diff/comments are lost, it breaks invariant 2), or the YAML stays canonical and has to be synchronized bidirectionally with an engine that wants to be the authority ("fighting the framework"); (2) **the TB diagram is a semantic projection, not a free drawing** — the nodes/edges derive from the config, and the "connection" in QuickUVM is the `source`/`monitor` field, not a free edge; the gesture is "add a scoreboard" = a YAML mutation, not "drag a rectangle"; draw.io is a generic drawing editor, it would have to be constrained massively (custom shapes, connection validation, blocking the free drawing); (3) **it would throw away the hardened infrastructure for no net gain** — hierarchical ELK layout (the UVM containment), the A* grid router (D20), drag+sidecar with total seeds (D21), a versioned protocol; draw.io has its own generic layout/routing, either I accept them (I lose the aesthetic control of D5/D20), or I disable them by imposing our positions (draw.io becomes a heavy ~1–2MB renderer, with no reason to use it); it goes against D5. **What we borrow** (as from bigUML): draw.io interaction patterns — colour-coded fixed/floating endpoints, editing waypoints by segment-drag, connection points, the directional clone menu. **Condition for re-evaluation**: only if the TB view were to become a free-form drawing canvas where the user places geometry that does NOT map 1:1 onto the YAML — but that would be another product, one that sacrifices the differentiator "the YAML is the source of truth" | draw.io as a complete editor application (it replaces the webview; mxGraph the authority over the model); mxGraph as a diagramming library we build on (a large dependency, it owns the model, against D5); the `.drawio` format as storage (irrelevant — the YAML is the format) |
 | D25 | **the testbench top drives the DUT's reset: `setDut` writes `reset: {external: true}`, derived from the document, with no checkbox** (Nov 2026) | the MVP was declared validated on `quick-uvm generate`'s exit code; the first real compile of the tutorial bench (Xcelium 25.09) failed at elaboration — `tb_top` connected the DUT to `cmd_if_inst.rst_n`, a signal `cmd_if` does not have. Probed on quick-uvm 1.1.0 (docs/quickuvm-schema-reference.md §1.4.1): a single-reset bench works when the top drives the reset (`external: true`) or when an agent declares the port; the third shape — neither — validates, exits 0 and does not elaborate. Architect excludes reset pins from agents by design (the reset role, docs/03), so the third shape was EVERY Architect bench with a reset, and the "External reset" checkbox, unchecked by default, chose it. Deriving the flag (a reset port, a clocked DUT, no agent declaring it) removes the wrong answer instead of defaulting away from it; the hand-written agent-driven shape stays legal and `setDut` respects it. The derivation stops where the generator's own walls are (a combinational DUT, `kind: selftest`, an agent with `reset_port` — docs/03). Existing configs get the `reset-undriven` error with a one-click repair (`external: true`, or `dut.reset: ''` where the top cannot drive the reset). `npm run test:e2e` now lints the generated top (every signal connected to a DUT port must be declared) on every scenario, and compares the tutorial's YAML listing with what the mutations write | keeping the checkbox with the default flipped (the unchecked state is still a bench that does not elaborate — a choice with one valid answer is not a choice); putting the reset pin into the primary agent's `inputs` (quick-uvm's `init` shape: the reset becomes a randomised field of that agent's sequence item, changes the transaction and the coverage, and contradicts the reset role); waiting for the generator to refuse the config (the gap is reported upstream, `docs/upstream-quickuvm-reset-undriven.md`, but installed 1.x versions stay as they are) |
-| D24 | **navigare unificată pe niveluri, fără comutator Symbol/Schematic** (revizuire de UX, iul. 2026) — înlocuiește parțial D18: modul „Symbol" separat dispare | simbolul unui bloc e deja vizibil ca reprezentarea lui (cutie cu pini) în orice schemă în care apare, deci o vedere-simbol de sine-stătătoare a fiecărui modul e redundantă, iar comutatorul de mod producea confuzie. Model unic: fiecare diagramă (DESIGN și TB) arată **nivelul curent** cu blocurile lui ca simboluri interconectate; **dublu-clic pe un bloc** coboară în structura lui (schema instanțelor copil la RTL; sequencer/driver/monitor la agent; agenți la Env), cu selecție sincronizată în panoul-arbore și breadcrumb pentru urcare. **Rădăcina DESIGN** = simbolul top-ului (un bloc) cu buton „Set top module"; **rădăcina TB** = Testbench (DUT + Env). Frunza (modul fără instanțe interne) rămâne salt-la-sursă la dublu-clic. Ce dispare: comutatorul Symbol/Schematic din header, vederea-simbol de sine-stătătoare a modulelor interne, butonul „Open symbol" din inspector. Ce rămâne: desenul unui bloc ca simbol (cutie cu pini) în orice schemă + rădăcina = simbolul top-ului. Terminologia D18 (Symbol/Schematic) rămâne pentru glife/cod, dar nu mai e un mod comutabil. **Implementare** (iul. 2026): rădăcina DESIGN e un nod sintetic „top module" DISTINCT de nodul instanței-top — click pe „top module" → simbolul top-ului, click pe nodul top (și pe orice modul cu nume) → schema internă; astfel diferențierea simbol/schemă se reflectă în selecția din arbore chiar la nivelul de top (rafinare cerută de utilizator, altfel simbolul și schema top-ului n-aveau noduri distincte de selectat). `nav/drill.mode` duce modul spre host pentru reveal-ul corect (rădăcină sintetică vs nod-instanță); `model/full` NU re-trimite `nav/drill` la prima deschidere (ar concura cu `view/show`-ul explicit al host-ului) | păstrarea comutatorului Symbol/Schematic (D18 original — sursă de confuzie confirmată de utilizator); rădăcină DESIGN = schema top-ului direct (utilizatorul vrea explicit simbolul top-ului ca punct de intrare + set-top); vedere-simbol pe frunze (reintroduce un nivel gol redundant) |
+| D24 | **unified navigation by levels, without the Symbol/Schematic switch** (a UX revision, Jul 2026) — it partially replaces D18: the separate "Symbol" mode disappears | the symbol of a block is already visible as its representation (a box with pins) in any schematic in which it appears, so a stand-alone symbol view of every module is redundant, and the mode switch produced confusion. A single model: every diagram (DESIGN and TB) shows **the current level** with its blocks as interconnected symbols; **a double-click on a block** descends into its structure (the schematic of the child instances for RTL; sequencer/driver/monitor for an agent; the agents for the Env), with the selection synchronized in the tree panel and a breadcrumb for going up. **The DESIGN root** = the symbol of the top (one block) with a "Set top module" button; **the TB root** = the Testbench (DUT + Env). A leaf (a module without internal instances) remains jump-to-source on double-click. What disappears: the Symbol/Schematic switch in the header, the stand-alone symbol view of the internal modules, the "Open symbol" button of the inspector. What stays: the drawing of a block as a symbol (a box with pins) in any schematic + the root = the symbol of the top. The terminology of D18 (Symbol/Schematic) stays for glyphs/code, but it is no longer a switchable mode. **Implementation** (Jul 2026): the DESIGN root is a synthetic node "top module" DISTINCT from the node of the top instance — a click on "top module" → the symbol of the top, a click on the top node (and on any named module) → the internal schematic; this way the symbol/schematic distinction is reflected in the tree's selection even at the top level (a refinement requested by the user, otherwise the symbol and the schematic of the top had no distinct nodes to select). `nav/drill.mode` carries the mode to the host for the correct reveal (the synthetic root vs the instance node); `model/full` does NOT re-send `nav/drill` at the first opening (it would race with the host's explicit `view/show`) | keeping the Symbol/Schematic switch (the original D18 — a source of confusion confirmed by the user); the DESIGN root = the schematic of the top directly (the user explicitly wants the symbol of the top as the entry point + set-top); a symbol view on leaves (it reintroduces a redundant empty level) |
 | D27 | **a wire can be routed by hand: level 3 of the routing overrides (D7) is a SKELETON anchored to the pins, stored per edge, edited per wire, dormant when it no longer fits** (Nov 2026; six choices, each asked of the user) | D7 deferred level 3 to "demonstrated demand", and level 4 (wire ↔ label) did take most of it away; the demand that remained came from hand-arranged diagrams (tutorial figures): the user could move every block and flag and still could not move a wire. The shape of the answer: (1) **relative means "an offset from a pin"** — a route is the list of the wire's interior segments, each storing the distance of its line from the pin at one end of the edge (`route: source+16 source-40 target-16`), so moving a block carries the segments measured from its pin and stretches the rest, moving both ends moves everything, and the file holds no coordinate and nothing derived (the rule of the sidecar); (2) **per edge in the file, per wire in the hand** — an edge id names two pins, which is what orphaning needs, but a net with fan-out is several edges on one trunk: a gesture freezes the whole wire group as drawn (WYSIWYG — nothing else jumps), moves a straight run as one line, and makes the segments sharing a run follow the pin their edges have in common, or one block move would split the trunk; (3) **dormant, not deleted, not clamped** — a skeleton that would leave its pin backwards or cut a block where the blocks stand now is not drawn: the router takes that edge, the override stays in the file and returns when it fits (a trial flip costs nothing), in the spirit of invariant 5; (4) **blocks are walls for a hand, texts and other wires are not** — a drop that cuts a box is refused with a reason, so the file never holds a route that was invalid when it was made; (5) the hand-placed routes occupy their cells in the router FIRST, so automatic wires of other nets keep off them; (6) reset is explicit (context menu, inspector, palette) and "Re-arrange all" discards the routes with the positions they were drawn for. Built on our own router and SVG (D5, D20) — the re-evaluation towards a diagramming library that docs/04 reserved for this case was not needed: ~700 lines of pure rules with their own suite (`test:wireroute`) | the docs/04 sketch `{segment, offset}` relative to the AUTOMATIC route (the automatic route changes its number of segments on almost any move — "segment 1" means something else each time); a pinned segment handed to A\* as a constraint with the rest routed automatically (more adaptive, but the rest of the wire jumps while one segment is dragged, and a constraint that stops making sense produces loops instead of a clean fallback); absolute waypoints (rejected since D7: a moved block leaves its wire behind); clamping an invalid route to the nearest legal position (routes that neither the user nor the router drew); deleting an invalid route (a trial flip loses the work); routes stored per net (a net's edge set changes with a fold and with every new sink — per edge, the unaffected edges keep theirs); a diagramming library (JointJS, the reserve D5 named) |
 | D26 | **secondary notation (frames, sticky notes, node colours) is an annotation of the VIEW, kept in the layout sidecar — never part of the verification model** (docs/08 R21, Nov 2026; the author's explicit answer to the re-evaluation condition of D23) | D23 rejected a generic drawing engine because the TB diagram is a semantic projection of the YAML, and named "geometry that does not map 1:1 onto YAML" as the point where that must be decided again. Frames, notes and colours are exactly such geometry — and they are what Green & Petre call secondary notation: layout, grouping and comments that carry meaning for the READER and none for the generator. The line is therefore drawn by WHERE they live and what they can do: (1) the sidecar, next to the positions, under the same per-view (per-level) key — invariant 2 is untouched, the YAML stays the only source of truth for verification, and `quick-uvm generate` does not change by a byte; (2) a frame stores its MEMBERS, not a rectangle — its box is derived from where the members are, so it cannot become a free shape; (3) nothing in them is read back into the model: no frame means "a subenv", no colour means "an error", no note is parsed; (4) they are invalidated gracefully, like every override (invariant 5): a coloured node that disappears migrates with its colour, a frame with no live member and a vanished view's frames and notes migrate whole and come back with their targets. Free drawing (arbitrary shapes, connectors that are not wires, text on wires) stays out: it would be a second, unvalidated model on the same canvas | storing them in the QuickUVM YAML under an extension key (rejected by quick-uvm 1.0: unknown keys are refused, and it would put view state into the verification source — the rule from D15's promotion: intent → schema key, view state → sidecar); frames as stored rectangles with resize handles (free geometry that outlives its content and breaks on every re-arrangement); a separate annotations file (a second file to keep in step with the same views); no secondary notation at all (the criticism the research records against node editors without it) |
-| D18 | terminologia EDA adoptată **integral**, în engleză: **Symbol view** (istoric „vederea de context") și **Schematic view** (istoric „vederea de interior") — în UI, protocol (`ViewMode: symbol\|schematic`), comenzi (`quickuvm.openSymbolView`/`openSchematicView`), fișiere (`src/webview/schematic.ts`) și documentație („vederea-simbol"/„vederea-schemă"); decizie luată în doi pași în aceeași zi (întâi doar UI, extinsă apoi la tot, la cererea utilizatorului) | publicul-țintă vine din Verdi/Vivado/DVT și recunoaște perechea instantaneu; „context" putea sugera greșit „unde e folosit modulul"; adopția parțială ar fi lăsat un strat permanent de traducere între docs, UI și cod; momentul e cel mai ieftin din istoria proiectului (pre-git, pre-Marketplace, pre-sidecar — vocabularul ales acum e cel care se va persista pe disc), raționamentul D17 | doar etichete UI cu identificatori `context`/`interior` (varianta inițială — strat de traducere permanent); păstrarea „Context/Interior" în UI (cerea explicație — semn că numele era greșit); românizarea „Simbol/Schemă" în UI (înlocuită de D19, UI integral englez) |
-| D19 | limba UI a extensiei = **engleza**, cu localizare prin mecanismele native VSCode: `package.nls.json` (+`package.nls.ro.json`) pentru contribuții, `vscode.l10n.t()` + `l10n/bundle.l10n.ro.json` pentru host; **româna livrată ca prima traducere** a părții native; webview-ul rămâne monolingv englez în MVP (extragerea într-o tabelă de șiruri se face când apare a doua limbă); jurnalele (Output) nu se localizează; documentația și comentariile din cod rămân în română (convenția existentă) | publicul Marketplace e internațional — engleza e limba implicită de facto; plumbing-ul l10n montat acum costă puțin și evită retrofit-ul; șirurile românești existente nu se pierd, devin traducerea oficială | UI românesc cu traducere engleză ulterioară (public restrâns implicit); i18n complet inclusiv webview de la început (efort disproporționat pentru MVP; VSCode nu oferă mecanism nativ pentru webview) |
-| D17 | redenumire: QuickXray → **QuickUVM Architect** (id `quickuvm-architect`, spațiu de nume tehnic `quickuvm.*`, prefix paletă `QuickUVM Architect:`); înlocuiește D11, care rămâne ca istorie | extinderea D16 schimbă identitatea produsului din instrument de diagnostic (radiografie = privit) în masă de lucru bidirecțională (privit + proiectat); „architect" e rolul real din industrie (verification architect) și sintagma standard „UVM testbench architecture" — exact ce editează 3b; sub-brand al QuickUVM = fără coliziuni prin construcție + ecosistem unitar cu generatorul; momentul e ieftin (pre-Marketplace, pre-git). Redenumiri mecanice consecutive: blocul YAML `x_quickxray` → `x_quickuvm_architect` (D15), sidecar-ul planificat `*.quickxray.yaml` → `*.quickuvm-architect.yaml` (doc 04), schema `$id`/`title` | QuickUVM-design/QuickDesignUVM („design" = DUT-ul în jargonul verificării — derutant); QuickUVM Sketch („sketch" = schiță aproximativă, nepotrivit unui editor de precizie); QuickUVM Studio/Canvas (corecte dar generice; „Architect" numește activitatea, nu încăperea); QuickCanvas/QuickHarness/QuickBlueprint ca frați standalone (pierd legătura explicită cu QuickUVM; Canvas aglomerat în alte categorii) |
+| D18 | the EDA terminology adopted **in full**, in English: **Symbol view** (historically "the context view", „vederea de context") and **Schematic view** (historically "the interior view", „vederea de interior") — in the UI, the protocol (`ViewMode: symbol\|schematic`), the commands (`quickuvm.openSymbolView`/`openSchematicView`), the files (`src/webview/schematic.ts`) and the documentation ("the symbol view"/"the schematic view" — „vederea-simbol"/„vederea-schemă" in the Romanian documentation of the time); a decision taken in two steps on the same day (first only the UI, then extended to everything, at the user's request) | the target audience comes from Verdi/Vivado/DVT and recognizes the pair instantly; "context" could wrongly suggest "where the module is used"; a partial adoption would have left a permanent translation layer between the docs, the UI and the code; the moment is the cheapest in the project's history (pre-git, pre-Marketplace, pre-sidecar — the vocabulary chosen now is the one that will be persisted on disk), the reasoning of D17 | only UI labels with the identifiers `context`/`interior` (the initial variant — a permanent translation layer); keeping "Context/Interior" in the UI (it required explanation — a sign that the name was wrong); Romanianizing to „Simbol/Schemă" in the UI (replaced by D19, the UI entirely English) |
+| D19 | the UI language of the extension = **English**, with localization through the native VSCode mechanisms: `package.nls.json` (+`package.nls.ro.json`) for contributions, `vscode.l10n.t()` + `l10n/bundle.l10n.ro.json` for the host; **Romanian shipped as the first translation** of the native part; the webview stays monolingual English in the MVP (the extraction into a string table is done when a second language appears); the logs (Output) are not localized; the documentation and the code comments stay in Romanian (the existing convention) | the Marketplace audience is international — English is the de facto default language; the l10n plumbing installed now costs little and avoids the retrofit; the existing Romanian strings are not lost, they become the official translation | a Romanian UI with an English translation later (a restricted audience by default); full i18n including the webview from the start (an effort out of proportion for the MVP; VSCode offers no native mechanism for the webview) |
+| D17 | a rename: QuickXray → **QuickUVM Architect** (id `quickuvm-architect`, technical namespace `quickuvm.*`, palette prefix `QuickUVM Architect:`); it replaces D11, which stays as history | the extension by D16 changes the identity of the product from a diagnostic instrument (X-ray = looking) into a bidirectional workbench (looking + designing); "architect" is the real role in the industry (verification architect) and the standard phrase "UVM testbench architecture" — exactly what 3b edits; a sub-brand of QuickUVM = no collisions by construction + a unitary ecosystem with the generator; the moment is cheap (pre-Marketplace, pre-git). The consequent mechanical renames: the YAML block `x_quickxray` → `x_quickuvm_architect` (D15), the planned sidecar `*.quickxray.yaml` → `*.quickuvm-architect.yaml` (doc 04), the schema's `$id`/`title` | QuickUVM-design/QuickDesignUVM ("design" = the DUT in verification jargon — confusing); QuickUVM Sketch ("sketch" = a rough draft, unsuited to a precision editor); QuickUVM Studio/Canvas (correct but generic; "Architect" names the activity, not the room); QuickCanvas/QuickHarness/QuickBlueprint as standalone siblings (they lose the explicit link with QuickUVM; Canvas is crowded in other categories) |
