@@ -1987,9 +1987,13 @@ text.split-sign {
    layout and is simply not drawn; a dimmed one stays readable. Plain classes,
    NOT behind `#canvas` like the level of detail: an SVG export shows what the
    view shows, filters included. */
-.f-hide { display: none; }
-.f-dim { opacity: 0.28; }
-.f-dim.selected { opacity: 0.7; }
+.f-hide { display: none !important; }
+/* a ghost has its own opacity rule (two classes): the dim must win over it too */
+.f-dim,
+.tbnode.ghost.f-dim,
+.tb-edge.ghost.f-dim { opacity: 0.28; }
+.f-dim.selected,
+.tbnode.ghost.f-dim.selected { opacity: 0.7; }
 /* the header's indicator: always there while the view has rules */
 .filter-chip {
   margin-right: 8px;

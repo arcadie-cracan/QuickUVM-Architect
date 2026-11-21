@@ -597,9 +597,19 @@ mesajele tot aici, la implementare.
   view has rules — "Filters: 3 hidden, 1 dimmed", "Filters: no match", "Filters
   off (2 rules)" — and a click on it opens the editor; and an element with a
   finding is never hidden, it is dimmed instead (the diagram never hides a
-  problem). The editor is a small dialog under the header: one row per rule
-  (effect, kind, pattern — applied while typing —, how many elements of this
-  view it matches or why the pattern does not compile, up / down, delete),
+  problem; in a design view a finding on any PIN of a block protects the
+  block). What a rule hides cannot be selected — not by a click, the lasso,
+  Ctrl+F or a reveal from the tree, which says so instead — and is not in the
+  SVG export. The editor is a small dialog under the header: one row per rule
+  (effect, kind, pattern — applied while typing, sent to the host when the
+  typing pauses —, how many elements of this view it matches or why the
+  pattern cannot run, up / down, delete). A pattern is at most 200 characters
+  and is refused, before it is ever run, when it is a repeated group that
+  itself repeats or alternates (`(a+)+`, `(a|aa)*`): such a pattern can take
+  exponential time, on every render, from a file that is shared. A colour
+  rule matches only what can show a tint (not a flag, not an inferred ghost).
+  The editor follows the view: after a drill it shows the new level's rules.
+  Its buttons:
   "+ Add rule" (which starts on the kind of the selected block, never on
   "everything"), "Lift all (keep the rules)" and "Delete all rules". From the
   canvas: "Filter: hide this block" and "Filter: dim every <kind>" on a block's

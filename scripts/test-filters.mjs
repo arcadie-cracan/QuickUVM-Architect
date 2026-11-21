@@ -126,7 +126,52 @@ test("sanitize: only what a rule is survives a hand-edited file or a message", (
   assert.deepEqual(F.sanitizeFilters({ rules: [], off: true }), { rules: [] }, "off without rules means nothing");
   const many = F.sanitizeFilters({ rules: Array.from({ length: 60 }, () => ({ effect: "dim" })) });
   assert.equal(many.rules.length, F.MAX_RULES);
-  assert.equal(F.sanitizeFilters({ rules: [{ effect: "hide", name: "x".repeat(500) }] }).rules[0].name.length, 120);
+  // an over-long pattern is never TRUNCATED (half a pattern is another pattern,
+  // and a rule without its pattern matches everything of its kind): the whole
+  // rule goes, the direction that shows more — review
+  assert.deepEqual(
+    F.sanitizeFilters({
+      rules: [
+        { effect: "hide", kind: "agent", name: "x".repeat(F.NAME_MAX + 1) },
+        { effect: "dim", name: "y".repeat(F.NAME_MAX) },
+      ],
+    }).rules,
+    [{ effect: "dim", name: "y".repeat(F.NAME_MAX) }]
+  );
+});
+
+test("review: a pattern that can backtrack forever is refused before it runs", () => {
+  for (const bad of ["(a+)+$", "(.*)*x", "(a|aa)+$", "^(\\w+\\s?)*$", "((ab)*c)*", "(x{2,})+", "(?:a*)*b", "(foo|bar)+"]) {
+    assert.ok(F.unsafePattern(bad), `${bad} is refused`);
+  }
+  for (const ok of ["^cmd", "_i$", "u_(add|inv)", "ch\\d+", "^g_ch\\[\\d+\\]", "(a+)b", "a*b*c*", "(ab)+", "[(+)*]+", "\\(a+\\)+", "(a|b)?c", "x{2,4}"]) {
+    assert.equal(F.unsafePattern(ok), null, `${ok} passes`);
+  }
+  // refused = a rule that cannot run: it matches nothing, says why, and the
+  // matcher is never entered (this would not return on the old code)
+  const t0 = Date.now();
+  const r = F.applyFilters(
+    [{ id: "n", kind: "agent", name: "a".repeat(40) + "!" }],
+    { rules: [{ effect: "hide", name: "(a+)+$" }, { effect: "dim", kind: "agent" }] }
+  );
+  assert.ok(Date.now() - t0 < 500, "the pattern was not run");
+  assert.match(r.errors[0], /repeats or alternates/);
+  assert.equal(r.counts[0], 0);
+  assert.equal(r.hidden.size, 0);
+  assert.deepEqual([...r.dimmed], ["n"], "the other rules still run");
+});
+
+test("review: a colour rule does not match what takes no tint (a flag, a ghost)", () => {
+  const items = [
+    { id: "agent:cmd", kind: "agent", name: "cmd" },
+    { id: "sb:sbd", kind: "scoreboard", name: "sbd", noColor: true }, // an inferred ghost
+    { id: "<if>.cmd_if", kind: "port", name: "cmd_if", noColor: true },
+  ];
+  const r = F.applyFilters(items, { rules: [{ effect: "red" }, { effect: "dim", kind: "port" }] });
+  assert.deepEqual([...r.colors.keys()], ["agent:cmd"]);
+  assert.equal(r.counts[0], 1, "the editor's count is what the user will SEE coloured");
+  assert.deepEqual([...r.dimmed], ["<if>.cmd_if"], "visibility rules still reach them");
+  assert.equal(F.filterSummary({ rules: [{ effect: "red" }] }, r), "Filters: 1 dimmed, 1 coloured");
 });
 
 test("the indicator says what the rules do to this view, and that they are off", () => {

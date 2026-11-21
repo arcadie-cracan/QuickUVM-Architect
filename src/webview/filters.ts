@@ -29,6 +29,10 @@ export interface FilterItem {
   id: string;
   kind: string;
   name: string;
+  /** nothing draws a tint on it (a flag, an inferred ghost): a colour rule
+   *  does not match it — a count of "coloured" elements nobody can see coloured
+   *  would be the indicator lying */
+  noColor?: boolean;
 }
 
 export interface FilterResult {
@@ -43,7 +47,8 @@ export interface FilterResult {
 
 export const FILTER_EFFECTS: readonly FilterEffect[] = ["hide", "dim", "show", ...ANNOT_COLORS];
 export const MAX_RULES = 24;
-const NAME_MAX = 120;
+/** the longest pattern a rule may carry (the editor's input enforces it) */
+export const NAME_MAX = 200;
 
 const isEffect = (e: unknown): e is FilterEffect =>
   typeof e === "string" && (FILTER_EFFECTS as readonly string[]).includes(e);
@@ -83,7 +88,15 @@ export function sanitizeFilters(raw: unknown): ViewFilters {
       clean.kind = rule.kind.trim().slice(0, 40);
     }
     if (typeof rule.name === "string" && rule.name.trim()) {
-      clean.name = rule.name.trim().slice(0, NAME_MAX);
+      const name = rule.name.trim();
+      if (name.length > NAME_MAX) {
+        // never TRUNCATED: half a pattern is another pattern (`^cmd_very…` cut
+        // short matches more), and without its pattern the rule would match
+        // everything of its kind. The whole rule goes — the direction that
+        // shows more, never hides more
+        continue;
+      }
+      clean.name = name;
     }
     out.rules.push(clean);
   }
@@ -93,10 +106,61 @@ export function sanitizeFilters(raw: unknown): ViewFilters {
   return out;
 }
 
+const isQuantifier = (src: string, i: number): boolean =>
+  src[i] === "*" || src[i] === "+" || (src[i] === "{" && /^\{\d+(,\d*)?\}/.test(src.slice(i)));
+
+/**
+ * Why a pattern is refused before it is ever run, or null. JavaScript's
+ * matcher backtracks: a REPEATED group that itself repeats or alternates —
+ * `(a+)+`, `(.*)*`, `(a|aa)+` — can take exponential time on a name that
+ * almost matches, and a rule runs on every render of the view, from a file
+ * that is persisted and shared. So the shape is refused statically (a rule
+ * that cannot run matches nothing and says why). Conservative on purpose:
+ * `(foo|bar)+` is refused too — an overlap cannot be told apart cheaply — while
+ * the patterns a name filter needs (`^cmd`, `_i$`, `u_(add|inv)`, `ch\d+`) pass.
+ * Best effort, not a proof: the names it runs on are short.
+ */
+export function unsafePattern(src: string): string | null {
+  const groups: { rep: boolean }[] = [];
+  let inClass = false;
+  for (let i = 0; i < src.length; i++) {
+    const ch = src[i];
+    if (ch === "\\") {
+      i++; // an escaped character is a literal
+      continue;
+    }
+    if (inClass) {
+      inClass = ch !== "]";
+      continue;
+    }
+    if (ch === "[") {
+      inClass = true;
+    } else if (ch === "(") {
+      groups.push({ rep: false });
+    } else if (ch === ")") {
+      const g = groups.pop();
+      const repeated = isQuantifier(src, i + 1);
+      if (g?.rep && repeated) {
+        return "a repeated group that itself repeats or alternates can take forever to match — write it without the nesting";
+      }
+      if ((g?.rep || repeated) && groups.length) {
+        groups[groups.length - 1].rep = true; // seen from the enclosing group
+      }
+    } else if ((ch === "|" || isQuantifier(src, i)) && groups.length) {
+      groups[groups.length - 1].rep = true;
+    }
+  }
+  return null;
+}
+
 /** the compiled pattern of a rule, or the reason it does not compile */
 function pattern(rule: FilterRule): { re: RegExp | null; error: string | null } {
   if (!rule.name) {
     return { re: null, error: null };
+  }
+  const unsafe = unsafePattern(rule.name);
+  if (unsafe) {
+    return { re: null, error: unsafe };
   }
   try {
     return { re: new RegExp(rule.name, "i"), error: null };
@@ -138,7 +202,12 @@ export function applyFilters(
     for (let i = 0; i < rules.length; i++) {
       const rule = rules[i];
       const c = compiled[i];
-      if (c.error || (rule.kind && rule.kind !== it.kind) || (c.re && !c.re.test(it.name))) {
+      if (
+        c.error ||
+        (rule.kind && rule.kind !== it.kind) ||
+        (it.noColor && isColor(rule.effect)) ||
+        (c.re && !c.re.test(it.name))
+      ) {
         continue;
       }
       res.counts[i]++;

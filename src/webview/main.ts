@@ -72,6 +72,7 @@ import {
   FILTER_EFFECTS,
   filterSummary,
   MAX_RULES,
+  NAME_MAX,
   sanitizeFilters,
   type FilterItem,
   type FilterResult,
@@ -453,8 +454,20 @@ window.addEventListener("message", (e: MessageEvent) => {
       persistState();
       void render(true);
       break;
-    case "select/reveal":
+    case "select/reveal": {
       state.selection = new Set(m.ids);
+      // docs/08 R23 — what a rule hides cannot be selected (nothing on screen
+      // would say what the selection is): the reveal says WHY nothing lit up
+      const hidden = m.ids.filter(hiddenByFilter);
+      if (hidden.length) {
+        const r = canvas.getBoundingClientRect();
+        wireToast(
+          `${hidden.length === 1 ? hidden[0] : `${hidden.length} elements`} hidden by a filter of this view — the "Filters" chip lifts it`,
+          r.left + 12,
+          r.top + 12,
+          true
+        );
+      }
       applySelectionClasses();
       renderInspectorHere();
       // echo to the host: without it, panel.selection stayed empty after a reveal
@@ -462,6 +475,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       // adversarial review of the synchronization); the remapping onto folds is done by presentScene
       postSelection();
       break;
+    }
     case "probe/highlight":
       // cross-probing editor->diagram: persistent halo, NOT selection —
       // the user's working selection stays untouched (docs/05)
@@ -565,7 +579,22 @@ window.addEventListener("message", (e: MessageEvent) => {
     case "layout/full":
       // the source of truth for positions/folds/flips: the local state is
       // reconstructed entirely (external edit, invalidation, cleanup)
-      sidecar = m.sidecar;
+      {
+        // docs/08 R23 — rules being typed here whose (debounced) message has
+        // not left yet are NEWER than this set: they stay in the mirror, and
+        // the pending post delivers them
+        const key = filterPostKey;
+        const mine = key !== null ? sidecar.views[key]?.filters : undefined;
+        sidecar = m.sidecar;
+        if (key !== null) {
+          const view = (sidecar.views[key] ??= {});
+          if (mine) {
+            view.filters = mine;
+          } else {
+            delete view.filters;
+          }
+        }
+      }
       expandedFolds.clear();
       for (const [viewId, view] of Object.entries(sidecar.views)) {
         for (const [nodeId, n] of Object.entries(view.nodes ?? {})) {
@@ -1681,6 +1710,10 @@ function exportSvg(): void {
   );
   // the status badges are a session diagnostic, not content (docs/05)
   clone.querySelectorAll(".status-badge").forEach((n) => n.remove());
+  // docs/08 R23 — "the export shows what the view shows": a hidden element is
+  // `display: none` on screen, and `display` is not an inlined property — left
+  // in the clone it was drawn in the file, outside the bounds taken above
+  clone.querySelectorAll(".f-hide").forEach((n) => n.remove());
   clone.removeAttribute("id"); // no `#canvas` rules + no duplicate id
   // attach off-screen: the styles resolve from the stylesheet WITHOUT :hover
   // (the pointer is on the real UI, not on the clone) and without :selected (stripped)
@@ -1956,6 +1989,13 @@ function probeCtx(): ProbeViewCtx {
 }
 
 function applySelectionClasses(): void {
+  // docs/08 R23 — every selection path ends here (click, lasso, select-all,
+  // Ctrl+F, a reveal from the tree): what a filter hides drops out of it
+  for (const id of [...state.selection]) {
+    if (hiddenByFilter(id)) {
+      state.selection.delete(id);
+    }
+  }
   // the halo is recomputed here (no cached Set is kept): the function runs
   // after each render/navigation, so the mapping always follows the current scene
   // docs/08 R4 — the YAML caret's target (`kind: "tb"`) maps straight onto the
@@ -2849,6 +2889,12 @@ async function openSubPreview(id: string): Promise<void> {
   // the drawn boxes are not elements of THIS view: no ids, no hit targets
   for (const e of inner.querySelectorAll("[data-id]")) {
     e.removeAttribute("data-id");
+  }
+  // docs/08 R23 — nor wires a filter of THIS view may hide by their ends' ids
+  // (the child's node ids repeat the parent level's: `agent:cmd`)
+  for (const e of inner.querySelectorAll("[data-src]")) {
+    e.removeAttribute("data-src");
+    e.removeAttribute("data-dst");
   }
   g.append(inner);
   if (!viewport) {
@@ -5222,6 +5268,28 @@ function renderMatrix(): void {
 
 let filterResult: FilterResult | null = null;
 let filterBox: HTMLElement | null = null;
+/** the view + rules the open editor's rows were built from: a row handler
+ *  holds an INDEX into that list, so the box is rebuilt whenever either moves
+ *  (a navigation, another surface's set) and refuses to write meanwhile */
+let filterBoxKey: string | null = null;
+let filterBoxSig = "";
+/** where the focus goes after the next rebuild (a moved rule takes it along) */
+let filterFocusHint: string | null = null;
+/** the view whose typed rules have not been sent yet (debounced), or null */
+let filterPostKey: string | null = null;
+let filterPostTimer: number | undefined;
+const FILTER_POST_MS = 350;
+
+const filterSig = (): string => `${layoutKey() ?? ""}\n${JSON.stringify(viewFilters())}`;
+
+/** the element is not drawn because a rule hides it — itself, or the block it
+ *  is a part of (a pin of a hidden instance); read from the DOM, which is what
+ *  the user sees. An id with no element (a folded member awaiting its remap)
+ *  is not "hidden" */
+function hiddenByFilter(id: string): boolean {
+  const els = canvas.querySelectorAll<SVGElement>(`[data-id="${CSS.escape(id)}"]`);
+  return els.length > 0 && [...els].every((e) => e.closest(".f-hide") !== null);
+}
 
 const TB_KIND: Readonly<Record<string, string>> = {
   tbagent: "agent",
@@ -5247,8 +5315,13 @@ function filterItems(): FilterItem[] {
     const s = currentTbScene;
     return s
       ? [
-          ...s.nodes.map((n) => ({ id: n.id, kind: TB_KIND[n.kind] ?? n.kind, name: n.label })),
-          ...s.boundary.map((b) => ({ id: b.id, kind: "port", name: b.label })),
+          ...s.nodes.map((n) => ({
+            id: n.id,
+            kind: TB_KIND[n.kind] ?? n.kind,
+            name: n.label,
+            noColor: n.inferred === true, // a ghost takes no tint (R21)
+          })),
+          ...s.boundary.map((b) => ({ id: b.id, kind: "port", name: b.label, noColor: true })),
         ]
       : [];
   }
@@ -5256,7 +5329,7 @@ function filterItems(): FilterItem[] {
   return s
     ? [
         ...s.nodes.map((n) => ({ id: n.id, kind: n.kind as string, name: n.name })),
-        ...s.boundary.map((b) => ({ id: b.id, kind: "port", name: b.name })),
+        ...s.boundary.map((b) => ({ id: b.id, kind: "port", name: b.name, noColor: true })),
       ]
     : [];
 }
@@ -5281,14 +5354,19 @@ function applyFiltersHere(): void {
   if (!annotatable()) {
     filterResult = null;
     updateFilterChip();
+    syncFilterBox();
     return;
   }
   const filters = viewFilters();
   const res = applyFilters(filterItems(), filters);
   // the diagram never hides a problem: an element with a finding is dimmed,
-  // not hidden (the R18 rule for hidden pins, applied to blocks)
+  // not hidden (the R18 rule for hidden pins, applied to blocks). In a design
+  // view the findings are keyed by PIN (`<node>.<port>`), never by the block:
+  // a block is protected by a finding on any of its pins (review — testing the
+  // block's own id protected nothing there)
+  const flagged = [...statusByElement.keys()];
   for (const id of [...res.hidden]) {
-    if (statusByElement.has(id)) {
+    if (statusByElement.has(id) || flagged.some((k) => k.startsWith(`${id}.`))) {
       res.hidden.delete(id);
       res.dimmed.add(id);
     }
@@ -5306,18 +5384,53 @@ function applyFiltersHere(): void {
   applyFilterEdges();
   applyTints(canvas, viewAnnots(), res.colors);
   // a hidden block cannot stay selected: nothing on screen says what the
-  // selection is, and Delete would still reach it
-  const lost = [...state.selection].filter((id) => res.hidden.has(id));
-  if (lost.length) {
-    for (const id of lost) {
-      state.selection.delete(id);
-    }
-    applySelectionClasses();
+  // selection is, and Delete would still reach it (its pins go with it)
+  if ([...state.selection].some(hiddenByFilter)) {
+    applySelectionClasses(); // drops them
     postSelection();
     renderInspectorHere();
   }
   updateFilterChip();
+  syncFilterBox();
 }
+
+/** the open editor follows the view: rebuilt when the view or its rules are
+ *  no longer the ones its rows were built from, closed where rules cannot be */
+function syncFilterBox(): void {
+  if (!filterBox) {
+    return;
+  }
+  if (!annotatable()) {
+    closeFilterBox();
+  } else if (filterBoxSig !== filterSig()) {
+    renderFilterBox();
+  } else {
+    updateFilterCounts();
+  }
+}
+
+function postFilters(key: string): void {
+  const f = viewFilters(key);
+  post({
+    v: 1,
+    type: "view/filters",
+    viewId: key,
+    rules: f.rules,
+    ...(f.off ? { off: true as const } : {}),
+  });
+}
+
+/** sends the rules typed since the last message, if any */
+function flushFilterPost(): void {
+  if (filterPostKey === null) {
+    return;
+  }
+  clearTimeout(filterPostTimer);
+  const key = filterPostKey;
+  filterPostKey = null;
+  postFilters(key);
+}
+window.addEventListener("pagehide", flushFilterPost);
 
 /** the header's indicator: present whenever the view HAS rules, even lifted */
 function updateFilterChip(): void {
@@ -5334,11 +5447,21 @@ function updateFilterChip(): void {
   tgl.prepend(chip);
 }
 
-/** replaces the view's rules: mirror + host + what is drawn */
-function storeFilters(next: ViewFilters, rebuild = true): void {
+/**
+ * Replaces the view's rules: the mirror, what is drawn, then the host — in
+ * that order: a pattern is RUN here before it is persisted, so one that hangs
+ * the matcher never reaches the file every later open would read. `typing`
+ * (the pattern field, per keystroke) keeps the editor's rows and debounces the
+ * message: each one makes the host save and fan `layout/full` out to the other
+ * surfaces.
+ */
+function storeFilters(next: ViewFilters, typing = false): void {
   const key = layoutKey();
   if (!key || !annotatable()) {
     return;
+  }
+  if (filterPostKey !== null && filterPostKey !== key) {
+    flushFilterPost(); // another view's typed rules: sent before anything else
   }
   const clean = sanitizeFilters(next);
   const view = (sidecar.views[key] ??= {});
@@ -5347,19 +5470,18 @@ function storeFilters(next: ViewFilters, rebuild = true): void {
   } else {
     delete view.filters;
   }
-  post({
-    v: 1,
-    type: "view/filters",
-    viewId: key,
-    rules: clean.rules,
-    ...(clean.off ? { off: true as const } : {}),
-  });
-  applyFiltersHere();
+  if (typing && filterBoxKey === key) {
+    filterBoxSig = filterSig(); // the rows ARE these rules: no rebuild under the caret
+  }
+  applyFiltersHere(); // rebuilds or recounts the open editor (syncFilterBox)
   refreshMinimap();
-  if (rebuild) {
-    renderFilterBox();
+  clearTimeout(filterPostTimer);
+  if (typing) {
+    filterPostKey = key;
+    filterPostTimer = window.setTimeout(flushFilterPost, FILTER_POST_MS);
   } else {
-    updateFilterCounts();
+    filterPostKey = null;
+    postFilters(key);
   }
 }
 
@@ -5376,8 +5498,12 @@ function addFilterRule(rule: FilterRule): void {
 const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 function closeFilterBox(): void {
+  flushFilterPost();
   filterBox?.remove();
   filterBox = null;
+  filterBoxKey = null;
+  filterBoxSig = "";
+  filterFocusHint = null;
 }
 
 function openFilterBox(): void {
@@ -5428,12 +5554,28 @@ function renderFilterBox(): void {
   }
   const f = viewFilters();
   const kinds = filterKinds();
+  // the rows below hold indices into THIS view's list: a handler that fires
+  // after the view changed (the next render is asynchronous) writes nothing
+  const boxKey = layoutKey();
+  const here = (fn: () => void) => (): void => {
+    if (layoutKey() === boxKey) {
+      fn();
+    }
+  };
+  filterBoxKey = boxKey ?? null;
+  filterBoxSig = filterSig();
+  // where the focus was: every control is replaced, and a focus left on <body>
+  // sends the next key to the diagram (Delete would reach the selection)
+  const active = document.activeElement as HTMLElement | null;
+  const was = box.contains(active) ? filterFocusHint ?? active?.dataset.f ?? "close" : null;
+  filterFocusHint = null;
   box.replaceChildren();
   const top = h("div", "fhead");
   top.append(h("span", "ftitle", "Filters of this view"));
   const close = h("button", "mclose", "×");
   close.title = "Close (Escape)";
   close.setAttribute("aria-label", "Close");
+  close.dataset.f = "close";
   close.addEventListener("click", closeFilterBox);
   top.append(close);
   box.append(top);
@@ -5446,8 +5588,11 @@ function renderFilterBox(): void {
         : "No rules: everything in this view is drawn."
     )
   );
-  const set = (i: number, patch: Partial<FilterRule>, rebuild = true): void => {
+  const set = (i: number, patch: Partial<FilterRule>, typing = false): void => {
     const cur = viewFilters();
+    if (layoutKey() !== boxKey || !cur.rules[i]) {
+      return;
+    }
     const rule = { ...cur.rules[i], ...patch };
     for (const k of ["kind", "name"] as const) {
       if (!rule[k]) {
@@ -5455,7 +5600,7 @@ function renderFilterBox(): void {
       }
     }
     cur.rules[i] = rule;
-    storeFilters(cur, rebuild);
+    storeFilters(cur, typing);
   };
   f.rules.forEach((rule, i) => {
     const row = h("div", "frule");
@@ -5467,6 +5612,7 @@ function renderFilterBox(): void {
       effect.append(o);
     }
     effect.setAttribute("aria-label", `Rule ${i + 1}: effect`);
+    effect.dataset.f = `${i}.effect`;
     effect.addEventListener("change", () => set(i, { effect: effect.value as FilterRule["effect"] }));
     const kind = h("select", "prop");
     for (const k of ["", ...new Set([...kinds, ...(rule.kind ? [rule.kind] : [])])]) {
@@ -5476,6 +5622,7 @@ function renderFilterBox(): void {
       kind.append(o);
     }
     kind.setAttribute("aria-label", `Rule ${i + 1}: kind`);
+    kind.dataset.f = `${i}.kind`;
     kind.addEventListener("change", () => set(i, { kind: kind.value }));
     const name = h("input", "prop");
     name.type = "text";
@@ -5483,66 +5630,107 @@ function renderFilterBox(): void {
     name.value = rule.name ?? "";
     name.placeholder = "any name (regular expression)";
     name.setAttribute("aria-label", `Rule ${i + 1}: name pattern`);
-    // live while typing, without rebuilding the row under the caret
-    name.addEventListener("input", () => set(i, { name: name.value }, false));
+    name.maxLength = NAME_MAX; // a longer pattern would be dropped, not cut
+    name.dataset.f = `${i}.name`;
+    // live while typing, without rebuilding the row under the caret; the
+    // message is debounced and leaves at the latest when the field is left
+    name.addEventListener("input", () => set(i, { name: name.value }, true));
+    name.addEventListener("change", flushFilterPost);
     const count = h("span", "fcount", "");
     const move = (d: number): void => {
       const cur = viewFilters();
       const j = i + d;
-      if (j < 0 || j >= cur.rules.length) {
+      if (layoutKey() !== boxKey || j < 0 || j >= cur.rules.length) {
         return;
       }
       [cur.rules[i], cur.rules[j]] = [cur.rules[j], cur.rules[i]];
+      filterFocusHint = `${j}.${d < 0 ? "up" : "down"}`; // the focus follows the rule
       storeFilters(cur);
     };
     const up = h("button", "fbtn", "↑");
     up.title = "Move up (an earlier rule wins)";
     up.setAttribute("aria-label", `Rule ${i + 1}: move up`);
     up.disabled = i === 0;
+    up.dataset.f = `${i}.up`;
     up.addEventListener("click", () => move(-1));
     const down = h("button", "fbtn", "↓");
     down.title = "Move down";
     down.setAttribute("aria-label", `Rule ${i + 1}: move down`);
     down.disabled = i === f.rules.length - 1;
+    down.dataset.f = `${i}.down`;
     down.addEventListener("click", () => move(1));
     const del = h("button", "fbtn", "×");
     del.title = "Delete this rule";
     del.setAttribute("aria-label", `Rule ${i + 1}: delete`);
-    del.addEventListener("click", () => {
-      const cur = viewFilters();
-      cur.rules.splice(i, 1);
-      storeFilters(cur);
-    });
+    del.dataset.f = `${i}.del`;
+    del.addEventListener(
+      "click",
+      here(() => {
+        const cur = viewFilters();
+        cur.rules.splice(i, 1);
+        storeFilters(cur);
+      })
+    );
     row.append(effect, kind, name, count, up, down, del);
     box.append(row);
   });
   const foot = h("div", "ffoot");
   const add = h("button", "nextbtn", "+ Add rule");
   add.disabled = f.rules.length >= MAX_RULES;
-  add.addEventListener("click", () => {
-    // never "everything": a new rule starts on the kind of the selected block,
-    // or on the first kind of the view
-    const sel = filterItems().find((it) => state.selection.has(it.id));
-    addFilterRule({ effect: "dim", kind: sel?.kind ?? kinds[0] });
-  });
+  add.dataset.f = "add";
+  add.addEventListener(
+    "click",
+    here(() => {
+      // never "everything": a new rule starts on the kind of the selected block,
+      // or on the first kind of the view
+      const sel = filterItems().find((it) => state.selection.has(it.id));
+      filterFocusHint = "0.name"; // the new rule goes first; its pattern is next
+      addFilterRule({ effect: "dim", kind: sel?.kind ?? kinds[0] });
+    })
+  );
   foot.append(add);
   if (f.rules.length) {
     const lift = h("button", "nextbtn", f.off ? "Apply the rules" : "Lift all (keep the rules)");
-    lift.addEventListener("click", () => {
-      const cur = viewFilters();
-      if (cur.off) {
-        delete cur.off;
-      } else {
-        cur.off = true;
-      }
-      storeFilters(cur);
-    });
+    lift.dataset.f = "lift";
+    lift.addEventListener(
+      "click",
+      here(() => {
+        const cur = viewFilters();
+        if (cur.off) {
+          delete cur.off;
+        } else {
+          cur.off = true;
+        }
+        storeFilters(cur);
+      })
+    );
     const clear = h("button", "nextbtn", "Delete all rules");
-    clear.addEventListener("click", () => storeFilters(emptyFilters()));
+    clear.dataset.f = "clear";
+    clear.addEventListener("click", here(() => storeFilters(emptyFilters())));
     foot.append(lift, clear);
   }
   box.append(foot);
   updateFilterCounts();
+  // The focus comes back only where it WAS and only while this document has
+  // it (the box is rebuilt on host messages too — another surface's rules —
+  // and must not pull the focus out of a text editor)
+  if (was !== null && document.hasFocus()) {
+    const pick = (k: string): HTMLElement | null =>
+      box.querySelector<HTMLElement>(`[data-f="${k}"]:not(:disabled)`);
+    const [row, part] = was.split(".");
+    const n = Number(row);
+    const target =
+      pick(was) ??
+      (part
+        ? // a moved rule at the end of the list: its other arrow; a deleted
+          // row: the row that took its place, else the one above
+          pick(`${row}.${part === "up" ? "down" : part === "down" ? "up" : part}`) ??
+          pick(`${n - 1}.${part}`)
+        : null) ??
+      pick("add") ??
+      close;
+    target.focus();
+  }
 }
 
 /** the filter entries of a context menu: on a block, or on the background */
@@ -5815,22 +6003,25 @@ function annotFindItems(): FindItem[] {
 }
 
 function findItems(): FindItem[] {
+  // docs/08 R23 — a block a filter hides is not offered: choosing it would
+  // select nothing and centre the camera on an empty spot
+  const shown = (it: FindItem): boolean => !filterResult?.hidden.has(it.id);
   if (state.mode === "tb") {
     const s = currentTbScene;
     if (!s) {
       return [];
     }
     return [
-      ...s.nodes.map((n) => ({ id: n.id, label: n.label })),
-      ...s.boundary.map((b) => ({ id: b.id, label: b.label })),
+      ...s.nodes.map((n) => ({ id: n.id, label: n.label })).filter(shown),
+      ...s.boundary.map((b) => ({ id: b.id, label: b.label })).filter(shown),
       ...annotFindItems(),
     ];
   }
   const s = currentScene;
   if (s) {
     return [
-      ...s.nodes.map((n) => ({ id: n.id, label: n.name })),
-      ...s.boundary.map((b) => ({ id: b.id, label: b.name })),
+      ...s.nodes.map((n) => ({ id: n.id, label: n.name })).filter(shown),
+      ...s.boundary.map((b) => ({ id: b.id, label: b.name })).filter(shown),
       ...annotFindItems(),
     ];
   }
@@ -6280,6 +6471,13 @@ window.addEventListener("keydown", (e) => {
     }
     if (ctxMenu) {
       closeCtxMenu(); // Escape closes the context menu first, not the selection
+      return;
+    }
+    if (filterBox) {
+      // docs/08 R23 — as for the matrix below: the editor's own handler hears
+      // a key only while the focus is inside it
+      e.preventDefault();
+      closeFilterBox();
       return;
     }
     if (matrixBox) {
@@ -7552,6 +7750,9 @@ async function renderTb(refit: boolean): Promise<void> {
       [OPEN_AS_TEXT],
       true
     );
+    // docs/08 R23 — the header was rebuilt (the chip went with it) while the
+    // previous drawing, hidden elements included, is still on screen
+    applyFiltersHere();
     return;
   }
   if (gen !== renderGen) {

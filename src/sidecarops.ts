@@ -685,8 +685,11 @@ export function invalidate(
       frame.members = frame.members.map((m) => renamed.get(`${o.view}\0${m}`) ?? m);
       if (!frame.members.some((m) => keys.has(m) || Boolean(view.notes?.[m]))) {
         still.push(o);
-        if (!view.nodes && !view.nets && !view.hidePins && !view.frames && !view.notes) {
-          delete data.views[o.view]; // `viewOf` created it for nothing
+        if (viewEmpty(view)) {
+          // `viewOf` created it for nothing. The ONE predicate, not a list of
+          // keys written out here: the hand-rolled list had no `filters`, and
+          // deleted a view whose only content was its filter rules (review)
+          delete data.views[o.view];
         }
         continue;
       }

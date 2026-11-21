@@ -624,4 +624,28 @@ test("R23: invalidate — a vanished view's rules wait in orphans and return wit
   assert.deepEqual(n.views[V].filters, { rules: [{ effect: "dim" }] }, "the newer rules stay");
 });
 
+test("R23 review: a view holding ONLY filters survives a frame orphan that keeps waiting for it", () => {
+  // the orphan pass asks `viewOf` for the view and, when the frame cannot come
+  // back yet, drops the view "it created for nothing" — judged by a hand-rolled
+  // key list that did not know `filters`: the rules were deleted on a recompile
+  const d = ops.emptySidecar();
+  const rules = { rules: [{ effect: "hide", kind: "instance", name: "^u_" }] };
+  ops.setFilters(d, V, rules);
+  d.orphans.push({
+    view: V,
+    node: "frame:1",
+    kind: "frame",
+    value: { title: "gone", members: ["no_such_node"] },
+    lastSeen: "2026-11-01",
+  });
+  ops.invalidate(d, model, "2026-11-21");
+  assert.deepEqual(d.views[V]?.filters, rules, "the rules are the user's work");
+  assert.equal(d.orphans.length, 1, "the frame still waits");
+  // and a view that really is empty is still cleaned up
+  const e = ops.emptySidecar();
+  e.orphans.push({ ...d.orphans[0] });
+  ops.invalidate(e, model, "2026-11-21");
+  assert.equal(e.views[V], undefined);
+});
+
 console.log(`\ntest-sidecar: ${passed} teste au trecut.`);
