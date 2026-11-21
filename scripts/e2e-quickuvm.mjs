@@ -1459,7 +1459,7 @@ endpackage
   // MUTATION PROOF — the lint is what catches the old shape. The same bench
   // without `reset: {external: true}` (what every earlier Architect wrote):
   // quick-uvm 1.1.0 still exits 0 and the lint names the dangling reference. The
-  // fix merged upstream after 1.1.0 (arcadie-cracan/QuickUVM#119) INFERS the
+  // fix released in quick-uvm 1.2.0 (arcadie-cracan/QuickUVM#119) INFERS the
   // top-driven reset for this shape — then the bench is the same as the one
   // above and the lint is clean; a generator that refuses the config instead is
   // accepted too. All three are told apart here, so this test says which

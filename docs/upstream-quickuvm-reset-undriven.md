@@ -9,8 +9,9 @@ yields a bench that cannot run because of how the reset is (not) connected.
 *Written from QuickUVM Architect's side; observed on quick-uvm 1.1.0, Nov 2026.
 The fix described below was merged upstream on 21 Nov 2026 as
 [arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119)
-(QuickUVM `main` at `89b02a0`). It is in no release yet: quick-uvm 1.1.0, the
-version this note was probed on, does not have it.*
+(QuickUVM `main` at `89b02a0`) and released the same day in quick-uvm **1.2.0**
+(tag `v1.2.0`). quick-uvm 1.1.0, the version this note was probed on, and
+everything older do not have it.*
 
 ## Summary
 
@@ -194,9 +195,11 @@ was read. It means *external to the agents*: `true` is the shape in which
 ## The fix upstream
 
 [arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119), merged into `main` as `89b02a0`
+and released in quick-uvm 1.2.0
 ("the prototype" in the tables and the list below: they were measured on its
-branch, `fix/undriven-reset`, before the merge; the merge changed nothing in
-the tree):
+branch, `fix/undriven-reset`, before the merge; neither the merge nor the
+release changed generator code — 1.2.0 adds the version strings and the
+changelog):
 `quick_uvm/models.py` (`_infer_reset_driver`, `undriven_reset`, the `reset`
 entry of `resolved()`), `quick_uvm/templates/selftest_top.sv.j2`,
 `quick_uvm/svcheck.py` (`find_dangling_dut_connections` — the static gate that
@@ -239,9 +242,10 @@ passing — that needs the user's reference model in the `prediction_logic` seam
   means the same on 1.1.0 and on a generator with the inference;
 - existing configs get a `reset-undriven` error with a one-click repair
   (`external: true`, or `dut.reset: ''` where the top cannot drive the reset).
-  Once a generator with the inference is the minimum version, the `external`
-  half of that finding is moot (the generator resolves it) and should be gated
-  on the version; the `reset_port` half becomes the generator's own error;
+  quick-uvm 1.2.0 is the first release with the inference. Once it is the
+  minimum version, the `external` half of that finding is moot (the generator
+  resolves it) and should be gated on the version; the `reset_port` half
+  becomes the generator's own error;
 - a `kind: selftest` bench never carries `external: true` (the kind switch
   drops it) — needed on 1.1.0, harmless after;
 - `npm run test:e2e` lints every generated top (each signal connected to a DUT
@@ -249,4 +253,6 @@ passing — that needs the user's reference model in the `prediction_logic` seam
   keeps the reproductions above as mutation proofs that tell the generators
   apart: it passes on 1.1.0 ("the lint names the dangling reference") and on
   the prototype ("the generator INFERS the top-driven reset (fixed upstream)"),
-  checked with `PYTHONPATH=<QuickUVM checkout> npm run test:e2e`.
+  checked with `PYTHONPATH=<QuickUVM checkout> npm run test:e2e` — and, since
+  the release, on an installed quick-uvm 1.2.0 with no `PYTHONPATH` (91 checks,
+  the "fixed upstream" lines).
