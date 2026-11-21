@@ -370,7 +370,7 @@ test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate 
   });
   // params on a single line (flow map) and the skeleton comments intact
   assert.ok(/params: \{ ?W: 8 ?\}/.test(text), `params nu e flow:\n${text}`);
-  assert.ok(text.includes("# Configuratie QuickUVM"));
+  assert.ok(text.includes("# QuickUVM configuration — created by QuickUVM Architect"));
   // composition requires layout: packaged (validated by QuickUVM) — ensured by the mutation
   assert.equal(cfg.layout, "packaged");
   // incremental addition to the existing list
