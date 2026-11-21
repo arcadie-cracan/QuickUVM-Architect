@@ -89,6 +89,9 @@ export type ActionKind =
   | "wireConnections"
   // docs/08 R11: one hand-drawn connection between two composed blocks
   | "addConnection"
+  // docs/08 R22: one `connections` entry removed (the matrix editor's cell
+  // toggled off) — `{from, to}`; the destination's agents are left as they are
+  | "removeConnection"
   // slice 3: composes the current block + its siblings into the parent bench
   | "composeIntoParent"
   // drill into the composed block: opens the subenv's config with the default

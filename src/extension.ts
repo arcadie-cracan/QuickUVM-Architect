@@ -438,6 +438,13 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.to === "string" ? args.to : ""
           );
           break;
+        case "removeConnection":
+          // docs/08 R22 — the matrix editor's cell toggled off
+          void actions.removeConnection(
+            typeof args.from === "string" ? args.from : "",
+            typeof args.to === "string" ? args.to : ""
+          );
+          break;
         case "composeIntoParent":
           void actions.composeIntoParent(target);
           break;

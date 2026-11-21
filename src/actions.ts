@@ -2658,6 +2658,26 @@ export class Actions {
     );
   }
 
+  /**
+   * docs/08 R22 — one `connections` entry removed (the matrix editor's cell
+   * toggled off). Only the top configuration changes: the destination block's
+   * agents were set passive when the connection was made, and stay so — whether
+   * that block should drive its port again is the user's call, not a side
+   * effect of removing a wire (another connection may still drive it).
+   */
+  async removeConnection(
+    from: string,
+    to: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri || !from || !to) {
+      return;
+    }
+    if (await cfg.apply((t) => ops.removeConnection(t, from, to))) {
+      this.log.appendLine(`[actions] removeConnection ${from} -> ${to}`);
+    }
+  }
+
   /** docs/08 R11 — ONE connection drawn by hand between two composed blocks
    *  (the temporary wire from a block's output to another's input, or the
    *  reverse): the checks are the pure `singleConnection`, the write the same

@@ -214,6 +214,12 @@ test("sub-port: a block's output / input port is an origin with its width and it
   assert.equal(wireOriginOf(cscene, COMPOSED, "sub:ch0.nope", CHILDREN), null, "a port the scene does not draw");
   assert.equal(subPortWidth(CHILDREN, "u_add", "cin", "in"), 1, "no width = 1");
   assert.equal(subPortWidth(CHILDREN, "ghostly", "x", "in"), null, "an unreadable child: unknown");
+  // a child config is not shape-checked: a port list that is not a list, or an
+  // agent entry that is not a mapping, reads as unknown and never throws (review)
+  const odd = { c: { agents: [null, "s", { ports: { inputs: 5, outputs: "x" } }, { ports: { inputs: [null, { name: "p", width: 4 }] } }] }, d: { agents: 3 } };
+  assert.equal(subPortWidth(odd, "c", "p", "in"), 4);
+  assert.equal(subPortWidth(odd, "c", "p", "out"), null);
+  assert.equal(subPortWidth(odd, "d", "p", "in"), null);
 });
 
 test("sub-port targets: another block's inputs — free, one driver per input, equal widths; agents are not targets", () => {

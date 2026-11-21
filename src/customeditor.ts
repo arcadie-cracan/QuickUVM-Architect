@@ -594,6 +594,10 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "traceabilityReport":
         void vscode.commands.executeCommand("quickuvm.traceabilityReport");
         break;
+      case "removeConnection":
+        // docs/08 R22 — one `connections` entry of THIS document
+        void this.actions.removeConnection(s("from"), s("to"), target);
+        break;
       case "addConnection":
         // the children's configs (and the multi-file plan) belong to the ACTIVE
         // configuration's service: this editor draws the connection pins but

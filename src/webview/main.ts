@@ -65,6 +65,7 @@ import {
   setNoteText,
 } from "./annotations";
 import { drawAnnotations, redrawFrames, type NoteRects } from "./annotations-view";
+import { analysisMatrix, connectionsMatrix, worthOffering, type Matrix } from "./matrix";
 import { ANNOT_COLORS, type AnnotColor, type ViewAnnotations } from "../protocol";
 import {
   alignItems,
@@ -519,7 +520,9 @@ window.addEventListener("message", (e: MessageEvent) => {
           persistState();
         }
         void render();
-      } else if (!state.model) {
+      }
+      renderMatrix(); // docs/08 R22: an open matrix follows the YAML
+      if (state.mode !== "tb" && !state.model) {
         // the no-model empty state offers the verification view only when a
         // configuration has something to draw: it must follow THIS message
         // (overlay/config, which renders, is posted before it)
@@ -4994,6 +4997,195 @@ function annotMenu(
   return { items, colors: id ? colorRowFor(colorableSelection()) : null };
 }
 
+// --- the matrix editor (docs/08 R22) ----------------------------------------
+//
+// Agents x scoreboards / coverage, and block outputs x block inputs on a
+// composition, as a TABLE over the canvas: a click on a cell toggles the
+// relationship. The model is pure (`matrix.ts`, test:matrix) — every cell
+// already holds the host action a click sends, the SAME actions the canvas
+// gestures and the Properties panel send, so the table writes nothing a wire
+// could not. It is re-derived from the configuration on every `config/full`,
+// which is how a click shows its result: the YAML changed, the matrix follows.
+
+type MatrixKind = Matrix["kind"];
+let matrixBox: HTMLElement | null = null;
+let matrixKind: MatrixKind = "analysis";
+
+function matrixOf(kind: MatrixKind): Matrix | null {
+  if (state.mode !== "tb") {
+    return null;
+  }
+  try {
+    return kind === "analysis"
+      ? analysisMatrix(state.config, state.childAgents)
+      : connectionsMatrix(state.config, childConfigs);
+  } catch {
+    // the header calls this on every render, outside the scene's try/catch: a
+    // shape nobody foresaw must cost the Matrix button, not the header
+    return null;
+  }
+}
+
+function closeMatrix(): void {
+  matrixBox?.remove();
+  matrixBox = null;
+}
+
+function openMatrix(kind: MatrixKind): void {
+  if (!matrixOf(kind)) {
+    return;
+  }
+  matrixKind = kind;
+  if (!matrixBox) {
+    matrixBox = h("div", "matrix");
+    matrixBox.setAttribute("role", "dialog");
+    matrixBox.setAttribute("aria-label", "Matrix editor");
+    // its own keys: Escape closes; nothing typed here reaches the diagram
+    matrixBox.addEventListener("keydown", (e) => {
+      e.stopPropagation();
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeMatrix();
+      }
+    });
+    document.body.append(matrixBox);
+  }
+  renderMatrix();
+  matrixBox.querySelector<HTMLElement>("button.mcell:not(:disabled), button.mtab")?.focus();
+}
+
+/** rebuilds the open matrix from the current configuration, keeping the focus
+ *  on the cell it was on (so several cells can be toggled from the keyboard) */
+function renderMatrix(): void {
+  const box = matrixBox;
+  if (!box) {
+    return;
+  }
+  const m = matrixOf(matrixKind) ?? matrixOf(matrixKind === "analysis" ? "connections" : "analysis");
+  if (!m) {
+    closeMatrix(); // the configuration no longer has anything to tabulate
+    return;
+  }
+  matrixKind = m.kind;
+  // where the focus was BEFORE the rebuild: every button below is replaced, and
+  // a focus left on <body> sends the next key to the diagram
+  const active = document.activeElement as HTMLElement | null;
+  const inside = box.contains(active);
+  const focused = inside ? active?.dataset.cell ?? null : null;
+  const onTab = inside && Boolean(active?.classList.contains("mtab"));
+  const scroll = box.querySelector(".mscroll");
+  const keep = scroll ? { x: scroll.scrollLeft, y: scroll.scrollTop } : null;
+  box.replaceChildren();
+
+  const head = h("div", "mhead");
+  for (const kind of ["analysis", "connections"] as const) {
+    const other = matrixOf(kind);
+    if (!other) {
+      continue;
+    }
+    const tab = h("button", `mtab${kind === m.kind ? " active" : ""}`, other.title);
+    tab.addEventListener("click", () => {
+      matrixKind = kind;
+      renderMatrix();
+    });
+    head.append(tab);
+  }
+  const close = h("button", "mclose", "×");
+  close.title = "Close (Escape)";
+  close.setAttribute("aria-label", "Close");
+  close.addEventListener("click", closeMatrix);
+  head.append(close);
+  box.append(head);
+  if (m.note) {
+    box.append(h("div", "mnote", m.note));
+  }
+
+  const table = h("table", "mtable");
+  // two header rows: the groups (a scoreboard, a block), then the columns
+  const groups = h("tr", "");
+  groups.append(h("th", "mcorner", m.corner));
+  for (let i = 0; i < m.cols.length; ) {
+    let span = 1;
+    while (i + span < m.cols.length && m.cols[i + span].group === m.cols[i].group) {
+      span++;
+    }
+    const th = h("th", "mgroup", m.cols[i].group);
+    th.colSpan = span;
+    groups.append(th);
+    i += span;
+  }
+  const labels = h("tr", "");
+  labels.append(h("th", "", ""));
+  for (const c of m.cols) {
+    const th = h("th", "mcol", c.label);
+    th.title = c.id;
+    labels.append(th);
+  }
+  const thead = h("thead", "");
+  thead.append(groups, labels);
+  table.append(thead);
+
+  const tbody = h("tbody", "");
+  m.rows.forEach((row, r) => {
+    const tr = h("tr", "");
+    const th = h("th", "mrow", row.group ? `${row.group}.${row.label.split(".").pop()}` : row.label);
+    th.title = row.id;
+    tr.append(th);
+    m.cells[r].forEach((cell, c) => {
+      const td = h("td", "");
+      const b = h("button", `mcell${cell.on ? " on" : ""}`, cell.on ? cell.mark : "");
+      b.dataset.cell = `${row.id}|${m.cols[c].id}`;
+      b.title = cell.title;
+      // the STATE is said in words too: a mark alone is not an accessible name
+      b.setAttribute(
+        "aria-label",
+        `${row.id} / ${m.cols[c].group} ${m.cols[c].label}: ${cell.on ? "on" : "off"}. ${cell.title}`
+      );
+      b.setAttribute("aria-pressed", String(cell.on));
+      if (cell.warn) {
+        b.classList.add("warn");
+      }
+      if (cell.click) {
+        const click = cell.click;
+        b.addEventListener("click", () => postAction(click.action, click.args));
+      } else {
+        b.disabled = true;
+      }
+      td.append(b);
+      tr.append(td);
+    });
+    tbody.append(tr);
+  });
+  table.append(tbody);
+  const wrap = h("div", "mscroll");
+  wrap.append(table);
+  box.append(wrap);
+  if (keep) {
+    wrap.scrollLeft = keep.x;
+    wrap.scrollTop = keep.y;
+  }
+  // The focus comes back only where it WAS, and only while this document has
+  // it: the matrix is rebuilt on every `config/full`, and a `.focus()` on a
+  // host message would pull the focus out of the YAML editor the user is
+  // typing in (the table follows the text, it does not interrupt it).
+  if (inside && document.hasFocus()) {
+    // a toggled cell keeps the focus; if the toggle disabled it (a source that
+    // just moved here cannot be clicked again), or a tab was clicked, the focus
+    // must still be IN the matrix, or the next key would go to the diagram
+    const again = focused
+      ? [...box.querySelectorAll<HTMLButtonElement>("button.mcell")].find(
+          (b) => b.dataset.cell === focused
+        )
+      : undefined;
+    const tab = onTab ? box.querySelector<HTMLElement>("button.mtab.active") : null;
+    if (again && !again.disabled) {
+      again.focus();
+    } else {
+      (tab ?? close).focus();
+    }
+  }
+}
+
 // --- align / distribute / straighten (docs/08 R7) ---------------------------
 //
 // Pure geometry on the grid (src/webview/arrange.ts, test:arrange) over the
@@ -5434,6 +5626,14 @@ function paletteItems(): PaletteItem[] {
   for (const a of arrangeActions()) {
     add("Arrange", a.label, a.run);
   }
+  // docs/08 R22 — the matrix editor, whatever the size (the header button
+  // appears only from about 4x4 upwards)
+  for (const kind of ["analysis", "connections"] as const) {
+    const m = matrixOf(kind);
+    if (m) {
+      add("View", `Matrix: ${m.title.toLowerCase()}`, () => openMatrix(kind));
+    }
+  }
   // docs/08 R21 — the secondary notation, by keyboard: the same entries as the
   // context menus (`annotMenu`), the colours as named rows
   if (annotatable()) {
@@ -5676,6 +5876,14 @@ window.addEventListener("keydown", (e) => {
     }
     if (ctxMenu) {
       closeCtxMenu(); // Escape closes the context menu first, not the selection
+      return;
+    }
+    if (matrixBox) {
+      // docs/08 R22 — the matrix has its own key handler, but it only hears a
+      // key while the focus is inside it; a click on the canvas takes the
+      // focus out, and Escape must still close the table before the selection
+      e.preventDefault();
+      closeMatrix();
       return;
     }
     if (card) {
@@ -6388,6 +6596,7 @@ async function render(refit = false): Promise<void> {
   if (state.mode === "tb") {
     return renderTb(refit);
   }
+  closeMatrix(); // docs/08 R22: the matrix is the verification view's
   if (bannerIsTb) {
     hideBanner(); // back in a design view: the TB view's banner does not follow
   }
@@ -7106,6 +7315,15 @@ function renderTbHeader(scene: TbScene | null): void {
   yml.title = "Open the QuickUVM configuration beside the diagram";
   yml.addEventListener("click", () => postAction("openConfigBeside", {}));
   tgl.append(yml);
+  // docs/08 R22 — the matrix editor, offered in the header from about 4x4
+  // upwards (below that the canvas says it better; the palette always has it)
+  const big = (["analysis", "connections"] as const).find((k) => worthOffering(matrixOf(k)));
+  if (big) {
+    const mx = h("button", "mbtn", "Matrix");
+    mx.title = "Edit the relationships as a table";
+    mx.addEventListener("click", () => openMatrix(big));
+    tgl.append(mx);
+  }
   // docs/08 R17 — the action palette: the legal actions for the selection
   const act = h("button", "mbtn", "Actions");
   act.title = "Actions for the selection (Ctrl+Space, Ctrl+/)";
