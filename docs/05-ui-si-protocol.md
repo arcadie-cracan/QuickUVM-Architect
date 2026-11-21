@@ -500,6 +500,33 @@ mesajele tot aici, la implementare.
   active" as one-shot rows. The Properties sidebar mirrors the PANEL's
   selection and the active configuration, so in a per-file editor the
   multi-selection edit is reached through those palette rows.
+- **Secondary notation** (docs/08 R21, Nov 2026; decision D25): frames, sticky
+  notes and node colours — annotations of the VIEW, on the schematic views and
+  on every level of the verification view, kept in the layout sidecar (docs/04)
+  and never in the YAML. **Frame**: `Ctrl+G` (or "Frame the selection" in the
+  context menu / the palette) puts a titled box around the selected blocks,
+  flags and notes and opens its title for typing; the box is derived from its
+  members, its title tab is its only hit target (a lasso can start on the empty
+  area inside a frame) and dragging the tab moves the members. A block or a
+  note dropped inside a frame joins it; "Remove from frame" takes it out;
+  double-click or `F2` renames, `Delete` removes the frame (its members stay).
+  **Note**: `N` (at the centre of the view) or "Add note here" on the
+  background's context menu opens a text field — the note exists once it has
+  text; `Enter` is a new line, `Ctrl+Enter` or a click elsewhere commits,
+  `Escape` discards; double-click or `F2` edits, an emptied note is deleted,
+  `Delete` removes it. A note is dragged like a block, alone or with the
+  selection. **Colour**: a row of six named dots (and "no colour") at the top of
+  the context menu of a block, a frame or a note, and as "Color: …" rows in the
+  palette (the name is the tooltip and the accessible label — never colour
+  alone). All of it is ONE message, `view/annotations {viewId, frames, notes,
+  colors}`, carrying the view's whole set after each gesture, and one entry of
+  the same history as the moves: `Ctrl+Z` brings back a deleted note or frame.
+  A rename (R14) carries the memberships and the colours to the new ids; the
+  SVG export includes frames and notes; at the overview level of detail (R6) a
+  note keeps its box and loses its text. The data rules are pure
+  (`src/webview/annotations.ts`, `test:annotations`; the sidecar side in
+  `src/sidecarops.ts`, `test:sidecar`), the drawing is
+  `src/webview/annotations-view.ts`.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
@@ -632,6 +659,7 @@ JSON, versionat (`v: 1`), tipat în TypeScript într-un singur fișier partajat
 | `layout/snapshot` | `{viewId, nodes: {id: {x, y}}}` | pozițiile întregii vederi, în bloc (docs/04): la finalul oricărui drag se persistă TOATE pozițiile curente (noduri, pliaje, steaguri de graniță), nu doar elementele trase; la randarea unei vederi deja aranjate se trimit pozițiile elementelor care nu aveau sămânță (elemente noi din recompilare, membri de pliaj, sidecar parțial moștenit). Fără semințe totale, ELK interactiv re-plasează elementele nepersistate altfel decât layout-ul complet văzut de utilizator (regresie reală: steagurile porturilor săreau la redeschidere). Host: `setPositions` în sidecar; fără ecou. Undo/redo-ul de poziții (Ctrl+Z/Ctrl+Y, docs/04) reutilizează același mesaj: fiecare pas restaurat se persistă ca un gest de poziție obișnuit |
 | `node/collapsed` | `{viewId, nodeId, collapsed}` | docs/08 R18: a TB block collapsed to its header (title, stereotype, ports — no compartments, no widgets) or expanded; `viewId` is the level key `tb:<config>\|<focus>`, like `node/flipped`; the host writes `collapsed: true` on the node in the sidecar (expanded = absent) |
 | `view/pins` | `{viewId, hidden}` | docs/08 R18: an RTL view hides / shows its nc (not connected) child pins and its ignored (waived) DUT pins; a view-level override in the sidecar (`hidePins: true`, shown = absent) |
+| `view/annotations` | `{viewId, frames, notes, colors}` | docs/08 R21: the secondary notation of a view, sent WHOLE after every annotation gesture (the set is small; a whole replace needs no per-gesture message and makes undo one message). `viewId` is the layout key (the RTL view, or the TB level `tb:<config>\|<focus>`); `frames` = `{"frame:<n>": {title, color?, members[]}}`, `notes` = `{"note:<n>": {x, y, text, color?}}`, `colors` = `{<nodeId>: <palette name>}` (stored on the node entries in the file). The host sanitises it (`setAnnotations`) and does not echo it back |
 | `fold/toggled` | `{viewId, foldId, collapsed}` | expandarea/re-plierea unui pliaj generate → host persistă starea în sidecar (`nodes[foldId].collapsed`) |
 | `node/flipped` | `{viewId, nodeId, flipH, flipV}` | răsturnarea unui bloc (doc. 04: reatribuirea laturilor/ordinii pinilor, nu oglindire geometrică) → host persistă `nodes[nodeId].flipH/flipV` |
 | `ports/reordered` | `{viewId, port, side, order}` | override de pin |

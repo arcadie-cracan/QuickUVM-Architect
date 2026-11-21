@@ -1760,3 +1760,106 @@ text.split-sign {
 /* a field whose value differs across the selected components: dimmed italic,
    so "mixed" never reads as a value */
 #inspector .prop-mixed { font-style: italic; opacity: 0.8; }
+
+/* ------------------------------- secondary notation (docs/08 R21) */
+/* A tint is a NAME mapped onto the theme's chart palette — never a raw colour,
+   so a frame, a note and a tinted box follow the theme. The tint is a fill
+   wash only: a TB box's stroke keeps saying what KIND of component it is. */
+.tint-blue { --tint: var(--vscode-charts-blue, #3794ff); }
+.tint-green { --tint: var(--vscode-charts-green, #89d185); }
+.tint-yellow { --tint: var(--vscode-charts-yellow, #cca700); }
+.tint-orange { --tint: var(--vscode-charts-orange, #d18616); }
+.tint-red { --tint: var(--vscode-charts-red, #f14c4c); }
+.tint-purple { --tint: var(--vscode-charts-purple, #b180d7); }
+.inode[class*="tint-"] > .module-box,
+.tbnode[class*="tint-"] > .tb-box {
+  fill: color-mix(
+    in srgb,
+    var(--tint) 20%,
+    var(--vscode-editorWidget-background, var(--vscode-editor-background))
+  );
+}
+/* a frame is a background: its box takes NO pointer events (a lasso starts on
+   the empty area inside it); the title tab is its only handle */
+.frame-box {
+  fill: color-mix(in srgb, var(--tint, var(--vscode-foreground)) 7%, transparent);
+  stroke: color-mix(in srgb, var(--tint, var(--vscode-foreground)) 55%, transparent);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+  pointer-events: none;
+}
+.frame-tab {
+  fill: color-mix(
+    in srgb,
+    var(--tint, var(--vscode-foreground)) 24%,
+    var(--vscode-editor-background)
+  );
+  cursor: grab;
+}
+.frame-title {
+  font-size: 12px;
+  font-weight: 600;
+  fill: var(--vscode-foreground);
+  pointer-events: none;
+}
+.frame-title.untitled { font-style: italic; opacity: 0.6; }
+.frame.selected .frame-box {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+.frame.selected .frame-tab { stroke: var(--vscode-focusBorder); stroke-width: 1; }
+/* a note without a tint is the classic yellow */
+.note-box {
+  fill: color-mix(
+    in srgb,
+    var(--tint, var(--vscode-charts-yellow, #cca700)) 22%,
+    var(--vscode-editor-background)
+  );
+  stroke: color-mix(in srgb, var(--tint, var(--vscode-charts-yellow, #cca700)) 60%, transparent);
+  stroke-width: 1;
+  cursor: grab;
+}
+.note-text {
+  font-size: 12px;
+  fill: var(--vscode-foreground);
+  pointer-events: none;
+}
+.note.selected .note-box {
+  stroke: var(--vscode-focusBorder);
+  stroke-width: 2;
+}
+.note-edit {
+  position: fixed;
+  z-index: 102;
+  box-sizing: border-box;
+  padding: 6px 8px;
+  resize: none;
+  font-family: inherit;
+  line-height: 1.3;
+  border: 1px solid var(--vscode-focusBorder);
+  border-radius: 2px;
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+}
+/* the colour row of a context menu: one dot per palette name, "none" last */
+.ctxswatch {
+  width: 18px;
+  height: 18px;
+  margin: 2px 1px;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  background: var(--tint);
+  cursor: pointer;
+}
+.ctxswatch.none {
+  background:
+    linear-gradient(to top right, transparent 45%, var(--vscode-foreground) 46%, var(--vscode-foreground) 54%, transparent 55%);
+}
+.ctxswatch[aria-pressed="true"] {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}
+/* at the overview level a note keeps its box and loses its text, like a
+   block's compartments (docs/08 R6); a frame's title stays — it IS a title */
+#canvas[data-lod="low"] .note-text { display: none; }

@@ -43,6 +43,29 @@ import {
 } from "./wiring";
 import { el, measurer, SVG_NS } from "./svg";
 import {
+  addFrame,
+  addNote,
+  cloneAnnotations,
+  deleteFrame,
+  deleteNote,
+  dropIntoFrames,
+  emptyAnnotations,
+  frameOf,
+  frameRects,
+  isFrameId,
+  isNoteId,
+  leaveFrame,
+  moveNotes,
+  NOTE_W,
+  renameIds,
+  sameAnnotations,
+  setColor,
+  setFrameTitle,
+  setNoteText,
+} from "./annotations";
+import { drawAnnotations, redrawFrames, type NoteRects } from "./annotations-view";
+import { ANNOT_COLORS, type AnnotColor, type ViewAnnotations } from "../protocol";
+import {
   alignItems,
   distributeItems,
   hasLinks,
@@ -1313,6 +1336,7 @@ function applyLodTitles(): void {
 
 function applyTransform(): void {
   cancelRename(); // docs/08 R14: a fixed-position editor would detach from its title
+  closeAnnotEditor(true); // docs/08 R21: the same — but a typed paragraph is kept
   viewport?.setAttribute(
     "transform",
     `translate(${state.tx},${state.ty}) scale(${state.k})`
@@ -2042,6 +2066,12 @@ canvas.addEventListener("pointerleave", () => {
 // exists, at leaves the module source itself. Ctrl+double-click on a block =
 // the module source, anywhere.
 canvas.addEventListener("dblclick", (e) => {
+  // docs/08 R21 — a note's text / a frame's title is edited in place
+  const annotEl = (e.target as Element).closest<SVGElement>(".note, .frame");
+  if (annotEl?.dataset.id && annotatable()) {
+    editAnnotation(annotEl.dataset.id);
+    return;
+  }
   if (state.mode === "tb") {
     if ((e.target as Element).closest(".tb-widget")) {
       return; // docs/08 R13 — a double-click on a widget is not a drill
@@ -2201,9 +2231,9 @@ let marquee: Marquee | undefined;
 function marqueeCandidates(): { id: string; r: DOMRect }[] {
   const sel =
     state.mode === "schematic"
-      ? ".inode[data-id], .bport[data-id]"
+      ? ".inode[data-id], .bport[data-id], .note[data-id]"
       : state.mode === "tb"
-        ? ".tbnode[data-id], .tb-bport[data-id]"
+        ? ".tbnode[data-id], .tb-bport[data-id], .note[data-id]"
         : ".pin[data-id]";
   return [...canvas.querySelectorAll<SVGGElement>(sel)].map((g) => ({
     id: g.dataset.id ?? "",
@@ -2324,6 +2354,10 @@ function dragReroute(): void {
   } else if (currentScene && currentLayout && currentEdgesGroup) {
     routeEdges(currentScene, currentLayout, currentEdgesGroup);
   }
+  // docs/08 R21: a frame's box is its members' bounding box — it follows them
+  if (viewport && annotatable()) {
+    redrawFrames(viewport, viewAnnots(), rectOf, noteRects, annotMeasure());
+  }
 }
 /** iterates all the positions of the current view (for the total snapshot D21) */
 function dragEachPos(cb: (id: string, x: number, y: number) => void): void {
@@ -2351,7 +2385,14 @@ function dragEachPos(cb: (id: string, x: number, y: number) => void): void {
  *  each applied step is persisted normally through `layout/snapshot`, like any
  *  position gesture (the sidecar remains the persisted source) */
 type PosMap = Record<string, { x: number; y: number }>;
-const posHistory = new Map<string, { undo: PosMap[]; redo: PosMap[] }>();
+/** one step of the history: the positions AND the secondary notation (docs/08
+ *  R21) of the view at that moment — a frame deleted or a note's text changed
+ *  comes back with the same Ctrl+Z as a move */
+interface LayoutSnap {
+  pos: PosMap;
+  annot: ViewAnnotations;
+}
+const posHistory = new Map<string, { undo: LayoutSnap[]; redo: LayoutSnap[] }>();
 const POS_HISTORY_MAX = 50;
 
 /** the current positions of the view (all, D21), or null without a layout */
@@ -2374,7 +2415,7 @@ function pushPosUndo(before: PosMap | null): void {
     return;
   }
   const h = posHistory.get(key) ?? { undo: [], redo: [] };
-  h.undo.push(before);
+  h.undo.push({ pos: before, annot: viewAnnots() });
   if (h.undo.length > POS_HISTORY_MAX) {
     h.undo.shift();
   }
@@ -2406,9 +2447,12 @@ function undoPositions(redo: boolean): void {
   }
   const now = capturePositions();
   if (now) {
-    (redo ? h.undo : h.redo).push(now);
+    (redo ? h.undo : h.redo).push({ pos: now, annot: viewAnnots() });
   }
-  applyPositions(key, snap);
+  if (!sameAnnotations(viewAnnots(), snap.annot)) {
+    storeAnnots(key, snap.annot); // before the render that draws them
+  }
+  applyPositions(key, snap.pos);
 }
 
 // ------------------------------- "what will this generate" card (docs/08 R15)
@@ -3109,7 +3153,7 @@ function applyPendingRename(scene: TbScene): void {
     const o = nodes[oldId];
     // the seat AND the view state (flips, docs/08 R18's collapse) travel; only
     // the seat is a snapshot entry
-    if (o && (o.x !== undefined || o.collapsed || o.flipH || o.flipV)) {
+    if (o && (o.x !== undefined || o.collapsed || o.flipH || o.flipV || o.color)) {
       Object.assign(sidecarNode(pr.key, newId), o);
       if (o.x !== undefined && o.y !== undefined) {
         moved[newId] = { x: o.x, y: o.y };
@@ -3119,7 +3163,17 @@ function applyPendingRename(scene: TbScene): void {
   if (Object.keys(moved).length) {
     post({ v: 1, type: "layout/snapshot", viewId: pr.key, nodes: moved });
   }
+  // docs/08 R21 — the frame memberships and the colours follow the new ids
+  const carried = renameIds(viewAnnots(pr.key), pr.pairs);
+  if (!sameAnnotations(viewAnnots(pr.key), carried)) {
+    storeAnnots(pr.key, carried);
+  }
   if (pr.level) {
+    // ...and the renamed agent's own level takes its frames and notes along
+    const lv = viewAnnots(pr.level.from);
+    if (!sameAnnotations(lv, emptyAnnotations())) {
+      storeAnnots(pr.level.to, lv);
+    }
     const oldLevel = sidecar.views[pr.level.from];
     if (oldLevel?.nodes) {
       const all: Record<string, { x: number; y: number }> = {};
@@ -3731,6 +3785,35 @@ canvas.addEventListener("pointerdown", (e) => {
       return;
     }
   }
+  // docs/08 R21 — a frame is dragged by its title tab (its members move), a
+  // note by its body; a note that is part of a multi-selection moves with it
+  if (e.button === 0 && annotatable()) {
+    const t0 = e.target as Element;
+    const frameEl = t0.closest<SVGElement>(".frame");
+    const noteEl = t0.closest<SVGElement>(".note");
+    const pressed = (frameEl ?? noteEl)?.dataset.id ?? "";
+    if (pressed) {
+      const ids = frameEl
+        ? viewAnnots().frames[pressed]?.members ?? []
+        : state.selection.has(pressed) && state.selection.size > 1
+          ? [...state.selection]
+          : [pressed];
+      const items = dragItemsFor(ids);
+      if (items.length) {
+        drag = {
+          items,
+          // a frame is steered by its first block (the alignment guides read
+          // the primary's pins); a note has none and snaps to the grid
+          primary: (items.find((it) => !isNoteId(it.nodeId)) ?? items[0]).nodeId,
+          startX: e.clientX,
+          startY: e.clientY,
+          moved: false,
+          before: capturePositions(),
+        };
+      }
+      return; // a frame with nothing on screen has no tab; a press here is a click
+    }
+  }
   // drag of a node or of a boundary flag in the schematic, with the left button
   // (docs/04: the positions belong to the user); the fold button keeps its
   // click
@@ -3748,25 +3831,8 @@ canvas.addEventListener("pointerdown", (e) => {
         state.selection.has(pressedId) && state.selection.size > 1
           ? [...state.selection]
           : [pressedId];
-      const byId = new Map<string, SVGGElement>();
-      canvas
-        .querySelectorAll<SVGGElement>(dragSelector())
-        .forEach((g) => byId.set(g.dataset.id ?? "", g));
-      const items: DragItem[] = [];
-      for (const id of ids) {
-        const el2 = byId.get(id);
-        const child = dragChild(id);
-        if (el2 && child) {
-          // only nodes/flags; the nets or pins in the selection are ignored
-          items.push({
-            nodeId: id,
-            el: el2,
-            child,
-            origX: child.x ?? 0,
-            origY: child.y ?? 0,
-          });
-        }
-      }
+      // only nodes/flags and notes; the nets or pins in the selection are ignored
+      const items = dragItemsFor(ids);
       if (items.length) {
         // only a drag candidate: the pointer is NOT captured yet — capture
         // re-targets the click to the canvas (Chrome) and would break the selection;
@@ -3973,6 +4039,25 @@ canvas.addEventListener("pointerup", (e) => {
       });
       post({ v: 1, type: "layout/snapshot", viewId: key, nodes });
       suppressClick = true;
+      // docs/08 R21 — the notes' new places, and the containment test: a moved
+      // item that has no frame and was dropped inside one joins it. The undo
+      // entry is the drag's own (pushed above, before any of this).
+      const notePos: Record<string, { x: number; y: number }> = {};
+      const movedRects: { id: string; rect: Rect }[] = [];
+      for (const it of drag.items) {
+        if (isNoteId(it.nodeId)) {
+          notePos[it.nodeId] = { x: it.child.x ?? 0, y: it.child.y ?? 0 };
+        }
+        const r = annotRectOf(it.nodeId);
+        if (r) {
+          movedRects.push({ id: it.nodeId, rect: r });
+        }
+      }
+      const placed = moveNotes(viewAnnots(), notePos);
+      commitAnnots(
+        dropIntoFrames(placed, frameRects(placed, annotRectOf), movedRects),
+        false
+      );
     }
     clearAlignGuides();
     drag = undefined;
@@ -4323,7 +4408,7 @@ function rectOf(id: string): Rect | null {
 function fitSelection(): void {
   const rects: Rect[] = [];
   for (const id of state.selection) {
-    const r = rectOf(id);
+    const r = annotRectOf(id); // a selected note frames like a block (R21)
     if (r) {
       rects.push(r);
     }
@@ -4371,6 +4456,390 @@ function nudgeSelection(dx: number, dy: number): void {
   }
   pushPosUndo(before);
   applyPositions(key, next);
+}
+
+// --- secondary notation (docs/08 R21) ---------------------------------------
+//
+// Frames, sticky notes and node colours: annotations of the VIEW (decision
+// D25) — they live in the layout sidecar under the view's layout key, the YAML
+// never hears of them. The data and its rules are pure (`annotations.ts`,
+// test:annotations), the SVG is `annotations-view.ts`; here are the gestures.
+// Every gesture replaces the view's whole set (`view/annotations`) and is one
+// entry of the SAME history as the moves, so Ctrl+Z undoes a deleted note.
+
+/** the notes' rectangles as drawn: their position holders during a drag */
+let noteRects: NoteRects = new Map();
+
+/** frames, notes and colours exist where positions do: the multi-node views */
+function annotatable(): boolean {
+  return draggable();
+}
+
+let annotMeasureFn: ((s: string) => number) | null = null;
+function annotMeasure(): (s: string) => number {
+  if (!annotMeasureFn) {
+    const m = measurer();
+    annotMeasureFn = (t) => m(t);
+  }
+  return annotMeasureFn;
+}
+
+/** the secondary notation of a view (the current one by default), read from
+ *  the local sidecar mirror — a detached copy */
+function viewAnnots(key = layoutKey()): ViewAnnotations {
+  const out = emptyAnnotations();
+  const view = key ? sidecar.views[key] : undefined;
+  if (!view) {
+    return out;
+  }
+  for (const [id, f] of Object.entries(view.frames ?? {})) {
+    out.frames[id] = { ...f, members: [...f.members] };
+  }
+  for (const [id, n] of Object.entries(view.notes ?? {})) {
+    out.notes[id] = { ...n };
+  }
+  for (const [id, n] of Object.entries(view.nodes ?? {})) {
+    if (n.color) {
+      out.colors[id] = n.color;
+    }
+  }
+  return out;
+}
+
+/** writes a view's secondary notation into the mirror and tells the host */
+function storeAnnots(key: string, a: ViewAnnotations): void {
+  const view = (sidecar.views[key] ??= {});
+  const copy = cloneAnnotations(a);
+  if (Object.keys(copy.frames).length) {
+    view.frames = copy.frames;
+  } else {
+    delete view.frames;
+  }
+  if (Object.keys(copy.notes).length) {
+    view.notes = copy.notes;
+  } else {
+    delete view.notes;
+  }
+  for (const n of Object.values(view.nodes ?? {})) {
+    delete n.color;
+  }
+  for (const [id, c] of Object.entries(copy.colors)) {
+    sidecarNode(key, id).color = c;
+  }
+  post({ v: 1, type: "view/annotations", viewId: key, ...copy });
+}
+
+/** a note's rectangle, or a node's / a flag's */
+function annotRectOf(id: string): Rect | null {
+  return isNoteId(id) ? noteRects.get(id) ?? null : rectOf(id);
+}
+
+function drawAnnotationsHere(): void {
+  if (!viewport || !annotatable()) {
+    noteRects = new Map();
+    return;
+  }
+  annotMeasureFn = null; // a render may follow a theme/font change
+  noteRects = drawAnnotations(canvas, viewport, viewAnnots(), rectOf, annotMeasure());
+}
+
+/**
+ * Applies a new set to the current view: mirror + host + redraw (no layout
+ * pass — nothing here moves a block). `undo` pushes the state BEFORE as one
+ * history entry; a gesture that already pushed its own (a drag end) passes
+ * false. Returns false when nothing changed (no message, no entry).
+ */
+function commitAnnots(next: ViewAnnotations, undo = true): boolean {
+  const key = layoutKey();
+  if (!key || !annotatable() || sameAnnotations(viewAnnots(), next)) {
+    return false;
+  }
+  if (undo) {
+    pushPosUndo(capturePositions());
+  }
+  storeAnnots(key, next);
+  drawAnnotationsHere();
+  applySelectionClasses();
+  refreshMinimap();
+  return true;
+}
+
+/** the drag items for a set of ids: nodes and flags through the layout, notes
+ *  through their rectangles; anything else (a pin, a net, a dead id) is skipped */
+function dragItemsFor(ids: readonly string[]): DragItem[] {
+  const items: DragItem[] = [];
+  const seen = new Set<string>();
+  for (const id of ids) {
+    if (seen.has(id)) {
+      continue;
+    }
+    seen.add(id);
+    if (isNoteId(id)) {
+      const r = noteRects.get(id);
+      const g = canvas.querySelector<SVGGElement>(`.note[data-id="${CSS.escape(id)}"]`);
+      if (r && g) {
+        items.push({ nodeId: id, el: g, child: r, origX: r.x, origY: r.y });
+      }
+      continue;
+    }
+    const child = dragChild(id);
+    const g = child
+      ? [...canvas.querySelectorAll<SVGGElement>(dragSelector())].find(
+          (n) => n.dataset.id === id
+        )
+      : undefined;
+    if (child && g) {
+      items.push({ nodeId: id, el: g, child, origX: child.x ?? 0, origY: child.y ?? 0 });
+    }
+  }
+  return items;
+}
+
+/** the selected ids a frame can hold: blocks, flags and notes on screen */
+function frameableSelection(): string[] {
+  return [...state.selection].filter((id) => !isFrameId(id) && annotRectOf(id) !== null);
+}
+
+/** the selected ids a colour applies to: boxes (not flags), frames and notes */
+function colorableSelection(): string[] {
+  const boxes = new Set(
+    (state.mode === "tb" ? currentTbScene?.nodes : currentScene?.nodes)?.map((n) => n.id) ?? []
+  );
+  const a = viewAnnots();
+  return [...state.selection].filter(
+    (id) => boxes.has(id) || Boolean(a.frames[id]) || Boolean(a.notes[id])
+  );
+}
+
+function frameSelection(): void {
+  const members = frameableSelection();
+  if (!members.length) {
+    return;
+  }
+  const r = addFrame(viewAnnots(), members, "");
+  if (r.id && commitAnnots(r.annotations)) {
+    const id = r.id;
+    state.selection = new Set([id]);
+    applySelectionClasses();
+    postSelection();
+    // name it at once (Escape leaves it untitled); the title typed now is
+    // part of the SAME history step as the frame — one Ctrl+Z takes both
+    editAnnotation(id, false);
+  }
+}
+
+function deleteAnnotations(ids: readonly string[]): boolean {
+  let a = viewAnnots();
+  for (const id of ids) {
+    a = isFrameId(id) ? deleteFrame(a, id) : isNoteId(id) ? deleteNote(a, id) : a;
+  }
+  if (!commitAnnots(a)) {
+    return false;
+  }
+  for (const id of ids) {
+    state.selection.delete(id);
+  }
+  applySelectionClasses();
+  postSelection();
+  return true;
+}
+
+// --- the text editor of a note / a frame's title: a DOM field over the SVG ---
+
+let annotEditor: { finish: (commit: boolean) => void } | null = null;
+
+/** closes an open annotation editor; `commit` keeps what was typed (a pan, a
+ *  zoom or a re-render must not lose a paragraph), false discards it */
+function closeAnnotEditor(commit: boolean): void {
+  annotEditor?.finish(commit);
+}
+
+function openAnnotEditor(
+  at: { left: number; top: number; width: number; height: number },
+  value: string,
+  multiline: boolean,
+  commit: (v: string) => void
+): void {
+  closeAnnotEditor(true);
+  const box = multiline ? h("textarea", "note-edit") : h("input", "rename");
+  box.value = value;
+  box.spellcheck = false;
+  box.style.left = `${at.left}px`;
+  box.style.top = `${at.top}px`;
+  box.style.width = `${Math.max(at.width, 140)}px`;
+  if (multiline) {
+    box.style.height = `${Math.max(at.height, 64)}px`;
+  }
+  box.style.fontSize = `${Math.max(10, Math.round(12 * state.k))}px`;
+  let done = false;
+  const finish = (ok: boolean): void => {
+    if (done) {
+      return;
+    }
+    done = true; // BEFORE the removal: its blur must not commit a second time
+    annotEditor = null;
+    const v = box.value;
+    box.remove();
+    if (ok) {
+      commit(v);
+    }
+  };
+  box.addEventListener("keydown", (ev) => {
+    const e = ev as KeyboardEvent;
+    e.stopPropagation(); // the diagram's shortcuts stay out of the field
+    if (e.key === "Escape") {
+      e.preventDefault();
+      finish(false);
+    } else if (e.key === "Enter" && (!multiline || e.ctrlKey || e.metaKey)) {
+      e.preventDefault();
+      finish(true); // Enter in a note is a new line; Ctrl+Enter commits
+    }
+  });
+  box.addEventListener("blur", () => finish(true));
+  document.body.append(box);
+  annotEditor = { finish };
+  box.focus();
+  box.select();
+}
+
+/** edits a note's text or a frame's title in place (double-click, F2, the menu) */
+function editAnnotation(id: string, undo = true): void {
+  const a = viewAnnots();
+  const g = canvas.querySelector<SVGGElement>(
+    `${isFrameId(id) ? ".frame" : ".note"}[data-id="${CSS.escape(id)}"]`
+  );
+  if (!g) {
+    return;
+  }
+  if (isFrameId(id) && a.frames[id]) {
+    const tab = g.querySelector(".frame-tab") ?? g;
+    openAnnotEditor(tab.getBoundingClientRect(), a.frames[id].title, false, (v) =>
+      commitAnnots(setFrameTitle(viewAnnots(), id, v.trim().slice(0, 80)), undo)
+    );
+  } else if (a.notes[id]) {
+    openAnnotEditor(g.getBoundingClientRect(), a.notes[id].text, true, (v) => {
+      const next = setNoteText(viewAnnots(), id, v);
+      if (commitAnnots(next) && !next.notes[id]) {
+        state.selection.delete(id); // emptied: the note is gone
+        postSelection();
+      }
+    });
+  }
+}
+
+/** a new note at a point of the diagram (snapped to the grid): the editor
+ *  opens first, the note exists once it has text */
+function newNoteAt(world: { x: number; y: number }): void {
+  const key = layoutKey();
+  if (!key || !annotatable() || !viewport) {
+    return;
+  }
+  const x = Math.round(world.x / GRID) * GRID;
+  const y = Math.round(world.y / GRID) * GRID;
+  const cb = canvas.getBoundingClientRect();
+  openAnnotEditor(
+    {
+      left: cb.left + state.tx + x * state.k,
+      top: cb.top + state.ty + y * state.k,
+      width: NOTE_W * state.k,
+      height: 64 * state.k,
+    },
+    "",
+    true,
+    (v) => {
+      const r = addNote(viewAnnots(), x, y, v);
+      if (!r.id) {
+        return; // nothing typed: no note
+      }
+      // a note has an absolute place: the view it sits in must be the user's
+      // arrangement, or the next full layout would move every block away from it
+      pinViewIfUnseeded(key);
+      if (commitAnnots(r.annotations)) {
+        state.selection = new Set([r.id]);
+        applySelectionClasses();
+        postSelection();
+      }
+    }
+  );
+}
+
+function newNoteAtCenter(): void {
+  const vw = canvas.clientWidth || 800;
+  const vh = canvas.clientHeight || 600;
+  newNoteAt({
+    x: (vw / 2 - state.tx) / state.k - NOTE_W / 2,
+    y: (vh / 2 - state.ty) / state.k - 32,
+  });
+}
+
+/** the colour row of a menu: the ids it paints and the colour they share */
+interface ColorRow {
+  ids: string[];
+  current: AnnotColor | null;
+}
+
+function colorRowFor(ids: string[]): ColorRow | null {
+  if (!ids.length) {
+    return null;
+  }
+  const a = viewAnnots();
+  const of = (id: string): AnnotColor | null =>
+    (isFrameId(id) ? a.frames[id]?.color : isNoteId(id) ? a.notes[id]?.color : a.colors[id]) ??
+    null;
+  const first = of(ids[0]);
+  return { ids, current: ids.every((id) => of(id) === first) ? first : null };
+}
+
+function paint(ids: readonly string[], color: AnnotColor | null): void {
+  commitAnnots(setColor(viewAnnots(), ids, color));
+}
+
+/** the annotation entries of a context menu opened on `id` (a block, a flag, a
+ *  note, a frame) or on the background (`id` null, `world` = the click) */
+function annotMenu(
+  id: string | null,
+  world: { x: number; y: number } | null
+): { items: CtxItem[]; colors: ColorRow | null } {
+  const items: CtxItem[] = [];
+  if (!annotatable()) {
+    return { items, colors: null };
+  }
+  const a = viewAnnots();
+  if (id && a.frames[id]) {
+    items.push(
+      { label: "Rename frame… (F2)", action: () => editAnnotation(id) },
+      { label: "Delete frame", danger: true, action: () => void deleteAnnotations([id]) }
+    );
+    return { items, colors: colorRowFor([id]) };
+  }
+  if (id && a.notes[id]) {
+    items.push({ label: "Edit note… (F2)", action: () => editAnnotation(id) });
+    if (frameOf(a, id)) {
+      items.push({
+        label: "Remove from frame",
+        action: () => void commitAnnots(leaveFrame(viewAnnots(), id)),
+      });
+    }
+    items.push({
+      label: "Delete note",
+      danger: true,
+      action: () => void deleteAnnotations([id]),
+    });
+    return { items, colors: colorRowFor(colorableSelection().includes(id) ? colorableSelection() : [id]) };
+  }
+  if (!id && world) {
+    items.push({ label: "Add note here (N)", action: () => newNoteAt(world) });
+  }
+  if (frameableSelection().length) {
+    items.push({ label: "Frame the selection (Ctrl+G)", action: frameSelection });
+  }
+  if (id && frameOf(a, id)) {
+    items.push({
+      label: "Remove from frame",
+      action: () => void commitAnnots(leaveFrame(viewAnnots(), id)),
+    });
+  }
+  return { items, colors: id ? colorRowFor(colorableSelection()) : null };
 }
 
 // --- align / distribute / straighten (docs/08 R7) ---------------------------
@@ -4792,6 +5261,22 @@ function paletteItems(): PaletteItem[] {
   for (const a of arrangeActions()) {
     add("Arrange", a.label, a.run);
   }
+  // docs/08 R21 — the secondary notation, by keyboard: the same entries as the
+  // context menus (`annotMenu`), the colours as named rows
+  if (annotatable()) {
+    const one = state.selection.size === 1 ? [...state.selection][0] : null;
+    for (const it of annotMenu(one, null).items) {
+      add("Annotate", it.label, it.action, it.danger);
+    }
+    add("Annotate", "Add note (N)", newNoteAtCenter);
+    const paintable = colorableSelection();
+    if (paintable.length) {
+      for (const c of ANNOT_COLORS) {
+        add("Annotate", `Color: ${c}`, () => paint(paintable, c));
+      }
+      add("Annotate", "No color", () => paint(paintable, null));
+    }
+  }
   // docs/08 R9 — several agents selected: their role in one step (the panel's
   // multi-selection editor, as a one-shot action)
   if (state.mode === "tb") {
@@ -5049,6 +5534,12 @@ window.addEventListener("keydown", (e) => {
       openPalette();
       return;
     }
+    if (key === "g" && annotatable()) {
+      // docs/08 R21 — Ctrl+G: a frame around the selection
+      e.preventDefault();
+      frameSelection();
+      return;
+    }
     if (key === "h" && state.mode !== "tb") {
       // docs/08 R18 — Ctrl+H: hide/show the nc / ignored pins (plain H is the flip)
       e.preventDefault();
@@ -5074,6 +5565,27 @@ window.addEventListener("keydown", (e) => {
   }
   if (e.ctrlKey || e.metaKey || e.altKey) {
     return;
+  }
+  // docs/08 R21 — the secondary notation's keys: N a new note, F2 the text of
+  // the selected note / frame, Delete removes the selected notes and frames (a
+  // view annotation: no YAML, no confirmation — Ctrl+Z brings it back)
+  if (annotatable()) {
+    const annotIds = [...state.selection].filter((id) => isFrameId(id) || isNoteId(id));
+    if (key === "n") {
+      e.preventDefault();
+      newNoteAtCenter();
+      return;
+    }
+    if (annotIds.length && (key === "delete" || key === "backspace")) {
+      e.preventDefault();
+      deleteAnnotations(annotIds);
+      return;
+    }
+    if (key === "f2" && state.selection.size === 1 && annotIds.length === 1) {
+      e.preventDefault();
+      editAnnotation(annotIds[0]);
+      return;
+    }
   }
   // I: pins the "what will this generate" card of the selected TB box (docs/08
   // R15); again, or Escape, closes it
@@ -5250,13 +5762,35 @@ function openCtxMenu(
   x: number,
   y: number,
   items: CtxItem[],
-  arrange: ArrangeAction[] = []
+  arrange: ArrangeAction[] = [],
+  colors: ColorRow | null = null
 ): void {
   closeCtxMenu();
-  if (!items.length && !arrange.length) {
+  if (!items.length && !arrange.length && !colors) {
     return;
   }
   const m = h("div", "ctxmenu");
+  if (colors) {
+    // docs/08 R21 — the tint of the selection: one dot per palette colour (the
+    // name is the tooltip and the aria-label — never colour alone) + "none"
+    const row = h("div", "ctxrow");
+    const dot = (label: string, color: AnnotColor | null): void => {
+      const b = h("button", `ctxswatch${color ? ` tint-${color}` : " none"}`);
+      b.title = label;
+      b.setAttribute("aria-label", label);
+      b.setAttribute("aria-pressed", String(colors.current === color && color !== null));
+      b.addEventListener("click", () => {
+        closeCtxMenu();
+        paint(colors.ids, color);
+      });
+      row.append(b);
+    };
+    for (const c of ANNOT_COLORS) {
+      dot(`Color: ${c}`, c);
+    }
+    dot("No color", null);
+    m.append(row);
+  }
   if (arrange.length) {
     // docs/08 R7 — the arrangement gestures of a multi-selection as ONE compact
     // row of icons (nine more text rows would bury the element's own actions);
@@ -5324,8 +5858,16 @@ function rtlContextMenu(e: MouseEvent): void {
     postSelection();
     renderInspectorHere();
   }
-  // docs/08 R7: on a member of a multi-selection, the arrangement row too
-  openCtxMenu(e.clientX, e.clientY, items, arrangeActions(selectId));
+  // docs/08 R7: on a member of a multi-selection, the arrangement row too;
+  // docs/08 R21: on a block or a flag, the frame entries and the colour row
+  const onBlock = selectId && rectOf(selectId) ? annotMenu(selectId, null) : null;
+  openCtxMenu(
+    e.clientX,
+    e.clientY,
+    onBlock ? [...items, ...onBlock.items] : items,
+    arrangeActions(selectId),
+    onBlock?.colors ?? null
+  );
 }
 
 /** the actions of an RTL element under `t` (a pin, a block, a fold, the symbol):
@@ -5411,6 +5953,27 @@ function rtlMenuItemsFor(t: Element): { items: CtxItem[]; selectId: string | nul
 // The actions are the SAME as in the inspector and on the Delete key — `tbDeleteTarget`
 // remains the single source of id->name resolution, and the modal confirmation is the host's.
 canvas.addEventListener("contextmenu", (e) => {
+  // docs/08 R21 — on a note, on a frame's tab, and on the BACKGROUND of a
+  // multi-node view ("Add note here"); a block keeps its own menu below
+  if (annotatable()) {
+    const t = e.target as Element;
+    const an = t.closest<SVGElement>(".note, .frame");
+    if (an?.dataset.id || !t.closest("[data-id]")) {
+      const id = an?.dataset.id ?? null;
+      const m = annotMenu(id, clientToWorld(e.clientX, e.clientY));
+      if (m.items.length || m.colors) {
+        e.preventDefault();
+        if (id && !state.selection.has(id)) {
+          state.selection = new Set([id]);
+          applySelectionClasses();
+          postSelection();
+          renderInspectorHere();
+        }
+        openCtxMenu(e.clientX, e.clientY, m.items, [], m.colors);
+        return;
+      }
+    }
+  }
   if (state.mode !== "tb") {
     rtlContextMenu(e); // RTL views: Go to source / Open / fold / flip
     return;
@@ -5432,7 +5995,15 @@ canvas.addEventListener("contextmenu", (e) => {
   }
   // docs/08 R7: on a member of a multi-selection, the arrangement row too
   // (the clicked block is the one that stays when the wires are straightened)
-  openCtxMenu(e.clientX, e.clientY, tbMenuItems(id), arrangeActions(id));
+  // docs/08 R21: the frame entries and the colour row of the block
+  const an = annotMenu(id, null);
+  openCtxMenu(
+    e.clientX,
+    e.clientY,
+    [...tbMenuItems(id), ...an.items],
+    arrangeActions(id),
+    an.colors
+  );
 });
 
 /** the actions of a TB element — the context menu's items, also the action
@@ -5620,6 +6191,7 @@ function hideBanner(): void {
 async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
+  closeAnnotEditor(true); // docs/08 R21: committed, not lost
   closeCard(); // docs/08 R15: the card is anchored to a box that is about to be redrawn
   closePalette(); // docs/08 R17: its rows close over the scene that is about to change
   closeSubPreview(); // docs/08 R18: drawn into the viewport that is about to be rebuilt
@@ -5970,6 +6542,7 @@ async function presentScene(
   if (document.fonts?.ready) {
     void document.fonts.ready.then(() => centerChipSigns(canvas)).catch(() => {});
   }
+  drawAnnotationsHere(); // docs/08 R21: frames behind, notes on top, tints
   applySelectionClasses();
   applyStatusBadges();
   applyGenBadges();
@@ -6258,6 +6831,7 @@ async function renderTb(refit: boolean): Promise<void> {
   currentTbLayout = layout;
   const vp = resetCanvas();
   currentTbEdgesGroup = drawTb(scene, layout, vp);
+  drawAnnotationsHere(); // docs/08 R21: frames behind, notes on top, tints
   applySelectionClasses();
   contentBounds = tbBounds(layout);
   applyStatusBadges();
