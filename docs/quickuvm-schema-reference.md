@@ -180,6 +180,14 @@ never on a combinational DUT, a `kind: selftest` bench or next to a
 selftest that hangs — are written up for upstream in
 `docs/upstream-quickuvm-reset-undriven.md`.
 
+**Since quick-uvm 1.2.0** (the table above is 1.1.0): an unset `external`
+resolves to the top-driven reset when no agent declares the port, so the first
+two rows and the non-external composition leaf generate what the
+`external: true` rows do; an explicit `external: false` in that shape, and a
+`reset_port` next to a `dut.reset` naming a different undeclared port, are
+validation errors; a `kind: selftest` top generates its reset. Not re-probed row
+by row on 1.2.0 — the source is the generator's changelog and the upstream note.
+
 `reset:` list entries (`ResetConfig`): `{name: str (required), active_low: bool = true, clock: str|null}`.
 Under a list, `dut.reset` must name one of the domains:
 

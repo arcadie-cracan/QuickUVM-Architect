@@ -1663,9 +1663,11 @@ means validated against the generator — a simulator compile is the user's. The
 tutorial bench WAS then compiled and simulated (Xcelium 25.09-s002, 21 Nov
 2026): it elaborates and, with the stub-predictor scoreboard removed, runs to
 `$finish` with 0 errors; the old shape reproduces `*E,CUVUNF`. The table, and
-the generator-side fix (arcadie-cracan/QuickUVM#119, merged into its `main` on
-21 Nov 2026, in no release yet — the installed 1.1.0 does not have it), are in
-`docs/upstream-quickuvm-reset-undriven.md`.
+the generator-side fix (arcadie-cracan/QuickUVM#119, released in quick-uvm
+**1.2.0** on 21 Nov 2026 — 1.1.0 and older do not have it), are in
+`docs/upstream-quickuvm-reset-undriven.md`. Architect still writes
+`external: true` and still reports `reset-undriven`: both are right on every
+1.x, and 1.2.0 is not the minimum version.
 **Sprint R6–R9 (docs/08) is implemented** (Nov 2026): level of detail on zoom
 (`lodFor` / `titleUpscale` in `test:navfind`, `quickuvm.lodZoomThreshold`),
 marquee modifiers + align / distribute / straighten (`src/webview/arrange.ts`,
