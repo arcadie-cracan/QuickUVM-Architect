@@ -15,6 +15,15 @@ import type {
 import { splitLabel } from "./scene";
 import { Rect, route, RouteRequest } from "./router";
 import { el } from "./svg";
+import {
+  badWires,
+  placeManual,
+  simplifyPoly,
+  wireStateText,
+  type WireDrawn,
+  type WireGeom,
+  type WireOpts,
+} from "./wireroute";
 
 /** a port label as <text> with the packed/unpacked dimensions in a subtle
  *  shade (tspan `.dim`), the name in the full color — compact (without spaces),
@@ -484,7 +493,8 @@ export function drawSchematic(
   scene: SchematicScene,
   layout: ElkNode,
   viewport: SVGGElement,
-  hooks: SchematicHooks
+  hooks: SchematicHooks,
+  wires?: WireOpts
 ): SVGGElement {
   const nodeById = new Map(scene.nodes.map((n) => [n.id, n]));
   const bportById = new Map(scene.boundary.map((b) => [b.id, b]));
@@ -492,7 +502,7 @@ export function drawSchematic(
   // the edges first, so the nodes draw over the routes
   const edgesGroup = el("g", { class: "edges" });
   viewport.append(edgesGroup);
-  routeEdges(scene, layout, edgesGroup);
+  routeEdges(scene, layout, edgesGroup, wires);
 
   for (const child of layout.children ?? []) {
     const x = child.x ?? 0;
@@ -514,19 +524,25 @@ export function drawSchematic(
 
 // ------------------------------------------------------------------ edges
 
-function edgeElement(spec: SceneEdge, d: string): SVGGElement {
+function edgeElement(spec: SceneEdge, d: string, extra = "", note = ""): SVGGElement {
   // grading by width class: the bus wire is thicker (docs/04)
   const g = el("g", {
-    class: `edge ${spec.kind} ${widthClass(spec.width)}`.trimEnd(),
+    class: `edge ${spec.kind} ${widthClass(spec.width)} ${extra}`.replace(/\s+/g, " ").trimEnd(),
   });
   // stable ID for selection: the net's name in the view's scope
   if (spec.net) {
     g.dataset.id = spec.net;
   }
+  // docs/04 level 3 — the edge a wire gesture starts from (an interface edge
+  // has no net; a comb's pieces name the net's first edge: the same wire group)
+  g.dataset.edge = spec.id;
   // docs/08 R23 — a filter hides or dims a wire WITH one of its ends
   g.dataset.src = spec.source;
   g.dataset.dst = spec.target;
   g.append(
+    // a wide, unpainted stroke under the line: a 1.3 px wire is selectable
+    // and draggable (docs/04 level 3) without pixel hunting
+    el("path", { class: "wire-hit", d }),
     // no direction arrow in the schematic view: the direction is implicit from the
     // port's side (inputs on west, outputs on east) — the user's decision. In
     // the TB view the arrows remain (the flags distinguish in/out/inout).
@@ -534,7 +550,7 @@ function edgeElement(spec: SceneEdge, d: string): SVGGElement {
       class: "edge-line",
       d,
     }),
-    el("title", {}, spec.net ?? "interface connection")
+    el("title", {}, (spec.net ?? "interface connection") + note)
   );
   return g;
 }
@@ -571,6 +587,7 @@ export function edgeObstacles(
     y: c.y ?? 0,
     w: c.width ?? 0,
     h: c.height ?? 0,
+    id: c.id, // whose box it is: an edge's pin stubs may touch their own (wireroute.ts)
   }));
   const wirePins = new Set<string>();
   for (const e of scene.edges) {
@@ -612,6 +629,10 @@ export function edgeObstacles(
           y: py - MARKER_CH / 2,
           w: MARKER_CW,
           h: MARKER_CH,
+          // its node's: with a wide bus label the chip ends 2 px from the stub
+          // tip, inside a hand-placed wire's clearance — the pin's own stub
+          // must not be "blocked" by its own chip (wireroute.ts; review finding)
+          id: n.id,
         });
       }
       if (wirePins.has(port.id)) {
@@ -640,12 +661,20 @@ export function edgeObstacles(
  * the A* router on the grid (docs/04) avoids the nodes, with a naive Z fallback
  * per edge with no path found. Empties and repopulates the group — callable
  * on every drag step.
+ *
+ * docs/04 level 3 (D27): an edge with a hand-placed skeleton in `wires.routes`
+ * is drawn from it — unless the skeleton is invalid where the blocks stand now
+ * (dormant: routed automatically, reported). The hand-placed routes take
+ * their cells in the router first, so the automatic wires keep off them. A net
+ * with a hand-placed edge is never redrawn as a comb. Returns what was drawn,
+ * per edge — the wire gestures hit-test on it.
  */
 export function routeEdges(
   scene: SchematicScene,
   layout: ElkNode,
-  group: SVGGElement
-): void {
+  group: SVGGElement,
+  wires?: WireOpts
+): WireDrawn {
   group.replaceChildren();
   const childById = new Map((layout.children ?? []).map((c) => [c.id, c]));
   const bportById = new Map(scene.boundary.map((b) => [b.id, b]));
@@ -708,15 +737,62 @@ export function routeEdges(
       requests.push({ id: e.id, source: s, target: t, group: e.net ?? e.id });
     }
   }
-  const routed = route(obstacles, requests);
-  const draw = (e: SceneEdge, poly: Pt[]): void => {
+  // the hand-placed routes (docs/04 level 3): placed first, off the router
+  const hardRects = obstacles.filter((o) => o.cost === undefined);
+  const placed = placeManual(
+    pending.map(({ e, s, t }) => ({ edge: e, s, t })),
+    wires?.routes ?? {},
+    hardRects,
+    wires?.force
+  );
+  const routed = route(
+    obstacles,
+    requests.filter((r) => !placed.manual.has(r.id)),
+    {
+      fixed: pending
+        .filter(({ e }) => placed.manual.has(e.id))
+        .map(({ e }) => ({
+          group: e.net ?? e.id,
+          points: placed.manual.get(e.id)?.pts ?? [],
+        })),
+    }
+  );
+  const geoms = new Map<string, WireGeom>();
+  /** a dormant skeleton says so on the wire that is drawn in its place */
+  const asleep = (ids: readonly string[]): { cls: string; note: string } => {
+    const why = ids.map((id) => placed.dormant.get(id)).find(Boolean);
+    return why
+      ? { cls: "dormant", note: ` — hand-placed route suspended: ${wireStateText(why)}` }
+      : { cls: "", note: "" };
+  };
+  const draw = (e: SceneEdge, poly: Pt[], extra = "", note = ""): void => {
     group.append(
-      edgeElement(e, "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "))
+      edgeElement(e, "M " + poly.map((p) => `${p.x} ${p.y}`).join(" L "), extra, note)
     );
+  };
+  /** one edge on its own: from its skeleton, from the router, or the naive Z */
+  const drawOne = (p: { e: SceneEdge; s: Anchor; t: Anchor }): Pt[] => {
+    const hand = placed.manual.get(p.e.id);
+    const pts = hand?.pts ?? routed.get(p.e.id) ?? zRoute(p.s, p.t);
+    const zz = asleep([p.e.id]);
+    draw(
+      p.e,
+      pts,
+      hand ? (hand.state === "ok" ? "manual" : "manual wire-bad") : zz.cls,
+      zz.note
+    );
+    geoms.set(p.e.id, {
+      edge: p.e,
+      s: p.s,
+      t: p.t,
+      pts,
+      route: hand?.route ?? null,
+      asleep: placed.dormant.has(p.e.id),
+    });
+    return pts;
   };
   // the comb guard: an axial segment must not cut through the interior of a
   // block (HARD obstacle, no cost) — otherwise the straight taps would pass through boxes
-  const hardRects = obstacles.filter((o) => o.cost === undefined);
   const combClear = (polys: Pt[][]): boolean =>
     polys.every((poly) => {
       for (let i = 0; i + 1 < poly.length; i++) {
@@ -745,11 +821,7 @@ export function routeEdges(
       (byNet.get(p.e.net) ?? byNet.set(p.e.net, []).get(p.e.net)!).push(p);
     } else {
       // interface / no net: per-edge (without junction dots)
-      const pts = routed.get(p.e.id);
-      draw(p.e, pts ?? []);
-      if (!pts) {
-        group.append(edgeElement(p.e, zRoute(p.s, p.t)));
-      }
+      drawOne(p);
     }
   }
   for (const [net, eds] of byNet) {
@@ -767,22 +839,34 @@ export function routeEdges(
         }
       }
     }
-    const comb = eds.length >= 2 ? combPolys(ends, polysRouted) : null;
-    if (comb && combClear(comb)) {
-      comb.forEach((poly) => draw(eds[0].e, poly));
+    // a net with a hand-placed edge is drawn edge by edge: the comb is a
+    // redrawing of the ROUTED star, and would draw over the user's route
+    const hand = eds.some(({ e }) => placed.manual.has(e.id));
+    const comb = eds.length >= 2 && !hand ? combPolys(ends, polysRouted) : null;
+    const trunkX = comb ? combTrunkX(comb) : null;
+    if (comb && trunkX !== null && combClear(comb)) {
+      const zz = asleep(eds.map(({ e }) => e.id));
+      comb.forEach((poly) => draw(eds[0].e, poly, zz.cls, zz.note));
       netPolys.set(net, comb);
-    } else {
-      const polys: Pt[][] = [];
+      // what each edge IS in the comb: its two taps and its part of the trunk
+      // — the comb is exactly the union of these (a wire gesture freezes them)
       for (const { e, s, t } of eds) {
-        const pts = routed.get(e.id);
-        if (pts) {
-          draw(e, pts);
-          polys.push(pts);
-        } else {
-          group.append(edgeElement(e, zRoute(s, t)));
-        }
+        geoms.set(e.id, {
+          edge: e,
+          s,
+          t,
+          pts: simplifyPoly([
+            { x: s.x, y: s.y },
+            { x: trunkX, y: s.y },
+            { x: trunkX, y: t.y },
+            { x: t.x, y: t.y },
+          ]),
+          route: null,
+          asleep: placed.dormant.has(e.id),
+        });
       }
-      netPolys.set(net, polys);
+    } else {
+      netPolys.set(net, eds.map(drawOne));
     }
   }
   // the junction points (T) of the nets with fanout (docs/04, vocabulary)
@@ -794,6 +878,20 @@ export function routeEdges(
       })
     );
   }
+  const drawn: WireDrawn = { geoms, dormant: placed.dormant, bad: badWires(placed.manual) };
+  wires?.onDrawn?.(drawn);
+  return drawn;
+}
+
+/** the x of a comb's trunk: the vertical piece of its spine (`combPolys`) */
+function combTrunkX(comb: Pt[][]): number | null {
+  const spine = comb[0] ?? [];
+  for (let i = 0; i + 1 < spine.length; i++) {
+    if (spine[i].x === spine[i + 1].x && spine[i].y !== spine[i + 1].y) {
+      return spine[i].x;
+    }
+  }
+  return null;
 }
 
 interface Pt {
@@ -1053,21 +1151,23 @@ export function pinTipOffsets(
 }
 
 /** orthogonal Z route; at unfavorable directions, an S detour through the middle */
-function zRoute(s: Anchor, t: Anchor): string {
+function zRoute(s: Anchor, t: Anchor): Pt[] {
   const off = 14;
   const forward =
     s.dir > 0 ? t.x + t.dir * off >= s.x + off : t.x + t.dir * off <= s.x - off;
   if (forward && s.dir === -t.dir) {
     const mx = (s.x + t.x) / 2;
-    return `M ${s.x} ${s.y} L ${mx} ${s.y} L ${mx} ${t.y} L ${t.x} ${t.y}`;
+    return [
+      { x: s.x, y: s.y }, { x: mx, y: s.y }, { x: mx, y: t.y }, { x: t.x, y: t.y },
+    ];
   }
   const sx2 = s.x + s.dir * off;
   const tx2 = t.x + t.dir * off;
   const my = (s.y + t.y) / 2;
-  return (
-    `M ${s.x} ${s.y} L ${sx2} ${s.y} L ${sx2} ${my} ` +
-    `L ${tx2} ${my} L ${tx2} ${t.y} L ${t.x} ${t.y}`
-  );
+  return [
+    { x: s.x, y: s.y }, { x: sx2, y: s.y }, { x: sx2, y: my },
+    { x: tx2, y: my }, { x: tx2, y: t.y }, { x: t.x, y: t.y },
+  ];
 }
 
 /** port of the view's module: pentagonal flag with the name inside */

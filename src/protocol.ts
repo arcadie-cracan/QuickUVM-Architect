@@ -4,11 +4,10 @@
 // (src/) and the webview (src/webview/), so it does not import anything from `vscode`.
 //
 // State of the contract (phases 0-3b completed): all the messages and actions
-// below are implemented and strictly typed, with TWO exceptions declared
-// to fix the contract but not yet handled — reserved for the level
-// 2/3 overrides of phase 4 (docs/04): `ports/reordered` (the pin order) and
-// `edge/override` (waypoints; payload `unknown`, refined at
-// implementation time, D7: only on demonstrated demand).
+// below are implemented and strictly typed, with ONE exception declared
+// to fix the contract but not yet handled — reserved for the level-2
+// override of phase 4 (docs/04): `ports/reordered` (the pin order).
+// `edge/override` (level 3, the hand-routed wires) is implemented — D27.
 
 import type { ProjectModel } from "./model";
 
@@ -274,8 +273,19 @@ export interface SidecarNode {
 // webview (docs/04) — the first opening of a view always fits;
 // the frame is preserved only between switches within the same session
 
+/** docs/04, level 3 (D27) — the overrides of ONE edge. `route` is a hand-placed
+ *  skeleton in its file form, one token per interior segment
+ *  (`source+40 target-24 target-16`): the offset of the segment's line from the
+ *  pin at that end of the edge — never an absolute coordinate
+ *  (src/webview/wireroute.ts) */
+export interface SidecarEdge {
+  route?: string;
+}
+
 export interface SidecarView {
   nodes?: Record<string, SidecarNode>;
+  /** docs/04, level 3 (D27) — the hand-routed wires of the view, by edge id */
+  edges?: Record<string, SidecarEdge>;
   /** docs/08 R18 — the nc / ignored pins of this RTL view are hidden (absent = shown) */
   hidePins?: true;
   /** the level-4 override (docs/04): wire <-> label per net; absent =
@@ -299,9 +309,10 @@ export interface SidecarOrphan {
     | { render: "wire" | "label" }
     | SidecarFrame
     | SidecarNote
-    | ViewFilters;
+    | ViewFilters
+    | SidecarEdge;
   /** the kind of the orphan key; absent = node (compatibility) */
-  kind?: "net" | "frame" | "note" | "filters";
+  kind?: "net" | "frame" | "note" | "filters" | "edge";
   /** the date of the last valid view (ISO 8601) */
   lastSeen: string;
 }
@@ -490,6 +501,8 @@ export type HostMessage =
   | { v: 1; type: "relay/flip"; nodeId: string; axis: "h" | "v" }
   | { v: 1; type: "relay/fold"; foldId: string }
   | { v: 1; type: "relay/netRender"; net: string }
+  // docs/04 level 3 (D27) — "Reset route" on the selected net
+  | { v: 1; type: "relay/resetRoute"; net: string }
   | { v: 1; type: "relay/selectPins"; names: string[] }
   // docs/08 R18 — the sidebar's "Collapse to header" / "Expand", relayed like a flip
   | { v: 1; type: "relay/collapse"; nodeId: string }
@@ -550,7 +563,11 @@ export type WebviewMessage =
       side: Side;
       order: number;
     }
-  | { v: 1; type: "edge/override"; viewId: string; edgeId: string; patch: unknown }
+  // docs/04, level 3 (D27) — the hand-routed wires a gesture changed, as a
+  // PATCH by edge id: a route in its file form, or null = back to automatic.
+  // A patch, not the view's whole set: another surface's stale mirror cannot
+  // delete a route it never saw
+  | { v: 1; type: "edge/override"; viewId: string; edges: Record<string, string | null> }
   | { v: 1; type: "net/render"; viewId: string; net: string; render: "wire" | "label" }
   // docs/08 R15 — the hover card asks what a TB element will generate; the host
   // answers with `card/full` from the config text and the cached manifest
@@ -581,6 +598,8 @@ export type WebviewMessage =
   | { v: 1; type: "relay/flip"; nodeId: string; axis: "h" | "v" }
   | { v: 1; type: "relay/fold"; foldId: string }
   | { v: 1; type: "relay/netRender"; net: string }
+  // docs/04 level 3 (D27) — "Reset route" on the selected net
+  | { v: 1; type: "relay/resetRoute"; net: string }
   | { v: 1; type: "relay/selectPins"; names: string[] }
   // docs/08 R18 — the sidebar's "Collapse to header" / "Expand", relayed like a flip
   | { v: 1; type: "relay/collapse"; nodeId: string }

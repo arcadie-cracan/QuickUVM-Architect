@@ -1038,12 +1038,20 @@ function addSubenvs(
       tooltip: `composed block env (H1): ${s.config ?? "?"}`,
     });
   }
-  connections.forEach((c, i) => {
+  // the edge id names the connection, not its place in the list: a
+  // hand-placed route is stored by edge id (docs/04 level 3), and with a
+  // positional id removing one connection moved its route onto the next one
+  // (review finding). A connection written twice gets its ordinal.
+  const connSeen = new Map<string, number>();
+  connections.forEach((c) => {
     const from = endpoint(c.from);
     const to = endpoint(c.to);
     if (from && to) {
+      const connKey = `${c.from}->${c.to}`;
+      const nth = connSeen.get(connKey) ?? 0;
+      connSeen.set(connKey, nth + 1);
       edges.push({
-        id: `e:conn${i}`,
+        id: `e:conn:${connKey}${nth ? `#${nth + 1}` : ""}`,
         net: `${c.from}→${c.to}`,
         kind: "wire",
         source: subId(from[0]),

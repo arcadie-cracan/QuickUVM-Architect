@@ -221,6 +221,31 @@
           window.__sidecar = sc;
           sessionStorage.setItem("__sidecar", JSON.stringify(sc));
         }
+        if (m.type === "edge/override") {
+          // docs/04 level 3 — the host's setEdgeRoutes, in miniature: a patch
+          // by edge id, null = back to automatic
+          const sc = loadSidecar();
+          const view = (sc.views[m.viewId] ??= {});
+          const edges = (view.edges ??= {});
+          for (const [id, route] of Object.entries(m.edges)) {
+            if (route === null) delete edges[id];
+            else edges[id] = { route };
+          }
+          if (!Object.keys(edges).length) delete view.edges;
+          window.__sidecar = sc;
+          sessionStorage.setItem("__sidecar", JSON.stringify(sc));
+        }
+        if (m.type === "relayout/request") {
+          // the host's relayout: the positions and the hand-placed routes go
+          const sc = loadSidecar();
+          const view = sc.views[m.viewId];
+          if (view) {
+            for (const n of Object.values(view.nodes ?? {})) { delete n.x; delete n.y; }
+            delete view.edges;
+          }
+          window.__sidecar = sc;
+          sessionStorage.setItem("__sidecar", JSON.stringify(sc));
+        }
         if (m.type === "node/flipped") {
           const sc = loadSidecar();
           const nodes = ((sc.views[m.viewId] ??= {}).nodes ??= {});

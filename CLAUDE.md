@@ -123,6 +123,7 @@ npm run test:textedit    # the MINIMAL edit between two YAML texts + the span to
 npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (docs/08 R4)
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
+npm run test:wireroute   # hand-routed wires (docs/04 level 3, D27): the skeleton anchored to the pins, freeze, grab / drag / jog, validity and dormancy, wire groups, the router's fixed routes
 npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
 npm run test:results     # simulation results (docs/08 R25): UVM log + run verdict + attribution by reporter path + imc summary + the per-level projection, on real Xcelium runs
 npm run test:templates   # "New testbench" templates (docs/08 R24): per interface, per clock domain, composition — what each plan writes and what it leaves out
@@ -1265,6 +1266,80 @@ coliziunea de nume.
   host's memory): `handleDrop` accepts both. The files written with the Write
   tool are LF; git normalises them (autocrlf).
 
+- **Hand-routed wires (docs/04 level 3, decision D27)**: a wire dragged by
+  hand is a SKELETON stored per edge — `views.<key>.edges.<edgeId>.route:
+  "source+16 source-40 target-16"`, one token per interior segment, the offset
+  of its line from the pin at that end of the edge; never an absolute
+  coordinate, nothing derived. The rules are pure (`src/webview/wireroute.ts`,
+  `test:wireroute`); the two drawers (`routeEdges`, `drawTbEdges`) place the
+  valid skeletons first and report what they drew (`WireDrawn`), and `main.ts`
+  only forwards gestures. Do not add a second place that decides geometry. The
+  sidecar side repeats the R18 / R21 traps (`test:sidecar`, the `D27:` tests):
+  `serializeSidecar` WHITELISTS (`edges` must be copied), `viewEmpty` and
+  `prune` know the key, `parseSidecar` reads through `cleanEdges` — the same
+  reduction `setEdgeRoutes` writes through. `edge/override` is a PATCH by edge
+  id (`null` = automatic), not the view's whole set, and the undo history
+  follows the same rule: a `LayoutSnap` holds the routes of the edges ITS
+  gesture changed (`routePatchOf`), `null` for a block move — the first cut
+  snapshot the whole set on every step, and an undo of a move in one surface
+  deleted a route added in another (review). An edge id names two PINS, and a
+  fold's pin is not its members' pins: `validEdgeIds` builds the scene for
+  every fold combination (all of them up to five folds) with every net forced
+  to a wire, or a recompile orphans the routes of a view shown with one fold
+  expanded, or of a net currently shown as a label. A `tb:` level is never
+  invalidated: a route whose edge is gone stays inert. From the two adversarial
+  reviews, each locked by a test or noted where it cannot be: (1) the wide hit
+  stroke (`.wire-hit`) is what makes a 1.3 px wire grabbable, and in the
+  verification view the wires are drawn ABOVE the boxes — it covered the port
+  hotspot its own stub ends in, and a press there became a segment drag instead
+  of R10's temporary wire: `wireStartAt` / `wireTargetAt` / the hover cursor
+  look through `belowWires` (harness-proved, no pure test). It is
+  `non-scaling-stroke` (9 px on screen at any zoom) and `.tb-preview .wire-hit`
+  takes no pointer events — an explicit `pointer-events` on a child beats the
+  group's `none`, the `.tb-name` trap again; (2) a junction dot is drawn over
+  its wire: `.junction { pointer-events: none }`, or a press on it starts a
+  lasso; (3) a DORMANT edge is drawn from the router's line, so a gesture on a
+  sibling froze that line and wrote it over the skeleton that was waiting —
+  `WireGeom.asleep`, and `dragWire` leaves such an edge out of `routes` unless
+  it is itself moved; (4) "a frozen automatic route must never be invalid":
+  three walls broke it — the select / concat chip of the wire's OWN pin (with a
+  bus label of three characters it ends 2 px from the stub tip, inside
+  `WALL_CLEAR`; the chip rect carries its node's id now), a TB boundary flag
+  (no obstacle of the router's, so a wire may bend right at it: `WireRect.flag`
+  exempts the edges that end there), and the TB anchors being 2 px off the grid
+  (a bend at the pin reads as 2 px backwards: `REVERSE_SLACK`); (5) the level
+  branch of a fan is one straight line with a trunk WITHOUT length — frozen at
+  mid-span, the trunk appeared twice once the pins stopped being level:
+  `trunkThrough` puts it on the group-mate's vertical that touches its row, and
+  that zero-length segment is in `runOf` (not pressable, `d = Infinity`) so it
+  moves with the trunk; (6) the corner test picked its two segments from the
+  first edge only, so a junction was a corner or not by edge order — the
+  nearest vertical and horizontal are taken over the whole group; (7) a drag of
+  less than half a cell on an axis moves nothing on it (an off-grid line was
+  pulled onto the grid by a drag that went nowhere, and committed); (8) a
+  result the file form cannot say (a jog on a 41-segment skeleton, an offset
+  over 100000) is NOT made — read back as nothing, it deleted the stored route
+  at the host (`fitsFile`); (9) `LayoutStore.relayout` clears the routes and
+  must ANNOUNCE it (`annotEmitter`): the other surfaces draw from their own
+  mirror and the sidebar's Net section counts the routes; (10) a render under a
+  wire drag (`resetCanvas` -> `cancelWireDrag(false, true)`) drops the drag AND
+  swallows the release's click — the pointer is still captured, and the click
+  cleared the selection; (11) a `connections` edge is `e:conn:<from>-><to>`,
+  not positional — a route is stored by edge id, and removing one connection
+  moved its route onto the next; (12) in the `contextmenu` handler the wire
+  check comes FIRST: an interface / reference edge has no `data-id`, and the
+  annotations branch takes anything without one for the background. Also: a
+  wire gesture pins an un-arranged view first (`pinViewIfUnseeded`, D21); a net
+  with a hand-placed edge is never redrawn as a comb; `route()` takes the
+  hand-placed polylines as `fixed` occupancy so automatic wires keep off them;
+  Shift (the cone) and Ctrl (the toggle) presses are never drags; the candidate
+  is dropped on a `pointermove` with no button down (the release happened
+  outside the canvas, before the capture). Known and accepted: a TB rename
+  leaves the old edge ids' routes inert; a trunk shared by edges with no common
+  pin (two drivers, two sinks) can split when one block moves; two hand-placed
+  wires of different nets on one line are not prevented; `validEdgeIds`' mixed
+  fold combinations have no fixture (the regression view has one fold).
+
 - **Simulation results on the diagram (docs/08 R25)**: the extension READS
   what `make regress` left under `<outputDir>/out` and never runs or waits
   for a simulator — do not add a process. Probed on quick-uvm 1.1.0 +
@@ -1707,4 +1782,14 @@ logs), `src/results-service.ts`, the `results/full` message, the commands
 `quickuvm.refreshResults` / `showResults` / `hideResults`. The watcher, the
 commands and the report need a manual pass in the Extension Development Host
 against a real `make regress`.
+**Level 3 of the routing overrides is implemented** (Nov 2026, decision D27):
+wires dragged by hand in the schematic views and on every level of the
+verification view — a segment, a corner / junction, a pin stub lifted into a
+jog — stored per edge as a skeleton anchored to the pins, dormant when it no
+longer fits, reset from the context menu / the inspector / ⟲;
+`src/webview/wireroute.ts` + `test:wireroute` (45 tests), the `D27:` tests of
+`test:sidecar`, the `edge/override` and `relay/resetRoute` messages. Verified
+in `scripts/harness.html` with scripted pointer events; the gestures, the
+sidebar's "Reset route" and the two-surface refresh still need a manual pass in
+the Extension Development Host.
 Planul complet: `docs/06-plan-mvp.md`.

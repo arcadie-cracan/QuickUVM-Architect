@@ -387,9 +387,13 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         case "node/flipped":
           this.layout.nodeFlipped(m.viewId, m.nodeId, m.flipH, m.flipV);
           break;
+        case "edge/override":
+          // docs/04 level 3 (D27) — hand-placed wire routes, in the SHARED sidecar
+          this.layout.edgeRoutes(m.viewId, m.edges, webview);
+          break;
         case "relayout/request":
           if (m.scope === "all") {
-            this.layout.relayout(m.viewId);
+            this.layout.relayout(m.viewId, webview);
           }
           break;
         case "action/request":

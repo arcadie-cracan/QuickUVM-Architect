@@ -34,10 +34,12 @@ Rezolvarea poziției unui nod, în ordine: override manual → poziția persista
 din sesiunea anterioară → poziție calculată de ELK interactiv în jurul celor de
 mai sus.
 
-Muchiile sunt **excluse** din proprietatea utilizatorului: traseele se
-recalculează automat după pozițiile curente ale nodurilor (utilizatorul
-aranjează blocuri și pini, nu întreține trasee), modulat de override-urile de
-rutare de mai jos.
+The edges are **automatic by default**: the routes are recomputed from the
+current positions of the nodes (the user arranges blocks and pins, and does not
+have to maintain routes). A wire the user DID place by hand (level 3 of the
+routing overrides below, D27) is the user's, like a position: it is kept
+relative to its pins, follows them, and goes back to the router only on an
+explicit reset.
 
 ## Fișierul sidecar de layout
 
@@ -58,12 +60,9 @@ views:
     ports:                         # override de ordine/latura a pinilor
       din:   {side: west, order: 1}
       clk:   {side: west, order: 90}
-    edges:
-      "u_add.dout->sum":
-        style: orthogonal          # nivel 1: stil per muchie
-        exit: east                 # nivel 2: directia de iesire
-        waypoints:                 # nivel 3: relative, nu absolute
-          - {segment: 1, offset: 40}
+    edges:                         # level 3: hand-routed wires, by edge id
+      "sum:u_add.dout-><port>.sum":
+        route: source+16 source-40 target-16   # offsets from the pins, never absolute
     nets:
       din:   {render: label}       # nivel 4: fir <-> eticheta
       clk:   {render: label}
@@ -152,6 +151,19 @@ their own and stay while the view exists; when it disappears they migrate
 (`kind: filters`) and return with it, unless newer rules were written
 meanwhile.
 
+A hand-placed route (level 3, D27) is keyed by its EDGE, and an edge's id
+names its two pins: when the edge no longer exists — a pin or a net gone, the
+view itself gone — the route migrates into `orphans` (`kind: edge`) and returns
+when the edge does, unless a newer route was written for it meanwhile. The same
+wire has ONE id while a generate fold is folded and others when it is expanded
+(the fold's pin is not its members' pins), so the valid ids are taken over the
+fold combinations of the view (`validEdgeIds`: all of them up to five folds),
+and every net is taken as a wire — a net shown as a label has no edges now, but
+its routes wait for the day it is a wire again. A verification (`tb:`) level is
+never invalidated: a route whose edge is gone from the configuration stays in
+the file, inert, and is drawn again if the edge comes back (an undo of the YAML
+edit); "Re-arrange all" clears it.
+
 Când o cheie din sidecar nu mai există în model (redenumire, eroare temporară
 de compilare), intrarea se mută în `orphans` cu data ultimei vederi valide; nu
 se șterge. UI-ul oferă "Curăță override-urile orfane" și, la redenumiri
@@ -176,33 +188,183 @@ Decizia se ia în faza 3 pe un prototip comparativ; interfața ruterului e fixă
 `route(obstacles, pins, constraints) -> polylines`, ca implementarea să fie
 interschimbabilă.
 
-## Ierarhia de override-uri de rutare
+## The hierarchy of routing overrides
 
-| Nivel | Ce controlează | Persistență | Fragilitate |
+| Level | What it controls | Persistence | Fragility |
 |---|---|---|---|
-| 1 | stil (ortogonal/direct/curbe), spațiere, per vedere sau per muchie | atribut declarativ | zero |
-| 2 | latura/ordinea pinilor pe nod; direcția de ieșire a muchiei | relativ la nod | zero (se mută cu nodul) |
-| 3 | waypoints pe muchie | **relative** (offset per segment sau ancoră la nod) — niciodată coordonate absolute | mică, cu invalidare grațioasă |
-| 4 | fir ↔ etichetă de net | per net | zero |
+| 1 | style (orthogonal / direct / curves), spacing, per view or per edge | a declarative attribute | none |
+| 2 | the side / order of the pins on a node; the exit direction of an edge | relative to the node | none (it moves with the node) |
+| 3 | the route of an edge, placed by hand | **relative**: each segment an offset from the pin at one end of the edge — never an absolute coordinate | small, with dormancy and graceful invalidation |
+| 4 | wire ↔ net label | per net | none |
 
-Nivelul 4 este prima linie de apărare a lizibilității: net-urile cu fan-out
-peste prag (implicit >4; `render` vine deja sugerat din model) și net-urile cu
-rol ceas/reset se afișează ca etichete pe pini, nu ca trasee. Aplicat corect,
-reduce cererea de waypoints (nivelul 3) aproape la zero — de aceea ordinea de
-implementare este 1 → 4 → 2 → 3, iar 3 doar la cerere demonstrată.
+Level 4 is the first line of defence of readability: the nets with a fan-out
+above the threshold (default > 4; `render` already comes suggested by the model)
+and the nets with a clock / reset role are shown as labels on the pins, not as
+routes. Applied properly it takes most of the demand for level 3 away — which
+is why the order of implementation was 1 → 4 → 2 → 3, and 3 only on
+demonstrated demand (D7). That demand came in Nov 2026, from the user arranging
+diagrams by hand: level 3 is implemented (D27, below). Level 2 is still open.
 
-Implementat (iul. 2026): netul se selectează prin click pe traseu sau pe
-eticheta lui, iar inspectorul oferă comutatorul „Show as label"/„Show as
-wire" (mesajul `net/render`, docs/05). La o selecție de UN pin/steag,
-inspectorul îi derivă netul (din muchii sau `pin.nets`/`bport.nets`) și arată
-același comutator — descoperibil de pe orice capăt, nu doar de pe traseu/etichetă
-(rafinare din validare). Override-ul se persistă în sidecar sub
-`views.<vedere>.nets.<net>.render` doar când diferă de sugestia din model —
-revenirea la sugestie șterge intrarea (fișierul ține doar abateri). La
-invalidare, override-urile net-urilor dispărute migrează în `orphans` cu
-`kind: net` și se restaurează la reapariție, ca pozițiile. Nivelul 1 (stilul
-traseelor) se amână: există un singur stil — ortogonal pe grilă, prin ruterul
-propriu (D20) — deci nu are încă ce parametru să expună.
+**Level 4, implemented (Jul 2026)**: a net is selected by a click on its route
+or on its label, and the inspector offers the "Show as label" / "Show as wire"
+switch (the `net/render` message, docs/05). On a selection of ONE pin / flag the
+inspector derives its net (from the edges or `pin.nets` / `bport.nets`) and
+shows the same switch — discoverable from either end, not only from the route or
+the label (a refinement from validation). The override is persisted in the
+sidecar under `views.<view>.nets.<net>.render` only when it differs from the
+model's suggestion — going back to the suggestion deletes the entry (the file
+holds only deviations). On invalidation, the overrides of the nets that
+disappeared migrate into `orphans` with `kind: net` and are restored when the
+net reappears, like the positions. Level 1 (the style of the routes) is
+deferred: there is one style — orthogonal on the grid, through our own router
+(D20) — so it has no parameter to expose yet.
+
+### Level 3 — hand-routed wires (D27, Nov 2026)
+
+In the schematic views and on every level of the verification view, a wire can
+be moved by hand. Six decisions shape it, each asked of the user: both view
+families; the full gesture set (segments, corners / junctions, a jog out of a
+pin stub); reset from the context menu, the inspector and "Re-arrange all"; a
+skeleton anchored to the pins; an invalid route falls back to the router and
+stays stored; a hand-placed segment may cross texts and other wires, never a
+block. The rules are pure — `src/webview/wireroute.ts`, `npm run test:wireroute`
+— and the webview only draws and forwards the gestures.
+
+**The model: a skeleton anchored to the pins.** A wire leaves and enters its
+pins horizontally, so between the two pin stubs its interior segments alternate
+vertical, horizontal, …, vertical: an odd count. A hand-placed route is that
+list, source to target, and each segment stores ONE number — the offset of its
+line from the pin at one end of the edge, on the segment's own axis (x for a
+vertical segment, y for a horizontal one). The file form is one line per edge,
+a token per segment:
+
+```yaml
+views:
+  demo_top.u_soc:
+    edges:
+      "sum:u_add.dout-><port>.sum":
+        route: source+16 source-40 target-16
+```
+
+— a vertical 16 px out of the source pin, a horizontal 40 px above it, a
+vertical 16 px before the target pin. Moving a block therefore carries the
+segments measured from its pin, and the ones in between stretch; moving both
+ends by the same amount moves the whole route. Nothing absolute is stored, and
+nothing derived: the polyline is rebuilt from the pins on every draw
+(`resolveRoute`). The sketch this document carried before (`waypoints:
+[{segment, offset}]`, an offset from the AUTOMATIC route) was rejected: the
+automatic route changes its number of segments on almost any move, so "segment
+1" would mean something else each time.
+
+Which pin a segment follows is decided when the route is first frozen: the
+first half of the segments follow the source pin, the second half the target
+pin, the middle one the nearer pin (`freezeRoute`). A later drag keeps it,
+except for the middle segment, which is put on the pin it was dragged next to.
+
+**Per edge in the file, per wire in the hand.** The override is stored per
+EDGE (the id names two pins: that is what orphaning needs), but the eye sees
+wires, not edges: a net with fan-out is several edges on one trunk. A gesture
+therefore works on the **wire group** — the edges connected through a shared
+net or a shared pin (`wireGroup`; in the verification view the differently
+named wires that leave one analysis port are one group) — and:
+
+- the first gesture **freezes the whole group** as it is drawn (each automatic
+  route becomes a skeleton; a net drawn as a comb is frozen as what each edge
+  is in the comb — its two taps and its part of the trunk), so what the user
+  saw is what stays, and only the dragged part moves. A branch drawn as one
+  straight line has a trunk without length: it is frozen ON the group's
+  vertical that touches its row, not at mid-span, and moves with that run —
+  or the trunk would appear twice the day its pins stop being level;
+- a segment takes its whole straight **run** with it — the segments of the
+  group's other edges on the same line that touch it, directly or through one
+  another: a trunk is one line wherever along it the branches leave;
+- segments of different edges that share a run follow the **same pin** — the
+  one all those edges leave (fan-out) or all enter (fan-in) — or moving a
+  single block would split the trunk (`shareAnchors`).
+
+**Gestures.** A press on a wire and a drag past the click threshold (the cursor
+says what would move):
+
+- on a **segment**: it moves perpendicular to itself — a vertical one left /
+  right, a horizontal one up / down;
+- on a **corner or a junction**: both segments that meet there move, each on
+  its axis — whichever edges of the group they belong to (the nearest vertical
+  and the nearest horizontal within reach, over the whole group). Beside a pin
+  the stub stays (its line is the pin's): the corner where a stub meets the
+  trunk moves the trunk only;
+- on a **pin stub**: the stub is lifted into a **jog** that leaves 16 px at the
+  pin (`JOG_STUB`); a straight pin-to-pin wire becomes a bump with a stub at
+  each pin. This is how a detour is made where the router drew a straight line.
+
+Every moved line is snapped to the grid as an ABSOLUTE line (so a line that was
+off the grid lands on it at its first move — a drag of less than half a cell
+on an axis moves nothing on it), a bend dragged flat disappears
+(`normalizeRoute`), and the preview is always computed from the press, never
+from the previous frame. A result the file form cannot say (more than 41
+segments) is not made. A click without a drag still selects the net; Shift
+(the cone) and Ctrl (the selection toggle) keep their meaning — with either the
+press is never a drag. `Escape` cancels a drag in flight. The wires have a
+wide, unpainted hit stroke (`.wire-hit`: 9 px on screen at any zoom, stripped
+from the SVG export), so a 1.3 px line can be selected and grabbed without
+pixel hunting. In the verification view the wires are drawn above the boxes,
+and that stroke reaches over the port hotspot its stub ends in: a press there
+still starts the temporary wire of docs/08 R10 (`belowWires`).
+
+**What a hand may cross.** Texts (pin labels, annotations) and the wires of
+other nets: yes — it is the user's hand. A block: no. The walls are the boxes
+of the nodes and of the boundary flags, and the select / concat chips, with a
+clearance of half a grid cell (`WALL_CLEAR`: a segment one cell from a box is
+clear, one ON its edge is not); the two pin stubs may touch the box of their
+own node and its chips (with a wide bus label the chip ends 2 px from the stub's
+tip). In the verification view a boundary flag is no obstacle of the router's,
+so an automatic wire may bend right at the flag it ends at: that edge may touch
+its own flag with any segment (`WireRect.flag`). "Backwards" has half a cell of
+slack (`REVERSE_SLACK`) for the same view's off-grid anchors. The rule behind
+all three: an automatic route, frozen, must never be invalid where it stands. While a drag would cut a wall, or leave a pin backwards, the wire is
+drawn as invalid (red, dashed), and such a drop is **refused** with a message —
+nothing is stored. Two hand-placed wires of DIFFERENT nets on the same line are
+not prevented.
+
+**Dormant, not deleted.** A stored skeleton is checked against the blocks on
+every draw (`routeState`): if a later move (or a flip, or a new block) makes it
+leave its pin backwards or cut a wall, that edge is routed automatically for as
+long as it stays so — its tooltip and its context menu say "hand-placed route
+suspended" and why — and the skeleton, still in the file, is drawn again the
+moment it fits (un-flip the block and it is back). The other edges of the net
+keep their routes, and a gesture on one of THEM does not write the dormant
+edge: it is drawn — and frozen for the drag — from the router's line, but its
+own skeleton keeps waiting in the file; only dragging the dormant wire itself
+replaces it. Nothing is deleted without a gesture of the user's.
+
+**The router knows about them.** The hand-placed routes are placed first and
+occupy their cells in the router (`RouteConstraints.fixed`): the automatic wires
+of other nets keep off them the way they keep off each other, and the ones of
+the same net may share them. A net with a hand-placed edge is never redrawn as
+a comb.
+
+**Back to automatic.** "Reset wire route" in the wire's context menu and in the
+action palette, "Reset route" in the inspector's Net section (schematic views),
+and "Wires: reset all hand-placed routes" in the palette; a reset works on the
+whole wire group. "Re-arrange all" (⟲) discards the view's routes with its
+positions — they describe the arrangement being discarded. A wire gesture is
+one step of the layout history (`Ctrl+Z` / `Ctrl+Y`, shared with the moves and
+the annotations), and so is a reset; an undone ⟲ brings the routes back with
+the positions. A step holds the routes of the edges ITS gesture changed, as a
+patch — never the view's whole set, which would write back over a route another
+surface added since. The first wire gesture on an un-arranged view pins it (the D21
+total snapshot), like any gesture that fixes a place.
+
+**Known limits.** A component renamed in the verification view gets new edge
+ids: its wires go back to automatic and the old entries stay inert (a
+composition's connection is named by its two endpoints, `e:conn:<from>-><to>`,
+so removing another connection does not move its route). On a trunk shared by
+edges with NO pin in common (two drivers and two sinks) each segment follows
+its own edge's pin, and moving one block can split the trunk. The suspended
+state is shown on the wire (tooltip, context menu), not in the sidebar
+inspector, which has no geometry; the inspector's "Reset route" exists in the
+schematic views only (the verification view has no Net section — context menu
+and palette there). There are no visible handles — the cursor is the
+affordance.
 
 ## Randare
 
@@ -549,6 +711,7 @@ multiplu de 8, deci pinii rămân pe grilă —, lățimi și
 ELK), astfel încât snap-ul colțului stânga-sus pune automat toate punctele de
 conexiune pe grilă: pin aliniat cu pin = fir perfect drept. Consecință: pinii
 stau în ordinea declarației din modul (norma din schematics); reordonarea vine
-din override-urile de nivel 2. Reevaluarea către JointJS se face
-doar dacă rutarea interactivă a muchiilor devine cerință reală (jurnalul
-deciziilor, doc. 06).
+din override-urile de nivel 2. Interactive routing of the edges did become a
+requirement (Nov 2026) and was built on our own router and SVG (level 3 above,
+D27): the re-evaluation towards JointJS that this paragraph used to reserve was
+not needed.

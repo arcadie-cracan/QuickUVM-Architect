@@ -703,6 +703,9 @@ export function activate(context: vscode.ExtensionContext): void {
         case "relay/netRender":
           DiagramPanel.current?.postRelay({ v: 1, type: "relay/netRender", net: m.net });
           break;
+        case "relay/resetRoute":
+          DiagramPanel.current?.postRelay({ v: 1, type: "relay/resetRoute", net: m.net });
+          break;
         case "relay/selectPins":
           DiagramPanel.current?.postRelay({
             v: 1, type: "relay/selectPins", names: m.names,
@@ -836,12 +839,13 @@ export function activate(context: vscode.ExtensionContext): void {
       positionsSnapshotted: (v, nodes) => layout.positionsSnapshotted(v, nodes),
       foldToggled: (v, f, c) => layout.foldToggled(v, f, c),
       nodeFlipped: (v, n, fh, fv) => layout.nodeFlipped(v, n, fh, fv),
-      relayout: (v) => layout.relayout(v),
+      relayout: (v) => layout.relayout(v, PANEL_ORIGIN),
       netRender: (v, n, r) => layout.netRender(v, n, r),
       nodeCollapsed: (v, n, c) => layout.nodeCollapsed(v, n, c),
       viewPins: (v, h) => layout.viewPins(v, h),
       annotationsSet: (v, a) => layout.annotationsSet(v, a, PANEL_ORIGIN), // docs/08 R21
     filtersSet: (v, f) => layout.filtersSet(v, f, PANEL_ORIGIN), // docs/08 R23
+      edgeRoutes: (v, e) => layout.edgeRoutes(v, e, PANEL_ORIGIN), // docs/04 level 3
     },
     onTbFocus: (focus, select) => {
       // the webview navigated across levels (drill/breadcrumb): the host keeps
