@@ -126,6 +126,37 @@ export function decosFromFindings(
           ],
         });
         break;
+      case "reset-undriven": {
+        // the DUT's reset pin (RTL) and the Env box (TB root: the bench as a whole
+        // does not elaborate) — the repair is the SAME gesture as the inspector's
+        // "Driven by: the testbench top" row (`editReset set external true`)
+        // `repair: clear` — the top cannot be the answer (the DUT has no such
+        // port, or an agent drives the reset through `reset_port`): `dut.reset: ''`
+        const clear = f.params.repair === "clear";
+        const msg = text(
+          clear
+            ? f.params.why === "reset-port"
+              ? `dut.reset names "${port}", which nobody drives — an agent drives the reset through reset_port, and the generated tb_top would reference a signal that does not exist`
+              : `dut.reset names "${port}", which is not a port of the DUT and which nobody drives — the generated tb_top would reference a signal that does not exist`
+            : `reset "${port}" is driven by nobody: no agent declares it and reset.external is not true — the generated tb_top would reference a signal that does not exist`
+        );
+        const fixes: StatusFix[] = [
+          clear
+            ? {
+                label: `Declare no reset port (dut.reset: '')`,
+                action: "editReset",
+                args: { op: "clear" },
+              }
+            : {
+                label: `Let the testbench top drive "${port}" (reset: {external: true})`,
+                action: "editReset",
+                args: { op: "set", name: port, field: "external", value: "true" },
+              },
+        ];
+        out.push({ scope: "port", port, severity: f.severity, message: msg, fixes });
+        out.push({ scope: "env", severity: f.severity, message: msg, fixes });
+        break;
+      }
     }
   }
   return out;
@@ -190,12 +221,14 @@ export function statusIdsRtl(
     if (d.scope !== "port") {
       continue;
     }
+    // the repairs ride along (Nov 2026): the RTL view is where "Set as DUT"
+    // leaves the user, so the pin's badge must offer what the TB badge offers
     if (ctx.viewModule === ctx.dut) {
-      addTo(out, `<port>.${d.port}`, d.severity, d.message);
+      addTo(out, `<port>.${d.port}`, d.severity, d.message, d.fixes);
     }
     for (const n of ctx.nodes) {
       if (n.module === ctx.dut) {
-        addTo(out, `${n.id}.${d.port}`, d.severity, d.message);
+        addTo(out, `${n.id}.${d.port}`, d.severity, d.message, d.fixes);
       }
     }
   }
