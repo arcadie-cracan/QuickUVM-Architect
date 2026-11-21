@@ -10,7 +10,7 @@ import { PreviewProvider } from "./previewdiff";
 import { proposalsFor } from "./proposals";
 import type { ProposalApply } from "./protocol";
 import { Backend } from "./backend";
-import { ConfigService, onGestureApplied, WidthFixProvider } from "./config";
+import { ConfigFixProvider, ConfigService, onGestureApplied } from "./config";
 import { postToConfigEditors } from "./customeditor";
 import { YamlLink } from "./yamllink";
 import { elementAtOffset, elementRange, entryText } from "./yamlmap";
@@ -132,8 +132,8 @@ export function activate(context: vscode.ExtensionContext): void {
     vTreeView,
     vscode.languages.registerCodeActionsProvider(
       { scheme: "file", pattern: "**/*.{yaml,yml}" },
-      new WidthFixProvider(),
-      WidthFixProvider.metadata
+      new ConfigFixProvider(),
+      ConfigFixProvider.metadata
     ),
     // slice 4 (D22): the TB diagram as the default editor of `*.quickuvm.yaml`, with
     // text fallback (reopenWith). The layout reuses the common sidecar,
@@ -1250,6 +1250,17 @@ export function activate(context: vscode.ExtensionContext): void {
       "quickuvm.fixPortWidth",
       (agent: string, port: string, width: number) => {
         void actions.fixPortWidth(agent, port, width);
+      }
+    ),
+    // the YAML quick-fix of the `reset-undriven` finding: the same gesture as the
+    // diagram's badge fix and the inspector's "Driven by" row. Internal (invoked
+    // by the CodeAction only, like fixPortWidth) — not contributed to the palette.
+    vscode.commands.registerCommand(
+      "quickuvm.fixResetUndriven",
+      (port: string, repair?: string) => {
+        void (repair === "clear"
+          ? actions.editReset("clear", {})
+          : actions.editReset("set", { name: port, field: "external", value: "true" }));
       }
     ),
 

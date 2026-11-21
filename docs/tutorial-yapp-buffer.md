@@ -55,19 +55,30 @@ Hierarchy** și **Properties**.
 
 ---
 
-## 1. Deschide designul și setează DUT-ul
+## 1. Open the design and set the DUT
 
-1. În **Design Hierarchy** apare rădăcina **„top module"** și, sub ea,
-   `yapp_buffer`. Clic pe `yapp_buffer` → se deschide **schema/simbolul** lui
-   (o cutie cu toți pinii pe laturi).
-2. În panoul **Properties** din bara laterală, la secțiunea de configurare, apasă
-   **„Set as DUT"**. Extensia:
-   - detectează euristic ceasul (`clk`) și reset-ul (`rst_n`, activ-jos — sufixul
-     `_n`), pe care le confirmi;
-   - creează un fișier `yapp_buffer.quickuvm.yaml` lângă design.
+1. **Design Hierarchy** shows the **"top module"** root and, under it,
+   `yapp_buffer`. Click `yapp_buffer` → its **schematic/symbol** opens (a box
+   with all the pins on its sides).
+2. In the **Properties** panel of the side bar, in the configuration section,
+   press **"Set as DUT"**. The extension:
+   - proposes the clock (`clk`) and the reset (`rst_n`, active-low — the `_n`
+     suffix) heuristically, for you to confirm;
+   - creates a `yapp_buffer.quickuvm.yaml` file next to the design.
 
-   Overlay-ul se aprinde: pinii nemapați (toți, deocamdată) sunt marcați, iar
-   `clk`/`rst_n` primesc rolul de ceas/reset.
+   The overlay lights up: the unmapped pins (all of them, for now) are marked, and
+   `clk`/`rst_n` take the clock/reset role.
+
+   > **Who drives the reset.** The reset pin is never part of an agent, so the
+   > extension writes `reset: {external: true}`: the generated `tb_top.sv`
+   > declares `rst_n`, holds it asserted for 5 clocks, releases it, and passes it
+   > into every interface (drivers and monitors wait for the release). There is
+   > no checkbox for it — the other answer (`external` off, no agent declaring
+   > the port) is a bench that generates cleanly and then **fails to elaborate**:
+   > `tb_top` connects the DUT to `cmd_if_inst.rst_n`, a signal `cmd_if` does not
+   > have. That is exactly what this tutorial produced until Nov 2026; a config
+   > from back then now shows the `reset-undriven` error, with the repair on the
+   > badge and in the Problems panel.
 
 ---
 
@@ -176,12 +187,12 @@ Fișiere-cheie așteptate:
 
 ---
 
-## 9. Verifică rezultatul
+## 9. Check the result
 
-- **YAML lizibil**: deschide `yapp_buffer.quickuvm.yaml` ca text — trebuie să
-  arate ca mai jos, curat și editabil de mână.
-- **`generate` curat**: fără erori în panoul **Problems** sau în canalul de
-  ieșire **QuickUVM Architect**.
+- **Readable YAML**: open `yapp_buffer.quickuvm.yaml` as text — it must look like
+  the listing below, clean and editable by hand.
+- **A clean `generate`**: no errors in the **Problems** panel or in the
+  **QuickUVM Architect** output channel.
 
 ```yaml
 # Configuratie QuickUVM — creata de QuickUVM Architect, editabila si manual.
@@ -199,6 +210,8 @@ dut:
   name: yapp_buffer
   clock: clk
   reset: rst_n
+reset:
+  external: true
 agents:
   - name: cmd
     interface: cmd_if
@@ -221,18 +234,30 @@ agents:
         - { name: out_addr, width: 2, randomize: false }
         - { name: out_valid, randomize: false }
 analysis:
-  coverage: [ cmd ]
   scoreboards:
     - { name: pkt_sb, source: cmd, monitor: rsp, match: out_of_order, match_key: out_addr }
+  coverage: [ cmd ]
 ```
 
-> Detalii care confirmă că YAML-ul e cel real (nu unul idealizat):
-> - porturile de 1 bit apar fără `width` (implicitul QuickUVM e 1), deci
->   `in_valid`/`in_ready`/`out_ready`/`out_valid` nu au `width`;
-> - lipsa lui `reset_active_low` **înseamnă activ-jos** (implicitul QuickUVM); se
->   scrie `reset_active_low: false` doar la un reset activ-sus;
-> - porturile pe care agentul le **observă** (ieșirile DUT-ului) primesc
->   `randomize: false` — nu sunt stimul.
+> Details that confirm this is the real YAML, not an idealised one — the listing
+> is compared byte for byte with what the mutations write, in `npm run test:e2e`
+> (scenario 15), which also generates it and checks the reset wiring:
+> - 1-bit ports carry no `width` (QuickUVM's default is 1), so
+>   `in_valid`/`in_ready`/`out_ready`/`out_valid` have none;
+> - the top-level `reset:` block holds **who drives the reset and its polarity**
+>   (quick-uvm >= 1.0 — the old `dut.reset_active_low` / `dut.external_reset`
+>   keys are rejected). `external: true` = the testbench top generates the
+>   reset (see step 1). `active_low` is absent because active-low is QuickUVM's
+>   default; an active-high reset gets `active_low: false` next to it;
+> - the ports an agent **samples** (the DUT's outputs) get `randomize: false` —
+>   they are not stimulus.
+>
+> **Compiling it.** "Generates cleanly" is not "elaborates": the extension cannot
+> run a simulator. After generating, compile `tb/` with yours (`tb/run.f` lists
+> the files; replace the generated stub `tb/yapp_buffer.sv` with the real
+> `yapp_buffer.sv`) — the reset connection to look for in `tb/tb_top.sv` is
+> `.rst_n(cmd_if_inst.rst_n)` with `cmd_if` declared as
+> `interface cmd_if (input clk, input rst_n);`.
 
 ---
 

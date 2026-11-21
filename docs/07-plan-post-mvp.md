@@ -548,20 +548,27 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   Rămas pentru P4b: domenii de RESET (invariantul suplimentar `dut.reset` = numele
   unui domeniu declarat sub listă), `open_drain`/`pullup` pe inouts, tipuri de port
   bogate (enum/struct/packed_dims).
-- **P4b LIVRAT — domenii de reset.** Simetric cu ceasurile, plus două invariante pe
-  care ceasurile nu le au: sub LISTĂ `dut.reset` numește un DOMENIU declarat (nu un
-  port), iar poarta `clock:` a unui domeniu trebuie să numească un domeniu de ceas
-  declarat. Trei lucruri ieșite din construcție: (a) `external` există DOAR pe maparea
-  simplă — intrările din listă resping cheia, deci conversia unui reset extern e
-  REFUZATĂ în loc să piardă tăcut faptul că TB-ul nu conduce resetul; (b) redenumirea
-  unui domeniu **cascadează** peste `dut.reset` și peste agenții porniți de el
-  (dovedit prin mutație: fără cascadă, quick-uvm refuză); (c) un reset cu totul
-  implicit nu scrie niciun bloc `reset:`, deci prima abatere trebuie să-l CREEZE —
-  altfel rândurile de polaritate/externalitate ar fi aruncat pe un bench proaspăt.
-  Capcană prinsă de teste: defaultul e PER CÂMP (`active_low` implicit true,
-  `external` implicit false) — un singur test „falsy ⇒ default" ștergea exact
-  `active_low: false`, adică abaterea cerută.
-  Rămas pentru P4c: `open_drain`/`pullup` pe inouts și tipuri de port bogate
+- **P4b DELIVERED — reset domains.** Symmetric with the clocks, plus two invariants
+  the clocks do not have: under a LIST `dut.reset` names a declared DOMAIN (not a
+  port), and a domain's `clock:` gate must name a declared clock domain. Three
+  things that came out of building it: (a) `external` exists ONLY on the single
+  mapping — list entries reject the key. **Corrected Nov 2026 (D25)**: the
+  conversion of an external reset used to be REFUSED, on the reading that
+  `external` meant "the TB does not drive the reset". It means the opposite (the
+  testbench TOP drives it — docs/03, "Who drives the reset"), and a list is
+  always top-driven, so the conversion now simply drops the key; what is refused
+  instead is converting an AGENT-driven reset (quick-uvm rejects the agent port
+  that collides with the domain net), and collapsing a list restores
+  `external: true`; (b) renaming a domain **cascades** over `dut.reset` and over
+  the agents gated by it (proven by mutation: without the cascade, quick-uvm
+  refuses); (c) an all-default reset writes no `reset:` block at all, so the
+  first deviation has to CREATE it — otherwise the polarity/externality rows
+  would have thrown on a fresh bench (since D25 a bench with a reset port always
+  has the block: `external: true`).
+  A pitfall the tests caught: the default is PER FIELD (`active_low` defaults to
+  true, `external` to false) — a single "falsy ⇒ default" test deleted exactly
+  `active_low: false`, the deviation the user asked for.
+  Left for P4c: `open_drain`/`pullup` on inouts and the rich port types
   (enum/struct/packed_dims).
 - **P4c LIVRAT — adâncimea de porturi. P4 COMPLET.** Inspectorul de agent capătă un
   bloc „Ports" per port: `width` (rutat prin `setAgentPortWidth`, aceeași cale cu
