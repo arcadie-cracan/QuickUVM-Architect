@@ -355,7 +355,7 @@ export function createAgent(text: string, spec: AgentSpec): string {
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if (isMap(item) && item.get("name") === spec.name) {
-        throw new Error(`agentul „${spec.name}" exista deja in configuratie`);
+        throw new Error(`agent "${spec.name}" already exists in the configuration`);
       }
     }
   }
@@ -511,7 +511,7 @@ export function createSubenvs(text: string, specs: SubenvSpec[]): string {
   const seq = isSeq(existing) ? existing : (doc.createNode([]) as YAMLSeq);
   for (const spec of specs) {
     if (names.has(spec.name)) {
-      throw new Error(`subenv-ul „${spec.name}" exista deja in configuratie`);
+      throw new Error(`subenv "${spec.name}" already exists in the configuration`);
     }
     names.add(spec.name);
     const entry: Record<string, unknown> = {
@@ -607,7 +607,7 @@ export function setAgentActive(
       }
     }
   }
-  throw new Error(`agentul „${agentName}" nu exista in configuratie`);
+  throw new Error(`agent "${agentName}" does not exist in the configuration`);
 }
 
 /** Deletes a connection (by the from/to pair) from `connections`. Idempotent. */
@@ -651,7 +651,7 @@ export function addScoreboard(text: string, spec: ScoreboardSpec): string {
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if (isMap(item) && item.get("name") === spec.name) {
-        throw new Error(`scoreboard-ul „${spec.name}" exista deja in configuratie`);
+        throw new Error(`scoreboard "${spec.name}" already exists in the configuration`);
       }
     }
   }
@@ -764,7 +764,7 @@ export function addVirtualSequence(text: string, spec: VseqSpec): string {
     for (const item of existing.items) {
       if (isMap(item) && item.get("name") === spec.name) {
         throw new Error(
-          `secventa virtuala „${spec.name}" exista deja in configuratie`
+          `virtual sequence "${spec.name}" already exists in the configuration`
         );
       }
     }
@@ -1261,7 +1261,7 @@ export function setAgentField(
       return doc.toString(TO_STRING);
     }
   }
-  throw new Error(`agentul „${name}" nu exista in configuratie`);
+  throw new Error(`agent "${name}" does not exist in the configuration`);
 }
 
 // -------------------------------------- bench-level config (docs/07 line 3, P2)
@@ -1322,7 +1322,7 @@ const REGISTER_MODEL_REQUIRED: readonly RegisterModelField[] = [
 export function addRegisterModel(text: string, spec: RegisterModelSpec): string {
   const doc = parse(text);
   if (doc.getIn(["register_model"]) !== undefined) {
-    throw new Error("configuratia are deja un `register_model`");
+    throw new Error("the configuration already has a `register_model`");
   }
   doc.setIn(["register_model"], doc.createNode({
     package: spec.package,
@@ -1358,12 +1358,12 @@ export function setRegisterModelField(
     value === "" ||
     (Array.isArray(value) && value.length === 0);
   if (REGISTER_MODEL_REQUIRED.includes(field) && empty) {
-    throw new Error(`campul „${field}" al lui register_model este obligatoriu`);
+    throw new Error(`register_model's field "${field}" is required`);
   }
   const doc = parse(text);
   const rm = doc.getIn(["register_model"]);
   if (!isMap(rm)) {
-    throw new Error("configuratia nu are un `register_model`");
+    throw new Error("the configuration has no `register_model`");
   }
   const def = REGISTER_MODEL_DEFAULTS[field];
   const isDefault =
@@ -1436,7 +1436,7 @@ export function setRegressField(
   const doc = parse(text);
   const rg = doc.getIn(["regress"]);
   if (!isMap(rg)) {
-    throw new Error("configuratia nu are un `regress`");
+    throw new Error("the configuration has no `regress`");
   }
   if (value === undefined || value === "" || value === REGRESS_DEFAULTS[field]) {
     rg.delete(field);
@@ -1504,7 +1504,7 @@ export function setProjectField(
   value: string | number | undefined
 ): string {
   if (field === "name" && (value === undefined || value === "")) {
-    throw new Error("`project.name` este obligatoriu");
+    throw new Error("`project.name` is required");
   }
   const doc = parse(text);
   if (value === undefined || value === "") {
@@ -1531,7 +1531,7 @@ export function addTest(text: string, name: string): string {
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if (isMap(item) && item.get("name") === name) {
-        throw new Error(`testul „${name}" exista deja in configuratie`);
+        throw new Error(`test "${name}" already exists in the configuration`);
       }
     }
   }
@@ -1584,7 +1584,7 @@ export function setTestField(
   if (field === "seeds" && value !== undefined && value !== "") {
     if (doc.getIn(["regress"]) === undefined) {
       throw new Error(
-        "`seeds` cere un bloc `regress:` — este numarul de seed-uri per test din matricea de regresie"
+        "`seeds` needs a `regress:` block — it is the number of seeds per test in the regression matrix"
       );
     }
   }
@@ -1601,7 +1601,7 @@ export function setTestField(
       }
     }
   }
-  throw new Error(`testul „${name}" nu exista in configuratie`);
+  throw new Error(`test "${name}" does not exist in the configuration`);
 }
 
 // ------------------------------------- composition & VIP (docs/07 line 3, P5)
@@ -1628,7 +1628,7 @@ export function addVipAgent(text: string, name: string, manifest: string): strin
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if (isMap(item) && item.get("name") === name) {
-        throw new Error(`agentul „${name}" exista deja in configuratie`);
+        throw new Error(`agent "${name}" already exists in the configuration`);
       }
     }
   }
@@ -1670,7 +1670,7 @@ export function setSubenvNamespace(
       }
     }
   }
-  throw new Error(`subenv-ul „${subenv}" nu exista in configuratie`);
+  throw new Error(`subenv "${subenv}" does not exist in the configuration`);
 }
 
 // ---------------------------------------- agent port depth (docs/07 line 3, P4c)
@@ -1737,7 +1737,7 @@ export function setAgentPortField(
   const doc = parse(text);
   const found = findPort(doc, agent, port);
   if (!found) {
-    throw new Error(`portul „${port}" nu exista pe agentul „${agent}"`);
+    throw new Error(`port "${port}" does not exist on agent "${agent}"`);
   }
   const p = found.map;
   const empty =
@@ -1749,7 +1749,7 @@ export function setAgentPortField(
     if (value === true) {
       if ((p.get("width") ?? 1) !== 1) {
         throw new Error(
-          `portul „${port}" e open-drain doar pe 1 bit — per-bit pe un vector cere un generate loop, declara cate un port pe linie`
+          `port "${port}": open drain is 1-bit only — per-bit on a vector needs a generate loop; declare one port per line`
         );
       }
       p.set("open_drain", true);
@@ -1763,7 +1763,7 @@ export function setAgentPortField(
   if (field === "pullup") {
     if (value !== true && p.get("open_drain") === true) {
       throw new Error(
-        `portul „${port}" e open-drain: fara pullup linia pluteste in X cand toti elibereaza — pullup-ul nu e optional aici`
+        `port "${port}" is open-drain: without a pullup the line floats to X when every driver releases — the pullup is not optional here`
       );
     }
     if (value === true) {
@@ -1777,7 +1777,7 @@ export function setAgentPortField(
     for (const hand of ["packed_dims", "struct"] as const) {
       if (p.get(hand) !== undefined && !empty) {
         throw new Error(
-          `portul „${port}" are deja \`${hand}\` — enum/type/packed_dims/struct sunt exclusive; scoate-l intai din YAML`
+          `port "${port}" already has \`${hand}\` — enum/type/packed_dims/struct are mutually exclusive; remove it from the YAML first`
         );
       }
     }
@@ -1836,7 +1836,7 @@ export function addClockDomain(text: string, name: string): string {
   if (isSeq(clock)) {
     for (const d of clock.items) {
       if (isMap(d) && d.get("name") === name) {
-        throw new Error(`domeniul de ceas „${name}" exista deja`);
+        throw new Error(`clock domain "${name}" already exists`);
       }
     }
     const node = doc.createNode({ name }) as YAMLMap;
@@ -1855,7 +1855,7 @@ export function addClockDomain(text: string, name: string): string {
     }
   }
   if (first.name === name) {
-    throw new Error(`domeniul de ceas „${name}" exista deja`);
+    throw new Error(`clock domain "${name}" already exists`);
   }
   const seq = doc.createNode([first, { name }]) as YAMLSeq;
   for (const item of seq.items) {
@@ -1884,7 +1884,7 @@ export function removeClockDomain(text: string, name: string): string {
   }
   if (clock.items.length <= 1) {
     throw new Error(
-      `„${name}" este singurul domeniu de ceas — colapseaza la un ceas simplu in loc sa-l stergi`
+      `"${name}" is the only clock domain — collapse to a single clock instead of removing it`
     );
   }
   const users = (doc.getIn(["agents"]) as YAMLSeq | undefined)?.items?.filter(
@@ -1893,7 +1893,7 @@ export function removeClockDomain(text: string, name: string): string {
   if (users && users.length) {
     const who = users.map((a) => (a as YAMLMap).get("name")).join(", ");
     throw new Error(
-      `domeniul de ceas „${name}" e folosit de agentul/agenții ${who} — reasignează-i întâi`
+      `clock domain "${name}" is used by agent(s) ${who} — reassign them first`
     );
   }
   clock.delete(idx);
@@ -1916,17 +1916,17 @@ export function setClockDomainField(
       ? clock
       : undefined;
   if (!isMap(target)) {
-    throw new Error(`domeniul de ceas „${name}" nu exista`);
+    throw new Error(`clock domain "${name}" does not exist`);
   }
   // `name` is required on a list domain (QuickUVM keys by it); refuse emptying it
   if (field === "name") {
     if (value === undefined || value === "") {
-      throw new Error("numele domeniului de ceas este obligatoriu");
+      throw new Error("the clock domain's name is required");
     }
     if (isSeq(clock)) {
       for (const d of clock.items) {
         if (d !== target && isMap(d) && d.get("name") === value) {
-          throw new Error(`domeniul de ceas „${value}" exista deja`);
+          throw new Error(`clock domain "${value}" already exists`);
         }
       }
     }
@@ -1959,7 +1959,7 @@ export function collapseClocks(text: string): string {
     return text;
   }
   if (clock.items.length !== 1) {
-    throw new Error("colapsarea cere exact un domeniu de ceas");
+    throw new Error("collapsing needs exactly one clock domain");
   }
   const only = clock.items[0];
   if (!isMap(only)) {
@@ -2005,7 +2005,7 @@ export function addResetDomain(text: string, name: string): string {
   if (isSeq(reset)) {
     for (const d of reset.items) {
       if (isMap(d) && d.get("name") === name) {
-        throw new Error(`domeniul de reset „${name}" exista deja`);
+        throw new Error(`reset domain "${name}" already exists`);
       }
     }
     const node = doc.createNode({ name }) as YAMLMap;
@@ -2017,7 +2017,7 @@ export function addResetDomain(text: string, name: string): string {
   const firstName =
     typeof dutReset === "string" && dutReset ? dutReset : "rst_n";
   if (firstName === name) {
-    throw new Error(`domeniul de reset „${name}" exista deja`);
+    throw new Error(`reset domain "${name}" already exists`);
   }
   if (agentDeclaresPort(doc, firstName)) {
     throw new Error(
@@ -2090,12 +2090,12 @@ export function removeResetDomain(text: string, name: string): string {
   }
   if (reset.items.length <= 1) {
     throw new Error(
-      `„${name}" este singurul domeniu de reset — colapseaza la un reset simplu in loc sa-l stergi`
+      `"${name}" is the only reset domain — collapse to a single reset instead of removing it`
     );
   }
   if (doc.getIn(["dut", "reset"]) === name) {
     throw new Error(
-      `„${name}" e domeniul legat de portul de reset al DUT-ului (dut.reset) — leaga intai altul`
+      `"${name}" is the domain bound to the DUT's reset port (dut.reset) — bind another one first`
     );
   }
   const users = (doc.getIn(["agents"]) as YAMLSeq | undefined)?.items?.filter(
@@ -2104,7 +2104,7 @@ export function removeResetDomain(text: string, name: string): string {
   if (users && users.length) {
     const who = users.map((a) => (a as YAMLMap).get("name")).join(", ");
     throw new Error(
-      `domeniul de reset „${name}" e folosit de agentul/agenții ${who} — reasignează-i întâi`
+      `reset domain "${name}" is used by agent(s) ${who} — reassign them first`
     );
   }
   reset.delete(idx);
@@ -2140,16 +2140,16 @@ export function setResetDomainField(
       ? reset
       : undefined;
   if (!isMap(target)) {
-    throw new Error(`domeniul de reset „${name}" nu exista`);
+    throw new Error(`reset domain "${name}" does not exist`);
   }
   if (field === "name") {
     if (typeof value !== "string" || !value) {
-      throw new Error("numele domeniului de reset este obligatoriu");
+      throw new Error("the reset domain's name is required");
     }
     if (domains) {
       for (const d of domains.items) {
         if (d !== target && isMap(d) && d.get("name") === value) {
-          throw new Error(`domeniul de reset „${value}" exista deja`);
+          throw new Error(`reset domain "${value}" already exists`);
         }
       }
     }
@@ -2171,7 +2171,7 @@ export function setResetDomainField(
   if (field === "external" && isList) {
     // the LIST entry schema is {name, active_low, clock} — QuickUVM rejects `external`
     throw new Error(
-      "`external` exista doar pe resetul SIMPLU (maparea); intrarile din lista de domenii nu au cheia"
+      "`external` exists only on the SINGLE reset (the mapping); the entries of a domain list do not have the key"
     );
   }
   // the default is PER FIELD: active_low defaults to TRUE, external to FALSE — one
@@ -2246,7 +2246,7 @@ export function collapseResets(text: string): string {
     return text;
   }
   if (reset.items.length !== 1) {
-    throw new Error("colapsarea cere exact un domeniu de reset");
+    throw new Error("collapsing needs exactly one reset domain");
   }
   const only = reset.items[0];
   if (!isMap(only)) {
@@ -2307,7 +2307,7 @@ function richCoverage(doc: Document, agent: string): YAMLMap {
   const found = findCoverageEntry(doc, agent);
   const entry = found && found.seq.get(found.idx);
   if (!isMap(entry)) {
-    throw new Error(`agentul „${agent}" nu are un model de coverage bogat`);
+    throw new Error(`agent "${agent}" has no rich coverage model`);
   }
   return entry;
 }
@@ -2322,10 +2322,10 @@ export function upgradeCoverage(text: string, agent: string, field: string): str
   const doc = parse(text);
   const found = findCoverageEntry(doc, agent);
   if (!found) {
-    throw new Error(`agentul „${agent}" nu are o intrare de coverage`);
+    throw new Error(`agent "${agent}" has no coverage entry`);
   }
   if (isMap(found.seq.get(found.idx))) {
-    throw new Error(`agentul „${agent}" are deja un model de coverage bogat`);
+    throw new Error(`agent "${agent}" already has a rich coverage model`);
   }
   const node = doc.createNode({
     agent,
@@ -2356,7 +2356,7 @@ export function addCoverpoint(text: string, agent: string, field: string): strin
   const seq = isSeq(cps) ? cps : (doc.createNode([]) as YAMLSeq);
   for (const cp of seq.items) {
     if (isMap(cp) && cp.get("field") === field) {
-      throw new Error(`campul „${field}" are deja un coverpoint`);
+      throw new Error(`field "${field}" already has a coverpoint`);
     }
   }
   seq.add(doc.createNode({ field, bins: [] }));
@@ -2385,7 +2385,7 @@ export function removeCoverpoint(text: string, agent: string, field: string): st
   }
   if (cps.items.length === 1) {
     throw new Error(
-      `„${field}" este singurul coverpoint — un model bogat cere cel putin unul (treci intrarea la forma simpla)`
+      `"${field}" is the only coverpoint — a rich model needs at least one (switch the entry to the simple form)`
     );
   }
   cps.delete(idx);
@@ -2422,11 +2422,11 @@ export function setCoverageBin(
   const entry = richCoverage(doc, agent);
   const cps = entry.get("coverpoints");
   if (!isSeq(cps)) {
-    throw new Error(`agentul „${agent}" nu are coverpoints`);
+    throw new Error(`agent "${agent}" has no coverpoints`);
   }
   const cp = cps.items.find((c) => isMap(c) && c.get("field") === field);
   if (!isMap(cp)) {
-    throw new Error(`campul „${field}" nu are un coverpoint`);
+    throw new Error(`field "${field}" has no coverpoint`);
   }
   const bins = cp.get("bins");
   const seq = isSeq(bins) ? bins : (doc.createNode([]) as YAMLSeq);
@@ -2541,7 +2541,7 @@ export function setCoverageGoal(
     entry.delete("goal");
   } else {
     if (!Number.isInteger(goal) || goal < 1 || goal > 100) {
-      throw new Error("`goal` este un procent intre 1 si 100");
+      throw new Error("`goal` is a percentage between 1 and 100");
     }
     entry.set("goal", goal);
   }
@@ -2573,7 +2573,7 @@ export function setScoreboardField(
   // `source` is mandatory (A2): emptying it would produce an invalid scoreboard —
   // it is refused, as with the other configuration errors (the YAML is not corrupted)
   if (field === "source" && (value === undefined || value === "")) {
-    throw new Error(`source-ul scoreboard-ului „${name}" este obligatoriu`);
+    throw new Error(`the source of scoreboard "${name}" is required`);
   }
   const doc = parse(text);
   const seq = doc.getIn(["analysis", "scoreboards"]);
@@ -2606,11 +2606,11 @@ export function setScoreboardField(
         // scoreboard can absorb — QuickUVM refuses it with a monitor present
         if (item.get("monitor")) {
           throw new Error(
-            `scoreboard-ul „${name}": \`window\` cere un scoreboard cu UN SINGUR flux (fara \`monitor\`)`
+            `scoreboard "${name}": \`window\` needs a SINGLE-stream scoreboard (no \`monitor\`)`
           );
         }
         if (field === "window.length" && !isMap(win)) {
-          throw new Error(`scoreboard-ul „${name}" nu are un \`window\` de configurat`);
+          throw new Error(`scoreboard "${name}" has no \`window\` to configure`);
         }
         if (isMap(win)) {
           if (empty) {
@@ -2649,7 +2649,7 @@ export function setScoreboardField(
       return doc.toString(TO_STRING);
     }
   }
-  throw new Error(`scoreboard-ul „${name}" nu exista in configuratie`);
+  throw new Error(`scoreboard "${name}" does not exist in the configuration`);
 }
 
 export interface ProbeSpec {
@@ -2688,7 +2688,7 @@ export function addProbe(text: string, spec: ProbeSpec): string {
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if (isMap(item) && item.get("name") === spec.name) {
-        throw new Error(`proba „${spec.name}" exista deja in configuratie`);
+        throw new Error(`probe "${spec.name}" already exists in the configuration`);
       }
     }
   }
@@ -2814,7 +2814,7 @@ export function setAgentPortWidth(
   const doc = parse(text);
   const agents = doc.getIn(["agents"]);
   if (!isSeq(agents)) {
-    throw new Error("configuratia nu are agenti");
+    throw new Error("the configuration has no agents");
   }
   for (const item of agents.items) {
     if (!isMap(item) || item.get("name") !== agentName) {
@@ -2838,7 +2838,7 @@ export function setAgentPortWidth(
     }
   }
   throw new Error(
-    `portul „${portName}" al agentului „${agentName}" nu exista in YAML`
+    `port "${portName}" of agent "${agentName}" does not exist in the YAML`
   );
 }
 
