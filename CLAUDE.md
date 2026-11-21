@@ -1211,6 +1211,7 @@ means validated against the generator — a simulator compile is the user's. The
 tutorial bench WAS then compiled and simulated (Xcelium 25.09-s002, 21 Nov
 2026): it elaborates and, with the stub-predictor scoreboard removed, runs to
 `$finish` with 0 errors; the old shape reproduces `*E,CUVUNF`. The table, and
-the generator-side fix proposed as arcadie-cracan/QuickUVM#119 (branch
-`fix/undriven-reset`), are in `docs/upstream-quickuvm-reset-undriven.md`.
+the generator-side fix (arcadie-cracan/QuickUVM#119, merged into its `main` on
+21 Nov 2026, in no release yet — the installed 1.1.0 does not have it), are in
+`docs/upstream-quickuvm-reset-undriven.md`.
 Planul complet: `docs/06-plan-mvp.md`.

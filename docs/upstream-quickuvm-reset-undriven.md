@@ -7,8 +7,10 @@ yields a bench that cannot run because of how the reset is (not) connected.
 # 1. A dangling reset reference
 
 *Written from QuickUVM Architect's side; observed on quick-uvm 1.1.0, Nov 2026.
-The fix described below is proposed upstream as
-[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119).*
+The fix described below was merged upstream on 21 Nov 2026 as
+[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119)
+(QuickUVM `main` at `89b02a0`). It is in no release yet: quick-uvm 1.1.0, the
+version this note was probed on, does not have it.*
 
 ## Summary
 
@@ -189,9 +191,12 @@ generate the reset; the environment/DUT drives it") until the generated code
 was read. It means *external to the agents*: `true` is the shape in which
 `tb_top` **does** generate the reset.
 
-## The prototype
+## The fix upstream
 
-[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119), branch `fix/undriven-reset`:
+[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119), merged into `main` as `89b02a0`
+("the prototype" in the tables and the list below: they were measured on its
+branch, `fix/undriven-reset`, before the merge; the merge changed nothing in
+the tree):
 `quick_uvm/models.py` (`_infer_reset_driver`, `undriven_reset`, the `reset`
 entry of `resolved()`), `quick_uvm/templates/selftest_top.sv.j2`,
 `quick_uvm/svcheck.py` (`find_dangling_dut_connections` — the static gate that
