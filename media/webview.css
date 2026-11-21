@@ -2080,3 +2080,61 @@ text.split-sign {
 .filterbox .fbtn:disabled { opacity: 0.3; cursor: default; }
 .filterbox .ffoot { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px 0; }
 .filterbox :focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; }
+
+/* --- simulation results on the blocks (docs/08 R25) -------------------------
+   Read from the regression's files, never run from here: an error count at the
+   bottom-right corner, a coverage figure at the bottom-left, the block's
+   outline in the severity's colour. Stale results (the configuration changed
+   after the runs) are dimmed and dashed, and tint no outline. */
+.result-badge rect {
+  fill: var(--vscode-editor-background);
+  stroke: var(--vscode-descriptionForeground);
+  stroke-width: 1;
+}
+.result-badge text {
+  font-family: var(--vscode-editor-font-family);
+  font-size: 10px;
+  fill: var(--vscode-foreground);
+  pointer-events: none;
+}
+.result-badge.res-count { cursor: pointer; }
+.result-badge.res-count rect { pointer-events: all; }
+.result-badge.sev-error rect,
+.result-badge.sev-fatal rect {
+  fill: color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 22%, var(--vscode-editor-background));
+  stroke: var(--vscode-editorError-foreground, #f14c4c);
+}
+.result-badge.sev-fatal rect { stroke-width: 2; }
+.result-badge.sev-warning rect {
+  fill: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 22%, var(--vscode-editor-background));
+  stroke: var(--vscode-editorWarning-foreground, #cca700);
+}
+svg:not(.res-stale) .tbnode.res-error:not(.selected) > .tb-box,
+svg:not(.res-stale) .tbnode.res-fatal:not(.selected) > .tb-box {
+  stroke: var(--vscode-editorError-foreground, #f14c4c);
+}
+svg:not(.res-stale) .tbnode.res-warning:not(.selected) > .tb-box {
+  stroke: var(--vscode-editorWarning-foreground, #cca700);
+}
+svg.res-stale .result-badge { opacity: 0.55; }
+svg.res-stale .result-badge rect { stroke-dasharray: 3 2; }
+.results-chip {
+  margin-right: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--vscode-descriptionForeground);
+  border-radius: 9px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.results-chip.tone-pass {
+  border-color: var(--vscode-testing-iconPassed, #73c991);
+  background: color-mix(in srgb, var(--vscode-testing-iconPassed, #73c991) 18%, transparent);
+}
+.results-chip.tone-fail {
+  border-color: var(--vscode-editorError-foreground, #f14c4c);
+  background: color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 18%, transparent);
+}
+.results-chip.stale { border-style: dashed; opacity: 0.8; }

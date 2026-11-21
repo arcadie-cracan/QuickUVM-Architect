@@ -1,6 +1,7 @@
 // The webview's view-model, shared by the diagram (main.ts) and the inspector
 // (inspector-view.ts) so both can be rendered from the same messages.
 
+import type { ResultsSnapshot } from "../results";
 import type { ProjectModel } from "../model";
 import type { OverlayConfig, ProposalSet, StatusDeco, ViewMode } from "../protocol";
 import type { QuvmConfig } from "../quickuvm";
@@ -27,6 +28,9 @@ export interface State {
   /** docs/08 R3 — the quick-uvm status decorations (status/decorations), so the
    *  Properties panel can list a selected component's problems and repairs */
   statusDecos: StatusDeco[];
+  /** docs/08 R25 — the last regression's results (`results/full`), by diagram
+   *  id; null = nothing to show */
+  results: { snapshot: ResultsSnapshot; at: number | null; stale: boolean; unparsed: number } | null;
   /** the current level of the verification (TB) view (D24): "", "env", "agent:X" */
   tbFocus: string;
   /** docs/08 R12 — the designer-assistance proposals of the view the host shows

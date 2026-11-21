@@ -1,0 +1,264 @@
+xrun(64): 25.09-s002: (c) Copyright 1995-2025 Cadence Design Systems, Inc.
+TOOL:	xrun(64)	25.09-s002: Started on Nov 21, 2026 at 10:05:05 EET
+xrun
+	-R
+	-xmlibdirname /work/bench/tb/out/xcelium.d
+	+UVM_TESTNAME=smoke_test
+	-svseed 1
+	-covworkdir /work/bench/tb/out/cov_work
+	-covscope yapp_buffer
+	-covoverwrite
+	-covtest smoke_test.1
+	-l sim.log
+Loading snapshot worklib.tb_top:sv .................... Done
+SVSEED set from command line: 1
+xcelium> source /tools/XCELIUM/tools/xcelium/files/xmsimrc
+xcelium> source /tools/XCELIUM/tools/methodology/UVM/CDNS-1.2/additions/sv/files/tcl/uvm_sim.tcl
+xcelium> run
+UVM_INFO /tools/XCELIUM/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_root.svh(412) @ 0: reporter [UVM/RELNOTES] 
+----------------------------------------------------------------
+CDNS-UVM-1.2 (25.09-s002)
+(C) 2007-2014 Mentor Graphics Corporation
+(C) 2007-2014 Cadence Design Systems, Inc.
+(C) 2006-2014 Synopsys, Inc.
+(C) 2011-2013 Cypress Semiconductor Corp.
+(C) 2013-2014 NVIDIA Corporation
+----------------------------------------------------------------
+
+  ***********       IMPORTANT RELEASE NOTES         ************
+
+  You are using a version of the UVM library that has been compiled
+  with `UVM_NO_DEPRECATED undefined.
+  See http://www.eda.org/svdb/view.php?id=3313 for more details.
+
+  You are using a version of the UVM library that has been compiled
+  with `UVM_OBJECT_DO_NOT_NEED_CONSTRUCTOR undefined.
+  See http://www.eda.org/svdb/view.php?id=3770 for more details.
+
+      (Specify +UVM_NO_RELNOTES to turn off this notice)
+
+UVM_INFO @ 0: reporter [RNTST] Running test smoke_test...
+SDI/Verilog Transaction Recording Facility Version 25.09-s002
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 65: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 75: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 85: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 95: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 105: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=53  out_addr=01  out_valid=1    Actual:out_data=52  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 115: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=ae  out_addr=01  out_valid=1    Actual:out_data=52  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 125: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 135: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=eb  out_addr=01  out_valid=1    Actual:out_data=cc  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 145: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=cd  out_addr=01  out_valid=1    Actual:out_data=cc  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 155: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 165: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 175: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 185: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 195: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 205: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=d4  out_addr=01  out_valid=1    Actual:out_data=cc  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 215: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=0  out_addr=11  out_valid=1    Actual:out_data=3f  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 225: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=0  out_addr=11  out_valid=1    Actual:out_data=3f  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 235: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=dd  out_addr=11  out_valid=1    Actual:out_data=3f  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 245: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=40  out_addr=11  out_valid=1    Actual:out_data=3f  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 255: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=f3  out_addr=01  out_valid=1    Actual:out_data=38  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 265: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=62  out_addr=01  out_valid=1    Actual:out_data=38  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 275: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=26  out_addr=00  out_valid=1    Actual:out_data=c4  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 285: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=1a  out_addr=00  out_valid=1    Actual:out_data=c4  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 295: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=1c  out_addr=00  out_valid=1    Actual:out_data=c4  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 305: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=c5  out_addr=00  out_valid=1    Actual:out_data=c4  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 315: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=36  out_addr=10  out_valid=1    Actual:out_data=fc  out_addr=10  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 325: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=85  out_addr=10  out_valid=1    Actual:out_data=fc  out_addr=10  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 335: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=37  out_addr=01  out_valid=1    Actual:out_data=a7  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 345: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=39  out_addr=01  out_valid=1    Actual:out_data=a7  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 355: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=a8  out_addr=01  out_valid=1    Actual:out_data=a7  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 365: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=42  out_addr=01  out_valid=1    Actual:out_data=a7  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 375: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=9  out_addr=00  out_valid=1    Actual:out_data=1e  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 385: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=1f  out_addr=00  out_valid=1    Actual:out_data=1e  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 395: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=6e  out_addr=00  out_valid=1    Actual:out_data=1e  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 405: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=68  out_addr=11  out_valid=1    Actual:out_data=93  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 415: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=eb  out_addr=11  out_valid=1    Actual:out_data=93  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 425: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=3c  out_addr=11  out_valid=1    Actual:out_data=93  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 435: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=fd  out_addr=11  out_valid=1    Actual:out_data=93  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 445: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=94  out_addr=11  out_valid=1    Actual:out_data=93  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 455: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=3 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 465: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=3 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 475: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=45  out_addr=11  out_valid=1    Actual:out_data=93  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 485: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=ea  out_addr=00  out_valid=1    Actual:out_data=3e  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 495: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=6b  out_addr=00  out_valid=1    Actual:out_data=3e  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 505: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=a0  out_addr=00  out_valid=1    Actual:out_data=3e  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 515: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=2b  out_addr=00  out_valid=1    Actual:out_data=3e  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 525: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=3f  out_addr=00  out_valid=1    Actual:out_data=3e  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 535: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 545: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=6f  out_addr=01  out_valid=1    Actual:out_data=6d  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 555: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=8b  out_addr=01  out_valid=1    Actual:out_data=6d  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 565: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=8b  out_addr=11  out_valid=1    Actual:out_data=3d  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 575: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=4b  out_addr=11  out_valid=1    Actual:out_data=3d  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 585: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=3e  out_addr=11  out_valid=1    Actual:out_data=3d  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 595: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=c2  out_addr=11  out_valid=1    Actual:out_data=3d  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 605: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=3 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 615: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=6e  out_addr=01  out_valid=1    Actual:out_data=5c  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 625: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=5d  out_addr=01  out_valid=1    Actual:out_data=5c  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 635: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 645: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 655: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=8f  out_addr=01  out_valid=1    Actual:out_data=5c  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 665: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=e1  out_addr=10  out_valid=1    Actual:out_data=e8  out_addr=10  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 675: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=ba  out_addr=10  out_valid=1    Actual:out_data=e8  out_addr=10  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 685: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=4f  out_addr=10  out_valid=1    Actual:out_data=e8  out_addr=10  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 695: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=bf  out_addr=00  out_valid=1    Actual:out_data=c2  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 705: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=eb  out_addr=00  out_valid=1    Actual:out_data=c2  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 715: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=f7  out_addr=00  out_valid=1    Actual:out_data=c2  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 725: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=c3  out_addr=00  out_valid=1    Actual:out_data=c2  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 735: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=e1  out_addr=01  out_valid=1    Actual:out_data=b4  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 745: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=b5  out_addr=01  out_valid=1    Actual:out_data=b4  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 755: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=62  out_addr=01  out_valid=1    Actual:out_data=b4  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 765: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 775: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 785: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 795: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 805: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=6f  out_addr=01  out_valid=1    Actual:out_data=6e  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 815: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 825: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 835: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=2f  out_addr=01  out_valid=1    Actual:out_data=2e  out_addr=01  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 845: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=75  out_addr=01  out_valid=1    Actual:out_data=2e  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 855: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 865: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=87  out_addr=01  out_valid=1    Actual:out_data=2e  out_addr=01  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 875: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 885: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=1 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 895: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=17  out_addr=00  out_valid=1    Actual:out_data=cc  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 905: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=4f  out_addr=00  out_valid=1    Actual:out_data=cc  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 915: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=cd  out_addr=00  out_valid=1    Actual:out_data=cc  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 925: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=ff  out_addr=00  out_valid=1    Actual:out_data=cc  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 935: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=a7  out_addr=11  out_valid=1    Actual:out_data=e5  out_addr=11  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 945: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=a6  out_addr=11  out_valid=1    Actual:out_data=e5  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 955: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=5a  out_addr=11  out_valid=1    Actual:out_data=e5  out_addr=11  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 965: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 975: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=16  out_addr=00  out_valid=1    Actual:out_data=15  out_addr=00  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 985: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=d5  out_addr=00  out_valid=1    Actual:out_data=15  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 995: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 1005: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 1015: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 1025: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(84) @ 1035: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] response with out_addr=0 has no pending request
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 1045: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=a  out_addr=00  out_valid=1    Actual:out_data=15  out_addr=00  out_valid=0  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 1055: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=6  out_addr=10  out_valid=1    Actual:out_data=30  out_addr=10  out_valid=1  
+
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(135) @ 1065: uvm_test_top.e.pkt_sb.cmp [ERROR] Expected:out_ready=0    out_data=fd  out_addr=10  out_valid=1    Actual:out_data=30  out_addr=10  out_valid=0  
+
+UVM_INFO /tools/XCELIUM/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_objection.svh(1271) @ 1065: reporter [TEST_DONE] 'run' phase is ready to proceed to the 'extract' phase
+UVM_WARNING ../tb/yapp_buffer_comparator.svh(101) @ 1065: uvm_test_top.e.pkt_sb.cmp [SB_LEFTOVER] 31 transaction(s) never matched by tag (test ended early?)
+UVM_ERROR ../tb/yapp_buffer_comparator.svh(106) @ 1065: uvm_test_top.e.pkt_sb.cmp [FAILED] 
+
+
+*** TEST FAILED - Vectors: 101 Ran / 0 Passed / 101 Failed ***
+
+UVM_INFO /tools/XCELIUM/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_report_catcher.svh(705) @ 1065: reporter [UVM/REPORT/CATCHER] 
+--- UVM Report catcher Summary ---
+
+
+Number of demoted UVM_FATAL reports  :    0
+Number of demoted UVM_ERROR reports  :    0
+Number of demoted UVM_WARNING reports:    0
+Number of caught UVM_FATAL reports   :    0
+Number of caught UVM_ERROR reports   :    0
+Number of caught UVM_WARNING reports :    0
+
+UVM_INFO /tools/XCELIUM/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_report_server.svh(851) @ 1065: reporter [UVM/REPORT/SERVER] 
+--- UVM Report Summary ---
+
+** Report counts by severity
+UVM_INFO :    4
+UVM_WARNING :    1
+UVM_ERROR :  102
+UVM_FATAL :    0
+** Report counts by id
+[ERROR]    70
+[FAILED]     1
+[RNTST]     1
+[SB_LEFTOVER]     1
+[SB_NOEXP]    31
+[TEST_DONE]     1
+[UVM/RELNOTES]     1
+[UVM/REPORT/CATCHER]     1
+
+Simulation complete via $finish(1) at time 1065 NS + 73
+/tools/XCELIUM/tools/methodology/UVM/CDNS-1.2/sv/src/base/uvm_root.svh:543     $finish;
+xcelium> exit
+xmsim: *N,COVCGN: Coverage configuration file command "set_covergroup -new_instance_reporting" can be specified to improve the scoping and naming of covergroup instances. It may be noted that subsequent merging of a coverage database saved with this command and a coverage database saved without this command is not allowed.
+xmsim: *W,CGDEFN: Default name "worklib.uvm_pkg::.cg" will be generated for covergroup instance "cg" as the name of the covergroup instance is not specified explicitly: /work/bench/tb/cmd_cov.svh, 18.
+
+coverage setup:
+  workdir  :  /work/bench/tb/out/cov_work
+  dutinst  :  tb_top(tb_top)
+  scope    :  yapp_buffer
+  testname :  smoke_test.1
+
+coverage files:
+  model(design data) :  /work/bench/tb/out/cov_work/yapp_buffer/icc_621a1833_35edaf2a.ucm (reused)
+  data               :  /work/bench/tb/out/cov_work/yapp_buffer/smoke_test.1/icc_621a1833_35edaf2a.ucd
+TOOL:	xrun(64)	25.09-s002: Exiting on Nov 21, 2026 at 10:05:05 EET  (total: 00:00:00)

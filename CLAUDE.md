@@ -124,6 +124,7 @@ npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (do
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
 npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
+npm run test:results     # simulation results (docs/08 R25): UVM log + run verdict + attribution by reporter path + imc summary + the per-level projection, on real Xcelium runs
 npm run test:templates   # "New testbench" templates (docs/08 R24): per interface, per clock domain, composition — what each plan writes and what it leaves out
 npm run test:signals     # the Signals view's model (docs/08 R24): clock / reset domains with their agents, the Unconnected folder, what a drop writes
 npm run test:matrix      # the matrix editor's model (docs/08 R22): agents x scoreboards/coverage, block outputs x inputs, cell legality
@@ -1188,6 +1189,49 @@ coliziunea de nume.
   host's memory): `handleDrop` accepts both. The files written with the Write
   tool are LF; git normalises them (autocrlf).
 
+- **Simulation results on the diagram (docs/08 R25)**: the extension READS
+  what `make regress` left under `<outputDir>/out` and never runs or waits
+  for a simulator — do not add a process. Probed on quick-uvm 1.1.0 +
+  Xcelium 25.09 (the fixtures in `scripts/fixtures/results/` are those runs;
+  keep them SANITISED — no home directory, no site tool path): the generated
+  Makefile writes `runs/<test>.<seed>/{status,test.txt,seed.txt,sim.log}` and
+  `cov/summary.txt`; UVM instance names are `uvm_test_top.e.<agent>_agnt
+  [.drv|.mon|.sqr]`, `e.<scoreboard name>[.prd|.cmp]`, `e.<agent>_cov_h`,
+  `e.vsqr` — the env's instance name (`e`) is NOT assumed, only its position.
+  Attribution is by reporter PATH (`elementOfPath`), never by message text;
+  `names.scoreboards` must include the INFERRED scoreboards (implicit mode:
+  `inferredComponents(resolve.current)`), or the reports of a bench without
+  `analysis:` all fall on the env. Three traps the real logs taught: the
+  "caught UVM_ERROR" numbers of the report CATCHER are 0 on a failing run —
+  only the report server's "Report counts by severity" block is read; a log
+  without that block (a crash, an elaboration failure) is a FAIL, never a
+  pass; an imc column NAME contains a space ("CoverGroup Covered"), so the
+  table is split on two or more spaces. A unit's reports are counted on its
+  agent AND under `agent:<a>:u.<unit>`: the unit keys are read ONLY at that
+  agent's level (`levelResults`), or the agent would count twice. Coverage is
+  never summed upwards. The service keeps what it READ (`raw`) apart from the
+  attributed snapshot: a configuration change only re-folds (`update()`), it
+  does not re-read megabytes of logs on every keystroke; the watcher is on
+  the `status` files and the summary — what a finished run writes LAST —
+  never on the logs. `results/full` is its own message, not a field of
+  `status/decorations` (results are not findings about the configuration,
+  and they are as old as their files): `stale` (config dirty, or saved after
+  the newest `status`) is computed by the host at send time and must be said
+  on every surface — chip, pills, report. The pills are placed from the
+  `.tb-box` rect's `getBBox()` (the group's box includes port labels), are
+  redrawn wherever the generation badges are (five call sites, `updateLod`
+  included), are stripped from the SVG export, and `resultByNode` is read by
+  `applyFiltersHere`: a block with a failing result is dimmed, never hidden.
+  `openResultSource` looks the file up by NAME under the generated bench
+  (`findFiles`): the simulator prints a path relative to ITS working
+  directory, which must never be resolved against the workspace. The report
+  is a virtual document (`quickuvm-results:`), like the traceability report.
+  Found by the probe, NOT fixed here (a generator-side issue with its own
+  task): with the default `reset.external: false` quick-uvm wires
+  `.rst_n(<primary agent>_if_inst.rst_n)` in tb_top, while Architect keeps
+  reset pins out of agents — such a bench generates clean and fails
+  elaboration (`*E,CUVUNF`); `reset: {external: true}` elaborates.
+
 
 ## Faza curentă
 
@@ -1532,4 +1576,13 @@ drag-and-drop of agents onto clock / reset domains; `src/templates.ts` +
 `test:e2e`, the `newTestbench` action and the `assignDomain` host flow. The
 QuickPick flow and the tree's drag-and-drop still need a manual pass in the
 Extension Development Host.
+**R25 (docs/08) is implemented as a first slice** (Nov 2026): the last
+regression's results READ from `<outputDir>/out` and shown on the verification
+view — error / warning counts and severity colour on the blocks, coverage
+figures on the collectors and the DUT, the runs' verdicts in the header, a
+results report; `src/results.ts` + `test:results` (16 tests on real Xcelium
+logs), `src/results-service.ts`, the `results/full` message, the commands
+`quickuvm.refreshResults` / `showResults` / `hideResults`. The watcher, the
+commands and the report need a manual pass in the Extension Development Host
+against a real `make regress`.
 Planul complet: `docs/06-plan-mvp.md`.

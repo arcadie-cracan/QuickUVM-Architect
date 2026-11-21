@@ -19,6 +19,7 @@ export type Side = "north" | "south" | "east" | "west";
 /** display mode of an RTL view (docs/05): the symbol or the schematic */
 import type { QuvmConfig } from "./quickuvm";
 import type { ResolvedConfig } from "./resolved";
+import type { ResultsSnapshot } from "./results";
 
 /** "tb" = the verification (TB) view (phase 3b, docs/05), the key `tb:<config-path>` */
 export type ViewMode = "symbol" | "schematic" | "tb";
@@ -118,6 +119,12 @@ export type ActionKind =
   // the traceability report (a markdown document)
   | "toggleCodeFollow"
   | "traceabilityReport"
+  // docs/08 R25: the simulation results the diagram shows — the report (a
+  // read-only document), a re-read of the results directory, and the source
+  // line a report came from (`{file, line}`, as the simulator printed it)
+  | "showResults"
+  | "refreshResults"
+  | "openResultSource"
   // docs/08 R8: the configuration in the TEXT editor — from the per-file editor
   // its own tab is reopened as text (`vscode.openWith … "default"`), from the
   // panel the active configuration opens beside; no args
@@ -442,6 +449,19 @@ export type HostMessage =
   | ({ v: 1; type: "card/full" } & ElementCard)
   // the quick-uvm status decorations (docs/05): the model<->YAML validations as
   // badges on elements + the result of the last generate as a chip in the header;
+  // docs/08 R25 — the results of the last regression, READ from the files it
+  // left under `<outputDir>/out` (never run by the extension): per element, by
+  // diagram id. `results: null` = nothing to show (never simulated, or hidden);
+  // `stale` = the configuration changed after the runs; `unparsed` = runs
+  // counted by verdict only (a log too large)
+  | {
+      v: 1;
+      type: "results/full";
+      results: ResultsSnapshot | null;
+      at: number | null;
+      stale: boolean;
+      unparsed: number;
+    }
   // empty decos = clear, generate null = never run
   | {
       v: 1;

@@ -72,5 +72,8 @@
   "cmd.addResetDomain": "Add Reset Domain",
   "view.signals.name": "Signals",
   "view.signals.contextualTitle": "QuickUVM Architect — clocks and resets",
-  "welcome.signals": "The clock and reset domains of the active testbench appear here, with the agents on each.\nDrag an agent onto a domain to assign it.\n[New Testbench…](command:quickuvm.newTestbench)"
+  "welcome.signals": "The clock and reset domains of the active testbench appear here, with the agents on each.\nDrag an agent onto a domain to assign it.\n[New Testbench…](command:quickuvm.newTestbench)",
+  "cmd.refreshResults": "Refresh Simulation Results",
+  "cmd.showResults": "Show Simulation Results Report",
+  "cmd.hideResults": "Hide Simulation Results"
 }

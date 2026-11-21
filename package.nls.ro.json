@@ -72,5 +72,8 @@
   "cmd.addResetDomain": "Adaugă domeniu de reset",
   "view.signals.name": "Semnale",
   "view.signals.contextualTitle": "QuickUVM Architect — ceasuri și reseturi",
-  "welcome.signals": "Aici apar domeniile de ceas și de reset ale testbench-ului activ, cu agenții de pe fiecare.\nTrage un agent pe un domeniu ca să-l asignezi.\n[Testbench nou…](command:quickuvm.newTestbench)"
+  "welcome.signals": "Aici apar domeniile de ceas și de reset ale testbench-ului activ, cu agenții de pe fiecare.\nTrage un agent pe un domeniu ca să-l asignezi.\n[Testbench nou…](command:quickuvm.newTestbench)",
+  "cmd.refreshResults": "Reîmprospătează rezultatele simulării",
+  "cmd.showResults": "Arată raportul rezultatelor simulării",
+  "cmd.hideResults": "Ascunde rezultatele simulării"
 }

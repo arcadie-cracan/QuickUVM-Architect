@@ -77,6 +77,13 @@ import {
   type FilterItem,
   type FilterResult,
 } from "./filters";
+import {
+  levelResults,
+  messageLine,
+  resultsChip,
+  worstOfNode,
+  type NodeResult,
+} from "../results";
 import { analysisMatrix, connectionsMatrix, worthOffering, type Matrix } from "./matrix";
 import {
   ANNOT_COLORS,
@@ -147,6 +154,7 @@ const state: State = {
   childAgents: {},
   resolved: null,
   statusDecos: [],
+  results: null,
   tbFocus: "",
   proposals: null,
   tx: 0,
@@ -491,6 +499,15 @@ window.addEventListener("message", (e: MessageEvent) => {
       refreshCard(); // the open card, if it is about this subject; timers untouched
       break;
     }
+    case "results/full":
+      // docs/08 R25 — the last regression's results, read from its files by the
+      // host: badges and coverage figures on the blocks, the header's verdicts
+      state.results = m.results
+        ? { snapshot: m.results, at: m.at, stale: m.stale, unparsed: m.unparsed }
+        : null;
+      applyResultBadges();
+      applyFiltersHere(); // a block with a failing result is dimmed, never hidden
+      break;
     case "status/decorations":
       // the quick-uvm status decorations (docs/05): badges + generate chip
       cardCache.clear(); // the generation state changed: the cards say so
@@ -504,6 +521,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       genStale = new Set(m.genStale);
       applyStatusBadges();
       applyGenBadges();
+      applyResultBadges(); // docs/08 R25
       applyFiltersHere(); // docs/08 R23: what has a finding may not be hidden
       updateGenChip();
       refreshCard(); // a pinned card shows the new ●/U/M state and flags
@@ -1308,6 +1326,7 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   applySelectionClasses();
   applyStatusBadges();
   applyGenBadges();
+  applyResultBadges(); // docs/08 R25
   refreshMinimap(); // the symbol has no minimap (it always fits) — removes it
 }
 
@@ -1349,6 +1368,7 @@ function updateLod(): void {
     // off-centre until the next render
     applyStatusBadges();
     applyGenBadges();
+    applyResultBadges(); // docs/08 R25
     if (state.mode === "schematic") {
       centerChipSigns(canvas);
     }
@@ -1710,6 +1730,12 @@ function exportSvg(): void {
   );
   // the status badges are a session diagnostic, not content (docs/05)
   clone.querySelectorAll(".status-badge").forEach((n) => n.remove());
+  // docs/08 R25 — nor are the simulation results (they are as old as their files)
+  clone.querySelectorAll(".result-badge").forEach((n) => n.remove());
+  clone
+    .querySelectorAll(".res-fatal, .res-error, .res-warning")
+    .forEach((n) => n.classList.remove("res-fatal", "res-error", "res-warning"));
+  clone.classList.remove("res-stale");
   // docs/08 R23 — "the export shows what the view shows": a hidden element is
   // `display: none` on screen, and `display` is not an inlined property — left
   // in the clone it was drawn in the file, outside the bounds taken above
@@ -1861,6 +1887,152 @@ function applyStatusBadges(): void {
     });
     g.append(badge);
   });
+}
+
+// --- simulation results on the blocks (docs/08 R25) -------------------------
+//
+// What the last regression left on disk, projected onto the level on screen
+// (`levelResults`, pure — src/results.ts): an error count at a block's
+// bottom-right corner, with its outline in the severity's colour; a coverage
+// figure at the bottom-left of the blocks that have one (a collector, the DUT);
+// the runs' verdicts in the header. The extension READS these — it runs no
+// simulator — so everything here is as old as the files: `stale` (the
+// configuration changed after the runs) dims the badges and is said on the chip.
+
+/** the results of the blocks on screen, by node id (also read by the filters:
+ *  a block with a failing result is never hidden) */
+let resultByNode: Record<string, NodeResult> = {};
+
+function resultPill(
+  cls: string,
+  x: number,
+  y: number,
+  anchor: "start" | "end",
+  text: string,
+  title: string
+): SVGGElement {
+  // 10px monospace: about 6px a character; the signs are a little wider
+  const w = Math.round(text.length * 6.1) + 12;
+  const x0 = anchor === "end" ? x - w + 8 : x - 8;
+  const g = el("g", { class: `result-badge ${cls}` });
+  g.append(
+    el("rect", { x: String(x0), y: String(y - 8), width: String(w), height: "16", rx: "8" }),
+    el("text", { x: String(x0 + w / 2), y: String(y + 3.5), "text-anchor": "middle" }, text),
+    el("title", {}, title)
+  );
+  return g;
+}
+
+function applyResultBadges(): void {
+  canvas.querySelectorAll(".result-badge").forEach((b) => b.remove());
+  canvas
+    .querySelectorAll(".res-fatal, .res-error, .res-warning")
+    .forEach((g) => g.classList.remove("res-fatal", "res-error", "res-warning"));
+  const r = state.results;
+  canvas.classList.toggle("res-stale", Boolean(r?.stale));
+  resultByNode = {};
+  const scene = currentTbScene;
+  if (state.mode !== "tb" || !scene || !r) {
+    updateResultsChip();
+    return;
+  }
+  resultByNode = levelResults(r.snapshot, scene.focus, scene.nodes.map((n) => n.id));
+  const staleNote = r.stale ? "\n(stale: the configuration changed after these runs)" : "";
+  canvas.querySelectorAll<SVGGraphicsElement>(".tbnode[data-id]").forEach((g) => {
+    const id = g.dataset.id ?? "";
+    const res = resultByNode[id];
+    if (!res) {
+      return;
+    }
+    let bb: DOMRect;
+    try {
+      bb = (g.querySelector<SVGGraphicsElement>(".tb-box") ?? g).getBBox();
+    } catch {
+      return; // not attached / not drawn yet
+    }
+    const worst = worstOfNode(res);
+    if (worst) {
+      g.classList.add(`res-${worst}`);
+      // failures first: a block with errors shows them, not its warnings
+      const n = res.fatals + res.errors || res.warnings;
+      const badge = resultPill(
+        `res-count sev-${worst}`,
+        bb.x + bb.width,
+        bb.y + bb.height,
+        "end",
+        `${worst === "warning" ? "!" : "✕"} ${n}`,
+        res.messages.map(messageLine).join("\n") + staleNote
+      );
+      // the badge is the way in (R3's wrench): the messages, each opening the
+      // line that raised it, and the report. Not a drag start, not a selection.
+      badge.addEventListener("pointerdown", (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        openCtxMenu(ev.clientX, ev.clientY, resultItems(res));
+      });
+      g.append(badge);
+    }
+    if (res.coverage.length) {
+      g.append(
+        resultPill(
+          "res-cov",
+          bb.x,
+          bb.y + bb.height,
+          "start",
+          res.coverage.map((f) => `${f.label} ${Math.round(f.pct)}%`).join(" · "),
+          res.coverage
+            .map(
+              (f) =>
+                `${f.label}: ${f.pct}%` +
+                (f.covered !== null && f.total !== null ? ` (${f.covered}/${f.total})` : "")
+            )
+            .join("\n") + staleNote
+        )
+      );
+    }
+  });
+  updateResultsChip();
+}
+
+/** the menu of a result badge: its messages (each opens its source line), the report */
+function resultItems(res: NodeResult): CtxItem[] {
+  const clip = (t: string): string => (t.length > 96 ? `${t.slice(0, 95)}…` : t);
+  const items: CtxItem[] = res.messages.map((m) => {
+    const file = m.file;
+    return file
+      ? {
+          label: clip(messageLine(m)),
+          action: () => postAction("openResultSource", { file, line: m.line }),
+        }
+      : { label: clip(messageLine(m)), action: () => undefined, info: true };
+  });
+  const shown = res.messages.reduce((n, m) => n + m.count, 0);
+  const all = res.fatals + res.errors + res.warnings;
+  if (all > shown) {
+    items.push({ label: `… and ${all - shown} more (see the report)`, action: () => undefined, info: true });
+  }
+  items.push({ label: "Open the results report", action: () => postAction("showResults", {}) });
+  return items;
+}
+
+/** the header's verdicts: present while there are results to show (TB view only) */
+function updateResultsChip(): void {
+  head.querySelector(".results-chip")?.remove();
+  const tgl = head.querySelector(".mode-toggle");
+  const r = state.results;
+  if (!tgl || !r || state.mode !== "tb") {
+    return;
+  }
+  const c = resultsChip(r.snapshot, r.stale);
+  const chip = h("button", `results-chip tone-${c.tone}${r.stale ? " stale" : ""}`, c.text);
+  chip.title =
+    "Simulation results, read from the files the regression left" +
+    (r.at !== null ? ` (${new Date(r.at).toLocaleString()})` : "") +
+    (r.unparsed ? ` — ${r.unparsed} log(s) not parsed: those runs count by verdict only` : "") +
+    (r.stale ? " — STALE: the configuration changed after these runs" : "") +
+    ". Click for the report.";
+  chip.addEventListener("click", () => postAction("showResults", {}));
+  tgl.prepend(chip);
 }
 
 /** docs/07 line 1 — the generation-state badge on a TB node, in the same vocabulary
@@ -5365,8 +5537,12 @@ function applyFiltersHere(): void {
   // a block is protected by a finding on any of its pins (review — testing the
   // block's own id protected nothing there)
   const flagged = [...statusByElement.keys()];
+  const failing = (id: string): boolean => {
+    const w = worstOfNode(resultByNode[id]); // docs/08 R25: a failing simulation result
+    return w === "error" || w === "fatal";
+  };
   for (const id of [...res.hidden]) {
-    if (statusByElement.has(id) || flagged.some((k) => k.startsWith(`${id}.`))) {
+    if (statusByElement.has(id) || failing(id) || flagged.some((k) => k.startsWith(`${id}.`))) {
       res.hidden.delete(id);
       res.dimmed.add(id);
     }
@@ -6220,6 +6396,13 @@ function paletteItems(): PaletteItem[] {
   // docs/08 R23 — the view's filter rules
   for (const it of filterMenu(state.selection.size === 1 ? [...state.selection][0] : null)) {
     add("View", it.label, it.action);
+  }
+  // docs/08 R25 — the simulation results: re-read the files, open the report
+  if (state.mode === "tb") {
+    add("View", "Results: re-read the regression's files", () => postAction("refreshResults", {}));
+    if (state.results) {
+      add("View", "Results: open the report", () => postAction("showResults", {}));
+    }
   }
   // docs/08 R22 — the matrix editor, whatever the size (the header button
   // appears only from about 4x4 upwards)
@@ -7552,6 +7735,7 @@ async function presentScene(
   applySelectionClasses();
   applyStatusBadges();
   applyGenBadges();
+  applyResultBadges(); // docs/08 R25
   applyFiltersHere(); // docs/08 R23: after the badges — a finding is never hidden
   contentBounds = withAnnotBounds(layoutBounds(layout));
   refreshMinimap();
@@ -7753,6 +7937,7 @@ async function renderTb(refit: boolean): Promise<void> {
     // docs/08 R23 — the header was rebuilt (the chip went with it) while the
     // previous drawing, hidden elements included, is still on screen
     applyFiltersHere();
+    updateResultsChip(); // docs/08 R25: the verdicts are the bench's, not the drawing's
     return;
   }
   if (gen !== renderGen) {
@@ -7846,6 +8031,7 @@ async function renderTb(refit: boolean): Promise<void> {
   contentBounds = withAnnotBounds(tbBounds(layout));
   applyStatusBadges();
   applyGenBadges();
+  applyResultBadges(); // docs/08 R25
   applyFiltersHere(); // docs/08 R23: after the badges — a finding is never hidden
   refreshMinimap();
   renderInspectorHere();

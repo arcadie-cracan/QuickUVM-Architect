@@ -70,6 +70,8 @@ export interface PanelDeps {
     genMissing: string[];
     genStale: string[];
   };
+  /** docs/08 R25 — the last `results/full` message (the host keeps it current) */
+  getResults?: () => HostMessage | null;
   /** docs/08 R12 — the designer-assistance proposals of a view (src/proposals.ts) */
   getProposals?: (viewId: string, mode: ViewMode | undefined) => ProposalSet | null;
   /** docs/08 R15 — what a TB element will generate (the YAML entry, the owned
@@ -314,6 +316,14 @@ export class DiagramPanel {
    *  every cursor move inside the same element */
   private lastProbe = "";
 
+  /** docs/08 R25 — the simulation results (re-sent whole whenever they change) */
+  postResults(): void {
+    const m = this.deps.getResults?.();
+    if (this.ready && m) {
+      this.post(m);
+    }
+  }
+
   /** the quick-uvm status decorations (docs/05): badges + the generate chip */
   postStatus(): void {
     const s = this.deps.getStatus?.();
@@ -382,6 +392,7 @@ export class DiagramPanel {
         this.postOverlay(this.deps.getOverlay());
         this.postConfig();
         this.postStatus(); // the status decorations (docs/05)
+        this.postResults(); // docs/08 R25
         if (this.pendingView) {
           const { select, ...vs } = this.pendingView;
           this.post({ v: 1, type: "view/show", ...vs });
