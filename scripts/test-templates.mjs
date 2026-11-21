@@ -86,7 +86,10 @@ test("per-interface: the DUT by heuristic, one agent per interface, what is left
   assert.deepEqual(cfg.dut, { name: "soc_top", clock: "clk", reset: "rst_n" });
   assert.deepEqual(cfg.agents.map((a) => a.name), ["bus"]);
   assert.deepEqual(cfg.agents[0].ports.inputs.map((x) => x.name), ["addr", "wdata", "we"], "the modport's signals, the DUT's directions");
-  assert.deepEqual(keys(p.text), ["project", "clock", "tests", "dut", "agents"], "no key nobody asked for");
+  // D25: the testbench top drives the reset — written, not left to a default
+  // that generates a top which does not elaborate
+  assert.deepEqual(cfg.reset, { external: true });
+  assert.deepEqual(keys(p.text), ["project", "clock", "tests", "dut", "reset", "agents"], "no key nobody asked for");
   assert.ok(p.notes.some((n) => /without an agent.*din/.test(n)), "the ungrouped pins are named");
   assert.ok(p.notes.some((n) => /unpacked.*ch_out/.test(n)), "an unpacked array is not guessed");
   assert.equal(p.children.length, 0);
@@ -356,9 +359,14 @@ test("clock and reset by name (review): an enable is not a clock, `aresetn` is a
   const axi = single("axi", [port("aclk", "in"), port("aresetn", "in"), port("s_valid", "in"), port("s_ready", "out")]);
   const a = parseQuvm(T.planTemplate(axi, "axi", "per-interface").text);
   assert.equal(a.dut.reset, "aresetn");
-  assert.equal(a.reset, undefined, "active low is the default: no `reset:` block at all");
+  assert.deepEqual(a.reset, { external: true }, "active low is the default: no `active_low` key, only who drives it (D25)");
   assert.equal(T.dutGuess("x", { ports: [port("clk", "in"), port("rstn", "in")], iface_ports: [] }).resetActiveLow, true);
   assert.equal(T.dutGuess("x", { ports: [port("clk", "in"), port("rst", "in")], iface_ports: [] }).resetActiveLow, false);
+  // D25: no clock = combinational = NO reset — quick-uvm leaves the reset of a
+  // combinational DUT unconnected, so the pin stays an ordinary unmapped pin
+  const comb = T.dutGuess("x", { ports: [port("rst_n", "in"), port("a", "in", 8)], iface_ports: [] });
+  assert.deepEqual([comb.clock, comb.reset, comb.combinational], [null, null, true]);
+  assert.equal("externalReset" in comb, false, "who drives the reset is derived by setDut, not part of the spec");
   // a name that says both is a RESET (the old heuristic's answer), never the clock
   const both = T.dutGuess("x", { ports: [port("clk", "in"), port("clk_rst_n", "in")], iface_ports: [] });
   assert.deepEqual([both.clock, both.reset], ["clk", "clk_rst_n"]);

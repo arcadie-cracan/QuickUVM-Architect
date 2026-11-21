@@ -1665,14 +1665,29 @@ endpackage
   assert.match(sharedDut, /\.rst_n\(rst_n\)/, "the shared reset is connected to the DUT");
   assert.match(sharedTop, /fast_if fast_if_inst \(\.clk\(fast_clk\), \.rst_n\(rst_n\)\)/,
     "the agent of the other domain gets the shared reset");
-  // the hazard itself, locked: the same bench with the reset as a MAPPING has no reset
-  // (`collapseResets` is the Properties panel's own gesture: a one-entry list
-  // back to the single mapping — which, under a clock list, is this hazard)
+  // `collapseResets` is the Properties panel's own gesture: a one-entry list
+  // back to the single mapping. Since D25 the mapping it writes is TOP-DRIVEN
+  // (`external: true`), which quick-uvm's multi-domain path does read — so the
+  // gesture no longer walks into the hazard below
   const mapped = ops.collapseResets(shared.text);
-  assert.equal(ops.parseQuvm(mapped).reset, undefined);
+  assert.deepEqual(ops.parseQuvm(mapped).reset, { external: true });
+  const dutOf = (top) => /bridge dut_inst \(([\s\S]*?)\);/.exec(top)?.[1] ?? "";
   const mappedTop = tbTop(generate("tpl_shared_reset_mapping", mapped, ["tb_top.sv"]));
-  assert.doesNotMatch(/bridge dut_inst \(([\s\S]*?)\);/.exec(mappedTop)?.[1] ?? "", /rst_n/,
-    "quick-uvm now wires a single reset under a clock list — resetAsList and the Signals view's warning can go");
+  assert.match(dutOf(mappedTop), /\.rst_n\(rst_n\)/,
+    "a top-driven single reset under a clock list is not connected to the DUT");
+  // the hazard itself, locked: the same bench with the PLAIN mapping (no
+  // `external` — a hand-written or pre-D25 config) has no reset on quick-uvm
+  // 1.1.0. A generator that infers the top-driven reset wires it; both are told
+  // apart, so this says which generator it ran against.
+  const plain = ops.setResetDomainField(mapped, "rst_n", "external", false);
+  assert.equal(ops.parseQuvm(plain).reset, undefined);
+  const plainTop = tbTop(generate("tpl_shared_reset_plain", plain, ["tb_top.sv"]));
+  if (/\.rst_n\(rst_n\)/.test(dutOf(plainTop))) {
+    console.log("  ok    templates: a plain reset mapping under a clock list — the generator INFERS the top-driven reset (fixed upstream)");
+  } else {
+    assert.doesNotMatch(dutOf(plainTop), /rst_n/, "the DUT's reset is connected to something else");
+    console.log("  ok    templates: a plain reset mapping under a clock list — NO reset is generated (resetAsList and the Signals view's warning stay)");
+  }
 
   // composition from the sub-blocks, on the regression design: 5 subenvs, 3 block
   // configs with a boundary agent each

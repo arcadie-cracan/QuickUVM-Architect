@@ -103,7 +103,9 @@ function resetDomains(cfg: QuvmConfig): Domains {
   const map = isObj(raw) ? raw : {};
   // quick-uvm's multi-domain path (a clock LIST) reads only a reset list, or
   // `external: true`: with the plain mapping no reset is generated and the
-  // DUT's reset port stays unconnected, exit 0 (probed on 1.1.0)
+  // DUT's reset port stays unconnected, exit 0 (probed on 1.1.0).
+  // `external: true` is external to the AGENTS — the testbench top generates
+  // the reset (D25); it does not mean "not driven by the bench"
   const unwired = Array.isArray(cfg.clock) && map.external !== true;
   return {
     listed: false,
@@ -112,9 +114,9 @@ function resetDomains(cfg: QuvmConfig): Domains {
         name,
         description:
           polarity(map) +
-          (map.external === true ? ", external (not driven by the bench)" : "") +
+          (map.external === true ? ", driven by the testbench top" : "") +
           (unwired
-            ? " — NOT GENERATED: with a clock list quick-uvm needs the reset declared as a domain (Add Reset Domain)"
+            ? " — NOT GENERATED: with a clock list quick-uvm needs the reset driven by the testbench top (external: true) or declared as a domain (Add Reset Domain)"
             : ""),
       },
     ],

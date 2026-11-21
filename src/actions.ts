@@ -32,6 +32,7 @@ import type { SignalField } from "./signals";
 import {
   configFileOf,
   dutGuess,
+  isResetPin,
   planTemplate,
   templateOffers,
   TemplateError,
@@ -78,7 +79,10 @@ export class Actions {
     // ONE heuristic for "Set as DUT", the subenv skeletons and the templates
     const guess = dutGuess(inst.module, def);
     let clock = guess.clock;
-    const reset = guess.reset;
+    // the reset CANDIDATE, offered even without a clock candidate (the user may
+    // choose the clock by hand below); `dutGuess` itself gives a clockless DUT
+    // no reset, and the spec below applies the same rule to what is confirmed
+    const reset = guess.reset ?? def.ports.find(isResetPin)?.name ?? null;
 
     type Item = vscode.QuickPickItem & { id: string };
     const items: Item[] = [];

@@ -1662,29 +1662,46 @@ test("docs/08 R9: one field folded over several agents is ONE text change, comme
 
 test("R24 resetAsList: the single reset as a ONE-entry list, named after dut.reset, polarity kept", () => {
   const base = ops.setDut(ops.newConfigText("d"), {
-    module: "d", clock: "clk", reset: "rst", resetActiveLow: false, externalReset: false, combinational: false,
+    module: "d", clock: "clk", reset: "rst", resetActiveLow: false, combinational: false,
   });
+  // what setDut writes (D25): the testbench top drives the reset
+  assert.deepEqual(ops.parseQuvm(base).reset, { active_low: false, external: true });
   const listed = ops.resetAsList(base);
   assert.deepEqual(ops.parseQuvm(listed).reset, [{ name: "rst", active_low: false }]);
   assert.equal(ops.parseQuvm(listed).dut.reset, "rst", "dut.reset now names the entry");
   assert.equal(ops.resetAsList(listed), listed, "already a list: the same text");
-  // an all-default reset has no `reset:` block at all: the entry is just the name
+  // an active-low reset: `external: true` is DROPPED by the conversion (a list
+  // is always top-driven), so the entry is just the name
   const low = ops.setDut(ops.newConfigText("d"), {
-    module: "d", clock: "clk", reset: "rst_n", resetActiveLow: true, externalReset: false, combinational: false,
+    module: "d", clock: "clk", reset: "rst_n", resetActiveLow: true, combinational: false,
   });
+  assert.deepEqual(ops.parseQuvm(low).reset, { external: true });
   assert.deepEqual(ops.parseQuvm(ops.resetAsList(low)).reset, [{ name: "rst_n" }]);
+  // ... and the old shape (no `reset:` block at all) converts the same way
+  const bare = ops.setResetDomainField(low, "rst_n", "external", false);
+  assert.equal(ops.parseQuvm(bare).reset, undefined);
+  assert.deepEqual(ops.parseQuvm(ops.resetAsList(bare)).reset, [{ name: "rst_n" }]);
+  // the round trip: collapsing the one-entry list gives the top-driven mapping back
+  assert.deepEqual(ops.parseQuvm(ops.collapseResets(ops.resetAsList(low))).reset, { external: true });
   // the list composes with the domain mutations (the template's fold)
   const two = ops.setResetDomainField(ops.addResetDomain(ops.resetAsList(low), "b_rst_n"), "b_rst_n", "clock", "b_clk");
   assert.deepEqual(ops.parseQuvm(two).reset, [{ name: "rst_n" }, { name: "b_rst_n", clock: "b_clk" }]);
-  // no reset: nothing to declare; an external reset cannot become a list entry
+  // no reset: nothing to declare
   const none = ops.setDut(ops.newConfigText("d"), {
-    module: "d", clock: "clk", reset: null, resetActiveLow: true, externalReset: false, combinational: false,
+    module: "d", clock: "clk", reset: null, resetActiveLow: true, combinational: false,
   });
   assert.equal(ops.resetAsList(none), none);
-  const ext = ops.setDut(ops.newConfigText("d"), {
-    module: "d", clock: "clk", reset: "rst_n", resetActiveLow: true, externalReset: true, combinational: false,
-  });
-  assert.throws(() => ops.resetAsList(ext), /external/);
+  // an AGENT-driven reset (the port is one of an agent's ports) cannot become a
+  // list entry: the domain would be a tb_top net of the same name, which
+  // quick-uvm refuses — the same wall as addResetDomain
+  const driven = ops.setDut(
+    ops.createAgent(ops.newConfigText("d"), {
+      name: "a", inputs: [{ name: "din", width: 8 }, { name: "rst_n", width: 1 }], outputs: [],
+    }),
+    { module: "d", clock: "clk", reset: "rst_n", resetActiveLow: true, combinational: false }
+  );
+  assert.equal(ops.parseQuvm(driven).reset, undefined, "an agent drives it: no external");
+  assert.throws(() => ops.resetAsList(driven), /driven by an agent/);
 });
 
 if (failures) {

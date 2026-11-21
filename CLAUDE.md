@@ -1195,7 +1195,7 @@ coliziunea de nume.
   `dut.clock` says; an agent with no `reset:` gets the reset RELEASED ON ITS
   CLOCK (the entry whose `clock:` is that clock) and only without one the
   first entry — two DIFFERENT rules, which the Signals view's "Unconnected"
-  folders state per agent (`→ <domain>`) and `test:e2e` (scenario 15) locks
+  folders state per agent (`→ <domain>`) and `test:e2e` (scenario 16) locks
   one key at a time (the first cut cleared both keys together, could not tell
   the rules apart, and the reset folder stated the wrong domain — review).
   Under a single clock / reset (a mapping) an agent's own key is REFUSED
@@ -1206,9 +1206,18 @@ coliziunea de nume.
   DUT's port unconnected, exit 0. So the per-clock template ALWAYS declares
   the reset as a list, one entry included (`resetAsList`; `addResetDomain`
   can only make two), and the Signals row of such a reset says "NOT
-  GENERATED". The hazard is reachable from shipped gestures too
-  (`addClockDomain` on a single-reset bench, `collapseResets` under a clock
-  list): it has no `checkConfig` finding yet.
+  GENERATED". Since D25 the shipped gestures no longer walk into it: `setDut`
+  writes `external: true` and `collapseResets` restores it, so
+  `addClockDomain` on an Architect-written bench keeps its reset; a plain
+  mapping (hand-written, or older than D25) is still the hazard, and
+  `reset-undriven` reports it (`test:configcheck`), its `external` repair
+  being one way out. `resetAsList` DROPS `external: true` like
+  `addResetDomain` (a list is always top-driven) and refuses an AGENT-driven
+  reset — its first cut refused the external one, the inverted reading of
+  the reset pitfall above, and would have thrown on every per-clock template
+  once `setDut` writes the flag. The Signals row of a top-driven reset says
+  "driven by the testbench top" (it said "external (not driven by the
+  bench)").
   `dutGuess` is the ONE DUT heuristic ("Set as DUT", the subenv skeletons, the
   templates); a reset is a 1-bit input that matches the reset regex — a name
   that says both (`clk_rst_n`, Qsys' `clk_reset_reset_n`) is a RESET, as the
@@ -1606,7 +1615,7 @@ scene, with a header chip while any rule exists; `src/webview/filters.ts` +
 templates (agent per interface / per clock domain / composition from the
 sub-blocks) as folds of the existing mutations, and the Signals tree view with
 drag-and-drop of agents onto clock / reset domains; `src/templates.ts` +
-`test:templates`, `src/signals.ts` + `test:signals`, scenario 15 of
+`test:templates`, `src/signals.ts` + `test:signals`, scenario 16 of
 `test:e2e`, the `newTestbench` action and the `assignDomain` host flow. The
 QuickPick flow and the tree's drag-and-drop still need a manual pass in the
 Extension Development Host.

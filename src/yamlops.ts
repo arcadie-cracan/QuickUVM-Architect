@@ -2045,8 +2045,11 @@ export function addResetDomain(text: string, name: string): string {
  * mapping, NO reset is generated and the DUT's reset port is left unconnected,
  * silently (probed on 1.1.0: generate exits 0). The entry is named after
  * `dut.reset` and carries the mapping's polarity. No-op (the same text) on a
- * list, and without a `dut.reset`. Refused, like `addResetDomain`, when the
- * reset is `external: true`: a list entry has no such key.
+ * list, and without a `dut.reset`. Like `addResetDomain`: `external: true` on
+ * the mapping is DROPPED, losslessly (under a list tb_top declares and drives
+ * every domain's reset — the entry schema has no such key because it is always
+ * the case), and an AGENT-driven reset (the port is one of an agent's ports)
+ * is refused — the domain would be a tb_top net of the same name.
  */
 export function resetAsList(text: string): string {
   const doc = parse(text);
@@ -2055,9 +2058,9 @@ export function resetAsList(text: string): string {
   if (isSeq(reset) || typeof dutReset !== "string" || !dutReset) {
     return text;
   }
-  if (isMap(reset) && reset.get("external") === true) {
+  if (agentDeclaresPort(doc, dutReset)) {
     throw new Error(
-      "the single reset is `external: true`, and a reset-domain entry has no `external` key — take externality off first"
+      `the reset "${dutReset}" is driven by an agent (it is one of its ports); a reset domain list makes it a testbench-top net of the same name, which quick-uvm refuses — remove the port from the agent first`
     );
   }
   const first: Record<string, unknown> = { name: dutReset };
