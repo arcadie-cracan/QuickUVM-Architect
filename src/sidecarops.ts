@@ -20,6 +20,7 @@ import {
   ANNOT_TITLE_MAX,
   type AnnotColor,
   type SidecarData,
+  type SidecarEdge,
   type SidecarFrame,
   type SidecarNode,
   type SidecarNote,
@@ -30,6 +31,7 @@ import {
 } from "./protocol";
 import { sanitizeFilters } from "./webview/filters";
 import { buildSchematicScene } from "./webview/scene";
+import { formatRoute, parseRoute } from "./webview/wireroute";
 
 export const SIDECAR_VERSION = 1;
 
@@ -86,6 +88,15 @@ export function parseSidecar(text: string): SidecarData {
       if (view.nodes !== undefined && (view.nodes === null || typeof view.nodes !== "object")) {
         delete view.nodes;
       }
+      if (view.edges !== undefined) {
+        // docs/04 level 3 — the same reduction the routes are written through
+        const edges = cleanEdges(view.edges);
+        if (Object.keys(edges).length) {
+          view.edges = edges;
+        } else {
+          delete view.edges;
+        }
+      }
       if (view.filters !== undefined) {
         // docs/08 R23 — read through the same reduction it is written through
         const filters = sanitizeFilters(view.filters);
@@ -136,6 +147,14 @@ export function serializeSidecar(data: SidecarData): string {
     }
     if (v.hidePins) {
       out.hidePins = true; // docs/08 R18: a view-level override
+    }
+    if (v.edges && Object.keys(v.edges).length) {
+      // docs/04 level 3 — the hand-routed wires (D27)
+      const edges: Record<string, SidecarEdge> = {};
+      for (const k of Object.keys(v.edges).sort()) {
+        edges[k] = v.edges[k];
+      }
+      out.edges = edges;
     }
     // docs/08 R21 — the secondary notation (this function WHITELISTS what it
     // copies: a key not named here is lost at the first save)
@@ -188,6 +207,7 @@ function viewEmpty(view: SidecarView): boolean {
     !view.nodes &&
     !view.nets &&
     !view.hidePins &&
+    !(view.edges && Object.keys(view.edges).length) &&
     !(view.frames && Object.keys(view.frames).length) &&
     !(view.notes && Object.keys(view.notes).length) &&
     !view.filters?.rules.length
@@ -202,6 +222,9 @@ function prune(data: SidecarData, viewId: string, nodeId?: string): void {
   }
   if (view.nets && Object.keys(view.nets).length === 0) {
     delete view.nets;
+  }
+  if (view.edges && Object.keys(view.edges).length === 0) {
+    delete view.edges;
   }
   if (view.frames && Object.keys(view.frames).length === 0) {
     delete view.frames;
@@ -479,6 +502,75 @@ export function setFilters(data: SidecarData, viewId: string, filters: unknown):
   return data;
 }
 
+// ------------------------------------- hand-routed wires (docs/04, level 3)
+
+/** the most edge overrides kept per view (a file is hand-editable) */
+export const EDGE_OVERRIDES_MAX = 2000;
+
+/**
+ * Edge overrides reduced to what one is: a non-empty edge id and a `route`
+ * that parses as a skeleton, re-written in its canonical form. Everything else
+ * is dropped — the file is hand-editable and merged by git, and the message
+ * crosses a process boundary.
+ */
+export function cleanEdges(raw: unknown): Record<string, SidecarEdge> {
+  const out: Record<string, SidecarEdge> = {};
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return out;
+  }
+  let count = 0;
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (!id || v === null || typeof v !== "object" || count >= EDGE_OVERRIDES_MAX) {
+      continue;
+    }
+    const route = parseRoute((v as SidecarEdge).route);
+    if (route) {
+      out[id] = { route: formatRoute(route) };
+      count++;
+    }
+  }
+  return out;
+}
+
+/**
+ * docs/04 level 3 (D27) — applies a PATCH of hand-placed routes to a view: a
+ * route in its file form replaces the edge's, `null` (or anything that is not
+ * a route) puts the edge back on the automatic router. Edges the patch does not
+ * name are untouched — the sender's mirror may be older than the file.
+ */
+export function setEdgeRoutes(
+  data: SidecarData,
+  viewId: string,
+  patch: unknown
+): SidecarData {
+  if (patch === null || typeof patch !== "object" || Array.isArray(patch)) {
+    return data;
+  }
+  const view = viewOf(data, viewId);
+  const edges = (view.edges ??= {});
+  for (const [id, text] of Object.entries(patch as Record<string, unknown>)) {
+    const route = id ? parseRoute(text) : null;
+    if (route && (edges[id] || Object.keys(edges).length < EDGE_OVERRIDES_MAX)) {
+      edges[id] = { ...edges[id], route: formatRoute(route) };
+    } else {
+      delete edges[id];
+    }
+  }
+  prune(data, viewId);
+  return data;
+}
+
+/** "Re-arrange all" (docs/04): the view's hand-placed routes go with its
+ *  positions — after a full re-layout they describe another arrangement */
+export function clearRoutes(data: SidecarData, viewId: string): SidecarData {
+  const view = data.views[viewId];
+  if (view?.edges) {
+    delete view.edges;
+    prune(data, viewId);
+  }
+  return data;
+}
+
 /**
  * The level-4 override (docs/04): wire <-> label per net. `suggestion`
  * is the model's suggestion — a choice equal to the suggestion deletes the override
@@ -576,6 +668,47 @@ export function validNodeKeys(
   return keys;
 }
 
+/** up to this many generated folds, every combination of folded / expanded
+ *  is built (2^n scenes); beyond it, the combinations a user most likely has */
+const FOLD_ENUM_MAX = 5;
+
+/**
+ * The edge ids a view can draw (docs/04 level 3): an edge's id names its two
+ * pins, and a pin of a generated fold is another id than the pins of its
+ * members — so the same wire has one id while the fold is folded and others
+ * when it is expanded, and a view with TWO folds has ids that exist only with
+ * one expanded and one folded. Every net is taken as a wire: a net shown as a
+ * label has no edges NOW, but its routes wait for it. Returns null if the view
+ * does not exist in the model.
+ */
+export function validEdgeIds(model: ProjectModel, viewId: string): Set<string> | null {
+  const nets = model.views[viewId]?.nets ?? [];
+  const wire = new Map(nets.map((n) => [n.name, "wire" as const]));
+  const collapsed = buildSchematicScene(model, viewId, new Set(), wire);
+  if (!collapsed) {
+    return null;
+  }
+  const ids = new Set(collapsed.edges.map((e) => e.id));
+  const folds = collapsed.nodes.filter((n) => n.kind === "fold").map((n) => n.id);
+  const combos: string[][] = [];
+  if (folds.length && folds.length <= FOLD_ENUM_MAX) {
+    for (let mask = 1; mask < 1 << folds.length; mask++) {
+      combos.push(folds.filter((_, i) => mask & (1 << i)));
+    }
+  } else if (folds.length) {
+    combos.push(folds);
+    for (const f of folds) {
+      combos.push([f], folds.filter((x) => x !== f));
+    }
+  }
+  for (const expanded of combos) {
+    for (const e of buildSchematicScene(model, viewId, new Set(expanded), wire)?.edges ?? []) {
+      ids.add(e.id);
+    }
+  }
+  return ids;
+}
+
 /**
  * Graceful invalidation (docs/04): the keys that no longer exist in the model
  * migrate into `orphans` with the date of the last valid view; the orphans whose
@@ -594,6 +727,15 @@ export function invalidate(
       valid.set(viewId, validNodeKeys(model, viewId));
     }
     return valid.get(viewId) ?? null;
+  };
+  // the edge ids are computed only for the views that hold (or wait for) a
+  // hand-routed wire: every fold combination is a scene build
+  const validEdges = new Map<string, Set<string> | null>();
+  const edgesFor = (viewId: string): Set<string> | null => {
+    if (!validEdges.has(viewId)) {
+      validEdges.set(viewId, validEdgeIds(model, viewId));
+    }
+    return validEdges.get(viewId) ?? null;
   };
 
   // 1. restoring the orphans whose keys have reappeared
@@ -615,6 +757,21 @@ export function invalidate(
     }
     if (o.kind === "frame" || o.kind === "note") {
       annotOrphans.push(o); // restored below, notes BEFORE frames
+      continue;
+    }
+    if (o.kind === "edge") {
+      // docs/04 level 3 — a hand-placed route comes back with its edge; a
+      // route written meanwhile for the same edge is the newer one and stays
+      if (!edgesFor(o.view)?.has(o.node)) {
+        still.push(o);
+        continue;
+      }
+      const clean = cleanEdges({ [o.node]: o.value })[o.node];
+      if (clean) {
+        const edges = (viewOf(data, o.view).edges ??= {});
+        edges[o.node] ??= clean;
+      }
+      changed = true;
       continue;
     }
     if (o.kind === "filters") {
@@ -741,6 +898,31 @@ export function invalidate(
     }
     if (view.nets && Object.keys(view.nets).length === 0) {
       delete view.nets;
+    }
+    // docs/04 level 3 — a hand-placed route whose edge no longer exists (a
+    // pin or a net gone, the view itself gone) waits among the orphans
+    if (view.edges) {
+      const edgeIds = edgesFor(viewId);
+      for (const edgeId of Object.keys(view.edges)) {
+        if (edgeIds?.has(edgeId)) {
+          continue;
+        }
+        data.orphans = data.orphans.filter(
+          (x) => !(x.view === viewId && x.node === edgeId && x.kind === "edge")
+        );
+        data.orphans.push({
+          view: viewId,
+          node: edgeId,
+          kind: "edge",
+          value: view.edges[edgeId],
+          lastSeen: today,
+        });
+        delete view.edges[edgeId];
+        changed = true;
+      }
+      if (Object.keys(view.edges).length === 0) {
+        delete view.edges;
+      }
     }
     for (const nodeId of Object.keys(view.nodes ?? {})) {
       if (keys?.has(nodeId)) {

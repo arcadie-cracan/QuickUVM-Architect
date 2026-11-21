@@ -166,6 +166,8 @@ function render(): void {
     netOfPin: (id) => (scene ? sceneNetOfPin(scene, id) : null),
     sidecar,
     toggleNetRender: (net) => post({ v: 1, type: "relay/netRender", net }),
+    // docs/04 level 3 — relayed like the wire/label toggle
+    resetNetRoute: (net) => post({ v: 1, type: "relay/resetRoute", net }),
     toggleFold: (id) => post({ v: 1, type: "relay/fold", foldId: id }),
     hasSchematic: (_model, v) => Boolean(state.model && hasSchematic(state.model, v)),
     navigateTo: (v, mode) =>

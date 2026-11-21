@@ -20,6 +20,9 @@ export interface Rect {
   y: number;
   w: number;
   h: number;
+  /** the node the box belongs to — unused by the router; the hand-routed wires
+   *  need it (an edge's pin stubs may touch their own block, wireroute.ts) */
+  id?: string;
   /** its own halo, in px (default: the global halo from constraints) */
   pad?: number;
   /** SOFT obstacle: traversal costs `cost` per cell instead of being
@@ -76,6 +79,11 @@ export interface RouteConstraints {
    *  near the common end, instead of being forced onto separate corridors; far from
    *  the ends, the penalty remains (distinct nets do not stick along their length) */
   fanoutRadius?: number;
+  /** routes that are already decided — the hand-placed wires (docs/04, level
+   *  3): their cells are occupied BEFORE anything is routed, so the automatic
+   *  wires of other nets keep off them the way they keep off each other, and
+   *  the ones of the same `group` may share them */
+  fixed?: readonly { group: string; points: readonly { x: number; y: number }[] }[];
 }
 
 interface Point {
@@ -127,6 +135,9 @@ export function route(
   for (const r of requests) {
     extend(r.source.x, r.source.y);
     extend(r.target.x, r.target.y);
+  }
+  if (requests.length === 0) {
+    return new Map(); // nothing to route: the fixed routes alone need no terrain
   }
   if (minX === Infinity) {
     return new Map();
@@ -185,8 +196,7 @@ export function route(
   const ownH = new Int32Array(gw * gh).fill(-1);
   const ownV = new Int32Array(gw * gh).fill(-1);
   const groupIdx = new Map<string, number>();
-  const groupOf = (req: RouteRequest): number => {
-    const key = req.group ?? req.id;
+  const groupNo = (key: string): number => {
     let g = groupIdx.get(key);
     if (g === undefined) {
       g = groupIdx.size;
@@ -194,6 +204,38 @@ export function route(
     }
     return g;
   };
+  const groupOf = (req: RouteRequest): number => groupNo(req.group ?? req.id);
+  const occupy = (own: Int32Array, x: number, y: number, group: number): void => {
+    if (x < 0 || y < 0 || x >= gw || y >= gh) {
+      return;
+    }
+    const idx = y * gw + x;
+    if (own[idx] === -1) {
+      own[idx] = group;
+    } else if (own[idx] !== group) {
+      own[idx] = -2;
+    }
+  };
+  // the fixed routes take their cells first (a route outside the terrain of
+  // the requests occupies nothing there — no request can reach it either)
+  for (const f of constraints?.fixed ?? []) {
+    const group = groupNo(f.group);
+    for (let i = 0; i + 1 < f.points.length; i++) {
+      const ax = Math.round(f.points[i].x / grid) - gx0;
+      const ay = Math.round(f.points[i].y / grid) - gy0;
+      const bx = Math.round(f.points[i + 1].x / grid) - gx0;
+      const by = Math.round(f.points[i + 1].y / grid) - gy0;
+      if (ay === by) {
+        for (let x = Math.max(0, Math.min(ax, bx)); x <= Math.min(gw - 1, Math.max(ax, bx)); x++) {
+          occupy(ownH, x, ay, group);
+        }
+      } else if (ax === bx) {
+        for (let y = Math.max(0, Math.min(ay, by)); y <= Math.min(gh - 1, Math.max(ay, by)); y++) {
+          occupy(ownV, ax, y, group);
+        }
+      }
+    }
+  }
 
   // the short ones first: they take their direct routes, the long ones go around
   const ordered = [...requests].sort(
@@ -219,12 +261,7 @@ export function route(
         const b = out.cells[i + 1];
         const own = a.y === b.y ? ownH : ownV;
         for (const c of [a, b]) {
-          const idx = c.y * gw + c.x;
-          if (own[idx] === -1) {
-            own[idx] = group;
-          } else if (own[idx] !== group) {
-            own[idx] = -2;
-          }
+          occupy(own, c.x, c.y, group);
         }
       }
     }

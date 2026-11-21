@@ -13,12 +13,14 @@ import type { SidecarData, ViewAnnotations } from "./protocol";
 import {
   cleanOrphans,
   clearPositions,
+  clearRoutes,
   emptySidecar,
   invalidate,
   parseSidecar,
   serializeSidecar,
   setAnnotations,
   setCollapsed,
+  setEdgeRoutes,
   setFilters,
   setFlip,
   setFold,
@@ -126,10 +128,31 @@ export class LayoutStore implements vscode.Disposable {
     this.scheduleSave();
   }
 
-  /** "Re-arrange all": the view's positions disappear, folds/flips remain */
-  relayout(viewId: string): void {
-    clearPositions(this.data, viewId);
+  /** docs/04 level 3 (D27) — the hand-placed routes a gesture changed, as a
+   *  patch by edge id (`null` = back to automatic). Announced like the
+   *  annotations: another surface showing this view draws its wires from its
+   *  own mirror, and must not keep drawing the old ones */
+  edgeRoutes(viewId: string, edges: unknown, origin?: unknown): void {
+    setEdgeRoutes(this.data, viewId, edges);
     this.scheduleSave();
+    this.annotEmitter.fire({ origin });
+  }
+
+  /** "Re-arrange all": the view's positions disappear — and its hand-placed
+   *  routes with them (they describe the arrangement that is being discarded);
+   *  folds/flips remain */
+  relayout(viewId: string, origin?: unknown): void {
+    const hadRoutes = Boolean(this.data.views[viewId]?.edges);
+    clearPositions(this.data, viewId);
+    clearRoutes(this.data, viewId);
+    this.scheduleSave();
+    if (hadRoutes) {
+      // the routes are drawn by every surface from its own mirror, and the
+      // sidebar's Net section counts them: without this the other surfaces
+      // kept drawing (and offering to reset) routes the file no longer has
+      // (review finding)
+      this.annotEmitter.fire({ origin });
+    }
   }
 
   /** the "Clean Orphaned Layout Overrides" command; returns how many there were */

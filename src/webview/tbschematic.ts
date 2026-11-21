@@ -8,6 +8,16 @@
 import type { ElkNode } from "elkjs/lib/elk.bundled.js";
 import { Rect, route, RouteRequest } from "./router";
 import { el } from "./svg";
+import {
+  badWires,
+  placeManual,
+  wireStateText,
+  type Pt,
+  type WireDrawn,
+  type WireGeom,
+  type WireOpts,
+  type WireRect,
+} from "./wireroute";
 import type {
   PortGlyph,
   TbBoundary,
@@ -343,7 +353,8 @@ const CLASS: Record<string, string> = {
 export function drawTb(
   scene: TbScene,
   layout: TbLayout,
-  viewport: SVGGElement
+  viewport: SVGGElement,
+  wires?: WireOpts
 ): SVGGElement {
   for (const p of layout.boundary.values()) {
     viewport.append(drawBoundary(p));
@@ -354,7 +365,7 @@ export function drawTb(
   // the edges' group above the nodes, reusable when re-routing from drag
   const edges = el("g", { class: "tb-edges" });
   viewport.append(edges);
-  drawTbEdges(scene, layout, edges);
+  drawTbEdges(scene, layout, edges, wires);
   return edges;
 }
 
@@ -693,16 +704,30 @@ export function anchor(
 }
 
 /** (re)routes the TB edges into `group` (reusable on drag, like `routeEdges`
- *  for RTL): empties the group and redraws the routes from the current positions */
+ *  for RTL): empties the group and redraws the routes from the current positions.
+ *  docs/04 level 3 (D27): an edge with a valid hand-placed skeleton in
+ *  `wires.routes` is drawn from it and takes its cells in the router first; an
+ *  invalid one is dormant (routed automatically, reported). Returns what was
+ *  drawn, per edge — the wire gestures hit-test on it. */
 export function drawTbEdges(
   scene: TbScene,
   layout: TbLayout,
-  group: SVGGElement
-): void {
+  group: SVGGElement,
+  wires?: WireOpts
+): WireDrawn {
   group.replaceChildren();
   const obstacles: Rect[] = [];
+  // the walls of a hand-placed route: the boxes AND the boundary flags (the
+  // router keeps off the flags by their layer; a hand has no layers)
+  const walls: WireRect[] = [];
   for (const p of layout.nodes.values()) {
     obstacles.push({ x: p.x, y: p.y, w: p.w, h: p.h, pad: 6 });
+    walls.push({ x: p.x, y: p.y, w: p.w, h: p.h, id: p.node.id });
+  }
+  for (const [id, b] of layout.boundary) {
+    // `flag`: the router does not avoid a flag, so an automatic wire may
+    // bend right at the one it ends at — that edge may touch it anywhere
+    walls.push({ x: b.x, y: b.y, w: b.w, h: BPORT_H, id, flag: true });
   }
   const requests: RouteRequest[] = [];
   const pending: { e: TbEdge; s: Anchor; t: Anchor }[] = [];
@@ -720,23 +745,58 @@ export function drawTbEdges(
     });
     pending.push({ e, s, t });
   }
-  const routed = route(obstacles, requests);
+  const placed = placeManual(
+    pending.map(({ e, s, t }) => ({ edge: e, s, t })),
+    wires?.routes ?? {},
+    walls,
+    wires?.force
+  );
+  const routed = route(
+    obstacles,
+    requests.filter((r) => !placed.manual.has(r.id)),
+    {
+      fixed: pending
+        .filter(({ e }) => placed.manual.has(e.id))
+        .map(({ e }) => ({
+          group: e.net ?? e.id,
+          points: placed.manual.get(e.id)?.pts ?? [],
+        })),
+    }
+  );
+  const geoms = new Map<string, WireGeom>();
   for (const { e, s, t } of pending) {
-    const pts = routed.get(e.id);
+    const hand = placed.manual.get(e.id);
     const mx = (s.x + t.x) / 2;
-    const d = pts
-      ? "M " + pts.map((q) => `${q.x} ${q.y}`).join(" L ")
-      : `M ${s.x} ${s.y} L ${mx} ${s.y} L ${mx} ${t.y} L ${t.x} ${t.y}`;
+    const pts: Pt[] = hand?.pts ??
+      routed.get(e.id) ?? [
+        { x: s.x, y: s.y }, { x: mx, y: s.y }, { x: mx, y: t.y }, { x: t.x, y: t.y },
+      ];
+    geoms.set(e.id, {
+      edge: e,
+      s,
+      t,
+      pts,
+      route: hand?.route ?? null,
+      asleep: placed.dormant.has(e.id),
+    });
+    const d = "M " + pts.map((q) => `${q.x} ${q.y}`).join(" L ");
+    const why = placed.dormant.get(e.id);
     const edge = el("g", {
-      class: `tb-edge ${e.kind}${e.inferred ? " ghost" : ""}`,
+      class:
+        `tb-edge ${e.kind}${e.inferred ? " ghost" : ""}` +
+        (hand ? (hand.state === "ok" ? " manual" : " manual wire-bad") : why ? " dormant" : ""),
     });
     if (e.net) {
       edge.dataset.id = e.net;
     }
+    edge.dataset.edge = e.id; // docs/04 level 3: where a wire gesture starts
     // docs/08 R23 — a filter hides or dims a wire WITH one of its ends
     edge.dataset.src = e.source;
     edge.dataset.dst = e.target;
     edge.append(
+      // a wide, unpainted stroke under the line: a thin wire is selectable and
+      // draggable (docs/04 level 3) without pixel hunting
+      el("path", { class: "wire-hit", d }),
       el("path", {
         class: "tb-edge-line",
         d,
@@ -746,8 +806,16 @@ export function drawTbEdges(
         // directions are visible
         "marker-end": "url(#arrow)",
       }),
-      el("title", {}, e.net ?? e.kind)
+      el(
+        "title",
+        {},
+        (e.net ?? e.kind) +
+          (why ? ` — hand-placed route suspended: ${wireStateText(why)}` : "")
+      )
     );
     group.append(edge);
   }
+  const drawn: WireDrawn = { geoms, dormant: placed.dormant, bad: badWires(placed.manual) };
+  wires?.onDrawn?.(drawn);
+  return drawn;
 }
