@@ -684,6 +684,88 @@ mesajele tot aici, la implementare.
   VIP's), a domain that is not declared. A click on an agent reveals it in the
   verification view; the groups carry an inline "+" (`quickuvm.addClockDomain`
   / `addResetDomain`, the Properties panel's own flows).
+- **Simulation results on the diagram** (docs/08 R25, Nov 2026): what the
+  last regression left on disk, shown on the blocks of the verification view.
+  The extension runs NO simulator and waits for none: it READS the files
+  QuickUVM's generated Makefile writes under `<outputDir>/out` —
+  `runs/<test>.<seed>/{status, test.txt, seed.txt, sim.log}` and
+  `cov/summary.txt` (imc's text summary) — when they change (a watcher on the
+  `status` files and the summary: what a finished run writes last), on
+  "Refresh Simulation Results", and when the configuration or the resolved
+  topology changes (the attribution depends on the element names; the files
+  are not re-read for that, and a run whose files did not change is not parsed
+  again). The parsing and the attribution are pure (`src/results.ts`,
+  `test:results`, on logs of real Xcelium runs).
+  **The verdict of a run is its `status` file and nothing else.** The Makefile
+  writes it after the simulator exits, so a run without one is in flight (or
+  was stopped): "without a verdict", exactly as the Makefile's own summary
+  skips it — its half-written log is never judged. Reports are folded by KIND
+  while the log is read (severity, reporter, id, source line; a log of a
+  hundred thousand mismatches is a handful of entries, and nothing of its text
+  is kept in memory). Only the report server's output is trusted: its report
+  lines and its "Report counts by severity" block — not the report catcher's
+  "caught" numbers, which are 0 on a failing run.
+  **Attribution** is by the reporter's hierarchical PATH first: the
+  generator's instance names follow from the configuration (probed per mode on
+  quick-uvm 1.1.0): `<agent>_agnt[.drv|.mon|.sqr]` (a sequence reports as
+  `sqr@@<sequence>`), a named scoreboard by its name, an unnamed or inferred
+  one as `sbd`, a declared collector as `<agent>_cov_h` and the implicit
+  mode's as `cov`, `vsqr`, `probe_mon`, a sub-environment by its name, and —
+  on a bench whose one agent is replicated or instantiated —
+  `<handle>_agnt` / `<handle>_sb`. A path that names nothing known, or is not
+  under the test at all (`reporter`), goes to the OWNER of the report's source
+  file (the generation manifest), and only then to the environment: a report
+  is never dropped, and never matched by a pattern on its text.
+  One message, `results/full {results, at, stale, covStale, unparsed}` (host →
+  panel, whole, on every change; `results: null` = nothing to show). On the
+  level on screen (`levelResults`): a count pill at a block's bottom-right
+  corner — `✕ n` for errors and fatals, `! n` for warnings alone — with the
+  block's outline in the severity's colour; the pill's tooltip lists the
+  folded messages (at most 12 kinds, the WORST kept: a late fatal is not
+  dropped behind earlier warnings), a click opens a menu of them (each opens
+  the source line that raised it, looked up by file name under the generated
+  bench — the `openResultSource {file, line}` action) and "Open the results
+  report"; the click does not select the block. A coverage figure sits at the
+  bottom-left of the blocks that have one, worded to fit the block: `cg` on a
+  coverage collector, `block` / `expr` / `toggle` on the DUT — summed over the
+  DUT's SUBTREE (imc's rows are per instance). A result is drawn on the block
+  that REPRESENTS its element on that level: its own block where there is one;
+  at the testbench level the Env block carries everything inside it; at an
+  agent's level its units carry theirs. What was reported and has NO block on
+  the level (the environment's own reports at the Env level, the rest of the
+  bench inside an agent) is a second chip in the header — "✕ n not on this
+  level" — so no level looks clean because its problems are drawn elsewhere.
+  Coverage is never summed upwards. The header shows the runs' VERDICTS
+  ("Runs: 3/4 passed, 1 without a verdict"), never an error count; a click
+  opens the report — a read-only document (`quickuvm.showResults`, the
+  `showResults` action): the runs, every element worst first with its folded
+  messages, the coverage figures.
+  What makes the picture incomplete is always SAID, never implied:
+  **stale** — the configuration has unsaved edits or was saved after the
+  OLDEST verdict shown (one fresh run does not vouch for the old ones): the
+  chip says "(stale)", the pills are dimmed and dashed, no outline is tinted,
+  the report opens with it; **old coverage** (`covStale`) — the summary is
+  older than the newest verdict (a later run did not rewrite it: `COV=0`, a
+  single `make run`) or than the configuration: the coverage pills are dimmed,
+  the chip's tooltip and the report say so; **partial** — a log above 16 MB,
+  or runs beyond the first 200, count by verdict only (`unparsed`), and
+  reports the simulator counted that could not be read from the log
+  (`missed`: a line format the parser does not know) are on no block — both
+  on the chip's tooltip and in the report; **another bench's** — the runs say
+  which DUT they covered (`-covscope`), and when that is not the active
+  configuration's DUT nothing is shown (`quickuvm.outputDir` is one folder for
+  the workspace; "Refresh Simulation Results" says whose results they are);
+  and **absent** — with no `out/runs` there is no chip and no pill: a bench
+  that was never simulated is not a bench that passed. "Hide Simulation
+  Results" hides the regression that is there now; another one shows again.
+  The result pills are a session's reading, not content: the SVG export leaves
+  them out, and a block with a failing result is never hidden by a filter rule
+  (R23) — it is dimmed. The per-file editor shows no results (and offers no
+  results command): they are the ACTIVE bench's, like the generation manifest.
+  Known limits of this slice: the `$finish` line, `-covscope` and the coverage
+  summary are Xcelium's and imc's (the UVM report format is the
+  simulator-independent part); a run without coverage cannot be told from
+  another bench's; a hand-edited generated file is not "stale".
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
@@ -824,7 +906,7 @@ JSON, versionat (`v: 1`), tipat în TypeScript într-un singur fișier partajat
 | `edge/override` | `{viewId, edgeId, patch}` | override de rutare (nivelurile 1–3) |
 | `net/render` | `{viewId, net, render: "wire"\|"label"}` | override-ul de nivel 4 (docs/04): comutarea unui net între fir și etichetă din inspector (netul se selectează prin click pe traseu sau pe eticheta lui). Webview-ul a aplicat deja local; host-ul persistă `nets[net].render` în sidecar — alegerea egală cu sugestia din model șterge override-ul; fără ecou |
 | `nav/drill` | `{instancePath, mode?}` | dublu-click pe instanță în vederea-schemă: webview-ul navighează local (schema dacă instanța are una, altfel simbolul), host-ul actualizează titlul panoului, vederea curentă și evidențiază instanța în ierarhie; `mode` (D24) distinge simbolul top-ului — reveal pe rădăcina sintetică „top module" — de schema lui — reveal pe nodul instanței (aceeași cale, vederi diferite) |
-| `action/request` | `{action, args}` | actions that touch the YAML or the sources: `setDut`, `createAgentFromPins`, `createAgentFromIface`, `createSubenv`, `ignorePort`, `unignorePort`, `generate`, `openSource`, `addScoreboard`, `addCoverage`, `addVirtualSequence`, `deleteComponent {kind, name}`, `editScoreboard {name, field, value}`, `createProbe {net}`, `wireConnections {}`, `composeIntoParent {}`, `openSubenvConfig {config}` (opens a subenv's config file — the path from `subenvs[].config`, carried by the drill — with the default editor), `openConfigBeside {}` (docs/08 R4: the "YAML" header button — the configuration as text beside the diagram, focus kept on the diagram; the host opens it, or the per-file editor opens its own document), `addPinsToAgent {agent, pins, viewId}` (docs/08 R10: a wire from a DUT pin dropped on a pin an agent already claims — the dragged pins join that agent through the `addAgentPorts` mutation, with the same port derivation as `createAgentFromPins`), `applyProposals {items: [{kind, args, accept?}]}` (docs/08 R12: the proposals the user CHECKED in the assistance strip, applied in order through the flows above — a preset agent name is used only when it is free, not an SV keyword and not a scoreboard/subenv/probe name, otherwise the input box asks; the `materialize` item carries the ghost ids to KEEP and the host writes `analysis:` from the RESOLVED inferred set through `materializeAnalysis` — the whole set at once, the unchecked members absent, `analysis: {}` when nothing is kept: docs/07's two sharp edges), `renameComponent {kind: agent|scoreboard|subenv, name, newName}` (docs/08 R14: in-place rename, validated on the host — an SV identifier, no keyword, free across agents/scoreboards/subenvs/probes — with the cascade of `renameAgent` / `renameScoreboard` / `renameSubenv`; a composed config gets a warning that the parent's `<subenv>.<agent>` references are not updated), `openGeneratedCode {id, label}` (docs/08 R15: the element's generated code BESIDE the diagram, focus kept — the `quickuvm.openGeneratedCode` flow, which offers to generate it first when it is missing), `addConnection {from, to}` (docs/08 R11: one hand-drawn connection between two composed blocks — checked by `singleConnection`, written through the multi-file wiring plan), `toggleCodeFollow {}` and `traceabilityReport {}` (docs/08 R20: the palette's View rows — the host flips `quickuvm.codeFollowsSelection` and re-posts `ui/config`, or opens the traceability report as a markdown document); `openConfigBeside` also takes an optional `id` (R15: the element's YAML entry is revealed and flashed after opening); `newTestbench {viewId}` (docs/08 R24: the "New testbench…" button — the host's template QuickPick for the view's module), `removeConnection {from, to}` (docs/08 R22: one `connections` entry removed — the matrix editor's cell toggled off; only the top configuration changes, the destination block's agents stay passive), `editAgents {names[], field, value}` and `editScoreboards {names[], field, value}` (docs/08 R9: one field on several components — only the fields of `MULTI_FIELDS`, only the names the config still has, one WorkspaceEdit); `openConfigAsText {}` (docs/08 R8: the banner's / empty state's "Open as text" — the per-file editor reopens its own tab with the built-in text editor through `vscode.openWith … "default"`, the panel opens the active configuration as text beside) and `setTop {}` (docs/08 R8: the no-model empty state's "Set top module…", the host's `quickuvm.setTop` input box) — the webview NEVER writes files; it asks the host. `openSource` also takes `peek: true` (hover cross-probing, phase 4): the host only **reveals** the declaration in the ALREADY visible editors, with a transient highlight of the line (~1.2 s) — it opens no tab and does not steal the focus; the `quickuvm.hoverCrossProbe` setting (on by default) turns it off |
+| `action/request` | `{action, args}` | actions that touch the YAML or the sources: `setDut`, `createAgentFromPins`, `createAgentFromIface`, `createSubenv`, `ignorePort`, `unignorePort`, `generate`, `openSource`, `addScoreboard`, `addCoverage`, `addVirtualSequence`, `deleteComponent {kind, name}`, `editScoreboard {name, field, value}`, `createProbe {net}`, `wireConnections {}`, `composeIntoParent {}`, `openSubenvConfig {config}` (opens a subenv's config file — the path from `subenvs[].config`, carried by the drill — with the default editor), `openConfigBeside {}` (docs/08 R4: the "YAML" header button — the configuration as text beside the diagram, focus kept on the diagram; the host opens it, or the per-file editor opens its own document), `addPinsToAgent {agent, pins, viewId}` (docs/08 R10: a wire from a DUT pin dropped on a pin an agent already claims — the dragged pins join that agent through the `addAgentPorts` mutation, with the same port derivation as `createAgentFromPins`), `applyProposals {items: [{kind, args, accept?}]}` (docs/08 R12: the proposals the user CHECKED in the assistance strip, applied in order through the flows above — a preset agent name is used only when it is free, not an SV keyword and not a scoreboard/subenv/probe name, otherwise the input box asks; the `materialize` item carries the ghost ids to KEEP and the host writes `analysis:` from the RESOLVED inferred set through `materializeAnalysis` — the whole set at once, the unchecked members absent, `analysis: {}` when nothing is kept: docs/07's two sharp edges), `renameComponent {kind: agent|scoreboard|subenv, name, newName}` (docs/08 R14: in-place rename, validated on the host — an SV identifier, no keyword, free across agents/scoreboards/subenvs/probes — with the cascade of `renameAgent` / `renameScoreboard` / `renameSubenv`; a composed config gets a warning that the parent's `<subenv>.<agent>` references are not updated), `openGeneratedCode {id, label}` (docs/08 R15: the element's generated code BESIDE the diagram, focus kept — the `quickuvm.openGeneratedCode` flow, which offers to generate it first when it is missing), `addConnection {from, to}` (docs/08 R11: one hand-drawn connection between two composed blocks — checked by `singleConnection`, written through the multi-file wiring plan), `toggleCodeFollow {}` and `traceabilityReport {}` (docs/08 R20: the palette's View rows — the host flips `quickuvm.codeFollowsSelection` and re-posts `ui/config`, or opens the traceability report as a markdown document); `openConfigBeside` also takes an optional `id` (R15: the element's YAML entry is revealed and flashed after opening); `showResults {}`, `refreshResults {}` and `openResultSource {file, line}` (docs/08 R25: the results report, a re-read of the results directory, and the source line of a UVM report — the file is looked up by NAME under the generated bench, never resolved as a path), `newTestbench {viewId}` (docs/08 R24: the "New testbench…" button — the host's template QuickPick for the view's module), `removeConnection {from, to}` (docs/08 R22: one `connections` entry removed — the matrix editor's cell toggled off; only the top configuration changes, the destination block's agents stay passive), `editAgents {names[], field, value}` and `editScoreboards {names[], field, value}` (docs/08 R9: one field on several components — only the fields of `MULTI_FIELDS`, only the names the config still has, one WorkspaceEdit); `openConfigAsText {}` (docs/08 R8: the banner's / empty state's "Open as text" — the per-file editor reopens its own tab with the built-in text editor through `vscode.openWith … "default"`, the panel opens the active configuration as text beside) and `setTop {}` (docs/08 R8: the no-model empty state's "Set top module…", the host's `quickuvm.setTop` input box) — the webview NEVER writes files; it asks the host. `openSource` also takes `peek: true` (hover cross-probing, phase 4): the host only **reveals** the declaration in the ALREADY visible editors, with a transient highlight of the line (~1.2 s) — it opens no tab and does not steal the focus; the `quickuvm.hoverCrossProbe` setting (on by default) turns it off |
 | `card/request` | `{id}` | docs/08 R15 — the hover card (a 450 ms dwell on a TB box, or `I` on the selected one) asks what the element will generate; the webview caches the answer until the next `config/full` or `status/decorations` |
 | `export/result` | `{viewId, svg}` | SVG-ul AUTONOM al vederii curente (faza 4): clonă cu stilurile calculate inline-uite (culorile temei VSCode sunt copiate în export — CSS-ul extern cu `var(--vscode-*)` nu călătorește), `viewBox` pe conținut (fără camera de sesiune), fundal copt din tema curentă. Emis la butonul ⤓ din header sau ca răspuns la `export/request`; host: save dialog + scriere pe disc |
 | `relay/flip` \| `relay/fold` \| `relay/netRender` \| `relay/selectPins` \| `relay/openTb` | `{nodeId, axis}` \| `{foldId}` \| `{net}` \| `{names[]}` \| `{}` | **gesturile de desen ale inspectorului din sidebar** (iul. 2026). Inspectorul NU mai stă în panou: aside-ul `#inspector` a fost SCOS, iar vederea „Properties" din sidebar e singurul inspector — de aici, un flip/pliaj/net-render nu are pânză pe care să acționeze, așa că se trimit host-ului, care le retrimite panoului (aceleași nume, sens invers). **Niciunul nu poartă `viewId`**: panoul le aplică pe vederea pe care o arată el, deliberat — sidebar-ul nu trebuie să poată muta o vedere pe care utilizatorul nu o privește. Fără panou deschis se pierd, ceea ce e corect: singurul lor efect e ce se desenează |

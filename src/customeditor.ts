@@ -598,6 +598,12 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "traceabilityReport":
         void vscode.commands.executeCommand("quickuvm.traceabilityReport");
         break;
+      case "showResults":
+        void vscode.commands.executeCommand("quickuvm.showResults"); // docs/08 R25
+        break;
+      case "refreshResults":
+        void vscode.commands.executeCommand("quickuvm.refreshResults");
+        break;
       case "removeConnection":
         // docs/08 R22 — one `connections` entry of THIS document
         void this.actions.removeConnection(s("from"), s("to"), target);

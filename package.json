@@ -140,6 +140,21 @@
         "category": "QuickUVM Architect"
       },
       {
+        "command": "quickuvm.refreshResults",
+        "title": "%cmd.refreshResults%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.showResults",
+        "title": "%cmd.showResults%",
+        "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.hideResults",
+        "title": "%cmd.hideResults%",
+        "category": "QuickUVM Architect"
+      },
+      {
         "command": "quickuvm.newTestbench",
         "title": "%cmd.newTestbench%",
         "category": "QuickUVM Architect",
@@ -359,6 +374,18 @@
       ],
       "commandPalette": [
         {
+          "command": "quickuvm.refreshResults",
+          "when": "quickuvm.hasConfig"
+        },
+        {
+          "command": "quickuvm.showResults",
+          "when": "quickuvm.hasConfig"
+        },
+        {
+          "command": "quickuvm.hideResults",
+          "when": "quickuvm.hasConfig"
+        },
+        {
           "command": "quickuvm.addClockDomain",
           "when": "quickuvm.hasConfig"
         },
@@ -576,6 +603,7 @@
     "test:wiring": "node scripts/test-wiring.mjs",
     "test:arrange": "node scripts/test-arrange.mjs",
     "test:annotations": "node scripts/test-annotations.mjs",
+    "test:results": "node scripts/test-results.mjs",
     "test:templates": "node scripts/test-templates.mjs",
     "test:signals": "node scripts/test-signals.mjs",
     "test:matrix": "node scripts/test-matrix.mjs",

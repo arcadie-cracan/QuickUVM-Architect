@@ -124,6 +124,7 @@ npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (do
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
 npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
+npm run test:results     # simulation results (docs/08 R25): UVM log + run verdict + attribution by reporter path + imc summary + the per-level projection, on real Xcelium runs
 npm run test:templates   # "New testbench" templates (docs/08 R24): per interface, per clock domain, composition — what each plan writes and what it leaves out
 npm run test:signals     # the Signals view's model (docs/08 R24): clock / reset domains with their agents, the Unconnected folder, what a drop writes
 npm run test:matrix      # the matrix editor's model (docs/08 R22): agents x scoreboards/coverage, block outputs x inputs, cell legality
@@ -1264,6 +1265,82 @@ coliziunea de nume.
   host's memory): `handleDrop` accepts both. The files written with the Write
   tool are LF; git normalises them (autocrlf).
 
+- **Simulation results on the diagram (docs/08 R25)**: the extension READS
+  what `make regress` left under `<outputDir>/out` and never runs or waits
+  for a simulator — do not add a process. Probed on quick-uvm 1.1.0 +
+  Xcelium 25.09 (the fixtures in `scripts/fixtures/results/` are those runs;
+  keep them SANITISED — no home directory, no site tool path): the generated
+  Makefile writes `runs/<test>.<seed>/{status,test.txt,seed.txt,sim.log}` and
+  `cov/summary.txt`. **The verdict is the `status` file's, nothing else's**:
+  the Makefile writes it AFTER the simulator exits, so a run without one is
+  in flight — UNKNOWN, as the Makefile's own summary skips it; judging its
+  half-written log reported a running regression as failing (the watcher
+  fires on each finished run while the next one's log is growing).
+  Attribution is by reporter PATH first (`elementOfPath`), then by the OWNER
+  of the report's source file (the manifest) when the path names nothing
+  known, then the env — never by message text, never dropped. The instance
+  names are generator policy and differ by MODE; they were assumed once and
+  were wrong, so they are probed and listed in `elementOfPath`'s comment:
+  `<agent>_agnt[.drv|.mon|.sqr]`, a sequence as `sqr@@<seq>` (strip the `@@`
+  tail), a named scoreboard by name but an UNNAMED or INFERRED one as `sbd`,
+  a declared collector as `<agent>_cov_h` but implicit mode's as `cov`,
+  `vsqr`, `probe_mon`, and `<handle>_agnt` / `<handle>_sb` for replicas and
+  instances (sole-agent benches only: quick-uvm refuses them otherwise). The
+  env's instance name (`e`) is NOT assumed, only its position. The names come
+  from `benchNames(config, inferred)` — pure, DEFENSIVE (it runs on every
+  edit of a half-typed file: a bare `-` under `agents:` threw inside the fold
+  and results stopped updating), and it needs `inferredComponents(resolve
+  .current)`: `resolve` races the manifest, so `resolve.onDidChange` re-folds.
+  Traps the real logs taught: the "caught UVM_ERROR" numbers of the report
+  CATCHER are 0 on a failing run — only the report server's "Report counts by
+  severity" block is read, and only when COMPLETE (a block cut after its
+  first line read as zero errors: PASS); a REPORT line is tested before the
+  `$finish` line (a message quoting it ended the run); a log without the
+  block is a FAIL of a log, never a pass; an imc column NAME contains a space
+  ("CoverGroup Covered"), so the table is split on two or more spaces, and
+  its rows are per INSTANCE (the DUT's figure is its subtree's sum). Reports
+  are FOLDED BY KIND WHILE PARSING and every kept string is copied (`own`): a
+  regex capture is a slice of the whole log, and one kept warning retained
+  its 8 MB log — 200 runs were gigabytes (measured at the review). The
+  message cap keeps the WORST (`keep`): first-come dropped the fatal that
+  ended the run behind eight earlier warnings. A unit's reports are counted
+  on its agent AND under `agent:<a>:u.<unit>`: the unit keys are read ONLY at
+  that agent's level (`levelResults`), or the agent would count twice.
+  Coverage is never summed upwards. `levelResults` returns `elsewhere` — what
+  was reported and has NO block on the level — and the header shows it: the
+  env's own fatal vanished at the Env level, and a level must never look
+  clean because its problems are drawn elsewhere. The service keeps what it
+  READ (`raw`) apart from the attributed snapshot and caches each parsed run
+  by its files' mtimes: a configuration change only re-folds (`update()`),
+  and a regression's N status events do not re-read N logs each; the watcher
+  is on the `status` files and the summary — what a finished run writes LAST
+  — never on the logs. OWNERSHIP: `quickuvm.outputDir` is one folder for the
+  workspace; the runs' `-covscope <dut>` is compared with the active
+  configuration's DUT and another bench's results are not shown (the
+  commands say whose they are). `results/full` is its own message, not a
+  field of `status/decorations`. AGE is computed by ONE host function
+  (`ageOf`) for the message and the report: `stale` = the config is dirty or
+  saved after the OLDEST verdict shown (the newest let one fresh run vouch
+  for the old ones); `covStale` = the summary is older than the newest
+  verdict or the config. `missed` (the server counted more than was read) and
+  `unparsed` are said too. The pills are placed from the `.tb-box` rect's
+  `getBBox()` (the group's box includes port labels), stop their own `click`
+  (it selected the block and the selection's outline replaced the
+  severity's), fit their block (the DUT's three figures ran onto the Env
+  block), are redrawn wherever the generation badges are (five call sites,
+  `updateLod` included) and on the unreadable-config path, are stripped from
+  the SVG export, and `resultByNode` is read by `applyFiltersHere`: a block
+  with a failing result is dimmed, never hidden. `openResultSource` looks the
+  file up by NAME under the generated bench (`findFiles`): the simulator
+  prints a path relative to ITS working directory, which must never be
+  resolved against the workspace. The report is a virtual document
+  (`quickuvm-results:`), like the traceability report. Found by the probe,
+  fixed since (D25 — the reset pitfall above — and, in the generator,
+  arcadie-cracan/QuickUVM#119): with the default `reset.external: false`
+  quick-uvm 1.1.0 wires `.rst_n(<primary agent>_if_inst.rst_n)` in tb_top,
+  while Architect keeps reset pins out of agents — such a bench generates
+  clean and fails elaboration (`*E,CUVUNF`).
+
 
 ## Faza curentă
 
@@ -1619,4 +1696,13 @@ drag-and-drop of agents onto clock / reset domains; `src/templates.ts` +
 `test:e2e`, the `newTestbench` action and the `assignDomain` host flow. The
 QuickPick flow and the tree's drag-and-drop still need a manual pass in the
 Extension Development Host.
+**R25 (docs/08) is implemented as a first slice** (Nov 2026): the last
+regression's results READ from `<outputDir>/out` and shown on the verification
+view — error / warning counts and severity colour on the blocks, coverage
+figures on the collectors and the DUT, the runs' verdicts in the header, a
+results report; `src/results.ts` + `test:results` (22 tests on real Xcelium
+logs), `src/results-service.ts`, the `results/full` message, the commands
+`quickuvm.refreshResults` / `showResults` / `hideResults`. The watcher, the
+commands and the report need a manual pass in the Extension Development Host
+against a real `make regress`.
 Planul complet: `docs/06-plan-mvp.md`.

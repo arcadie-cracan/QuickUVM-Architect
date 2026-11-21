@@ -77,6 +77,14 @@ import {
   type FilterItem,
   type FilterResult,
 } from "./filters";
+import {
+  countLabel,
+  levelResults,
+  messageLine,
+  resultsChip,
+  worstOfNode,
+  type NodeResult,
+} from "../results";
 import { analysisMatrix, connectionsMatrix, worthOffering, type Matrix } from "./matrix";
 import {
   ANNOT_COLORS,
@@ -147,6 +155,7 @@ const state: State = {
   childAgents: {},
   resolved: null,
   statusDecos: [],
+  results: null,
   tbFocus: "",
   proposals: null,
   tx: 0,
@@ -491,6 +500,22 @@ window.addEventListener("message", (e: MessageEvent) => {
       refreshCard(); // the open card, if it is about this subject; timers untouched
       break;
     }
+    case "results/full":
+      // docs/08 R25 — the last regression's results, read from its files by the
+      // host: badges and coverage figures on the blocks, the header's verdicts
+      resultsKnown = true; // this surface is told about results (the panel)
+      state.results = m.results
+        ? {
+            snapshot: m.results,
+            at: m.at,
+            stale: m.stale,
+            covStale: m.covStale,
+            unparsed: m.unparsed,
+          }
+        : null;
+      applyResultBadges();
+      applyFiltersHere(); // a block with a failing result is dimmed, never hidden
+      break;
     case "status/decorations":
       // the quick-uvm status decorations (docs/05): badges + generate chip
       cardCache.clear(); // the generation state changed: the cards say so
@@ -504,6 +529,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       genStale = new Set(m.genStale);
       applyStatusBadges();
       applyGenBadges();
+      applyResultBadges(); // docs/08 R25
       applyFiltersHere(); // docs/08 R23: what has a finding may not be hidden
       updateGenChip();
       refreshCard(); // a pinned card shows the new ●/U/M state and flags
@@ -1308,6 +1334,7 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
   applySelectionClasses();
   applyStatusBadges();
   applyGenBadges();
+  applyResultBadges(); // docs/08 R25
   refreshMinimap(); // the symbol has no minimap (it always fits) — removes it
 }
 
@@ -1349,6 +1376,7 @@ function updateLod(): void {
     // off-centre until the next render
     applyStatusBadges();
     applyGenBadges();
+    applyResultBadges(); // docs/08 R25
     if (state.mode === "schematic") {
       centerChipSigns(canvas);
     }
@@ -1710,6 +1738,12 @@ function exportSvg(): void {
   );
   // the status badges are a session diagnostic, not content (docs/05)
   clone.querySelectorAll(".status-badge").forEach((n) => n.remove());
+  // docs/08 R25 — nor are the simulation results (they are as old as their files)
+  clone.querySelectorAll(".result-badge").forEach((n) => n.remove());
+  clone
+    .querySelectorAll(".res-fatal, .res-error, .res-warning")
+    .forEach((n) => n.classList.remove("res-fatal", "res-error", "res-warning"));
+  clone.classList.remove("res-stale");
   // docs/08 R23 — "the export shows what the view shows": a hidden element is
   // `display: none` on screen, and `display` is not an inlined property — left
   // in the clone it was drawn in the file, outside the bounds taken above
@@ -1861,6 +1895,198 @@ function applyStatusBadges(): void {
     });
     g.append(badge);
   });
+}
+
+// --- simulation results on the blocks (docs/08 R25) -------------------------
+//
+// What the last regression left on disk, projected onto the level on screen
+// (`levelResults`, pure — src/results.ts): an error count at a block's
+// bottom-right corner, with its outline in the severity's colour; a coverage
+// figure at the bottom-left of the blocks that have one (a collector, the DUT);
+// the runs' verdicts in the header. The extension READS these — it runs no
+// simulator — so everything here is as old as the files: `stale` (the
+// configuration changed after the runs) dims the badges and is said on the chip.
+
+/** the results of the blocks on screen, by node id (also read by the filters:
+ *  a block with a failing result is never hidden) */
+let resultByNode: Record<string, NodeResult> = {};
+/** what was reported and has no block on this level (the header says it) */
+let resultElsewhere: NodeResult | null = null;
+/** the host sends `results/full` to this surface (the panel does, the per-file
+ *  editor does not): only then are the results commands offered */
+let resultsKnown = false;
+
+function resultPill(
+  cls: string,
+  x: number,
+  y: number,
+  anchor: "start" | "end",
+  text: string,
+  title: string
+): SVGGElement {
+  // 10px monospace: about 6px a character; the signs are a little wider
+  const w = Math.round(text.length * 6.1) + 12;
+  const x0 = anchor === "end" ? x - w + 8 : x - 8;
+  const g = el("g", { class: `result-badge ${cls}` });
+  g.append(
+    el("rect", { x: String(x0), y: String(y - 8), width: String(w), height: "16", rx: "8" }),
+    el("text", { x: String(x0 + w / 2), y: String(y + 3.5), "text-anchor": "middle" }, text),
+    el("title", {}, title)
+  );
+  return g;
+}
+
+function applyResultBadges(): void {
+  canvas.querySelectorAll(".result-badge").forEach((b) => b.remove());
+  canvas
+    .querySelectorAll(".res-fatal, .res-error, .res-warning")
+    .forEach((g) => g.classList.remove("res-fatal", "res-error", "res-warning"));
+  const r = state.results;
+  canvas.classList.toggle("res-stale", Boolean(r?.stale));
+  resultByNode = {};
+  resultElsewhere = null;
+  const scene = currentTbScene;
+  if (state.mode !== "tb" || !scene || !r) {
+    updateResultsChip();
+    return;
+  }
+  const level = levelResults(r.snapshot, scene.focus, scene.nodes.map((n) => n.id));
+  resultByNode = level.nodes;
+  resultElsewhere = level.elsewhere;
+  const staleNote = r.stale ? "\n(stale: the configuration changed after these runs)" : "";
+  const covNote = r.covStale
+    ? "\n(old coverage: the summary is older than the runs or the configuration)"
+    : "";
+  canvas.querySelectorAll<SVGGraphicsElement>(".tbnode[data-id]").forEach((g) => {
+    const id = g.dataset.id ?? "";
+    const res = resultByNode[id];
+    if (!res) {
+      return;
+    }
+    let bb: DOMRect;
+    try {
+      bb = (g.querySelector<SVGGraphicsElement>(".tb-box") ?? g).getBBox();
+    } catch {
+      return; // not attached / not drawn yet
+    }
+    const worst = worstOfNode(res);
+    if (worst) {
+      g.classList.add(`res-${worst}`);
+      const badge = resultPill(
+        `res-count sev-${worst}`,
+        bb.x + bb.width,
+        bb.y + bb.height,
+        "end",
+        countLabel(res), // failures first: errors, not the warnings beside them
+        res.messages.map(messageLine).join("\n") + staleNote
+      );
+      // the badge is the way in (R3's wrench): the messages, each opening the
+      // line that raised it, and the report. Not a drag start, not a selection.
+      badge.addEventListener("pointerdown", (ev) => {
+        ev.stopPropagation();
+        ev.preventDefault();
+        openCtxMenu(ev.clientX, ev.clientY, resultItems(res));
+      });
+      // …and the click that follows must not reach the block: it selected it,
+      // and the selection's outline then replaced the severity's (review)
+      badge.addEventListener("click", (ev) => ev.stopPropagation());
+      g.append(badge);
+    }
+    if (res.coverage.length) {
+      // the figures must fit the block they are about: a three-figure pill on
+      // a narrow DUT box ran across the gap onto the next block (review). The
+      // first wording that fits: full, rounded and short, the lowest alone.
+      const pct = (f: { pct: number }): string => `${Math.round(f.pct)}%`;
+      const lowest = [...res.coverage].sort((a, b) => a.pct - b.pct)[0];
+      const wordings = [
+        res.coverage.map((f) => `${f.label} ${pct(f)}`).join(" · "),
+        res.coverage.map((f) => `${f.label[0]} ${pct(f)}`).join(" "),
+        `${lowest.label} ${pct(lowest)}${res.coverage.length > 1 ? " …" : ""}`,
+      ];
+      const fits = (t: string): boolean => Math.round(t.length * 6.1) + 12 <= bb.width + 16;
+      g.append(
+        resultPill(
+          `res-cov${r.covStale ? " cov-stale" : ""}`,
+          bb.x,
+          bb.y + bb.height,
+          "start",
+          wordings.find(fits) ?? wordings[wordings.length - 1],
+          res.coverage
+            .map(
+              (f) =>
+                `${f.label}: ${f.pct}%` +
+                (f.covered !== null && f.total !== null ? ` (${f.covered}/${f.total})` : "")
+            )
+            .join("\n") +
+            staleNote +
+            covNote
+        )
+      );
+    }
+  });
+  updateResultsChip();
+}
+
+/** the menu of a result badge: its messages (each opens its source line), the report */
+function resultItems(res: NodeResult): CtxItem[] {
+  const clip = (t: string): string => (t.length > 96 ? `${t.slice(0, 95)}…` : t);
+  const items: CtxItem[] = res.messages.map((m) => {
+    const file = m.file;
+    return file
+      ? {
+          label: clip(messageLine(m)),
+          action: () => postAction("openResultSource", { file, line: m.line }),
+        }
+      : { label: clip(messageLine(m)), action: () => undefined, info: true };
+  });
+  const shown = res.messages.reduce((n, m) => n + m.count, 0);
+  const all = res.fatals + res.errors + res.warnings;
+  if (all > shown) {
+    items.push({ label: `… and ${all - shown} more (see the report)`, action: () => undefined, info: true });
+  }
+  items.push({ label: "Open the results report", action: () => postAction("showResults", {}) });
+  return items;
+}
+
+/** the header's verdicts: present while there are results to show (TB view only) */
+function updateResultsChip(): void {
+  head.querySelectorAll(".results-chip").forEach((c) => c.remove());
+  const tgl = head.querySelector(".mode-toggle");
+  const r = state.results;
+  if (!tgl || !r || state.mode !== "tb") {
+    return;
+  }
+  const c = resultsChip(r.snapshot, r.stale);
+  const chip = h("button", `results-chip tone-${c.tone}${r.stale ? " stale" : ""}`, c.text);
+  const missed = r.snapshot.missed;
+  chip.title =
+    "Simulation results, read from the files the regression left" +
+    (r.at !== null ? ` (${new Date(r.at).toLocaleString()})` : "") +
+    (r.unparsed ? ` — ${r.unparsed} log(s) not parsed: those runs count by verdict only` : "") +
+    (missed ? ` — ${missed} report(s) the simulator counted could not be read: on no block` : "") +
+    (r.stale ? " — STALE: the configuration changed after at least one of these runs" : "") +
+    (r.covStale ? " — the coverage summary is older than the runs or the configuration" : "") +
+    ". Click for the report.";
+  chip.addEventListener("click", () => postAction("showResults", {}));
+  // what was reported and has no block on THIS level (the env's own reports
+  // at the env level, the rest of the bench inside an agent): a level must
+  // never look clean because its problems are drawn elsewhere
+  const e = resultElsewhere;
+  if (e) {
+    const worst = worstOfNode(e) ?? "warning";
+    const more = h(
+      "button",
+      `results-chip elsewhere sev-${worst}${r.stale ? " stale" : ""}`,
+      `${countLabel(e)} not on this level`
+    );
+    more.title =
+      "Reported by parts of the bench that have no block on this level:\n" +
+      e.messages.map(messageLine).join("\n") +
+      "\nClick for the report.";
+    more.addEventListener("click", () => postAction("showResults", {}));
+    tgl.prepend(more);
+  }
+  tgl.prepend(chip);
 }
 
 /** docs/07 line 1 — the generation-state badge on a TB node, in the same vocabulary
@@ -5365,8 +5591,12 @@ function applyFiltersHere(): void {
   // a block is protected by a finding on any of its pins (review — testing the
   // block's own id protected nothing there)
   const flagged = [...statusByElement.keys()];
+  const failing = (id: string): boolean => {
+    const w = worstOfNode(resultByNode[id]); // docs/08 R25: a failing simulation result
+    return w === "error" || w === "fatal";
+  };
   for (const id of [...res.hidden]) {
-    if (statusByElement.has(id) || flagged.some((k) => k.startsWith(`${id}.`))) {
+    if (statusByElement.has(id) || failing(id) || flagged.some((k) => k.startsWith(`${id}.`))) {
       res.hidden.delete(id);
       res.dimmed.add(id);
     }
@@ -6220,6 +6450,13 @@ function paletteItems(): PaletteItem[] {
   // docs/08 R23 — the view's filter rules
   for (const it of filterMenu(state.selection.size === 1 ? [...state.selection][0] : null)) {
     add("View", it.label, it.action);
+  }
+  // docs/08 R25 — the simulation results: re-read the files, open the report
+  if (state.mode === "tb" && resultsKnown) {
+    add("View", "Results: re-read the regression's files", () => postAction("refreshResults", {}));
+    if (state.results) {
+      add("View", "Results: open the report", () => postAction("showResults", {}));
+    }
   }
   // docs/08 R22 — the matrix editor, whatever the size (the header button
   // appears only from about 4x4 upwards)
@@ -7552,6 +7789,7 @@ async function presentScene(
   applySelectionClasses();
   applyStatusBadges();
   applyGenBadges();
+  applyResultBadges(); // docs/08 R25
   applyFiltersHere(); // docs/08 R23: after the badges — a finding is never hidden
   contentBounds = withAnnotBounds(layoutBounds(layout));
   refreshMinimap();
@@ -7660,6 +7898,7 @@ async function renderTb(refit: boolean): Promise<void> {
     currentTbLayout = null;
     renderTbHeader(null);
     resetCanvas();
+    applyResultBadges(); // docs/08 R25: nothing is drawn, the runs' verdicts are still the bench's
     if (configError || unreadable) {
       // docs/08 R8 — a file that does not parse is not "empty": say what is
       // wrong and where, and offer the editor that can fix it
@@ -7753,6 +7992,7 @@ async function renderTb(refit: boolean): Promise<void> {
     // docs/08 R23 — the header was rebuilt (the chip went with it) while the
     // previous drawing, hidden elements included, is still on screen
     applyFiltersHere();
+    updateResultsChip(); // docs/08 R25: the verdicts are the bench's, not the drawing's
     return;
   }
   if (gen !== renderGen) {
@@ -7846,6 +8086,7 @@ async function renderTb(refit: boolean): Promise<void> {
   contentBounds = withAnnotBounds(tbBounds(layout));
   applyStatusBadges();
   applyGenBadges();
+  applyResultBadges(); // docs/08 R25
   applyFiltersHere(); // docs/08 R23: after the badges — a finding is never hidden
   refreshMinimap();
   renderInspectorHere();
