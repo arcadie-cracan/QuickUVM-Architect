@@ -235,12 +235,15 @@ export function isCrossBlockSb(
   return dotted(sb.source) || dotted(sb.monitor);
 }
 
-/** An agent's ports, flattened (name -> declared width). */
+/** An agent's ports, flattened (name -> declared width) — inputs, outputs AND
+ *  inouts: an inout the agent declares is a pin it claims (left out, it was
+ *  drawn as unmapped in the design view and counted against the coverage). */
 export function agentPorts(agent: QuvmAgent): Map<string, number> {
   const out = new Map<string, number>();
   for (const p of [
     ...(agent.ports?.inputs ?? []),
     ...(agent.ports?.outputs ?? []),
+    ...(agent.ports?.inouts ?? []),
   ]) {
     if (p.name) {
       out.set(p.name, p.width ?? 1);

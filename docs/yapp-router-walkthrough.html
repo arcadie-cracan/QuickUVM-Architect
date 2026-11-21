@@ -200,6 +200,8 @@
   .ui .shotimg { display: block; width: 100%; height: auto; background: #1e1e1e; }
   .ui.narrow { max-width: 460px; align-self: center; }
   .ui .shot-scroll { overflow-x: auto; }
+  /* a tall panel capture: shown at its own scale, scrolled inside the frame */
+  .ui .shot-tall { max-height: 620px; overflow-y: auto; }
   .ui .shot-scroll .shotimg { width: auto; height: 132px; max-width: none; }
   .cap .live { margin-left: auto; text-transform: none; letter-spacing: 0; color: var(--vs-green);
                font-size: 10px; border: 1px solid color-mix(in srgb, var(--vs-green) 45%, transparent);
@@ -378,18 +380,19 @@
     <div class="body">
       <p>Select the <b>pkt</b> agent (in the diagram or the Verification tree) and the <b>Properties</b> view fills with its fields. Three edits turn a raw port list into a meaningful packet — note <em>where</em> each one lives, since two are <b>per port</b> and one is on the agent:</p>
       <ul>
-        <li>Under <b>PORTS</b> → <code>in_addr</code> → <span class="menu">MORE</span>, give it a <b>symbolic enum</b>: <code>P0=0, P1=1, P2=2, DROP=3</code>. The destinations then read by name and randomization self-constrains to the four legal values.</li>
-        <li>Under <b>PORTS</b> → <code>in_valid</code> → <span class="menu">MORE</span>, set <b>Constraint</b> to <code>in_valid == 1</code>, so every generated item is a real packet.</li>
-        <li>Under <b>AGENT PROPERTIES</b> → <span class="menu">ADVANCED</span>, set <b>Emit when</b> to <code>in_valid</code>, so the monitor publishes only on cycles that actually carry a packet. The list offers only <b>1-bit ports of this agent</b> — QuickUVM requires exactly that, because the generated gate is <code>if (tr.in_valid)</code>.</li>
+        <li>Under <b>PORTS</b> → <code>in_addr</code> → <span class="menu">ALL</span>, give it a <b>symbolic enum</b>: <code>P0=0, P1=1, P2=2, DROP=3</code>. The destinations then read by name and randomization self-constrains to the four legal values.</li>
+        <li>Under <b>PORTS</b> → <code>in_valid</code> → <span class="menu">ALL</span>, set <b>Constraint</b> to <code>in_valid == 1</code>, so every generated item is a real packet.</li>
+        <li>Under <b>AGENT PROPERTIES</b> → <span class="menu">ALL</span>, set <b>Emit when</b> to <code>in_valid</code>, so the monitor publishes only on cycles that actually carry a packet. The list offers only <b>1-bit ports of this agent</b> — QuickUVM requires exactly that, because the generated gate is <code>if (tr.in_valid)</code>.</li>
       </ul>
-      <div class="ui">
+      <p class="tiny">A field you set moves up into <b>DECLARED</b>, in bold, with a ⟲ that removes the key again; what the generator would use anyway stays dimmed under <b>COMMON</b> and <b>ALL</b>.</p>
+      <div class="ui narrow">
         <div class="cap"><span class="dot"></span>Properties — agent pkt<span class="live">live capture</span></div>
-        <div class="shot-scroll"><img class="shotimg" alt="The real QuickUVM Architect Properties panel with the pkt agent selected: Agent properties (Role, Mode) with an Advanced disclosure holding Seq item style, Emit when set to in_valid and Replicas; then PORTS (9), each port showing its Width and a MORE disclosure with Randomize, Constraint and Enum — in_valid carrying the constraint in_valid == 1 and in_addr the enum P0=0, P1=1, P2=2, DROP=3." src="tutorial-shots/7-properties-agent.png"></div>
+        <div class="shot-tall"><img class="shotimg" alt="The real QuickUVM Architect Properties panel with the pkt agent selected: the component buttons (Open, Flip, Collapse), then Agent properties with a DECLARED group — Emit when set to in_valid, plus the interface and the sequence item — a COMMON group (Role, Mode) and a closed ALL disclosure; then PORTS (9): in_valid carrying the Constraint in_valid == 1, in_addr its Width 2 and the Enum P0=0, P1=1, P2=2, DROP=3, in_data its Width 8, and the six sampled outputs with Randomize set to No; every declared field is bold and has a reset button." src="tutorial-shots/7-properties-agent.png"></div>
       </div>
       <p>Drilling into the <b>pkt</b> agent (double-click it, or <span class="menu">Open Verification View</span>) shows the three components QuickUVM will generate — the <code>sequencer</code> feeds the <code>driver</code> a <code>seq_item</code>, the driver and <code>monitor</code> share the <code>pkt_if</code> interface, and the monitor publishes on its analysis port <code>ap</code>:</p>
       <div class="ui">
         <div class="cap"><span class="dot"></span>Verification View — inside the pkt agent<span class="live">live capture</span></div>
-        <div class="shot-scroll"><img class="shotimg" alt="The real QuickUVM Architect schematic inside the pkt agent: sequencer feeding the driver a seq_item, the driver driving the pkt_if interface, the interface sampled by the monitor, and the monitor publishing on its analysis port ap." src="tutorial-shots/4-schematic-agent.png"></div>
+        <div><img class="shotimg" alt="The real QuickUVM Architect schematic inside the pkt agent: sequencer feeding the driver a seq_item, the driver driving the pkt_if interface, the interface sampled by the monitor, and the monitor publishing on its analysis port ap." src="tutorial-shots/4-schematic-agent.png"></div>
       </div>
       <div class="note">
         <div class="h">Black-box on purpose</div>
