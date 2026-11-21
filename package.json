@@ -518,6 +518,7 @@
     "test:yamlmap": "node scripts/test-yamlmap.mjs",
     "test:wiring": "node scripts/test-wiring.mjs",
     "test:arrange": "node scripts/test-arrange.mjs",
+    "test:annotations": "node scripts/test-annotations.mjs",
     "test:proposals": "node scripts/test-proposals.mjs",
     "test:preview": "node scripts/test-preview.mjs",
     "test:trace": "node scripts/test-trace.mjs"

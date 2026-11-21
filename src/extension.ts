@@ -16,6 +16,10 @@ import { YamlLink } from "./yamllink";
 import { elementAtOffset, elementRange, entryText } from "./yamlmap";
 import { DirtyConfigStatus } from "./dirtystatus";
 import { QuvmConfigEditor, reopenConfigAs } from "./customeditor";
+
+/** who sent a `view/annotations`: the diagram panel (a per-file editor passes
+ *  its own webview) — the sender skips the echo of its own write */
+const PANEL_ORIGIN = "panel";
 import { codeFollowSetting, TraceService } from "./trace-service";
 import { Generator } from "./generate";
 import { resolveLocPath } from "./filelistops";
@@ -685,6 +689,7 @@ export function activate(context: vscode.ExtensionContext): void {
       netRender: (v, n, r) => layout.netRender(v, n, r),
       nodeCollapsed: (v, n, c) => layout.nodeCollapsed(v, n, c),
       viewPins: (v, h) => layout.viewPins(v, h),
+      annotationsSet: (v, a) => layout.annotationsSet(v, a, PANEL_ORIGIN), // docs/08 R21
     },
     onTbFocus: (focus, select) => {
       // the webview navigated across levels (drill/breadcrumb): the host keeps
@@ -762,6 +767,14 @@ export function activate(context: vscode.ExtensionContext): void {
     // this push its model stays undefined for the whole session and every pin-driven
     // action ("Agent from selection", "Ignore selection") is permanently disabled.
     propsView.post({ v: 1, type: "model/full", model: m });
+  });
+  // docs/08 R21 — annotations written by ANOTHER surface (a per-file editor)
+  // refresh the panel's mirror; the sidebar keeps a copy too
+  layout.onAnnotations(({ origin }) => {
+    if (origin !== PANEL_ORIGIN) {
+      DiagramPanel.current?.postLayout(layout.sidecar);
+    }
+    propsView.post({ v: 1, type: "layout/full", sidecar: layout.sidecar });
   });
   layout.onExternalChange((sidecar) => {
     DiagramPanel.current?.postLayout(sidecar);

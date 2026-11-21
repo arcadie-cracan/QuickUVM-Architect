@@ -88,8 +88,59 @@ Reguli:
   `collapsed: false` = expanded — is unchanged). On an RTL view, `hidePins: true`
   = its nc / ignored pins hidden (shown = absent; the serializer copies it next
   to `nodes` and `nets`, and a view with nothing but this key is kept).
+- docs/08 R21 (Nov 2026, decision D25): **secondary notation** — annotations of
+  the view, on the schematic views and on every TB level, never in the YAML:
+
+  ```yaml
+  views:
+    demo_top.u_soc:
+      nodes:
+        u_add: {x: 120, y: 80, color: green}     # a tint: a palette NAME
+      frames:
+        "frame:1":
+          title: arith
+          color: blue                            # optional
+          members: [u_add, u_inv, "note:1"]      # ids of this view
+      notes:
+        "note:1": {x: 80, y: 392, text: "din fans out to 9 loads"}
+  ```
+
+  A **frame** stores WHO is in it, not a rectangle: its box is the members'
+  bounding box plus padding, recomputed on every draw, so it survives a
+  re-arrangement, a collapse and a rename, and dragging its title tab drags its
+  members (one ordinary multi-node move: one total snapshot, D21). A member
+  belongs to one frame; an item dragged INTO a frame's box joins it (the
+  containment test at a drag's end: its centre outside before, inside after),
+  leaving is an explicit action, and a frame left without members is deleted. A **note** is text at an absolute position
+  (fixed width, the height follows the wrapped lines); creating one pins an
+  un-arranged view first, like any gesture that fixes a place. A **colour** is
+  one of six names from the theme's chart palette (`blue`, `green`, `yellow`,
+  `orange`, `red`, `purple`) on a node entry, a frame or a note — a fill wash,
+  so a TB box's stroke keeps saying what kind of component it is. "Re-arrange
+  all" keeps all three. The webview sends the view's whole set after each
+  gesture (`view/annotations`, docs/05); the host SANITISES it
+  (`setAnnotations`: ids, palette names, one frame per member — on a double
+  claim the lower-NUMBERED frame keeps it —, no empty frame, no empty note, a
+  title of at most 80 characters and a note of 2000), and `parseSidecar` reads
+  a file through the same reduction: the file is hand-editable and merged by
+  git, and a frame without `members` must not be able to throw later.
 
 ## Invalidarea grațioasă
+
+The secondary notation (docs/08 R21) follows the same rule, by kind: a node's
+**colour** lives on its node entry and migrates into `orphans` with it; a
+**frame** stays while at least ONE of its members is a key of the view — its
+dead member ids are left in place, inert, and are drawn again when their nodes
+return — and migrates whole (`kind: frame`: title, colour, members) when none
+is, to be restored when a member reappears; a **note** has no target and stays
+while its view exists. When the view itself disappears, its frames and notes
+migrate (`kind: frame` / `kind: note`) and return with it — the notes first,
+so a frame around notes only comes back too. A frame's or a note's id is a
+COUNTER, not a model key: an orphan whose id was reused meanwhile is restored
+under the next free id (and a frame follows its note's new id), never dropped. A verification
+(`tb:`) view is never invalidated against the RTL model, so its annotations
+are never touched; a leaf instance's boundary view keeps its notes and frames
+as it keeps `hidePins`.
 
 Când o cheie din sidecar nu mai există în model (redenumire, eroare temporară
 de compilare), intrarea se mută în `orphans` cu data ultimei vederi valide; nu

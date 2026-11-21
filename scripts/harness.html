@@ -199,6 +199,19 @@
             );
           }, 60);
         }
+        if (m.type === "view/annotations") {
+          // docs/08 R21 — the host's setAnnotations, in miniature: frames and
+          // notes on the view, colours on its node entries
+          const sc = loadSidecar();
+          const view = (sc.views[m.viewId] ??= {});
+          view.frames = m.frames;
+          view.notes = m.notes;
+          const nodes = (view.nodes ??= {});
+          for (const n of Object.values(nodes)) delete n.color;
+          for (const [id, c] of Object.entries(m.colors)) (nodes[id] ??= {}).color = c;
+          window.__sidecar = sc;
+          sessionStorage.setItem("__sidecar", JSON.stringify(sc));
+        }
         if (m.type === "node/flipped") {
           const sc = loadSidecar();
           const nodes = ((sc.views[m.viewId] ??= {}).nodes ??= {});

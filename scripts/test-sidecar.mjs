@@ -281,4 +281,275 @@ test("cleanOrphans: goleste lista", () => {
   assert.deepEqual(d.orphans, []);
 });
 
+// ---------------------------------------------------------------- docs/08 R21
+const V = "demo_top.u_soc";
+const annot = (over = {}) => ({ frames: {}, notes: {}, colors: {}, ...over });
+
+test("R21: setAnnotations writes frames, notes and node colours; getAnnotations reads them back", () => {
+  const d = ops.emptySidecar();
+  ops.setNodePos(d, V, "u_add", 8, 16);
+  const a = annot({
+    frames: { "frame:1": { title: "datapath", color: "blue", members: ["u_add", "u_inv"] } },
+    notes: { "note:1": { x: 40, y: 80, text: "check the carry", color: "yellow" } },
+    colors: { u_add: "green", u_inv: "red" },
+  });
+  ops.setAnnotations(d, V, a);
+  assert.deepEqual(d.views[V].nodes.u_add, { x: 8, y: 16, color: "green" }, "the position is untouched");
+  assert.deepEqual(d.views[V].nodes.u_inv, { color: "red" }, "a colour alone is an entry");
+  assert.deepEqual(ops.getAnnotations(d, V), a);
+  // a detached copy: mutating it does not reach the sidecar
+  ops.getAnnotations(d, V).frames["frame:1"].members.push("x");
+  assert.deepEqual(d.views[V].frames["frame:1"].members, ["u_add", "u_inv"]);
+  // the serializer WHITELISTS: frames and notes must survive a round trip
+  const back = ops.parseSidecar(ops.serializeSidecar(d));
+  assert.deepEqual(ops.getAnnotations(back, V), a);
+});
+
+test("R21: a whole replace — what is not sent is gone, and an emptied view disappears", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({
+    frames: { "frame:1": { title: "a", members: ["u_add"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "n" } },
+    colors: { u_add: "green" },
+  }));
+  ops.setAnnotations(d, V, annot({ notes: { "note:1": { x: 0, y: 0, text: "n" } } }));
+  assert.deepEqual(d.views[V], { notes: { "note:1": { x: 0, y: 0, text: "n" } } },
+    "the frame and the colour are gone, the node entry with them");
+  ops.setAnnotations(d, V, annot());
+  assert.equal(d.views[V], undefined, "the file holds only overrides");
+  // a view holding ONLY a note is not judged empty by another mutation's prune
+  ops.setAnnotations(d, V, annot({ notes: { "note:1": { x: 0, y: 0, text: "n" } } }));
+  ops.setHidePins(d, V, true);
+  ops.setHidePins(d, V, false);
+  assert.deepEqual(Object.keys(d.views[V]), ["notes"]);
+});
+
+test("R21: what arrives is sanitised — empty frames, bad ids, bad colours, double membership", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({
+    frames: {
+      "frame:1": { title: "  keeps  ", color: "pink", members: ["u_add", "u_add", "", 7] },
+      "frame:2": { title: "second claim", members: ["u_add", "u_inv"] },
+      "frame:3": { title: "empty", members: [] },
+      bogus: { title: "bad id", members: ["u_inv"] },
+    },
+    notes: {
+      "note:1": { x: 1, y: 2, text: "   " },
+      "note:2": { x: NaN, y: 2, text: "t" },
+      "note:3": { x: 1, y: 2, text: "ok", color: "purple" },
+      other: { x: 1, y: 2, text: "bad id" },
+    },
+    colors: { u_add: "green", u_inv: "#ff0000", "": "blue" },
+  }));
+  assert.deepEqual(d.views[V].frames, {
+    "frame:1": { title: "keeps", members: ["u_add"] },
+    "frame:2": { title: "second claim", members: ["u_inv"] },
+  }, "a node belongs to ONE frame; an unknown colour is dropped; an empty frame is not written");
+  assert.deepEqual(d.views[V].notes, { "note:3": { x: 1, y: 2, text: "ok", color: "purple" } });
+  assert.deepEqual(d.views[V].nodes, { u_add: { color: "green" } });
+});
+
+test("R21: clearPositions (Re-arrange all) keeps the colours, the frames and the notes", () => {
+  const d = ops.emptySidecar();
+  ops.setNodePos(d, V, "u_add", 8, 16);
+  ops.setNodePos(d, V, "u_inv", 8, 96);
+  ops.setAnnotations(d, V, annot({
+    frames: { "frame:1": { title: "f", members: ["u_add"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "n" } },
+    colors: { u_add: "green" },
+  }));
+  ops.clearPositions(d, V);
+  assert.deepEqual(d.views[V], {
+    nodes: { u_add: { color: "green" } },
+    frames: { "frame:1": { title: "f", members: ["u_add"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "n" } },
+  });
+});
+
+test("R21: invalidate — a coloured node that disappears migrates with its colour and comes back", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({ colors: { u_add: "green", gone: "red" } }));
+  assert.equal(ops.invalidate(d, model, "2026-11-21"), true);
+  assert.deepEqual(d.views[V].nodes, { u_add: { color: "green" } });
+  assert.deepEqual(d.orphans, [
+    { view: V, node: "gone", value: { color: "red" }, lastSeen: "2026-11-21" },
+  ]);
+});
+
+test("R21: invalidate — a frame stays while ONE member lives (dead ids inert), migrates whole when none does", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({
+    frames: {
+      "frame:1": { title: "half", members: ["u_add", "gone"] },
+      "frame:2": { title: "dead", color: "red", members: ["gone2", "gone3"] },
+      "frame:3": { title: "around a note", members: ["note:1"] },
+    },
+    notes: { "note:1": { x: 0, y: 0, text: "n" } },
+  }));
+  ops.invalidate(d, model, "2026-11-21");
+  assert.deepEqual(d.views[V].frames, {
+    "frame:1": { title: "half", members: ["u_add", "gone"] },
+    "frame:3": { title: "around a note", members: ["note:1"] },
+  }, "the dead member id is kept: it comes back with its node");
+  assert.deepEqual(d.orphans, [{
+    view: V, node: "frame:2", kind: "frame",
+    value: { title: "dead", color: "red", members: ["gone2", "gone3"] },
+    lastSeen: "2026-11-21",
+  }]);
+  // a member reappears: the frame is restored whole
+  d.orphans[0].value.members = ["gone2", "u_inv"];
+  ops.invalidate(d, model, "2026-11-22");
+  assert.equal(d.orphans.length, 0);
+  assert.equal(d.views[V].frames["frame:2"].title, "dead");
+});
+
+test("R21: invalidate — a view that disappears takes its frames and notes into orphans; they return with it", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, "demo_top.not_there", annot({
+    frames: { "frame:1": { title: "f", members: ["x"] } },
+    notes: { "note:1": { x: 8, y: 8, text: "kept" } },
+  }));
+  ops.invalidate(d, model, "2026-11-21");
+  assert.equal(d.views["demo_top.not_there"], undefined);
+  assert.deepEqual(d.orphans.map((o) => [o.kind, o.node]).sort(), [["frame", "frame:1"], ["note", "note:1"]]);
+  // "the view is back": the note returns at once, the frame once a member is a key
+  for (const o of d.orphans) {
+    o.view = V;
+  }
+  ops.invalidate(d, model, "2026-11-22");
+  assert.deepEqual(d.views[V].notes, { "note:1": { x: 8, y: 8, text: "kept" } });
+  assert.deepEqual(d.orphans.map((o) => o.kind), ["frame"], "no member of it exists yet");
+});
+
+test("R21: parseSidecar reads the notation through the write-side sanitiser — a malformed entry never throws later", () => {
+  const text = [
+    "schema_version: 1",
+    "views:",
+    `  ${V}:`,
+    "    nodes:",
+    "      u_add: {x: 8, y: 16, color: pink}",
+    "      u_inv: {color: green}",
+    "    frames:",
+    "      'frame:1': {title: no members}",
+    "      'frame:2':",
+    "      'frame:3': {title: ok, members: [u_add, 7, u_inv]}",
+    "    notes:",
+    "      'note:1': {x: 1, y: 2, text: 42}",
+    "      'note:2': {x: 1, y: 2, text: kept}",
+    "      'note:3':",
+    "  broken_view: 5",
+    "orphans: [null, {view: v, node: n, value: {}, lastSeen: x}]",
+    "",
+  ].join("\n");
+  const d = ops.parseSidecar(text);
+  assert.deepEqual(d.views[V].frames, { "frame:3": { title: "ok", members: ["u_add", "u_inv"] } });
+  assert.deepEqual(d.views[V].notes, { "note:2": { x: 1, y: 2, text: "kept" } });
+  assert.deepEqual(d.views[V].nodes, { u_add: { x: 8, y: 16 }, u_inv: { color: "green" } }, "an unknown colour name is dropped");
+  assert.equal(d.views.broken_view, undefined);
+  assert.equal(d.orphans.length, 1, "a null orphan is not an orphan");
+  // the two calls that used to throw on such a file
+  assert.doesNotThrow(() => ops.invalidate(d, model, "2026-11-21"));
+  assert.doesNotThrow(() => ops.getAnnotations(d, V));
+  // a view left with frames/notes that are ALL malformed has no such keys
+  const e = ops.parseSidecar(`schema_version: 1\nviews:\n  ${V}:\n    frames: {a: 1}\n    notes: x\norphans: []\n`);
+  assert.deepEqual(e.views[V], {});
+});
+
+test("R21: a double claim is resolved by frame NUMBER (frame:2 before frame:10), on write and on read", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({
+    frames: {
+      "frame:10": { title: "ten", members: ["u_add", "u_inv"] },
+      "frame:2": { title: "two", members: ["u_add"] },
+    },
+  }));
+  assert.deepEqual(d.views[V].frames, {
+    "frame:2": { title: "two", members: ["u_add"] },
+    "frame:10": { title: "ten", members: ["u_inv"] },
+  });
+  // the limits are the webview's: a title of 80, a note of 2000
+  ops.setAnnotations(d, V, annot({
+    frames: { "frame:1": { title: "t".repeat(300), members: ["u_add"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "n".repeat(5000) } },
+  }));
+  assert.equal(d.views[V].frames["frame:1"].title.length, 80);
+  assert.equal(d.views[V].notes["note:1"].text.length, 2000);
+  assert.doesNotThrow(() => ops.setAnnotations(d, V, null));
+});
+
+test("R21: invalidate — an orphaned frame whose id was reused comes back under a NEW id, not dropped", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({ frames: { "frame:1": { title: "old", members: ["gone"] } } }));
+  ops.invalidate(d, model, "2026-11-21");
+  assert.equal(d.orphans[0].node, "frame:1");
+  // meanwhile the user frames something else: the counter gives frame:1 again
+  ops.setAnnotations(d, V, annot({ frames: { "frame:1": { title: "new", members: ["u_add"] } } }));
+  // the old frame's member returns
+  d.orphans[0].value.members = ["u_inv"];
+  ops.invalidate(d, model, "2026-11-22");
+  assert.deepEqual(d.views[V].frames, {
+    "frame:1": { title: "new", members: ["u_add"] },
+    "frame:2": { title: "old", members: ["u_inv"] },
+  });
+  assert.equal(d.orphans.length, 0);
+});
+
+test("R21: invalidate — a vanished view's frame around NOTES ONLY returns with its notes", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, "demo_top.not_there", annot({
+    frames: { "frame:1": { title: "remarks", members: ["note:1", "note:2"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "a" }, "note:2": { x: 0, y: 40, text: "b" } },
+  }));
+  ops.invalidate(d, model, "2026-11-21");
+  assert.equal(d.orphans.length, 3);
+  for (const o of d.orphans) {
+    o.view = V; // "the view is back"
+  }
+  ops.invalidate(d, model, "2026-11-22");
+  assert.equal(d.orphans.length, 0, "the frame did not wait for a node key that would never come");
+  assert.deepEqual(d.views[V].frames["frame:1"].members, ["note:1", "note:2"]);
+  // a note restored under a new id (its own was reused) is followed by its frame
+  const e = ops.emptySidecar();
+  ops.setAnnotations(e, V, annot({ notes: { "note:1": { x: 9, y: 9, text: "newer" } } }));
+  e.orphans.push(
+    { view: V, node: "note:1", kind: "note", value: { x: 0, y: 0, text: "older" }, lastSeen: "x" },
+    { view: V, node: "frame:1", kind: "frame", value: { title: "f", members: ["note:1"] }, lastSeen: "x" }
+  );
+  ops.invalidate(e, model, "2026-11-22");
+  assert.deepEqual(e.views[V].notes, {
+    "note:1": { x: 9, y: 9, text: "newer" },
+    "note:2": { x: 0, y: 0, text: "older" },
+  });
+  assert.deepEqual(e.views[V].frames["frame:1"].members, ["note:2"], "the frame follows its note's new id");
+});
+
+test("R21: invalidate — a dead frame re-added by a stale whole set does not pile up duplicate orphans", () => {
+  const d = ops.emptySidecar();
+  const stale = annot({ frames: { "frame:1": { title: "dead", members: ["gone"] } } });
+  ops.setAnnotations(d, V, stale);
+  ops.invalidate(d, model, "2026-11-21");
+  ops.setAnnotations(d, V, stale); // another surface's mirror writes it back
+  ops.invalidate(d, model, "2026-11-22");
+  assert.equal(d.orphans.length, 1);
+  assert.equal(d.orphans[0].lastSeen, "2026-11-22");
+  // a restore that cannot happen yet does not leave an empty view behind
+  assert.equal(d.views[V], undefined);
+});
+
+test("R21: invalidate never touches a verification (tb:) view's annotations, nor a leaf instance's", () => {
+  const d = ops.emptySidecar();
+  const a = annot({
+    frames: { "frame:1": { title: "f", members: ["agent:gone"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "n" } },
+    colors: { "agent:gone": "blue" },
+  });
+  ops.setAnnotations(d, "tb:demo.quickuvm.yaml|env", a);
+  const leaf = model.instances.find((i) => !model.views[i.path]).path;
+  ops.setAnnotations(d, leaf, annot({ notes: { "note:1": { x: 0, y: 0, text: "on a leaf" } } }));
+  ops.invalidate(d, model, "2026-11-21");
+  assert.deepEqual(ops.getAnnotations(d, "tb:demo.quickuvm.yaml|env"), a);
+  assert.deepEqual(d.views[leaf].notes, { "note:1": { x: 0, y: 0, text: "on a leaf" } });
+  assert.equal(d.orphans.length, 0);
+});
+
 console.log(`\ntest-sidecar: ${passed} teste au trecut.`);

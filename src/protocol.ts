@@ -177,9 +177,59 @@ export interface ProposalApply {
 /** the position (and the fold/flip state) of a node, owned by the
  *  user (docs/04); x/y may be missing on nodes with other overrides
  *  but not yet moved */
+/** docs/08 R21 — the tint of a node, a frame or a note: a NAME from the theme's
+ *  chart palette (never a raw colour, so it follows the theme) */
+export type AnnotColor = "blue" | "green" | "yellow" | "orange" | "red" | "purple";
+
+export const ANNOT_COLORS: readonly AnnotColor[] = [
+  "blue",
+  "green",
+  "yellow",
+  "orange",
+  "red",
+  "purple",
+];
+
+/**
+ * docs/08 R21 — a FRAME: a titled box drawn around its members. It stores WHO
+ * is in it, never a rectangle: the box is derived from the members' positions
+ * on every draw, so it survives a re-arrangement, a collapse or a resize, and
+ * dragging it is dragging its members. A member id that is not in the view
+ * (deleted, renamed outside the diagram, a broken build) is inert, not removed.
+ */
+export interface SidecarFrame {
+  title: string;
+  color?: AnnotColor;
+  /** node ids, boundary-flag ids and note ids (`note:<n>`) of the same view */
+  members: string[];
+}
+
+/** docs/08 R21 — a sticky note: free text at a position of the view */
+export interface SidecarNote {
+  x: number;
+  y: number;
+  text: string;
+  color?: AnnotColor;
+}
+
+/** the longest frame title / note text kept (the SAME limits on both sides: a
+ *  host that cut what the webview kept showed the cut only after a reload) */
+export const ANNOT_TITLE_MAX = 80;
+export const ANNOT_NOTE_MAX = 2000;
+
+/** docs/08 R21 — the secondary notation of ONE view, as the webview edits it
+ *  (`colors` live on the node entries in the file) */
+export interface ViewAnnotations {
+  frames: Record<string, SidecarFrame>;
+  notes: Record<string, SidecarNote>;
+  colors: Record<string, AnnotColor>;
+}
+
 export interface SidecarNode {
   x?: number;
   y?: number;
+  /** docs/08 R21 — the node's tint (a view annotation, like the position) */
+  color?: AnnotColor;
   /** generated folds (RTL): absent = folded (the default), false = expanded.
    *  TB blocks (docs/08 R18): true = collapsed to the header, absent = expanded. */
   collapsed?: boolean;
@@ -200,15 +250,19 @@ export interface SidecarView {
   /** the level-4 override (docs/04): wire <-> label per net; absent =
    *  the suggestion from the model (render computed from fan-out) */
   nets?: Record<string, { render: "wire" | "label" }>;
+  /** docs/08 R21 — secondary notation: annotations of the VIEW, never of the
+   *  verification model (decision D25); keyed `frame:<n>` / `note:<n>` */
+  frames?: Record<string, SidecarFrame>;
+  notes?: Record<string, SidecarNote>;
 }
 
 /** orphan override: the key disappeared from the model (graceful invalidation) */
 export interface SidecarOrphan {
   view: string;
   node: string;
-  value: SidecarNode | { render: "wire" | "label" };
+  value: SidecarNode | { render: "wire" | "label" } | SidecarFrame | SidecarNote;
   /** the kind of the orphan key; absent = node (compatibility) */
-  kind?: "net";
+  kind?: "net" | "frame" | "note";
   /** the date of the last valid view (ISO 8601) */
   lastSeen: string;
 }
@@ -427,6 +481,10 @@ export type WebviewMessage =
     }
   // docs/08 R18 — an RTL view's nc / ignored pins hidden (a view-level state)
   | { v: 1; type: "view/pins"; viewId: string; hidden: boolean }
+  // docs/08 R21 — the secondary notation of a view (frames, notes, node
+  // colours), sent WHOLE after every annotation gesture: the set is small, a
+  // whole replace needs no per-gesture message and makes undo one message
+  | ({ v: 1; type: "view/annotations"; viewId: string } & ViewAnnotations)
   | {
       v: 1;
       type: "ports/reordered";
