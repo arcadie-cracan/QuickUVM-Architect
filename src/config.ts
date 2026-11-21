@@ -7,7 +7,7 @@
 import * as path from "path";
 import * as vscode from "vscode";
 import { parseDocument } from "yaml";
-import { checkConfig, Finding, WIDTH_CODE } from "./configcheck";
+import { checkConfig, Finding, RESET_CODE, WIDTH_CODE } from "./configcheck";
 import { ProjectModel } from "./model";
 import { AGENT_PALETTE, OverlayConfig, PortRole, StatusDeco } from "./protocol";
 import { decosFromFindings, statusIdsTree, type ElementStatus } from "./status";
@@ -539,8 +539,10 @@ export class ConfigService implements vscode.Disposable {
   }
 }
 
-/** The "update the width to N" quick-fix (docs/03), on the WIDTH_CODE diagnostic. */
-export class WidthFixProvider implements vscode.CodeActionProvider {
+/** The YAML quick-fixes of the findings that carry a `code` (docs/03): "update
+ *  the width to N" on WIDTH_CODE, "let the testbench top drive the reset" on
+ *  RESET_CODE. The diagram offers the same repairs through `StatusDeco.fixes`. */
+export class ConfigFixProvider implements vscode.CodeActionProvider {
   static readonly metadata: vscode.CodeActionProviderMetadata = {
     providedCodeActionKinds: [vscode.CodeActionKind.QuickFix],
   };
@@ -553,6 +555,31 @@ export class WidthFixProvider implements vscode.CodeActionProvider {
     const actions: vscode.CodeAction[] = [];
     for (const d of context.diagnostics) {
       const code = typeof d.code === "string" ? d.code : "";
+      if (code.startsWith(`${RESET_CODE}:`)) {
+        // `<repair>:<port>` — the port is everything after the SECOND colon
+        const rest = code.slice(RESET_CODE.length + 1);
+        const cut = rest.indexOf(":");
+        const repair = cut < 0 ? "external" : rest.slice(0, cut);
+        const port = cut < 0 ? rest : rest.slice(cut + 1);
+        const fix = new vscode.CodeAction(
+          repair === "clear"
+            ? vscode.l10n.t("Declare no reset port (dut.reset: '')")
+            : vscode.l10n.t(
+                'Let the testbench top drive "{0}" (reset: {external: true})',
+                port
+              ),
+          vscode.CodeActionKind.QuickFix
+        );
+        fix.diagnostics = [d];
+        fix.isPreferred = true;
+        fix.command = {
+          command: "quickuvm.fixResetUndriven",
+          title: fix.title,
+          arguments: [port, repair],
+        };
+        actions.push(fix);
+        continue;
+      }
       if (!code.startsWith(`${WIDTH_CODE}:`)) {
         continue;
       }
@@ -631,6 +658,22 @@ function findingMessage(f: Finding): string {
       return vscode.l10n.t(
         'Coverage names agent "{0}", which does not exist in this configuration',
         String(p.agent)
+      );
+    case "reset-undriven":
+      if (p.repair === "clear") {
+        return p.why === "reset-port"
+          ? vscode.l10n.t(
+              'dut.reset names "{0}", which nobody drives: an agent drives the reset through `reset_port`, so quick-uvm would generate a tb_top that references a signal that does not exist. Clear dut.reset (quick fix), or name the port that agent drives.',
+              String(p.port)
+            )
+          : vscode.l10n.t(
+              'dut.reset names "{0}", which is not a port of the DUT and which nobody drives — quick-uvm would generate a tb_top that references a signal that does not exist. Clear dut.reset (quick fix) if the DUT has no reset port, or correct the name.',
+              String(p.port)
+            );
+      }
+      return vscode.l10n.t(
+        'Reset "{0}" is driven by nobody: no agent declares it and `reset: {external: true}` is not set — quick-uvm would generate a tb_top that references a signal that does not exist. Let the testbench top drive it (quick fix), or clear dut.reset if the DUT has no reset port.',
+        String(p.port)
       );
   }
 }

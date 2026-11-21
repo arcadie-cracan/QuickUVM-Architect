@@ -75,7 +75,9 @@ test("one clock, one reset: every agent is on them — no folder, nothing to ass
   const none = buildSignalsTree({ dut: { name: "d", clock: "clk", reset: "" }, agents: [] });
   assert.deepEqual(shape(none[1]), ["group", "Resets", [["note", "no reset (dut.reset is empty)", []]]]);
   const ext = buildSignalsTree({ ...SINGLE, reset: { active_low: false, external: true } });
-  assert.match(find(ext, "reset:rst_n").description, /active high, external/);
+  // `external: true` = the testbench top generates the reset (D25) — the label
+  // once read it the other way round ("not driven by the bench")
+  assert.equal(find(ext, "reset:rst_n").description, "active high, driven by the testbench top");
 });
 
 test("a domain list: agents under their domain, the rest in Unconnected — which says where they land", () => {

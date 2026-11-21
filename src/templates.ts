@@ -118,17 +118,22 @@ const usable = (p: Port): boolean =>
  * The DUT section a module's ports suggest: the first clock-like and the first
  * reset-like 1-bit input, polarity from the name. The heuristic of "Set as DUT"
  * and of the subenv skeletons — one function, so the three cannot disagree.
+ *
+ * Without a clock the DUT is combinational and gets NO reset (D25): quick-uvm
+ * refuses `combinational` next to a top-driven reset and otherwise leaves the
+ * port unconnected, so the pin stays an ordinary unmapped pin. Who drives the
+ * reset is not part of the spec: `ops.setDut` derives it (the testbench top,
+ * unless an agent declares the port).
  */
 export function dutGuess(module: string, def: ModuleDef | undefined): ops.DutSpec {
   const ports = def?.ports ?? [];
   const clock = ports.find(isClockPin)?.name ?? null;
-  const reset = ports.find(isResetPin)?.name ?? null;
+  const reset = clock ? (ports.find(isResetPin)?.name ?? null) : null;
   return {
     module,
     clock,
     reset,
     resetActiveLow: reset ? resetIsActiveLow(reset) : true,
-    externalReset: false,
     combinational: !clock,
   };
 }
@@ -462,7 +467,6 @@ function planPerClock(
     clock: first.clock,
     reset: dutReset,
     resetActiveLow: dutReset ? resetIsActiveLow(dutReset) : true,
-    externalReset: false,
     combinational: false,
   };
   let text = base(module, spec);
@@ -471,11 +475,12 @@ function planPerClock(
   }
   const summary = [dutLine(spec), `clock domains: ${domains.map((d) => d.clock).join(", ")}`];
   if (entries.length) {
-    // ALWAYS a reset list under a clock list — even for one reset: quick-uvm's
-    // multi-domain path reads only a list, and with the plain mapping it
-    // generates NO reset and leaves the DUT's port unconnected, exit 0 (probed;
-    // review finding). `resetAsList` names the first entry after `dut.reset`;
-    // every entry says which clock its release is synchronised to.
+    // ALWAYS a reset list under a clock list — even for one reset: only a list
+    // entry can say which clock its release is synchronised to, and the plain
+    // mapping WITHOUT `external: true` generates NO reset there and leaves the
+    // DUT's port unconnected, exit 0 (probed; review finding). `resetAsList`
+    // names the first entry after `dut.reset` and takes over from the
+    // `external: true` that `setDut` wrote (a list is always top-driven).
     text = ops.resetAsList(text);
     for (const e of entries.slice(1)) {
       text = ops.addResetDomain(text, e.name);
