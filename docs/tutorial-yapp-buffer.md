@@ -36,6 +36,14 @@ agents the exercise needs.
 > `npm run test:e2e` — so the steps are not merely plausible. "Generates" is not
 > "simulates": see step 10.
 
+> **About the figures.** They are captures of the extension's real webview —
+> the shipped bundle, fed with a real `svmodel` run of the fixture and with the
+> YAML the gestures below write — taken by `npm run shots`
+> (`scripts/capture-shots.mjs`), not drawings. They are not captures of a VS
+> Code window: there is no activity bar, no tree and no QuickPick in them, and
+> the **Properties** panel is shown to the left of the diagram, where the side
+> bar is.
+
 ---
 
 ## 0. Start the Extension Development Host
@@ -70,6 +78,8 @@ Hierarchy**, **Signals** (collapsed) and **Properties**.
    The overlay lights up: the unmapped pins (all of them, for now) are marked, and
    `clk`/`rst_n` take the clock/reset role.
 
+   ![The yapp_buffer symbol after "Set as DUT": clk and rst_n grouped under CLOCK / RESET, the eight data pins still unmapped (Properties: 2/10 ports mapped), and the proposal strip above the canvas offering agents "in" and "out".](tutorial-shots/yapp-buffer/01-set-as-dut.png)
+
    > **Who drives the reset.** The reset pin is never part of an agent, so the
    > extension writes `reset: {external: true}`: the generated `tb_top.sv`
    > declares `rst_n`, holds it asserted for 5 clocks, releases it, and passes it
@@ -93,6 +103,8 @@ Hierarchy**, **Signals** (collapsed) and **Properties**.
    **input** ports become what the agent **drives** (`in_data`, `in_addr`,
    `in_valid`), and `in_ready` (a DUT output) becomes what it **samples**.
 
+![The four command pins selected on the symbol — in_data, in_addr, in_valid and in_ready highlighted — and the Properties panel offering "Agent from selection (4)".](tutorial-shots/yapp-buffer/02-select-cmd-pins.png)
+
 The pins of `cmd` now take the agent's colour.
 
 > **The strip above the canvas.** Once the DUT is set, a proposal strip offers
@@ -115,6 +127,8 @@ The pins of `cmd` now take the agent's colour.
 You now have **2 agents** and every data pin is mapped (only `clk` / `rst_n`
 remain, as clock / reset). ✔️ *"two or more agents"*
 
+![Both agents on the symbol: the four cmd pins in blue with round markers, the four rsp pins in orange with square markers; Properties lists cmd (4 pins) and rsp (4 pins) and says 10/10 ports mapped.](tutorial-shots/yapp-buffer/03-agents-mapped.png)
+
 ---
 
 ## 4. Open the verification diagram
@@ -133,6 +147,8 @@ Two equivalent ways — the second one validates **slice 4**:
 You see the root of the testbench: **DUT** (`yapp_buffer`) + **Env**, with one
 interface per agent between them. Double-click **Env** to go down to the level
 of the agents.
+
+![The testbench root: the yapp_buffer DUT (clock clk, reset rst_n) and the Env block listing its two agents, joined by the cmd_if and rsp_if interfaces.](tutorial-shots/yapp-buffer/04-testbench-root.png)
 
 ---
 
@@ -157,6 +173,8 @@ Its fields can be edited later from the inspector (select the scoreboard → the
 Source / Monitor / Match / Match key / Max latency editor), or from the pills
 on the selected box.
 
+![The scoreboard pkt_sb selected inside the Env: Properties shows its declared fields — Source cmd, Monitor rsp, Match out of order, Match key out_addr — and the box carries the match and latency pills.](tutorial-shots/yapp-buffer/06-scoreboard-selected.png)
+
 ---
 
 ## 6. A coverage collector (on `cmd`)
@@ -166,6 +184,11 @@ appears, linked to `cmd`. ✔️ *"a coverage collector"*
 
 *(Optional)* **"Virtual sequence"** → coordinates `cmd` (the active agent) — a
 sequential `smoke`.
+
+![Inside the Env after steps 5 and 6: the cmd and rsp agents, the pkt_sb scoreboard fed by both analysis ports, the cmd_cov collector on cmd, the virtual sequencer, and the two interface flags.](tutorial-shots/yapp-buffer/05-env.png)
+
+*(The blocks in this figure were placed by hand — step 7 — which is why the
+wires are this straight; the automatic layout is a starting point.)*
 
 ---
 
@@ -319,6 +342,12 @@ To see the results **on the diagram**:
    covergroup figure on the `cmd` collector and the code-coverage figures on
    the DUT. **"Refresh Simulation Results"** re-reads the files; a click on the
    header chip opens the report.
+
+![The same Env with the results of a real regression of this bench: the header says "Runs: 0/2 passed", pkt_sb is outlined in red with a count of 204 errors, and cmd_cov shows "cg 100%".](tutorial-shots/yapp-buffer/07-results.png)
+
+*(This figure is drawn from the logs of a real Xcelium regression of this very
+bench, run with a deliberately wrong prediction — hence the comparator's
+mismatches.)*
 
 > This step has been checked piece by piece — the log parsing and the
 > attribution on real Xcelium logs of this very bench, the drawing in the

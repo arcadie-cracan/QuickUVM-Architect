@@ -9,10 +9,11 @@ import * as vscode from "vscode";
 import { parseDocument } from "yaml";
 import { checkConfig, Finding, RESET_CODE, WIDTH_CODE } from "./configcheck";
 import { ProjectModel } from "./model";
-import { AGENT_PALETTE, OverlayConfig, PortRole, StatusDeco } from "./protocol";
+import { OverlayConfig, StatusDeco } from "./protocol";
 import { decosFromFindings, statusIdsTree, type ElementStatus } from "./status";
 import { changedSpan, minimalEdit, wholeLines } from "./textedit";
-import { agentPorts, QuvmConfig } from "./quickuvm";
+import { overlayOf } from "./overlay";
+import { QuvmConfig } from "./quickuvm";
 import { docParseError, parseQuvm, type QuvmParseError } from "./yamlops";
 import { newConfigText, topConfigPaths } from "./yamlops";
 
@@ -439,43 +440,14 @@ export class ConfigService implements vscode.Disposable {
   }
 
   private buildOverlay(cfg: QuvmConfig, orphans: string[]): OverlayConfig {
-    const dut = cfg.dut?.name ?? null;
-    const agents = (cfg.agents ?? [])
-      .filter((a): a is typeof a & { name: string } => Boolean(a.name))
-      .map((a, i) => ({
-        name: a.name,
-        color: i % AGENT_PALETTE,
-        pins: [...agentPorts(a).keys()],
-      }));
-
-    const roles: Record<string, PortRole> = {};
-    for (const p of cfg.dut?.unverified_ports ?? []) {
-      roles[p] = "ignored";
-    }
-    if (cfg.dut?.clock) {
-      roles[cfg.dut.clock] = "clock";
-    }
-    if (cfg.dut?.reset) {
-      roles[cfg.dut.reset] = "reset";
-    }
-
-    const def = this.model && dut ? this.model.modules[dut] : undefined;
-    const claimed = new Set(agents.flatMap((a) => a.pins));
-    const unmapped = (def?.ports ?? [])
-      .map((p) => p.name)
-      .filter((n) => !claimed.has(n) && !roles[n]);
-    const total = def?.ports.length ?? 0;
-
-    return {
-      dut,
-      configPath: this.uri
-        ? vscode.workspace.asRelativePath(this.uri, false)
-        : null,
-      agents,
-      roles,
-      coverage: { total, mapped: total - unmapped.length, unmapped },
-      orphans,
-    };
+    // pure (src/overlay.ts): the figure-capture script builds the same overlay
+    const dut = cfg.dut?.name;
+    return overlayOf(
+      cfg,
+      this.model && dut ? this.model.modules[dut] : undefined,
+      this.uri ? vscode.workspace.asRelativePath(this.uri, false) : null,
+      orphans
+    );
   }
 
   /**
