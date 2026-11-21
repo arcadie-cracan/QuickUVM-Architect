@@ -88,7 +88,7 @@ Reguli:
   `collapsed: false` = expanded — is unchanged). On an RTL view, `hidePins: true`
   = its nc / ignored pins hidden (shown = absent; the serializer copies it next
   to `nodes` and `nets`, and a view with nothing but this key is kept).
-- docs/08 R21 (Nov 2026, decision D25): **secondary notation** — annotations of
+- docs/08 R21 (Nov 2026, decision D26): **secondary notation** — annotations of
   the view, on the schematic views and on every TB level, never in the YAML:
 
   ```yaml

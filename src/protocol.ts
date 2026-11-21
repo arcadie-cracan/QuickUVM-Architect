@@ -282,7 +282,7 @@ export interface SidecarView {
    *  the suggestion from the model (render computed from fan-out) */
   nets?: Record<string, { render: "wire" | "label" }>;
   /** docs/08 R21 — secondary notation: annotations of the VIEW, never of the
-   *  verification model (decision D25); keyed `frame:<n>` / `note:<n>` */
+   *  verification model (decision D26); keyed `frame:<n>` / `note:<n>` */
   frames?: Record<string, SidecarFrame>;
   notes?: Record<string, SidecarNote>;
   /** docs/08 R23 — the view's filter rules (hide / dim / colour by kind and
