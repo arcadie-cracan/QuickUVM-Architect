@@ -733,6 +733,9 @@ export function drawTbEdges(
     if (e.net) {
       edge.dataset.id = e.net;
     }
+    // docs/08 R23 — a filter hides or dims a wire WITH one of its ends
+    edge.dataset.src = e.source;
+    edge.dataset.dst = e.target;
     edge.append(
       el("path", {
         class: "tb-edge-line",

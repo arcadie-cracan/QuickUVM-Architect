@@ -125,6 +125,7 @@ npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, 
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
 npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
 npm run test:matrix      # the matrix editor's model (docs/08 R22): agents x scoreboards/coverage, block outputs x inputs, cell legality
+npm run test:filters     # per-view filter rules (docs/08 R23): matching, first-rule-wins, wires with their ends, sanitising, unsafe patterns, the indicator
 npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
 npm run test:preview     # the diff preview (docs/08 R19): the +/- line summary of a gesture, the files that change
 npm run test:trace       # diagram <-> generated code (docs/08 R20): file owner, identifier pattern, lit lines, lenses, report
@@ -1111,6 +1112,71 @@ coliziunea de nume.
   tooltip says so; `document.hasFocus()` is false for scripted events in the
   harness — test the focus with a real click.
 
+- **Per-view filter rules (docs/08 R23)**: `effect x kind x name pattern`
+  per view, in the sidecar (`filters: {rules, off?}`), applied as CLASSES on
+  the drawn elements (`f-hide`, `f-dim`, a `tint-*`) — never a re-layout, never
+  the YAML. The rule ORDER is meaning (the first match decides visibility; the
+  first colour rule decides the tint): `serializeSidecar` copies the list
+  as it is and must never sort it, and "+ Add rule" / the context-menu rules go
+  FIRST. Hidden wires are hidden dependencies, so three things are load-bearing:
+  a wire is hidden only WITH an end (`edgeEffect`; the edge elements carry
+  `data-src` / `data-dst` for this, and a drag REDRAWS them — `applyFilterEdges`
+  from `dragReroute`); the header chip exists while the view has rules, even
+  lifted, even with no match (`filterSummary` returns "" only without rules);
+  and an element with a finding is DIMMED, never hidden — `applyFiltersHere`
+  runs after `applyStatusBadges` (which fills `statusByElement`) in both render
+  tails and again on `status/decorations`. A hidden element leaves the
+  selection (Delete would still reach it) and the marquee's candidates. The
+  rule colours go through `applyTints(…, ruled)`: every redraw of the
+  annotations re-tints from the annotations ALONE, so `commitAnnots` and the
+  annotation undo call `applyFiltersHere` after it. The editor applies a
+  pattern while it is typed WITHOUT rebuilding its rows (`storeFilters(next,
+  typing = true)` + `updateFilterCounts`) — a rebuild takes the caret. `sanitizeFilters`
+  is the one reduction on both sides (`setFilters`, `parseSidecar`, the
+  webview's `viewFilters`); a rule with neither kind nor pattern is legal
+  ("dim everything") but the UI never creates one by default. `view/filters`
+  is a whole replace like `view/annotations` and is announced the same way
+  (`LayoutStore.filtersSet` fires `onAnnotations`). No depth slider: D24's
+  drill levels are the depth control. From the adversarial review: (1) the
+  editor's rows hold INDICES into one view's list, so the box remembers what
+  it was built from (`filterBoxKey` / `filterBoxSig`) — `syncFilterBox`, at
+  the end of every `applyFiltersHere`, rebuilds it when the view or the rules
+  moved (a drill with the editor open wrote the old rows' edits into the NEW
+  level), and every handler checks the key first (the next render is
+  asynchronous); (2) in a design view the findings are keyed by PIN
+  (`<node>.<port>`), never by the block — "a finding is never hidden" tested
+  the block's own id and protected nothing there; a block is protected by a
+  finding on any key that starts with `<id>.`; (3) `display` is not in
+  `EXPORT_PROPS`: the export clone must DROP `.f-hide`, or the file draws
+  what the view hides, outside the bounds; (4) `invalidate`'s frame-orphan
+  pass judged "the view `viewOf` created for nothing" with a hand-written key
+  list that did not know `filters` — `viewEmpty` is the ONE predicate, use it
+  for every new key family (`test:sidecar`); (5) the selection has ONE choke
+  point, `applySelectionClasses`, which drops what `hiddenByFilter` says (read
+  from the DOM: the element or an ancestor has `f-hide`, so a hidden block's
+  pins go too) — `select/reveal` and Ctrl+F selected invisible blocks, and
+  Delete reached them; the reveal says why nothing lit up; (6) JavaScript's
+  matcher backtracks: `(a+)+$` on a 40-character name never returns, on every
+  render, from a file that is persisted and shared — `unsafePattern` refuses
+  a REPEATED group that itself repeats or alternates before the pattern is
+  ever run (conservative: `(foo|bar)+` too), and `storeFilters` applies the
+  rules BEFORE it posts them; (7) a pattern over `NAME_MAX` drops the RULE —
+  truncating made another pattern, dropping the pattern alone made "hide
+  every agent"; the input has `maxLength`; (8) typing posts through a 350 ms
+  debounce (`filterPostKey`; each `view/filters` is a save plus a
+  `layout/full` to every other surface), flushed on `change`, on close and
+  on `pagehide`, and a `layout/full` that arrives meanwhile must NOT take the
+  typed rules out of the mirror; (9) the focus after a rebuild goes back where
+  it was (`data-f`, `filterFocusHint` follows a moved rule) and only while
+  `document.hasFocus()`; Escape from the canvas closes the editor (the window
+  chain, before the matrix); (10) a colour rule does not match what takes no
+  tint (`FilterItem.noColor`: flags, ghosts) — the count said "coloured" for
+  elements nobody saw coloured; `.tbnode.ghost { opacity }` has two classes
+  and beat `.f-dim`; the hover preview's wires lose `data-src` / `data-dst`
+  with their `data-id` (the child's ids repeat this level's); the ELK-throw
+  path of `renderTb` calls `applyFiltersHere` (the header was rebuilt, the
+  old drawing with its hidden elements is still on screen).
+
 
 ## Faza curentă
 
@@ -1454,4 +1520,8 @@ node colours as VIEW annotations in the sidecar; `src/webview/annotations.ts`
 scoreboards / coverage and block outputs x block inputs as an overlay table
 whose cells send the existing host actions; `src/webview/matrix.ts` +
 `test:matrix`, the `removeConnection` action.
+**R23 (docs/08) is implemented** (Nov 2026): per-view filter rules (hide /
+dim / show / colour x kind x name pattern) as presentation over the same
+scene, with a header chip while any rule exists; `src/webview/filters.ts` +
+`test:filters`, `setFilters` in `test:sidecar`, the `view/filters` message.
 Planul complet: `docs/06-plan-mvp.md`.

@@ -125,6 +125,13 @@ Reguli:
   a file through the same reduction: the file is hand-editable and merged by
   git, and a frame without `members` must not be able to throw later.
 
+- docs/08 R23 (Nov 2026): a view's **filter rules** —
+  `filters: {rules: [{effect: hide, kind: agent, name: "^rsp"}], off: true}` — a
+  view-level key like `hidePins`: the rule ORDER is meaning (the first match
+  decides) and is never sorted; `off` keeps the rules without applying them; a
+  view holding nothing but rules is kept. They are presentation, like the
+  positions: no rule changes the layout or the YAML.
+
 ## Invalidarea grațioasă
 
 The secondary notation (docs/08 R21) follows the same rule, by kind: a node's
@@ -140,7 +147,10 @@ COUNTER, not a model key: an orphan whose id was reused meanwhile is restored
 under the next free id (and a frame follows its note's new id), never dropped. A verification
 (`tb:`) view is never invalidated against the RTL model, so its annotations
 are never touched; a leaf instance's boundary view keeps its notes and frames
-as it keeps `hidePins`.
+as it keeps `hidePins`. A view's filter rules (docs/08 R23) have no target of
+their own and stay while the view exists; when it disappears they migrate
+(`kind: filters`) and return with it, unless newer rules were written
+meanwhile.
 
 Când o cheie din sidecar nu mai există în model (redenumire, eroare temporară
 de compilare), intrarea se mută în `orphans` cu data ultimei vederi valide; nu

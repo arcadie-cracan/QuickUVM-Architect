@@ -43,6 +43,8 @@ export interface LayoutDeps {
   viewPins(viewId: string, hidden: boolean): void;
   /** docs/08 R21 — the view's frames, notes and node colours, replaced whole */
   annotationsSet(viewId: string, a: ViewAnnotations): void;
+  /** docs/08 R23 — the view's filter rules, replaced whole */
+  filtersSet(viewId: string, filters: unknown): void;
 }
 
 export interface PanelDeps {
@@ -412,6 +414,10 @@ export class DiagramPanel {
         break;
       case "view/pins":
         this.deps.layout?.viewPins(m.viewId, m.hidden);
+        break;
+      case "view/filters":
+        // docs/08 R23 — the view's filter rules, whole
+        this.deps.layout?.filtersSet(m.viewId, { rules: m.rules, off: m.off });
         break;
       case "view/annotations":
         // docs/08 R21 — frames, notes and node colours of the view, whole

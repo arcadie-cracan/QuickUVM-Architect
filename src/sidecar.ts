@@ -19,6 +19,7 @@ import {
   serializeSidecar,
   setAnnotations,
   setCollapsed,
+  setFilters,
   setFlip,
   setFold,
   setHidePins,
@@ -98,6 +99,14 @@ export class LayoutStore implements vscode.Disposable {
     // replaces the set from a stale mirror — and deletes a note the user typed
     // on the other surface (review finding). `origin` is the sender, so it can
     // skip its own echo.
+    this.annotEmitter.fire({ origin });
+  }
+
+  /** docs/08 R23 — the filter rules of a view, replaced whole; announced like
+   *  the annotations, for the same reason (another surface's stale mirror) */
+  filtersSet(viewId: string, filters: unknown, origin?: unknown): void {
+    setFilters(this.data, viewId, filters);
+    this.scheduleSave();
     this.annotEmitter.fire({ origin });
   }
 

@@ -26,7 +26,9 @@ import {
   type SidecarOrphan,
   type SidecarView,
   type ViewAnnotations,
+  type ViewFilters,
 } from "./protocol";
+import { sanitizeFilters } from "./webview/filters";
 import { buildSchematicScene } from "./webview/scene";
 
 export const SIDECAR_VERSION = 1;
@@ -83,6 +85,15 @@ export function parseSidecar(text: string): SidecarData {
       }
       if (view.nodes !== undefined && (view.nodes === null || typeof view.nodes !== "object")) {
         delete view.nodes;
+      }
+      if (view.filters !== undefined) {
+        // docs/08 R23 — read through the same reduction it is written through
+        const filters = sanitizeFilters(view.filters);
+        if (filters.rules.length) {
+          view.filters = filters;
+        } else {
+          delete view.filters;
+        }
       }
       for (const n of Object.values(view.nodes ?? {})) {
         if (n && n.color !== undefined && !isColor(n.color)) {
@@ -142,6 +153,9 @@ export function serializeSidecar(data: SidecarData): string {
       }
       out.notes = notes;
     }
+    if (v.filters?.rules.length) {
+      out.filters = v.filters; // docs/08 R23: the rule ORDER is meaning — not sorted
+    }
     views[viewId] = out;
   }
   return stringify(
@@ -175,7 +189,8 @@ function viewEmpty(view: SidecarView): boolean {
     !view.nets &&
     !view.hidePins &&
     !(view.frames && Object.keys(view.frames).length) &&
-    !(view.notes && Object.keys(view.notes).length)
+    !(view.notes && Object.keys(view.notes).length) &&
+    !view.filters?.rules.length
   );
 }
 
@@ -193,6 +208,9 @@ function prune(data: SidecarData, viewId: string, nodeId?: string): void {
   }
   if (view.notes && Object.keys(view.notes).length === 0) {
     delete view.notes;
+  }
+  if (view.filters && !view.filters.rules.length) {
+    delete view.filters;
   }
   if (nodeId && view.nodes) {
     const n = view.nodes[nodeId];
@@ -446,6 +464,22 @@ export function setAnnotations(
 }
 
 /**
+ * docs/08 R23 — replaces the filter rules of a view (sanitised: a known effect,
+ * an optional kind and pattern, at most `MAX_RULES`). No rules, no key.
+ */
+export function setFilters(data: SidecarData, viewId: string, filters: unknown): SidecarData {
+  const view = viewOf(data, viewId);
+  const clean: ViewFilters = sanitizeFilters(filters);
+  if (clean.rules.length) {
+    view.filters = clean;
+  } else {
+    delete view.filters;
+  }
+  prune(data, viewId);
+  return data;
+}
+
+/**
  * The level-4 override (docs/04): wire <-> label per net. `suggestion`
  * is the model's suggestion — a choice equal to the suggestion deletes the override
  * (the file holds only deviations from the default).
@@ -583,6 +617,23 @@ export function invalidate(
       annotOrphans.push(o); // restored below, notes BEFORE frames
       continue;
     }
+    if (o.kind === "filters") {
+      // docs/08 R23 — a view's rules come back with the view; rules written
+      // meanwhile are the newer ones and stay
+      if (keysFor(o.view) === null) {
+        still.push(o);
+        continue;
+      }
+      const view = viewOf(data, o.view);
+      const clean = sanitizeFilters(o.value);
+      if (!view.filters && clean.rules.length) {
+        view.filters = clean;
+      } else if (viewEmpty(view)) {
+        delete data.views[o.view];
+      }
+      changed = true;
+      continue;
+    }
     const keys = keysFor(o.view);
     if (keys?.has(o.node)) {
       const existing = data.views[o.view]?.nodes?.[o.node];
@@ -634,8 +685,11 @@ export function invalidate(
       frame.members = frame.members.map((m) => renamed.get(`${o.view}\0${m}`) ?? m);
       if (!frame.members.some((m) => keys.has(m) || Boolean(view.notes?.[m]))) {
         still.push(o);
-        if (!view.nodes && !view.nets && !view.hidePins && !view.frames && !view.notes) {
-          delete data.views[o.view]; // `viewOf` created it for nothing
+        if (viewEmpty(view)) {
+          // `viewOf` created it for nothing. The ONE predicate, not a list of
+          // keys written out here: the hand-rolled list had no `filters`, and
+          // deleted a view whose only content was its filter rules (review)
+          delete data.views[o.view];
         }
         continue;
       }
@@ -710,7 +764,11 @@ export function invalidate(
     // the first cut lost the DUT's hidden pins on every recompile (review finding).
     // docs/08 R21: the same for its frames and notes (the leaf's boundary view
     // can carry them, and there are no keys to judge a frame's members by)
-    const hasAnnot = !viewEmpty({ frames: view.frames, notes: view.notes });
+    const hasAnnot = !viewEmpty({
+      frames: view.frames,
+      notes: view.notes,
+      filters: view.filters,
+    });
     const leafView =
       keys === null &&
       (Boolean(view.hidePins) || hasAnnot) &&
@@ -740,6 +798,19 @@ export function invalidate(
       }
       for (const [id, n] of Object.entries(view.notes ?? {})) {
         orphanAnnot(viewId, id, "note", n);
+      }
+      if (view.filters?.rules.length) {
+        // docs/08 R23 — the rules are the user's work too: they wait for the view
+        data.orphans = data.orphans.filter(
+          (x) => !(x.view === viewId && x.kind === "filters")
+        );
+        data.orphans.push({
+          view: viewId,
+          node: "filters",
+          kind: "filters",
+          value: view.filters,
+          lastSeen: today,
+        });
       }
       delete data.views[viewId];
       changed = true;

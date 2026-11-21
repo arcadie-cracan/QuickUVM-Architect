@@ -579,6 +579,49 @@ mesajele tot aici, la implementare.
   the focus from the text editor. `Escape` closes it, from inside the table
   and from the canvas, and no key typed in it reaches the diagram. A child
   configuration whose port lists cannot be read contributes no rows.
+- **Per-view filter rules** (docs/08 R23, Nov 2026): `effect x kind x name
+  pattern` — **hide**, **dim**, **show** or a colour, on the elements of one
+  kind (or any), whose name matches a case-insensitive regular expression (or
+  any) — per view (per level in the verification view), in the layout sidecar.
+  The kinds are the view's own: `instance` / `iface` / `fold` / `port` in a
+  schematic; `agent`, `scoreboard`, `coverage`, `vsqr`, `probes`, `subenv`,
+  `unit`, `dut`, `env`, `port` in the verification view. The FIRST rule that
+  matches an element decides its visibility, so an exception is written above
+  the rule it carves into (`show ^cmd$` above `hide agent`); the first colour
+  rule that matches decides its tint, independently, and a colour given by hand
+  (R21) wins over a rule's. It is presentation over the SAME scene: classes on
+  the drawn elements, no layout pass — a hidden block keeps its place, and a
+  wire is hidden or dimmed WITH one of its ends, never on its own. Because
+  hidden wires are hidden dependencies, three things are fixed: rules exist
+  only because the user wrote them; the header shows a chip for as long as the
+  view has rules — "Filters: 3 hidden, 1 dimmed", "Filters: no match", "Filters
+  off (2 rules)" — and a click on it opens the editor; and an element with a
+  finding is never hidden, it is dimmed instead (the diagram never hides a
+  problem; in a design view a finding on any PIN of a block protects the
+  block). What a rule hides cannot be selected — not by a click, the lasso,
+  Ctrl+F or a reveal from the tree, which says so instead — and is not in the
+  SVG export. The editor is a small dialog under the header: one row per rule
+  (effect, kind, pattern — applied while typing, sent to the host when the
+  typing pauses —, how many elements of this view it matches or why the
+  pattern cannot run, up / down, delete). A pattern is at most 200 characters
+  and is refused, before it is ever run, when it is a repeated group that
+  itself repeats or alternates (`(a+)+`, `(a|aa)*`): such a pattern can take
+  exponential time, on every render, from a file that is shared. A colour
+  rule matches only what can show a tint (not a flag, not an inferred ghost).
+  The editor follows the view: after a drill it shows the new level's rules.
+  Its buttons:
+  "+ Add rule" (which starts on the kind of the selected block, never on
+  "everything"), "Lift all (keep the rules)" and "Delete all rules". From the
+  canvas: "Filter: hide this block" and "Filter: dim every <kind>" on a block's
+  context menu, "Filters…" and "Lift all filters" on the background's and in
+  the palette. One message, `view/filters {viewId, rules, off?}` (the whole
+  list; the host sanitises it and re-posts `layout/full` to the other surfaces,
+  as for the annotations); the rules are pure (`src/webview/filters.ts`,
+  `test:filters`; the sidecar side in `test:sidecar`). The SVG export shows
+  what the view shows, filters included. The row's "depth slider" is not
+  implemented: since D24 a diagram shows ONE level and the drill is its depth
+  control — there is no second level in a scene to fold away (a block's own
+  detail is R18's collapse-to-header).
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
@@ -712,6 +755,7 @@ JSON, versionat (`v: 1`), tipat în TypeScript într-un singur fișier partajat
 | `node/collapsed` | `{viewId, nodeId, collapsed}` | docs/08 R18: a TB block collapsed to its header (title, stereotype, ports — no compartments, no widgets) or expanded; `viewId` is the level key `tb:<config>\|<focus>`, like `node/flipped`; the host writes `collapsed: true` on the node in the sidecar (expanded = absent) |
 | `view/pins` | `{viewId, hidden}` | docs/08 R18: an RTL view hides / shows its nc (not connected) child pins and its ignored (waived) DUT pins; a view-level override in the sidecar (`hidePins: true`, shown = absent) |
 | `view/annotations` | `{viewId, frames, notes, colors}` | docs/08 R21: the secondary notation of a view, sent WHOLE after every annotation gesture (the set is small; a whole replace needs no per-gesture message and makes undo one message). `viewId` is the layout key (the RTL view, or the TB level `tb:<config>\|<focus>`); `frames` = `{"frame:<n>": {title, color?, members[]}}`, `notes` = `{"note:<n>": {x, y, text, color?}}`, `colors` = `{<nodeId>: <palette name>}` (stored on the node entries in the file). The host sanitises it (`setAnnotations`) and does not echo it back |
+| `view/filters` | `{viewId, rules[], off?}` | docs/08 R23: the filter rules of a view, whole (`rules: []` clears them). A rule is `{effect, kind?, name?}`: `effect` = `show` \| `hide` \| `dim` \| a palette colour name, `kind` an element kind of the view, `name` a regular expression on the element's name; `off: true` keeps the rules without applying them. `viewId` is the layout key. The host sanitises the list (`setFilters` → `sanitizeFilters`: known effects, trimmed and bounded strings, at most 24 rules), does not echo it to the sender and re-posts `layout/full` to the other surfaces |
 | `fold/toggled` | `{viewId, foldId, collapsed}` | expandarea/re-plierea unui pliaj generate → host persistă starea în sidecar (`nodes[foldId].collapsed`) |
 | `node/flipped` | `{viewId, nodeId, flipH, flipV}` | răsturnarea unui bloc (doc. 04: reatribuirea laturilor/ordinii pinilor, nu oglindire geometrică) → host persistă `nodes[nodeId].flipH/flipV` |
 | `ports/reordered` | `{viewId, port, side, order}` | override de pin |
