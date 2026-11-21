@@ -50,6 +50,9 @@ export interface QuvmAgent {
   /** multi-clock/multi-reset: which declared domain this agent samples/is gated by */
   clock?: string;
   reset?: string;
+  /** the agent-side reset OUTPUT port (one of its `inputs`): an AGENT-driven
+   *  reset — quick-uvm refuses it next to `reset: {external: true}` */
+  reset_port?: string;
   /** C3 per-instance parameter overrides; they pin the bench to `layout: flat` */
   instances?: { name?: string }[];
   /** F2' — this agent is CONSUMED BY REFERENCE from a generated VIP: the entry
