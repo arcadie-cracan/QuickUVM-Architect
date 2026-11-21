@@ -537,12 +537,18 @@ export class ConfigFixProvider implements vscode.CodeActionProvider {
     for (const d of context.diagnostics) {
       const code = typeof d.code === "string" ? d.code : "";
       if (code.startsWith(`${RESET_CODE}:`)) {
-        const port = code.slice(RESET_CODE.length + 1);
+        // `<repair>:<port>` — the port is everything after the SECOND colon
+        const rest = code.slice(RESET_CODE.length + 1);
+        const cut = rest.indexOf(":");
+        const repair = cut < 0 ? "external" : rest.slice(0, cut);
+        const port = cut < 0 ? rest : rest.slice(cut + 1);
         const fix = new vscode.CodeAction(
-          vscode.l10n.t(
-            'Let the testbench top drive "{0}" (reset: {external: true})',
-            port
-          ),
+          repair === "clear"
+            ? vscode.l10n.t("Declare no reset port (dut.reset: '')")
+            : vscode.l10n.t(
+                'Let the testbench top drive "{0}" (reset: {external: true})',
+                port
+              ),
           vscode.CodeActionKind.QuickFix
         );
         fix.diagnostics = [d];
@@ -550,7 +556,7 @@ export class ConfigFixProvider implements vscode.CodeActionProvider {
         fix.command = {
           command: "quickuvm.fixResetUndriven",
           title: fix.title,
-          arguments: [port],
+          arguments: [port, repair],
         };
         actions.push(fix);
         continue;
@@ -635,6 +641,17 @@ function findingMessage(f: Finding): string {
         String(p.agent)
       );
     case "reset-undriven":
+      if (p.repair === "clear") {
+        return p.why === "reset-port"
+          ? vscode.l10n.t(
+              'dut.reset names "{0}", which nobody drives: an agent drives the reset through `reset_port`, so quick-uvm would generate a tb_top that references a signal that does not exist. Clear dut.reset (quick fix), or name the port that agent drives.',
+              String(p.port)
+            )
+          : vscode.l10n.t(
+              'dut.reset names "{0}", which is not a port of the DUT and which nobody drives — quick-uvm would generate a tb_top that references a signal that does not exist. Clear dut.reset (quick fix) if the DUT has no reset port, or correct the name.',
+              String(p.port)
+            );
+      }
       return vscode.l10n.t(
         'Reset "{0}" is driven by nobody: no agent declares it and `reset: {external: true}` is not set — quick-uvm would generate a tb_top that references a signal that does not exist. Let the testbench top drive it (quick fix), or clear dut.reset if the DUT has no reset port.',
         String(p.port)

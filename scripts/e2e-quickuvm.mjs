@@ -89,33 +89,81 @@ function quickUvmComposed(topText, producerText, consumerText) {
 const stripComments = (sv) =>
   sv.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
 
-/** the declarations of an interface / of the top: comments, clocking blocks and
- *  modports removed (they REFERENCE signals, they do not declare them) */
+/** the index just past the `)` that closes the `(` at `open`, or -1 */
+function closeParen(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "(") {
+      depth += 1;
+    } else if (text[i] === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return i + 1;
+      }
+    }
+  }
+  return -1;
+}
+
+/** removes every `#( ... )` group (parameter assignments, balanced): a DUT's
+ *  `#(.W(WIDTH))` is not a port connection, `clkgen #(10) ck (clk)` is an instance */
+function stripParamLists(text) {
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const m = /#\s*\(/.exec(text.slice(i));
+    if (!m) {
+      return out + text.slice(i);
+    }
+    const open = i + m.index + m[0].length - 1;
+    const close = closeParen(text, open);
+    if (close < 0) {
+      return out + text.slice(i);
+    }
+    out += text.slice(i, i + m.index) + " ";
+    i = close;
+  }
+}
+
+/** the DECLARATIONS of an interface / of the top: comments, clocking blocks and
+ *  modports removed (they REFERENCE signals), and the `[...]` ranges with them
+ *  (a name inside a dimension is a use, not a declaration) */
 function declText(sv) {
   return stripComments(sv)
     .replace(/\bclocking\b[\s\S]*?\bendclocking\b/g, " ")
-    .replace(/\bmodport\b[^;]*;/g, " ");
+    .replace(/\bmodport\b[^;]*;/g, " ")
+    .replace(/\[[^\]]*\]/g, " ");
 }
+
+const NOT_A_TYPE =
+  "begin|end|else|assign|if|initial|final|always\\w*|return|posedge|negedge|repeat|wait|forever|fork|join\\w*|module|interface|import|typedef|parameter|localparam";
 
 function declares(sv, sig) {
   const s = sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   const text = declText(sv);
   return (
-    // `logic [7:0] a, sig;`  /  `interface x (input clk, input sig);`
+    // `logic a, sig;`  /  `interface x (input clk, input sig);` — up to the end of
+    // the declaration, and never into an initialiser (`logic a = sig;` USES sig)
     new RegExp(
-      `\\b(?:input|output|inout|logic|wire|bit|reg|var|tri\\w*)\\b[^;)]*\\b${s}\\b`
+      `\\b(?:input|output|inout|logic|wire|bit|reg|var|tri\\w*)\\b[^;)=]*\\b${s}\\b`
     ).test(text) ||
-    // a user-typed signal: `my_struct_t sig;`
-    new RegExp(`(?:^|[;\\n])\\s*\\w+(?:\\s*\\[[^\\]]*\\])*\\s+${s}\\b\\s*(?:\\[[^\\]]*\\]\\s*)*[;,=]`).test(text)
+    // a user-typed signal, `my_struct_t sig;` — type and name on ONE line, and the
+    // "type" is not a keyword (`begin` + newline + `sig = ...;` is an assignment)
+    new RegExp(
+      `(?:^|[;\\n])[ \\t]*(?!(?:${NOT_A_TYPE})\\b)[A-Za-z_]\\w*(?:::\\w+)?[ \\t]+${s}\\b[ \\t]*[;,]`
+    ).test(text)
   );
 }
 
 /**
- * Returns the problems of a generated bench (empty = clean) and the DUT port
- * connections it found, as `{port, expr}`.
+ * Returns the problems of a generated bench (empty = clean), the DUT port
+ * connections it found as `{port, expr}`, and the top files. `extraRoots`: more
+ * directories to look for interface files in (a bench that consumes a VIP by
+ * reference instantiates interfaces generated elsewhere).
  */
-function lintDutConnections(tbDir) {
+function lintDutConnections(tbDir, extraRoots = []) {
   const files = listFiles(tbDir);
+  const elsewhere = extraRoots.flatMap((d) => listFiles(d));
   const problems = [];
   const connections = [];
   const tops = files.filter(
@@ -124,18 +172,25 @@ function lintDutConnections(tbDir) {
   for (const topFile of tops) {
     const raw = readFileSync(topFile, "utf8");
     const top = stripComments(raw);
-    // `<type> [#(...)] <inst> (` — the instances of the top, by name
+    // `<type> <inst> (` — the instances of the top, by name (parameter lists gone)
     const typeOf = new Map();
-    for (const m of top.matchAll(/^\s*([A-Za-z_]\w*)\s*(?:#\s*\([^;]*?\)\s*)?([A-Za-z_]\w*)\s*\(/gm)) {
+    for (const m of stripParamLists(top).matchAll(/^\s*([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\(/gm)) {
       typeOf.set(m[2], m[1]);
     }
     const blocks = raw.matchAll(
       /pragma quickuvm custom dut_connections begin([\s\S]*?)\/\/ pragma quickuvm custom dut_connections end/g
     );
     for (const b of blocks) {
-      for (const c of stripComments(b[1]).matchAll(/\.([A-Za-z_]\w*)\s*\(([^()]*)\)/g)) {
-        const [, port, exprRaw] = c;
-        const expr = exprRaw.trim();
+      const body = stripParamLists(stripComments(b[1]));
+      for (const c of body.matchAll(/\.([A-Za-z_]\w*)\s*\(/g)) {
+        const open = c.index + c[0].length - 1;
+        const close = closeParen(body, open);
+        if (close < 0) {
+          problems.push(`${basename(topFile)}: .${c[1]}( — unbalanced parentheses`);
+          continue;
+        }
+        const port = c[1];
+        const expr = body.slice(open + 1, close - 1).trim();
         connections.push({ port, expr });
         // sized literals (`8'hFF`, `'0`) are not names
         const names = expr
@@ -154,9 +209,11 @@ function lintDutConnections(tbDir) {
             problems.push(`${basename(topFile)}: .${port}(${expr}) — \`${head}\` is not an instance of the top`);
             continue;
           }
-          const ifFile = files.find((f) => basename(f) === `${type}.sv`);
+          const ifFile =
+            files.find((f) => basename(f) === `${type}.sv`) ??
+            elsewhere.find((f) => basename(f) === `${type}.sv`);
           if (!ifFile) {
-            problems.push(`${basename(topFile)}: .${port}(${expr}) — no ${type}.sv was generated for \`${head}\``);
+            problems.push(`${basename(topFile)}: .${port}(${expr}) — no ${type}.sv found for \`${head}\``);
             continue;
           }
           if (!declares(readFileSync(ifFile, "utf8"), rest[0])) {
@@ -169,6 +226,58 @@ function lintDutConnections(tbDir) {
     }
   }
   return { problems, connections, tops };
+}
+
+// THE LINT IS TESTED TOO (the adversarial review found five holes in its first
+// cut, each on a synthetic top — they are the cases below). A lint that passes
+// everything is worse than none: it is what "green" would have meant.
+{
+  const lintOf = (topBody, ifBody, extra = {}) => {
+    const d = mkdtempSync(join(tmpdir(), "quickuvm-e2e-lint-"));
+    writeFileSync(
+      join(d, "tb_top.sv"),
+      `module tb_top;\n  logic clk;\n${topBody.pre ?? ""}\n  a_if a_if_inst (clk);\n` +
+        `  // pragma quickuvm custom dut_connections begin\n${topBody.dut}\n` +
+        `  // pragma quickuvm custom dut_connections end\nendmodule\n`
+    );
+    if (ifBody !== null) {
+      writeFileSync(join(d, "a_if.sv"), `interface a_if (input clk);\n${ifBody}\nendinterface\n`);
+    }
+    for (const [f, t] of Object.entries(extra)) {
+      writeFileSync(join(d, f), t);
+    }
+    return lintDutConnections(d).problems;
+  };
+  const IF = "  logic [7:0] din;\n  clocking cb1 @(posedge clk);\n    output din;\n    input rst_n;\n  endclocking";
+  // clean: a parameterised DUT is not a list of port connections
+  assert.deepEqual(
+    lintOf({ dut: "  demo #(.W(WIDTH), .D(4)) dut_inst (\n    .din(a_if_inst.din),\n    .clk(clk)  );" }, IF),
+    []
+  );
+  // a name the clocking block merely REFERENCES is not declared
+  assert.equal(lintOf({ dut: "  demo dut_inst (.rst_n(a_if_inst.rst_n));" }, IF).length, 1);
+  // ... also inside a parenthesised / concatenated expression
+  assert.equal(lintOf({ dut: "  demo dut_inst (.rst_n(~(a_if_inst.rst_n)), .din({a_if_inst.din, 1'b0}));" }, IF).length, 1);
+  // an ASSIGNMENT after `begin` is not a declaration of the net
+  assert.equal(
+    lintOf({ pre: "  initial begin\n    rst_n = 1'b0;\n  end", dut: "  demo dut_inst (.rst_n(rst_n));" }, IF).length,
+    1
+  );
+  // a name in another declaration's INITIALISER or DIMENSION is not declared
+  assert.equal(lintOf({ pre: "  logic other = rst_n;", dut: "  demo dut_inst (.rst_n(rst_n));" }, IF).length, 1);
+  assert.equal(lintOf({ dut: "  demo dut_inst (.x(a_if_inst.W));" }, "  logic [W-1:0] din;").length, 1);
+  // declared for real: a net of the top, an interface port, a user-typed signal
+  assert.deepEqual(
+    lintOf(
+      { pre: "  logic rst_n;", dut: "  demo dut_inst (.rst_n(rst_n), .p(a_if_inst.pkt), .q(a_if_inst.r2));" },
+      "  pkt_t pkt;\n  wire r1, r2;"
+    ),
+    []
+  );
+  // an instance of the top that is no interface we can read is a problem, not a pass
+  assert.equal(lintOf({ dut: "  demo dut_inst (.x(ghost_inst.x), .y(a_if_inst.din));" }, IF).length, 1);
+  assert.equal(lintOf({ dut: "  demo dut_inst (.y(a_if_inst.din));" }, null).length, 1);
+  console.log("  ok    lint: the elaboration lint catches its own review cases");
 }
 
 function generate(name, yamlText, expectFiles, extraFiles = {}) {
@@ -188,8 +297,9 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   for (const f of expectFiles) {
     assert.ok(existsSync(join(dir, "tb", f)), `lipseste ${f} (in ${dir})`);
   }
-  // exit 0 is not enough — see lintDutConnections
-  const lint = lintDutConnections(join(dir, "tb"));
+  // exit 0 is not enough — see lintDutConnections (interfaces generated outside
+  // `tb/`, e.g. a VIP copied next to the config, are looked up in the scenario dir)
+  const lint = lintDutConnections(join(dir, "tb"), [dir]);
   assert.deepEqual(
     lint.problems,
     [],
@@ -1376,14 +1486,72 @@ endpackage
   });
   assert.equal(ops.parseQuvm(driven).reset, undefined, "external next to an agent-declared reset");
   generate("reset_agent_driven", driven, ["cmd_if.sv", "tb_top.sv"]);
-  // ... and `external: true` next to it is the generator's own wall
-  const both = ops.setResetDomainField(driven, "rst_n", "external", true);
+  // ... and `external: true` next to it is the generator's own wall — which the
+  // mutation says first (the guard and the wall agree, checked in both directions)
+  assert.throws(() => ops.setResetDomainField(driven, "rst_n", "external", true), /agent's ports/);
+  const both = driven + "reset: { external: true }\n";
+  assert.equal(ops.parseQuvm(both).reset.external, true, "the hand-written pair did not apply");
   const bd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-bothreset-"));
   writeFileSync(join(bd, "m.quickuvm.yaml"), both);
   const rb = quickUvm(["generate", "-c", join(bd, "m.quickuvm.yaml"), "-o", join(bd, "tb")], bd);
   assert.notEqual(rb.status, 0, "external + agent-declared reset should be refused");
   assert.match((rb.stdout ?? "") + (rb.stderr ?? ""), /must not also be an agent port/);
   console.log("  ok    reset: agent-driven (the port in an agent, no external) generates; both at once = REFUSED");
+
+  // `reset_port` (review): an agent drives the reset through its own port. With
+  // dut.reset left at its `rst_n` default the top dangles as before, `external:
+  // true` is REFUSED there — the repair is `clearDutReset`.
+  let rp = ops.createAgent(ops.newConfigText("rp"), {
+    name: "a", inputs: [{ name: "din", width: 8 }, { name: "arst", width: 1 }], outputs: [],
+  });
+  rp = ops.setAgentField(rp, "a", "reset_port", "arst");
+  rp += "dut: { name: rp, clock: clk }\n";
+  assert.equal(ops.parseQuvm(rp).dut.reset, undefined, "the key is absent: the generator's default");
+  const rd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-resetport-"));
+  writeFileSync(join(rd, "m.quickuvm.yaml"), rp);
+  const rr = quickUvm(["generate", "-c", join(rd, "m.quickuvm.yaml"), "-o", join(rd, "tb")], rd);
+  if (rr.status === 0) {
+    assert.match(lintDutConnections(join(rd, "tb")).problems.join("\n"), /\.rst_n\(a_if_inst\.rst_n\)/);
+  }
+  assert.throws(() => ops.setResetDomainField(rp, "rst_n", "external", true), /reset_port/);
+  generate("reset_port_cleared", ops.clearDutReset(rp), ["a_if.sv", "tb_top.sv"]);
+  console.log("  ok    reset: reset_port — the default dut.reset dangles, clearDutReset repairs it");
+
+  // `kind: selftest` (review): a DUT-less top. The kind switch must take
+  // `external: true` away — with it the interfaces take a `rst_n` input the top
+  // never connects, and the drivers wait on it forever (exit 0).
+  let st = ops.setDut(ops.newConfigText("st"), {
+    module: "st", clock: "clk", reset: "rst_n", resetActiveLow: true, combinational: false,
+  });
+  st = ops.createAgent(st, {
+    name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  for (const tname of ops.parseQuvm(st).tests.map((x) => x.name)) {
+    st = ops.removeTest(st, tname);
+  }
+  st = ops.setBenchField(st, "layout", "packaged");
+  assert.deepEqual(ops.parseQuvm(st).reset, { external: true });
+  const selftest = ops.setBenchField(st, "kind", "selftest");
+  assert.equal(ops.parseQuvm(selftest).reset, undefined, "the selftest kept `external: true`");
+  const sd = generate("selftest", selftest, ["a_driver.svh", "a_if.sv"]);
+  const waits = (dir) =>
+    /wait\s*\(\s*vif\.rst_n/.test(readFileSync(
+      listFiles(join(dir, "tb")).find((f) => basename(f) === "a_driver.svh"), "utf8"));
+  assert.equal(waits(sd), false, "the selftest's driver waits on a reset");
+  // mutation proof: the same selftest WITH the flag — the cascade is load-bearing
+  const stuck = selftest + "reset: { external: true }\n";
+  const xd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-selftest-ext-"));
+  writeFileSync(join(xd, "m.quickuvm.yaml"), stuck);
+  const xr = quickUvm(["generate", "-c", join(xd, "m.quickuvm.yaml"), "-o", join(xd, "tb")], xd);
+  if (xr.status === 0) {
+    const xtop = readFileSync(
+      listFiles(join(xd, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8");
+    assert.ok(waits(xd), "expected the driver to wait on vif.rst_n");
+    assert.match(xtop, /a_if a_if_inst \(clk\);/, "expected the top to leave rst_n unconnected");
+    console.log("  ok    reset: selftest — no external (with it: drivers wait on a reset the top never connects)");
+  } else {
+    console.log("  ok    reset: selftest — no external (the generator now refuses the pair itself)");
+  }
 }
 
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

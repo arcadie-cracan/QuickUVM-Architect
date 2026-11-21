@@ -1625,6 +1625,10 @@ export class Actions {
         case "collapse":
           done = await cfg.apply((t) => ops.collapseResets(t));
           break;
+        case "clear":
+          // the `reset-undriven` repair where the top cannot drive the reset
+          done = await cfg.apply((t) => ops.clearDutReset(t));
+          break;
         case "set": {
           const f = args.field as ops.ResetField;
           const raw = args.value ?? "";

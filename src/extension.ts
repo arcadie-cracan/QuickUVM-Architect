@@ -1167,9 +1167,14 @@ export function activate(context: vscode.ExtensionContext): void {
     // the YAML quick-fix of the `reset-undriven` finding: the same gesture as the
     // diagram's badge fix and the inspector's "Driven by" row. Internal (invoked
     // by the CodeAction only, like fixPortWidth) — not contributed to the palette.
-    vscode.commands.registerCommand("quickuvm.fixResetUndriven", (port: string) => {
-      void actions.editReset("set", { name: port, field: "external", value: "true" });
-    }),
+    vscode.commands.registerCommand(
+      "quickuvm.fixResetUndriven",
+      (port: string, repair?: string) => {
+        void (repair === "clear"
+          ? actions.editReset("clear", {})
+          : actions.editReset("set", { name: port, field: "external", value: "true" }));
+      }
+    ),
 
     // docs/08 R20 — the code view follows the selection (HDL Coder's Code view):
     // a setting, so it is a choice, not a surprise; the palette row toggles it.

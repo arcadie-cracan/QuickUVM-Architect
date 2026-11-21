@@ -163,13 +163,21 @@ Generated and inspected, one variant at a time, on the tutorial bench
 | composition, clocked leaf **not** external | the leaf DUT gets `.clk(u_a_clk)` and **no reset connection** | — | 0 |
 | composition, clocked leaf `external: true` | `logic u_a_rst_n;` + `reset_generator_u_a_rst_n`, `.rst_n(u_a_rst_n)` | `(.clk(u_a_clk), .rst_n(u_a_rst_n))` | 0 |
 | pure subsystem top with `dut.reset: rst_n` (or absent) | byte-identical to `reset: ''` — ignored | — | 0 |
+| agent `reset_port: arst` (`arst` in its inputs), `dut.reset` absent | `.arst(a_if_inst.arst)` **and** the dangling `.rst_n(a_if_inst.rst_n)` | no `rst_n` | **0** |
+| the same with `dut.reset: ''` or `dut.reset: arst` | `.arst(a_if_inst.arst)` only | — | 0 |
+| `reset_port` + `reset: {external: true}` | — | — | 1: `reset_port is an AGENT-DRIVEN reset and cannot be combined with `reset: {external: true}`` |
+| `kind: selftest` (packaged), not external | a DUT-less top, `a_if a_if_inst (clk);`, no reset anywhere | `(input clk)` | 0 |
+| `kind: selftest` + `reset: {external: true}` | still `a_if a_if_inst (clk);` — **`rst_n` unconnected** | `(input clk, input rst_n)`; driver/monitor `wait (vif.rst_n === 1'b1)` — **hangs** | **0** |
+| `kind: vip` | no top is generated | `external` alone decides whether the VIP's interfaces are `(input clk, input rst_n)` — the consuming bench must agree (a bench with `external: true` passes `.rst_n(rst_n)` to every interface) | 0 |
 
 So a single-reset bench has two working shapes — the top drives the reset
 (`external: true`), or an agent does (the port among its ports) — and one that
 validates and does not elaborate. **Architect writes `external: true`** whenever
-no agent declares the reset port (`resetNeedsExternal` in `src/yamlops.ts`) and
-reports the third shape (`reset-undriven`, `src/configcheck.ts`). The generator
-gap itself is written up for upstream in
+no agent declares the reset port (`resetNeedsExternal` in `src/yamlops.ts`;
+never on a combinational DUT, a `kind: selftest` bench or next to a
+`reset_port`) and reports the third shape (`reset-undriven`,
+`src/configcheck.ts`). The two exit-0 gaps — the dangling reference and the
+selftest that hangs — are written up for upstream in
 `docs/upstream-quickuvm-reset-undriven.md`.
 
 `reset:` list entries (`ResetConfig`): `{name: str (required), active_low: bool = true, clock: str|null}`.

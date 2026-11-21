@@ -153,7 +153,7 @@ test("R3: the unknown-agent findings target the scoreboard/coverage box with a r
 });
 
 test("reset-undriven: the reset PIN and the Env box, both with the editReset repair", () => {
-  const decos = decosFromFindings([F("reset-undriven", "error", { port: "rst_n" })]);
+  const decos = decosFromFindings([F("reset-undriven", "error", { port: "rst_n", repair: "external" })]);
   assert.deepEqual(decos.map((d) => d.scope), ["port", "env"]);
   assert.equal(decos[0].port, "rst_n");
   for (const d of decos) {
@@ -170,10 +170,27 @@ test("reset-undriven: the reset PIN and the Env box, both with the editReset rep
   });
   assert.equal(rtl.get("<port>.rst_n").severity, "error");
   assert.equal(rtl.get("u_buf.rst_n").severity, "error");
+  // (review) ... and the pin's badge OFFERS the repair: the RTL view is where
+  // "Set as DUT" leaves the user (the port decos used to drop their fixes there)
+  assert.equal(rtl.get("<port>.rst_n").fixes[0].action, "editReset");
+  assert.equal(rtl.get("u_buf.rst_n").fixes.length, 1);
   // TB root: on Env, with the repair one click away; the tree mirrors it
   const tb = statusIdsTb(decos, new Set(["dut", "env"]));
   assert.equal(tb.get("env").fixes[0].action, "editReset");
   assert.equal(statusIdsTree(decos).get("env").fixes.length, 1);
+});
+
+test("reset-undriven (review): `repair: clear` offers dut.reset: '' — never external", () => {
+  for (const why of ["no-port", "reset-port"]) {
+    const decos = decosFromFindings([
+      F("reset-undriven", "error", { port: "rst_n", repair: "clear", why }),
+    ]);
+    for (const d of decos) {
+      assert.deepEqual(d.fixes.map((f) => [f.action, f.args]), [["editReset", { op: "clear" }]]);
+      assert.match(d.fixes[0].label, /no reset port/);
+    }
+    assert.match(decos[0].message, why === "no-port" ? /not a port of the DUT/ : /reset_port/);
+  }
 });
 
 test("R3: the width repair rides on both the pin and the agent; ignored gets un-ignore", () => {

@@ -55,13 +55,13 @@ Hierarchy** și **Properties**.
 
 ---
 
-## 1. Deschide designul și setează DUT-ul
+## 1. Open the design and set the DUT
 
-1. În **Design Hierarchy** apare rădăcina **„top module"** și, sub ea,
-   `yapp_buffer`. Clic pe `yapp_buffer` → se deschide **schema/simbolul** lui
-   (o cutie cu toți pinii pe laturi).
-2. În panoul **Properties** din bara laterală, la secțiunea de configurare, apasă
-   **„Set as DUT"**. Extensia:
+1. **Design Hierarchy** shows the **"top module"** root and, under it,
+   `yapp_buffer`. Click `yapp_buffer` → its **schematic/symbol** opens (a box
+   with all the pins on its sides).
+2. In the **Properties** panel of the side bar, in the configuration section,
+   press **"Set as DUT"**. The extension:
    - proposes the clock (`clk`) and the reset (`rst_n`, active-low — the `_n`
      suffix) heuristically, for you to confirm;
    - creates a `yapp_buffer.quickuvm.yaml` file next to the design.
@@ -187,12 +187,12 @@ Fișiere-cheie așteptate:
 
 ---
 
-## 9. Verifică rezultatul
+## 9. Check the result
 
-- **YAML lizibil**: deschide `yapp_buffer.quickuvm.yaml` ca text — trebuie să
-  arate ca mai jos, curat și editabil de mână.
-- **`generate` curat**: fără erori în panoul **Problems** sau în canalul de
-  ieșire **QuickUVM Architect**.
+- **Readable YAML**: open `yapp_buffer.quickuvm.yaml` as text — it must look like
+  the listing below, clean and editable by hand.
+- **A clean `generate`**: no errors in the **Problems** panel or in the
+  **QuickUVM Architect** output channel.
 
 ```yaml
 # Configuratie QuickUVM — creata de QuickUVM Architect, editabila si manual.

@@ -105,6 +105,106 @@ test("setDut: `external` is DERIVED — an agent that declares the reset port dr
   assert.deepEqual(ops.parseQuvm(ops.setDut(other, DUT)).reset, { external: true });
 });
 
+test("setDut (review): a null `reset:`, aliased ports, `reset_port`, `kind: selftest`", () => {
+  // `reset:` with no value used to throw "Expected YAML collection at reset" —
+  // on EVERY DUT with a reset, now that `external` is always written
+  for (const empty of ["reset:\n", "reset: ~\n", "reset: 5\n"]) {
+    const t = ops.setDut(ops.newConfigText("demo") + empty, DUT);
+    assert.deepEqual(ops.parseQuvm(t).reset, { external: true }, JSON.stringify(empty));
+  }
+  // ... and stays absent when there is nothing to write
+  assert.equal(
+    ops.parseQuvm(ops.setDut(ops.newConfigText("demo") + "reset:\n", { ...DUT, reset: null })).reset,
+    undefined
+  );
+  // an ALIASED mapping is not rewritten (the anchor has other users)
+  const aliased = "common: &r { active_low: false }\nreset: *r\n";
+  const kept = ops.setDut(ops.newConfigText("demo") + aliased, DUT);
+  assert.ok(kept.includes("reset: *r"), kept);
+
+  // ports through an anchor: read the way the generator reads them
+  const anchored = [
+    "ports_a: &p",
+    "  inputs: [ { name: rst_n }, { name: din, width: 8 } ]",
+    "agents:",
+    "  - { name: a, interface: a_if, sequence_item: a_item, ports: *p }",
+    "",
+  ].join("\n");
+  assert.equal(ops.parseQuvm(ops.setDut(anchored, DUT)).reset, undefined,
+    "external next to an agent-declared reset (aliased ports)");
+
+  // `reset_port`: an agent-driven reset — quick-uvm refuses `external: true` next to it
+  let rp = ops.createAgent(ops.newConfigText("demo"), {
+    name: "a", inputs: [{ name: "arst", width: 1 }], outputs: [],
+  });
+  rp = ops.setAgentField(rp, "a", "reset_port", "arst");
+  assert.equal(ops.parseQuvm(rp).agents[0].reset_port, "arst");
+  assert.equal(ops.parseQuvm(ops.setDut(rp, DUT)).reset, undefined);
+
+  // `kind: selftest`: a DUT-less top that never connects the reset its drivers
+  // would wait on
+  const st = ops.setDut(ops.newConfigText("demo") + "kind: selftest\nlayout: packaged\n", DUT);
+  assert.equal(ops.parseQuvm(st).reset, undefined);
+  // a VIP keeps it (it decides whether the VIP's interfaces take the reset)
+  const vip = ops.setDut(ops.newConfigText("demo") + "kind: vip\nlayout: packaged\n", DUT);
+  assert.deepEqual(ops.parseQuvm(vip).reset, { external: true });
+});
+
+test("setBenchField kind (review): the reset driver follows the kind", () => {
+  let t = ops.setDut(ops.newConfigText("demo"), { ...DUT, resetActiveLow: false });
+  t = ops.setBenchField(t, "layout", "packaged");
+  assert.deepEqual(ops.parseQuvm(t).reset, { active_low: false, external: true });
+  // bench -> selftest drops `external` (the polarity stays)
+  const st = ops.setBenchField(t, "kind", "selftest");
+  assert.deepEqual(ops.parseQuvm(st).reset, { active_low: false });
+  // selftest -> vip / back to bench restores it
+  assert.deepEqual(ops.parseQuvm(ops.setBenchField(st, "kind", "vip")).reset,
+    { active_low: false, external: true });
+  assert.deepEqual(ops.parseQuvm(ops.setBenchField(st, "kind", "bench")).reset,
+    { active_low: false, external: true });
+  // an emptied mapping disappears; a reset LIST is never touched
+  const plain = ops.setBenchField(ops.setDut(ops.newConfigText("demo"), DUT), "kind", "selftest");
+  assert.equal(ops.parseQuvm(plain).reset, undefined);
+  const list = ops.addResetDomain(ops.setDut(ops.newConfigText("demo"), DUT), "srst_n");
+  assert.deepEqual(ops.parseQuvm(ops.setBenchField(list, "kind", "selftest")).reset,
+    ops.parseQuvm(list).reset);
+  // the other bench fields do not touch the reset
+  assert.equal(ops.parseQuvm(ops.setBenchField(plain, "top_name", "my_top")).reset, undefined);
+});
+
+test("setResetDomainField (review): `external: true` is refused where quick-uvm refuses it", () => {
+  const comb = ops.setDut(ops.newConfigText("demo"), { ...DUT, clock: null, combinational: true });
+  assert.throws(() => ops.setResetDomainField(comb, "rst_n", "external", true), /combinational/);
+  const st = ops.setDut(ops.newConfigText("demo") + "kind: selftest\n", DUT);
+  assert.throws(() => ops.setResetDomainField(st, "rst_n", "external", true), /selftest/);
+  let owned = ops.setDut(ops.newConfigText("demo"), { ...DUT, reset: null });
+  owned = ops.createAgent(owned, { name: "a", inputs: [{ name: "rst_n", width: 1 }], outputs: [] });
+  owned = ops.setDut(owned, DUT);
+  assert.throws(() => ops.setResetDomainField(owned, "rst_n", "external", true), /agent's ports/);
+  const rp = ops.setAgentField(
+    ops.createAgent(ops.setDut(ops.newConfigText("demo"), { ...DUT, reset: null }), {
+      name: "a", inputs: [{ name: "arst", width: 1 }], outputs: [],
+    }), "a", "reset_port", "arst");
+  assert.throws(() => ops.setResetDomainField(ops.setDut(rp, DUT), "rst_n", "external", true), /reset_port/);
+  // turning it OFF is never refused (it is how one gets out of a refused state)
+  const on = ops.setDut(ops.newConfigText("demo"), DUT);
+  assert.equal(ops.parseQuvm(ops.setResetDomainField(on, "rst_n", "external", false)).reset, undefined);
+});
+
+test("clearDutReset (review): dut.reset '' and the dead single mapping; no-op = same text", () => {
+  const t = ops.setDut(ops.newConfigText("demo"), { ...DUT, resetActiveLow: false });
+  const cleared = ops.clearDutReset(t);
+  assert.equal(ops.parseQuvm(cleared).dut.reset, "");
+  assert.equal(ops.parseQuvm(cleared).reset, undefined);
+  assert.equal(ops.clearDutReset(cleared), cleared, "no-op: byte-identical");
+  // the generator's default made explicit: an ABSENT key becomes ''
+  const absent = "project: {name: demo}\ndut:   {name: demo, clock: clk}\n";
+  assert.equal(ops.parseQuvm(ops.clearDutReset(absent)).dut.reset, "");
+  // under a domain list dut.reset must name a domain — refused, not half-applied
+  const list = ops.addResetDomain(ops.setDut(ops.newConfigText("demo"), DUT), "srst_n");
+  assert.throws(() => ops.clearDutReset(list), /domain list/);
+});
+
 test("setDut: a combinational DUT never gets `external` (quick-uvm refuses the pair)", () => {
   // "dut.combinational and `reset: {external: true}` are mutually exclusive"
   const text = ops.setDut(ops.newConfigText("demo"), { ...DUT, clock: null, combinational: true });

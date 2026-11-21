@@ -1,4 +1,10 @@
-# Upstream note for QuickUVM — `generate` exits 0 with a dangling reset reference
+# Upstream note for QuickUVM — `generate` exits 0 with a reset nobody wires
+
+Two gaps, the same family: a config that validates, generates with exit 0, and
+yields a bench that cannot run because of how the reset is (not) connected.
+**1** is the one that broke real benches; **2** was found while fixing 1.
+
+# 1. A dangling reset reference
 
 *A report to file against [QuickUVM](https://github.com/arcadie-cracan/QuickUVM);
 written from QuickUVM Architect's side, not filed. Observed on quick-uvm 1.1.0,
@@ -89,6 +95,12 @@ likewise gets no reset connection; `external: true` is refused there
 (*"a combinational DUT has no reset"*), which is consistent, but the named port
 is silently dropped rather than reported.
 
+The same reference dangles with an agent that uses `reset_port: arst` and a
+`dut.reset` left at its default: the top connects `.arst(a_if_inst.arst)` **and**
+`.rst_n(a_if_inst.rst_n)`. `dut.reset: ''` (or `dut.reset: arst`) is clean, and
+`external: true` is refused there (*"reset_port is an AGENT-DRIVEN reset…"*) —
+so with `reset_port` the default `dut.reset` is itself the trap.
+
 ## Suggested fix
 
 A model validator, the mirror of the existing "external reset must not also be
@@ -111,6 +123,52 @@ configs, so the validator is the conservative option.
 For composition, the same check applied to each clocked leaf config would turn
 the floating reset port into an error at the top's `generate`.
 
+# 2. `kind: selftest` + `reset: {external: true}` — exit 0, and the bench hangs
+
+```yaml
+project: {name: demo}
+kind: selftest
+layout: packaged
+reset: {external: true}
+dut: {name: demo, clock: clk, reset: rst_n}
+agents:
+  - name: a
+    interface: a_if
+    sequence_item: a_item
+    ports:
+      inputs: [{name: din, width: 8}]
+      outputs: [{name: dout, width: 8, randomize: false}]
+```
+
+`quick-uvm generate` exits 0. The generated selftest top has no DUT and no reset
+net, and instantiates the interface with the clock only:
+
+```systemverilog
+  a_if a_if_inst (clk);
+```
+
+while `external: true` made the interface take the reset and the driver and
+monitor wait for it:
+
+```systemverilog
+interface a_if (input clk, input rst_n);          // a_if.sv
+    wait (vif.rst_n === 1'b1);                    // a_driver.svh, a_monitor.svh
+```
+
+`rst_n` is an unconnected input, so the wait never ends. (Read in the generated
+text; not simulated.) Without `external: true` the same selftest has no reset
+anywhere and is consistent.
+
+Suggested fix: either refuse `kind: selftest` + `reset: {external: true}`, or
+give the selftest top the same `logic rst_n` + `reset_generator` block a bench
+top gets and pass it to the interfaces. The second also covers a VIP built with
+`external: true` (its interfaces take `rst_n`) being self-tested as it is.
+
+A related consistency point, not a bug in one file: a `kind: vip` built without
+`external: true` has interfaces `(input clk)`, and a bench that consumes it by
+reference with `external: true` instantiates them `(.clk(clk), .rst_n(rst_n))` —
+nothing checks that the two agree.
+
 ## Also worth a line in the docs
 
 `reset.external` reads as "the reset comes from outside the testbench" — which
@@ -123,7 +181,10 @@ was read. It means *external to the agents*: `true` is the shape in which
 
 - `setDut` writes `reset: {external: true}` whenever the DUT has a reset port
   that no agent declares (decision D25, `docs/06-plan-mvp.md`);
-- existing configs get a `reset-undriven` error with a one-click repair;
+- existing configs get a `reset-undriven` error with a one-click repair
+  (`external: true`, or `dut.reset: ''` where the top cannot drive the reset);
+- a `kind: selftest` bench never carries `external: true` (the kind switch
+  drops it);
 - `npm run test:e2e` lints every generated top (each signal connected to a DUT
   port must be declared in the top or in the interface it is taken from), and
   keeps the reproduction above as a mutation proof — when a quick-uvm release

@@ -598,15 +598,29 @@ function tbResetDomains(cfg: QuvmConfig): void {
     | undefined;
   const domains: { name?: string; active_low?: boolean; clock?: string }[] = isList
     ? (reset as { name?: string }[])
-    : [{ name: cfg.dut?.reset || "rst_n", active_low: single?.active_low }];
+    : [{ name: cfg.dut?.reset ?? "rst_n", active_low: single?.active_low }];
   const clocks = Array.isArray(cfg.clock)
     ? (cfg.clock as { name?: string }[])
         .map((c) => c.name)
         .filter((n): n is string => Boolean(n))
     : [];
 
-  if (!cfg.dut?.reset) {
+  // an ABSENT `dut.reset` is the generator's default `rst_n`, not "no reset" —
+  // only the empty string (or no dut at all) means there is none
+  if (!cfg.dut || cfg.dut.reset === "") {
     ctx.root.append(h("div", "dim", "no reset port on the DUT"));
+    return;
+  }
+  if (cfg.dut.combinational && !isList) {
+    // quick-uvm connects no reset on a combinational DUT and refuses
+    // `external: true` on it — neither "Driven by" answer applies
+    ctx.root.append(
+      h(
+        "div",
+        "note",
+        `a combinational DUT has no reset in QuickUVM: "${cfg.dut.reset ?? "rst_n"}" is left unconnected — map the pin to an agent or waive it, and clear dut.reset`
+      )
+    );
     return;
   }
 
@@ -678,7 +692,7 @@ function tbResetDomains(cfg: QuvmConfig): void {
       );
       // the agent-driven choice is only real when an agent declares the port;
       // otherwise it is the state the `reset-undriven` finding reports
-      const port = cfg.dut?.reset ?? "";
+      const port = cfg.dut?.reset ?? "rst_n";
       const owner = (cfg.agents ?? []).find((a) =>
         (["inputs", "outputs", "inouts"] as const).some((side) =>
           (a.ports?.[side] ?? []).some((p) => p.name === port)

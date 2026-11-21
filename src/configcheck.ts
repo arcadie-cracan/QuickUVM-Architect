@@ -15,7 +15,7 @@ import type { QuvmConfig } from "./quickuvm";
 /** the prefix of the diagnostic code that carries the width quick-fix */
 export const WIDTH_CODE = "quickuvm.width";
 /** the prefix of the diagnostic code that carries the reset quick-fix
- *  (`quickuvm.reset-undriven:<port>`) */
+ *  (`quickuvm.reset-undriven:<repair>:<port>`, repair = external | clear) */
 export const RESET_CODE = "quickuvm.reset-undriven";
 
 export type FindingKind =
@@ -35,11 +35,15 @@ export type FindingKind =
   | "sb-unknown-agent"
   /** an analysis.coverage entry names no agent of this config — {agent} */
   | "cov-unknown-agent"
-  /** the DUT's reset port is driven by nobody — {port}: `dut.reset` names a port,
-   *  the single-reset mapping is not `external: true` and no agent declares the
-   *  port. quick-uvm (1.1.0) accepts it, exits 0 and emits a tb_top that connects
-   *  the DUT to `<first agent>_if_inst.<port>`, a signal that interface does not
-   *  have — the bench does not elaborate. Carries `code` (the quick-fix). */
+  /** the DUT's reset port is driven by nobody — {port, repair, why?}: `dut.reset`
+   *  names a port, the single-reset mapping is not `external: true` and no agent
+   *  declares the port. quick-uvm (1.1.0) accepts it, exits 0 and emits a tb_top
+   *  that connects the DUT to `<first agent>_if_inst.<port>`, a signal that
+   *  interface does not have — the bench does not elaborate. `repair` is what
+   *  fixes it: `external` (the testbench top drives the reset) or `clear`
+   *  (`dut.reset: ''`), the latter with `why`: `no-port` (the model's DUT has no
+   *  such port) or `reset-port` (an agent drives the reset through `reset_port`,
+   *  and quick-uvm refuses `external: true` next to it). Carries `code`. */
   | "reset-undriven";
 
 export interface Finding {
@@ -224,20 +228,26 @@ export function checkConfig(
       });
     }
   });
-  // When the model KNOWS the DUT and it has no port of that name, this is a
-  // different defect (`dut.reset` names a pin that is not there — typically the
-  // key left to its `rst_n` default on a DUT without a reset); `external: true`
-  // would not repair it, so it is not reported as this one.
+  // When the model KNOWS the DUT and it has no port of that name (typically the
+  // key left to its `rst_n` default on a DUT without a reset, or a typo), the
+  // generated top is just as broken — but `external: true` would not repair it
+  // (the DUT has no such pin): the repair on offer is `dut.reset: ''`.
   const undriven = undrivenReset(cfg);
-  if (undriven && !(def && !modelPorts.has(undriven))) {
+  if (undriven) {
+    const noPort = Boolean(def) && !modelPorts.has(undriven.port);
+    const repair = noPort ? "clear" : undriven.repair;
     findings.push({
       kind: "reset-undriven",
       span:
         spanOf(ydoc.getIn(["dut", "reset"], true)) ??
         spanOf(ydoc.getIn(["dut", "name"], true)),
       severity: "error",
-      params: { port: undriven },
-      code: `${RESET_CODE}:${undriven}`,
+      params: {
+        port: undriven.port,
+        repair,
+        ...(repair === "clear" ? { why: noPort ? "no-port" : "reset-port" } : {}),
+      },
+      code: `${RESET_CODE}:${repair}:${undriven.port}`,
     });
   }
   return { findings, orphans };
@@ -254,19 +264,31 @@ export function checkConfig(
  *   - a port an agent declares (inputs / outputs / inouts) is wired to that
  *     agent's interface, which then has the signal.
  *
- * Deliberately silent where the YAML alone cannot tell:
+ * Deliberately silent where the generator wires no reset, or the YAML alone
+ * cannot tell:
  *   - a combinational DUT — quick-uvm connects no reset at all and refuses
  *     `external: true` on it, so there is neither a dangling reference nor this
  *     repair (a hand-written `dut: {combinational: true}` with the key absent
  *     would otherwise be flagged for a port it does not have);
+ *   - `kind: selftest` (a DUT-less top: no reset reference) and `kind: vip` (no
+ *     top at all);
  *   - a PURE subsystem top (subenvs, no agents of its own) — it instantiates
  *     no DUT of its own, its `dut.reset` is ignored;
  *   - a bench with a `from_vip` agent — the referenced agent's ports live in
  *     the VIP manifest, not in this file.
+ *
+ * `repair` is `clear` when an agent has a `reset_port` (an agent-driven reset:
+ * quick-uvm refuses `external: true` next to it, so the answer is
+ * `dut.reset: ''`), `external` otherwise.
  */
-export function undrivenReset(cfg: QuvmConfig): string | null {
+export function undrivenReset(
+  cfg: QuvmConfig
+): { port: string; repair: "external" | "clear" } | null {
   const dut = cfg.dut;
   if (!dut?.name || dut.combinational === true) {
+    return null;
+  }
+  if (cfg.kind === "selftest" || cfg.kind === "vip") {
     return null;
   }
   const port = dut.reset === undefined || dut.reset === null ? "rst_n" : dut.reset;
@@ -277,22 +299,29 @@ export function undrivenReset(cfg: QuvmConfig): string | null {
   if (Array.isArray(reset)) {
     return null;
   }
-  if ((reset as { external?: unknown } | undefined)?.external === true) {
+  // `yes` / `on` are booleans to the generator's YAML 1.1 loader, strings to ours
+  const external = (reset as { external?: unknown } | null | undefined)?.external;
+  if (external === true || (typeof external === "string" && /^(true|yes|on|y)$/i.test(external))) {
     return null;
   }
-  const agents = cfg.agents ?? [];
+  const agents = (cfg.agents ?? []).filter((a) => a && typeof a === "object");
   if (!agents.length && (cfg.subenvs ?? []).length) {
     return null;
   }
+  let repair: "external" | "clear" = "external";
   for (const a of agents) {
     if (a.from_vip) {
       return null;
     }
+    if (typeof a.reset_port === "string" && a.reset_port) {
+      repair = "clear";
+    }
     for (const side of ["inputs", "outputs", "inouts"] as const) {
-      if ((a.ports?.[side] ?? []).some((p) => p.name === port)) {
+      const list = a.ports?.[side];
+      if (Array.isArray(list) && list.some((p) => p && p.name === port)) {
         return null;
       }
     }
   }
-  return port;
+  return { port, repair };
 }

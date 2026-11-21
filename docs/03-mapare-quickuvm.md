@@ -57,17 +57,33 @@ The walls around it, all from the generator:
   external reset must not also be an agent port").
 - the reset port cannot be waived (`dut.unverified_ports`): "the bench itself
   drives it".
+- an agent with `reset_port` (the agent-side reset output — an agent-driven
+  reset under another port name) is **refused** next to `external: true`; there
+  `dut.reset` must be `''` or name that port.
+- `kind: selftest` + `external: true` is **accepted and hangs**: the DUT-less
+  top instantiates the interfaces with the clock only, while they take a
+  `rst_n` input and the drivers wait for it. A selftest never gets the flag
+  (`setBenchField("kind", …)` drops it and restores it on the way back). A
+  `kind: vip` keeps it: the flag decides whether the VIP's interfaces take the
+  reset, and the VIP and the bench that consumes it must agree.
 - in a composition, a clocked leaf whose own config is **not** external gets no
   reset connection at all in the subsystem top (the port floats — no error);
   with `external: true` the top declares, drives and connects `<subenv>_<reset>`.
 
 Configs written before this are repaired by the validation
 (`reset-undriven` in `src/configcheck.ts`, an error): on the DUT's reset pin and
-on the Env box in the diagram, in the Problems panel on `dut.reset`, with the
-one-click fix "Let the testbench top drive it" (`editReset set external true`).
-It is silent where the YAML cannot tell: a combinational DUT, a pure subsystem
-top, a bench with a `from_vip` agent (its ports live in the VIP manifest), and a
-DUT the model knows not to have the port.
+on the Env box in the diagram, in the Problems panel on `dut.reset`, with a
+one-click fix. Which fix depends on whether the top CAN drive the reset:
+
+| situation | repair |
+|---|---|
+| the usual one: a reset pin nobody drives | "Let the testbench top drive it" — `editReset set external true` |
+| the model's DUT has no port of that name (an absent `dut.reset` is the generator's default `rst_n`; or a typo) | "Declare no reset port" — `editReset clear` → `dut.reset: ''` |
+| an agent drives the reset through `reset_port` | the same `clear` (`external: true` would be refused) |
+
+It is silent where the generator wires no reset or the YAML cannot tell: a
+combinational DUT, `kind: selftest` / `kind: vip`, a pure subsystem top, and a
+bench with a `from_vip` agent (its ports live in the VIP manifest).
 
 ## Agenți din selecție de pini
 
