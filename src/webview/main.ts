@@ -4820,7 +4820,7 @@ function nudgeSelection(dx: number, dy: number): void {
 // --- secondary notation (docs/08 R21) ---------------------------------------
 //
 // Frames, sticky notes and node colours: annotations of the VIEW (decision
-// D25) — they live in the layout sidecar under the view's layout key, the YAML
+// D26) — they live in the layout sidecar under the view's layout key, the YAML
 // never hears of them. The data and its rules are pure (`annotations.ts`,
 // test:annotations), the SVG is `annotations-view.ts`; here are the gestures.
 // Every gesture replaces the view's whole set (`view/annotations`) and is one

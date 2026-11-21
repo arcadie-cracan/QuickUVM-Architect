@@ -500,7 +500,7 @@ mesajele tot aici, la implementare.
   active" as one-shot rows. The Properties sidebar mirrors the PANEL's
   selection and the active configuration, so in a per-file editor the
   multi-selection edit is reached through those palette rows.
-- **Secondary notation** (docs/08 R21, Nov 2026; decision D25): frames, sticky
+- **Secondary notation** (docs/08 R21, Nov 2026; decision D26): frames, sticky
   notes and node colours — annotations of the VIEW, on the schematic views and
   on every level of the verification view, kept in the layout sidecar (docs/04)
   and never in the YAML. **Frame**: `Shift+G` (or "Frame the selection" in the

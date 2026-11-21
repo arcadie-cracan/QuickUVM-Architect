@@ -2,7 +2,7 @@
 // node colours of ONE view, as plain data in and plain data out.
 //
 // These are annotations of the VIEW, never of the verification model
-// (decision D25): they live in the layout sidecar, the QuickUVM YAML never
+// (decision D26): they live in the layout sidecar, the QuickUVM YAML never
 // hears of them, and the generator's output does not change by a byte.
 //
 //  - a FRAME stores its members, not a rectangle. Its box is the members'

@@ -1024,7 +1024,7 @@ coliziunea de nume.
   selection, so a per-file editor reaches the multi edit only through the
   palette rows.
 
-- **Secondary notation (docs/08 R21, decision D25)**: frames, sticky notes
+- **Secondary notation (docs/08 R21, decision D26)**: frames, sticky notes
   and node colours are annotations of the VIEW — in the sidecar under the
   layout key (`tb:<config>|<focus>` per TB level), never in the YAML, never
   read back as meaning. A FRAME stores its MEMBERS, not a rectangle: the box is
@@ -1677,7 +1677,7 @@ with "Open as text" and the empty states that name the next action
 `quickuvm.openConfigAsText` / `openConfigAsDiagram`), multi-selection editing
 in the inspector (`multiGroups` in `test:inspector`, the `editAgents` /
 `editScoreboards` actions).
-**R21 (docs/08) is implemented** (Nov 2026; decision D25): secondary notation
+**R21 (docs/08) is implemented** (Nov 2026; decision D26): secondary notation
 — frames (member lists with derived boxes, `Shift+G`), sticky notes (`N`) and
 node colours as VIEW annotations in the sidecar; `src/webview/annotations.ts`
 + `test:annotations`, `setAnnotations` / `cleanFrames` / `cleanNotes` in
