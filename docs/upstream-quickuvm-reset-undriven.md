@@ -6,9 +6,9 @@ yields a bench that cannot run because of how the reset is (not) connected.
 
 # 1. A dangling reset reference
 
-*A report to file against [QuickUVM](https://github.com/arcadie-cracan/QuickUVM);
-written from QuickUVM Architect's side, not filed. Observed on quick-uvm 1.1.0,
-Nov 2026.*
+*Written from QuickUVM Architect's side; observed on quick-uvm 1.1.0, Nov 2026.
+The fix described below is proposed upstream as
+[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119).*
 
 ## Summary
 
@@ -191,8 +191,8 @@ was read. It means *external to the agents*: `true` is the shape in which
 
 ## The prototype
 
-A local branch of the QuickUVM checkout, `fix/undriven-reset` (not pushed, no
-PR): `quick_uvm/models.py` (`_infer_reset_driver`, `undriven_reset`, the `reset`
+[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119), branch `fix/undriven-reset`:
+`quick_uvm/models.py` (`_infer_reset_driver`, `undriven_reset`, the `reset`
 entry of `resolved()`), `quick_uvm/templates/selftest_top.sv.j2`,
 `quick_uvm/svcheck.py` (`find_dangling_dut_connections` — the static gate that
 checks, on the generated top, that every signal the `dut_connections` pragma
