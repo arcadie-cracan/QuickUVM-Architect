@@ -65,6 +65,8 @@
   const TB_CONFIG = {
     project: { name: "demo" },
     dut: { name: "soc_top", clock: "clk", reset: "rst_n" },
+    // the testbench top drives the reset — what setDut writes (D25)
+    reset: { external: true },
     agents: [
       { name: "cmd", interface: "cmd_if" },
       { name: "rsp", active: false },
@@ -108,6 +110,7 @@
   const CHILD_A = {
     project: { name: "chan" },
     dut: { name: "chan", clock: "clk", reset: "rst_n" },
+    reset: { external: true },
     agents: [
       { name: "chan_a", interface: "chan_if", ports: { inputs: [{ name: "din", width: 16 }], outputs: [{ name: "dout", width: 16 }] } },
     ],

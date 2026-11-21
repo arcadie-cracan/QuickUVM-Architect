@@ -4,7 +4,7 @@
 // import `vscode`: the host (config.ts) applies the result as a WorkspaceEdit,
 // and the tests run it directly in Node (scripts/test-yamlops.mjs).
 
-import { Document, isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
+import { Document, isAlias, isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
 import type { QuvmConfig } from "./quickuvm";
 
 /** The serialization options: a larger width so the flow ports don't break. */
@@ -17,8 +17,93 @@ export interface DutSpec {
   /** the reset port name; null => no reset ('' in YAML, as in the examples) */
   reset: string | null;
   resetActiveLow: boolean;
-  externalReset: boolean;
   combinational: boolean;
+}
+
+/** the agents of the document as plain values — through `toJS`, so anchors /
+ *  aliases (`ports: *common`) read the way the generator's YAML loader reads them */
+function agentsOf(doc: Document): QuvmConfig["agents"] {
+  try {
+    const agents = (doc.toJS() as QuvmConfig | null)?.agents;
+    return Array.isArray(agents) ? agents.filter((a) => a && typeof a === "object") : [];
+  } catch {
+    return [];
+  }
+}
+
+/** true when an agent of the document declares a port named `port` (on any side) */
+function agentDeclaresPort(doc: Document, port: string): boolean {
+  return (agentsOf(doc) ?? []).some((a) =>
+    (["inputs", "outputs", "inouts"] as const).some((side) => {
+      const list = a.ports?.[side];
+      return Array.isArray(list) && list.some((p) => p && p.name === port);
+    })
+  );
+}
+
+/** the name of an agent with a `reset_port` (the agent-side reset output: an
+ *  AGENT-driven reset, which quick-uvm refuses next to `external: true`), or null */
+function resetPortAgent(doc: Document): string | null {
+  const a = (agentsOf(doc) ?? []).find((x) => typeof x.reset_port === "string" && x.reset_port);
+  return a ? (a.name ?? "") : null;
+}
+
+/**
+ * Who drives the DUT's reset port (probed on quick-uvm 1.1.0, Nov 2026). The
+ * single-reset mapping has exactly two WORKING shapes:
+ *
+ *   - `reset: {external: true}` — tb_top declares the net, drives it from a
+ *     generated `initial` block (assert, 5 clocks, deassert; polarity honoured)
+ *     and passes it into every interface; drivers and monitors wait for it;
+ *   - `external` false AND an agent declares the port — the reset is a field of
+ *     that agent's sequence item, driven like any other stimulus.
+ *
+ * The third shape — not external, no agent declares the port — is what quick-uvm
+ * silently accepts and what every Architect bench used to be: tb_top connects the
+ * DUT to `<first agent>_if_inst.<reset>`, a signal that interface does not have
+ * (exit 0, elaboration fails). Architect keeps reset pins OUT of agents (the
+ * reset role, docs/03), so the testbench top is the driver whenever no agent
+ * claims the port. The exceptions, each a generator fact (probed):
+ *   - a combinational DUT: `combinational` + `external: true` is refused, and
+ *     the port is left unconnected;
+ *   - an agent with `reset_port`: an agent-driven reset, refused next to
+ *     `external: true`;
+ *   - `kind: selftest`: the top has no DUT, and with `external: true` its
+ *     interfaces take a `rst_n` input the top never connects while the drivers
+ *     wait on it — exit 0 and a bench that hangs. (A `kind: vip` KEEPS the
+ *     flag: it decides whether the VIP's interfaces take the reset, and the
+ *     benches Architect builds around it pass one.)
+ */
+function resetNeedsExternal(doc: Document): boolean {
+  const reset = doc.getIn(["dut", "reset"]);
+  return (
+    typeof reset === "string" &&
+    reset !== "" &&
+    doc.getIn(["dut", "combinational"]) !== true &&
+    doc.getIn(["kind"]) !== "selftest" &&
+    resetPortAgent(doc) === null &&
+    !agentDeclaresPort(doc, reset)
+  );
+}
+
+/** why `reset: {external: true}` cannot be written on this document, or null —
+ *  the generator's walls, said before the edit instead of at the next generate */
+function externalBlocker(doc: Document): string | null {
+  const reset = doc.getIn(["dut", "reset"]);
+  if (doc.getIn(["dut", "combinational"]) === true) {
+    return "a combinational DUT has no reset in QuickUVM (`combinational` and `reset: {external: true}` are mutually exclusive)";
+  }
+  if (doc.getIn(["kind"]) === "selftest") {
+    return "a `kind: selftest` bench has no DUT to reset — with `external: true` its interfaces would wait on a reset the top never connects";
+  }
+  const viaPort = resetPortAgent(doc);
+  if (viaPort !== null) {
+    return `agent "${viaPort}" drives the reset through \`reset_port\`, which QuickUVM refuses next to \`reset: {external: true}\``;
+  }
+  if (typeof reset === "string" && reset && agentDeclaresPort(doc, reset)) {
+    return `"${reset}" is one of an agent's ports — an external reset must not also be an agent port; remove it from the agent first`;
+  }
+  return null;
 }
 
 export interface AgentPortSpec {
@@ -225,13 +310,26 @@ export function setDut(text: string, spec: DutSpec): string {
   // the clock cadence exists even for a combinational DUT (QuickUVM docs / examples)
   doc.setIn(["dut", "clock"], spec.clock ?? "clk");
   doc.setIn(["dut", "reset"], spec.reset ?? "");
+  setOrDelete(doc, ["dut", "combinational"],
+    spec.combinational ? true : undefined);
   // quick-uvm >= 1.0.0: the polarity/externality live in the TOP-LEVEL key
   // `reset:` (dut.reset is only the port name); the old keys on `dut` are
-  // REJECTED by the generator with a teaching error. The map is written only on a
-  // deviation from the defaults and disappears when it becomes default again. A hand-written
+  // REJECTED by the generator with a teaching error. `active_low` is written only
+  // on a deviation from the default; `external: true` is written whenever the DUT
+  // has a reset port no agent declares (see `resetNeedsExternal` — it is DERIVED
+  // from the document, not asked: the other answer generates a bench that does
+  // not elaborate). A hand-written
   // `reset:` LIST (multi-reset domains, with their own active_low per domain) is NOT
   // touched; deleteIn guards against a missing intermediate (yaml throws otherwise).
-  if (!isSeq(doc.getIn(["reset"]))) {
+  // An ALIAS (`reset: *common`) is left alone like the list — rewriting it would
+  // edit the anchor's other users; the `reset-undriven` finding covers it.
+  const resetNode = doc.getIn(["reset"], true);
+  if (resetNode !== undefined && !isMap(resetNode) && !isSeq(resetNode) && !isAlias(resetNode)) {
+    // `reset:` with no value (null) or a stray scalar: setIn below would throw
+    // "Expected YAML collection" — it is an empty mapping to the generator
+    doc.deleteIn(["reset"]);
+  }
+  if (!isSeq(doc.getIn(["reset"])) && !isAlias(resetNode)) {
     const setOrDrop = (key: string, value: boolean | undefined): void => {
       if (value !== undefined) {
         doc.setIn(["reset", key], value);
@@ -241,14 +339,12 @@ export function setDut(text: string, spec: DutSpec): string {
     };
     setOrDrop("active_low",
       spec.reset !== null && !spec.resetActiveLow ? false : undefined);
-    setOrDrop("external", spec.externalReset ? true : undefined);
+    setOrDrop("external", resetNeedsExternal(doc) ? true : undefined);
     const resetBlock = doc.getIn(["reset"]);
     if (isMap(resetBlock) && resetBlock.items.length === 0) {
       doc.deleteIn(["reset"]);
     }
   }
-  setOrDelete(doc, ["dut", "combinational"],
-    spec.combinational ? true : undefined);
   return doc.toString(TO_STRING);
 }
 
@@ -1378,6 +1474,23 @@ export function setBenchField(
   } else {
     doc.setIn([field], value);
   }
+  if (field === "kind") {
+    // who drives the reset depends on the kind (see `resetNeedsExternal`): a
+    // selftest must NOT carry `external: true` (its top never connects the
+    // reset its drivers would wait on), a bench / vip with a reset port nobody
+    // declares must. Only the single mapping is touched.
+    const resetNode = doc.getIn(["reset"], true);
+    if (resetNode === undefined || isMap(resetNode)) {
+      if (resetNeedsExternal(doc)) {
+        doc.setIn(["reset", "external"], true);
+      } else if (isMap(resetNode) && resetNode.get("external") === true && externalBlocker(doc)) {
+        resetNode.delete("external");
+        if (resetNode.items.length === 0) {
+          doc.deleteIn(["reset"]);
+        }
+      }
+    }
+  }
   return doc.toString(TO_STRING);
 }
 
@@ -1875,10 +1988,16 @@ export type ResetField = "name" | "active_low" | "clock" | "external";
  * list `dut.reset` names a declared DOMAIN (not a port), so the first domain is named
  * after the current `dut.reset` to keep that binding valid.
  *
- * Refused when the single reset is `external: true`: the LIST entry schema has no
- * `external` key (QuickUVM rejects it), so the conversion would silently drop the
- * fact that the TB does not drive the reset. That is a semantic loss, not a
- * formatting one — the user takes externality off first, deliberately.
+ * `external: true` on the single mapping is DROPPED by the conversion, and that is
+ * lossless: under a list quick-uvm's tb_top declares and drives every domain's
+ * reset net itself (one generated `initial` block per domain — probed on 1.1.0),
+ * which is exactly what `external: true` means on the mapping. The list entry
+ * schema has no `external` key because it is always the case there.
+ *
+ * Refused when an AGENT declares the `dut.reset` port (the agent-driven reset):
+ * under a list the domain is a tb_top net of that name, and quick-uvm rejects
+ * the agent port that collides with it ("collides with a clock/reset net of the
+ * same name"). The user takes the port out of the agent first, deliberately.
  */
 export function addResetDomain(text: string, name: string): string {
   const doc = parse(text);
@@ -1894,16 +2013,16 @@ export function addResetDomain(text: string, name: string): string {
     reset.add(node);
     return doc.toString(TO_STRING);
   }
-  if (isMap(reset) && reset.get("external") === true) {
-    throw new Error(
-      "resetul curent e `external: true`, iar intrarile din lista de domenii nu accepta `external` — scoate intai externalitatea"
-    );
-  }
   const dutReset = doc.getIn(["dut", "reset"]);
   const firstName =
     typeof dutReset === "string" && dutReset ? dutReset : "rst_n";
   if (firstName === name) {
     throw new Error(`domeniul de reset „${name}" exista deja`);
+  }
+  if (agentDeclaresPort(doc, firstName)) {
+    throw new Error(
+      `the reset "${firstName}" is driven by an agent (it is one of its ports); a reset domain list makes it a testbench-top net of the same name, which quick-uvm refuses — remove the port from the agent first`
+    );
   }
   const first: Record<string, unknown> = { name: firstName };
   if (isMap(reset) && reset.get("active_low") !== undefined) {
@@ -2059,6 +2178,19 @@ export function setResetDomainField(
     value === undefined ||
     value === "" ||
     (field === "active_low" ? value === true : value === false);
+  if (field === "external" && value === true) {
+    const why = externalBlocker(doc);
+    if (why) {
+      throw new Error(`the testbench top cannot drive this reset: ${why}`);
+    }
+  }
+  // the no-op invariant: nothing to change => the ORIGINAL text, byte-identical
+  // (no re-serialisation, no phantom WorkspaceEdit — and the `{}` created above
+  // for a fresh bench is never written)
+  const cur = target.get(field);
+  if (isDefault ? cur === undefined : cur === value) {
+    return text;
+  }
   if (isDefault) {
     target.delete(field);
   } else {
@@ -2071,9 +2203,39 @@ export function setResetDomainField(
   return doc.toString(TO_STRING);
 }
 
+/**
+ * Declares that the DUT has NO reset port: `dut.reset: ''`, and the single-reset
+ * mapping (polarity / externality of a port that is no longer there) goes with
+ * it. The repair of `reset-undriven` where the testbench top cannot be the
+ * answer — `dut.reset` (often just the generator's `rst_n` default) names a
+ * port the DUT does not have, or an agent drives the reset through `reset_port`.
+ * Refused under a reset domain LIST (`dut.reset` must name a domain there).
+ * A no-op returns the original text.
+ */
+export function clearDutReset(text: string): string {
+  const doc = parse(text);
+  const resetNode = doc.getIn(["reset"], true);
+  if (isSeq(resetNode)) {
+    throw new Error(
+      "under a reset domain list `dut.reset` must name one of the domains — collapse the list to a single reset first"
+    );
+  }
+  const dropMapping = resetNode !== undefined && !isAlias(resetNode);
+  if (doc.getIn(["dut", "reset"]) === "" && !dropMapping) {
+    return text;
+  }
+  doc.setIn(["dut", "reset"], "");
+  if (dropMapping) {
+    doc.deleteIn(["reset"]);
+  }
+  return doc.toString(TO_STRING);
+}
+
 /** Collapses a ONE-element reset list back into the single mapping. The domain's
  *  name becomes `dut.reset` (a port name again), and a `clock:` gate is dropped —
- *  the single mapping has no such key. */
+ *  the single mapping has no such key. The mapping gets `external: true`: under
+ *  the list tb_top drove the reset, and a mapping without it would hand the reset
+ *  to an agent that does not declare the port (see `resetNeedsExternal`). */
 export function collapseResets(text: string): string {
   const doc = parse(text);
   const reset = doc.getIn(["reset"]);
@@ -2103,6 +2265,9 @@ export function collapseResets(text: string): string {
         a.delete("reset");
       }
     }
+  }
+  if (resetNeedsExternal(doc)) {
+    map.external = true;
   }
   if (Object.keys(map).length) {
     doc.setIn(["reset"], doc.createNode(map));

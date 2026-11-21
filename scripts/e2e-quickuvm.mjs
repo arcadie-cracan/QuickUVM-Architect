@@ -76,6 +76,210 @@ function quickUvmComposed(topText, producerText, consumerText) {
   return { status: r.status, out: (r.stdout ?? "") + (r.stderr ?? "") };
 }
 
+// ---------------------------------------------------------------------------
+// THE ELABORATION LINT (Nov 2026). `quick-uvm generate` exiting 0 proves the
+// config VALIDATES, not that the bench elaborates: the tutorial bench itself was
+// generated cleanly for months with `.rst_n(cmd_if_inst.rst_n)` in tb_top and no
+// `rst_n` in `cmd_if` (xmelab *E,CUVUNF on the first real compile). This script
+// cannot run a simulator, so it checks the generated TEXT: every signal the top
+// connects to a DUT port must be declared — in the top itself (a bare net) or in
+// the interface it is taken from (`<inst>.<signal>`). `generate()` runs it on
+// every bench of every scenario.
+
+const stripComments = (sv) =>
+  sv.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+
+/** the index just past the `)` that closes the `(` at `open`, or -1 */
+function closeParen(text, open) {
+  let depth = 0;
+  for (let i = open; i < text.length; i++) {
+    if (text[i] === "(") {
+      depth += 1;
+    } else if (text[i] === ")") {
+      depth -= 1;
+      if (depth === 0) {
+        return i + 1;
+      }
+    }
+  }
+  return -1;
+}
+
+/** removes every `#( ... )` group (parameter assignments, balanced): a DUT's
+ *  `#(.W(WIDTH))` is not a port connection, `clkgen #(10) ck (clk)` is an instance */
+function stripParamLists(text) {
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const m = /#\s*\(/.exec(text.slice(i));
+    if (!m) {
+      return out + text.slice(i);
+    }
+    const open = i + m.index + m[0].length - 1;
+    const close = closeParen(text, open);
+    if (close < 0) {
+      return out + text.slice(i);
+    }
+    out += text.slice(i, i + m.index) + " ";
+    i = close;
+  }
+}
+
+/** the DECLARATIONS of an interface / of the top: comments, clocking blocks and
+ *  modports removed (they REFERENCE signals), and the `[...]` ranges with them
+ *  (a name inside a dimension is a use, not a declaration) */
+function declText(sv) {
+  return stripComments(sv)
+    .replace(/\bclocking\b[\s\S]*?\bendclocking\b/g, " ")
+    .replace(/\bmodport\b[^;]*;/g, " ")
+    .replace(/\[[^\]]*\]/g, " ");
+}
+
+const NOT_A_TYPE =
+  "begin|end|else|assign|if|initial|final|always\\w*|return|posedge|negedge|repeat|wait|forever|fork|join\\w*|module|interface|import|typedef|parameter|localparam";
+
+function declares(sv, sig) {
+  const s = sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const text = declText(sv);
+  return (
+    // `logic a, sig;`  /  `interface x (input clk, input sig);` — up to the end of
+    // the declaration, and never into an initialiser (`logic a = sig;` USES sig)
+    new RegExp(
+      `\\b(?:input|output|inout|logic|wire|bit|reg|var|tri\\w*)\\b[^;)=]*\\b${s}\\b`
+    ).test(text) ||
+    // a user-typed signal, `my_struct_t sig;` — type and name on ONE line, and the
+    // "type" is not a keyword (`begin` + newline + `sig = ...;` is an assignment)
+    new RegExp(
+      `(?:^|[;\\n])[ \\t]*(?!(?:${NOT_A_TYPE})\\b)[A-Za-z_]\\w*(?:::\\w+)?[ \\t]+${s}\\b[ \\t]*[;,]`
+    ).test(text)
+  );
+}
+
+/**
+ * Returns the problems of a generated bench (empty = clean), the DUT port
+ * connections it found as `{port, expr}`, and the top files. `extraRoots`: more
+ * directories to look for interface files in (a bench that consumes a VIP by
+ * reference instantiates interfaces generated elsewhere).
+ */
+function lintDutConnections(tbDir, extraRoots = []) {
+  const files = listFiles(tbDir);
+  const elsewhere = extraRoots.flatMap((d) => listFiles(d));
+  const problems = [];
+  const connections = [];
+  const tops = files.filter(
+    (f) => /\.sv$/.test(f) && /pragma quickuvm custom dut_connections begin/.test(readFileSync(f, "utf8"))
+  );
+  for (const topFile of tops) {
+    const raw = readFileSync(topFile, "utf8");
+    const top = stripComments(raw);
+    // `<type> <inst> (` — the instances of the top, by name (parameter lists gone)
+    const typeOf = new Map();
+    for (const m of stripParamLists(top).matchAll(/^\s*([A-Za-z_]\w*)\s+([A-Za-z_]\w*)\s*\(/gm)) {
+      typeOf.set(m[2], m[1]);
+    }
+    const blocks = raw.matchAll(
+      /pragma quickuvm custom dut_connections begin([\s\S]*?)\/\/ pragma quickuvm custom dut_connections end/g
+    );
+    for (const b of blocks) {
+      const body = stripParamLists(stripComments(b[1]));
+      for (const c of body.matchAll(/\.([A-Za-z_]\w*)\s*\(/g)) {
+        const open = c.index + c[0].length - 1;
+        const close = closeParen(body, open);
+        if (close < 0) {
+          problems.push(`${basename(topFile)}: .${c[1]}( — unbalanced parentheses`);
+          continue;
+        }
+        const port = c[1];
+        const expr = body.slice(open + 1, close - 1).trim();
+        connections.push({ port, expr });
+        // sized literals (`8'hFF`, `'0`) are not names
+        const names = expr
+          .replace(/\d*'[sS]?[bBdDhHoO]?[0-9a-fA-F_xXzZ?]+/g, " ")
+          .match(/[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*/g);
+        for (const ref of names ?? []) {
+          const [head, ...rest] = ref.split(".");
+          if (!rest.length) {
+            if (!declares(top, head)) {
+              problems.push(`${basename(topFile)}: .${port}(${expr}) — net \`${head}\` is not declared in the top`);
+            }
+            continue;
+          }
+          const type = typeOf.get(head);
+          if (!type) {
+            problems.push(`${basename(topFile)}: .${port}(${expr}) — \`${head}\` is not an instance of the top`);
+            continue;
+          }
+          const ifFile =
+            files.find((f) => basename(f) === `${type}.sv`) ??
+            elsewhere.find((f) => basename(f) === `${type}.sv`);
+          if (!ifFile) {
+            problems.push(`${basename(topFile)}: .${port}(${expr}) — no ${type}.sv found for \`${head}\``);
+            continue;
+          }
+          if (!declares(readFileSync(ifFile, "utf8"), rest[0])) {
+            problems.push(
+              `${basename(topFile)}: .${port}(${expr}) — ${type}.sv declares no signal \`${rest[0]}\``
+            );
+          }
+        }
+      }
+    }
+  }
+  return { problems, connections, tops };
+}
+
+// THE LINT IS TESTED TOO (the adversarial review found five holes in its first
+// cut, each on a synthetic top — they are the cases below). A lint that passes
+// everything is worse than none: it is what "green" would have meant.
+{
+  const lintOf = (topBody, ifBody, extra = {}) => {
+    const d = mkdtempSync(join(tmpdir(), "quickuvm-e2e-lint-"));
+    writeFileSync(
+      join(d, "tb_top.sv"),
+      `module tb_top;\n  logic clk;\n${topBody.pre ?? ""}\n  a_if a_if_inst (clk);\n` +
+        `  // pragma quickuvm custom dut_connections begin\n${topBody.dut}\n` +
+        `  // pragma quickuvm custom dut_connections end\nendmodule\n`
+    );
+    if (ifBody !== null) {
+      writeFileSync(join(d, "a_if.sv"), `interface a_if (input clk);\n${ifBody}\nendinterface\n`);
+    }
+    for (const [f, t] of Object.entries(extra)) {
+      writeFileSync(join(d, f), t);
+    }
+    return lintDutConnections(d).problems;
+  };
+  const IF = "  logic [7:0] din;\n  clocking cb1 @(posedge clk);\n    output din;\n    input rst_n;\n  endclocking";
+  // clean: a parameterised DUT is not a list of port connections
+  assert.deepEqual(
+    lintOf({ dut: "  demo #(.W(WIDTH), .D(4)) dut_inst (\n    .din(a_if_inst.din),\n    .clk(clk)  );" }, IF),
+    []
+  );
+  // a name the clocking block merely REFERENCES is not declared
+  assert.equal(lintOf({ dut: "  demo dut_inst (.rst_n(a_if_inst.rst_n));" }, IF).length, 1);
+  // ... also inside a parenthesised / concatenated expression
+  assert.equal(lintOf({ dut: "  demo dut_inst (.rst_n(~(a_if_inst.rst_n)), .din({a_if_inst.din, 1'b0}));" }, IF).length, 1);
+  // an ASSIGNMENT after `begin` is not a declaration of the net
+  assert.equal(
+    lintOf({ pre: "  initial begin\n    rst_n = 1'b0;\n  end", dut: "  demo dut_inst (.rst_n(rst_n));" }, IF).length,
+    1
+  );
+  // a name in another declaration's INITIALISER or DIMENSION is not declared
+  assert.equal(lintOf({ pre: "  logic other = rst_n;", dut: "  demo dut_inst (.rst_n(rst_n));" }, IF).length, 1);
+  assert.equal(lintOf({ dut: "  demo dut_inst (.x(a_if_inst.W));" }, "  logic [W-1:0] din;").length, 1);
+  // declared for real: a net of the top, an interface port, a user-typed signal
+  assert.deepEqual(
+    lintOf(
+      { pre: "  logic rst_n;", dut: "  demo dut_inst (.rst_n(rst_n), .p(a_if_inst.pkt), .q(a_if_inst.r2));" },
+      "  pkt_t pkt;\n  wire r1, r2;"
+    ),
+    []
+  );
+  // an instance of the top that is no interface we can read is a problem, not a pass
+  assert.equal(lintOf({ dut: "  demo dut_inst (.x(ghost_inst.x), .y(a_if_inst.din));" }, IF).length, 1);
+  assert.equal(lintOf({ dut: "  demo dut_inst (.y(a_if_inst.din));" }, null).length, 1);
+  console.log("  ok    lint: the elaboration lint catches its own review cases");
+}
+
 function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const dir = mkdtempSync(join(tmpdir(), `quickuvm-e2e-${name}-`));
   const cfg = join(dir, `${name}.quickuvm.yaml`);
@@ -93,6 +297,14 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   for (const f of expectFiles) {
     assert.ok(existsSync(join(dir, "tb", f)), `lipseste ${f} (in ${dir})`);
   }
+  // exit 0 is not enough — see lintDutConnections (interfaces generated outside
+  // `tb/`, e.g. a VIP copied next to the config, are looked up in the scenario dir)
+  const lint = lintDutConnections(join(dir, "tb"), [dir]);
+  assert.deepEqual(
+    lint.problems,
+    [],
+    `${name}: the generated top connects the DUT to signals that do not exist (in ${dir})`
+  );
   console.log(`  ok    ${name}: testbench generat (${expectFiles.length}+ fisiere) in ${dir}`);
   return dir;
 }
@@ -107,7 +319,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: null,
     reset: null,
     resetActiveLow: true,
-    externalReset: false,
     combinational: true,
   });
   text = ops.createAgent(text, {
@@ -135,7 +346,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   });
   text = ops.createAgent(text, {
@@ -174,7 +384,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: null,
     reset: null,
     resetActiveLow: true,
-    externalReset: false,
     combinational: true,
   });
   const clocked = (m) => ({
@@ -182,7 +391,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   });
   const child = (m, w, dut) =>
@@ -196,7 +404,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   });
   top = ops.createSubenvs(top, [
@@ -204,7 +411,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     { name: "u_inv", config: "inverter.quickuvm.yaml", params: {} },
     { name: "u_ch", config: "chan.quickuvm.yaml", params: {} },
   ]);
-  generate(
+  const compDir = generate(
     "soc_top",
     top,
     [
@@ -225,6 +432,17 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
       "chan.quickuvm.yaml": child("chan", 16, clocked),
     }
   );
+  // THE CLOCKED LEAF'S RESET IS CONNECTED. In a composition the old shape failed
+  // differently, and more quietly: a leaf whose reset was not `external` got NO
+  // reset connection at all in the subsystem top (the port left floating — no
+  // elaboration error, a DUT that is never reset). With the reset setDut writes
+  // now, the top declares a per-leaf net, drives it and connects it.
+  const comp = lintDutConnections(join(compDir, "tb"));
+  const chanRst = comp.connections.filter((c) => c.port === "rst_n");
+  assert.deepEqual(chanRst.map((c) => c.expr), ["u_ch_rst_n"],
+    "the clocked leaf's reset port is not connected in the subsystem top");
+  assert.match(readFileSync(comp.tops[0], "utf8"), /u_ch_rst_n = 1'b1;\s*\/\/ deassert/);
+  console.log("  ok    composition: the clocked leaf's reset is declared, driven and connected in tb_top");
 }
 
 // --- scenario 4: DELETION (slice 2 of the verification view) — removeAgent's
@@ -239,7 +457,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   };
   let text = ops.setDut(ops.newConfigText("soc_top"), soc);
@@ -334,7 +551,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   };
   let text = ops.setDut(ops.newConfigText("soc_top"), soc);
@@ -406,7 +622,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
         clock: null,
         reset: null,
         resetActiveLow: true,
-        externalReset: false,
         combinational: true,
       }),
       { name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }] }
@@ -452,7 +667,7 @@ agents:
   // the top, built through the real MUTATIONS: setDut + createSubenvs + addConnections
   let top = ops.setDut(ops.newConfigText("sys_top"), {
     module: "sys_top", clock: "clk", reset: null,
-    resetActiveLow: false, externalReset: false, combinational: true,
+    resetActiveLow: false, combinational: true,
   });
   top = ops.createSubenvs(top, [
     { name: "p1", config: "producer.quickuvm.yaml", params: {} },
@@ -534,7 +749,7 @@ agents:
   const base = () => {
     let t = ops.setDut(ops.newConfigText("rsp_dut"), {
       module: "rsp_dut", clock: "clk", reset: "rst_n",
-      resetActiveLow: true, externalReset: false, combinational: false,
+      resetActiveLow: true, combinational: false,
     });
     return ops.createAgent(t, {
       name: "rd",
@@ -612,7 +827,7 @@ endpackage
 
   let t = ops.setDut(ops.newConfigText("cfg"), {
     module: "cfg", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "host",
@@ -675,7 +890,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("bid"), {
     module: "bid", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -764,7 +979,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("win"), {
     module: "win", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "es",
@@ -819,7 +1034,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("cov"), {
     module: "cov", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "cmd",
@@ -886,7 +1101,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("mc"), {
     module: "mc", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "core", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -943,7 +1158,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("mr"), {
     module: "mr", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "core", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -1001,7 +1216,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("i2c"), {
     module: "i2c", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "bus",
@@ -1058,7 +1273,7 @@ endpackage
   const child = (name, agent) => {
     let c = ops.setDut(ops.newConfigText(name), {
       module: name, clock: "clk", reset: "rst_n",
-      resetActiveLow: true, externalReset: false, combinational: false,
+      resetActiveLow: true, combinational: false,
     });
     return ops.createAgent(c, {
       name: agent,
@@ -1073,7 +1288,7 @@ endpackage
 
   let top = ops.setDut(ops.newConfigText("sys"), {
     module: "sys", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: true,
+    resetActiveLow: true, combinational: true,
   });
   top = ops.createSubenvs(top, [
     { name: "p1", config: "producer.quickuvm.yaml", params: {} },
@@ -1111,7 +1326,7 @@ endpackage
   // 1. the VIP: packaged layout, kind: vip, no bench-layer sections
   let vip = ops.setDut(ops.newConfigText("iovip"), {
     module: "iovip", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   vip = ops.createAgent(vip, {
     name: "io", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -1132,7 +1347,7 @@ endpackage
   // 2. the consuming bench: `{name, from_vip}` with the path RELATIVE to the config
   let bench = ops.setDut(ops.newConfigText("user"), {
     module: "user", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   // addVipAgent also switches the bench to `layout: packaged` — consuming by
   // reference requires it, and quick-uvm refuses otherwise
@@ -1165,7 +1380,199 @@ endpackage
   console.log("  ok    VIP: referinta poarta DOAR name + from_vip (restul: REFUZ)");
 }
 
-// --- scenario 15 (docs/08 R24): the "New testbench" TEMPLATES. Each plan is a fold
+// --- scenario 15 (Nov 2026): THE TUTORIAL BENCH, gesture by gesture
+// (docs/tutorial-yapp-buffer.md) — and the reset wiring that was broken in it.
+{
+  const tutorial = () => {
+    let t = ops.setDut(ops.newConfigText("yapp_buffer"), {
+      module: "yapp_buffer", clock: "clk", reset: "rst_n",
+      resetActiveLow: true, combinational: false,
+    });
+    t = ops.createAgent(t, {
+      name: "cmd",
+      inputs: [
+        { name: "in_data", width: 8 },
+        { name: "in_addr", width: 2 },
+        { name: "in_valid", width: 1 },
+      ],
+      outputs: [{ name: "in_ready", width: 1 }],
+    });
+    t = ops.createAgent(t, {
+      name: "rsp",
+      inputs: [{ name: "out_ready", width: 1 }],
+      outputs: [
+        { name: "out_data", width: 8 },
+        { name: "out_addr", width: 2 },
+        { name: "out_valid", width: 1 },
+      ],
+    });
+    t = ops.addScoreboard(t, {
+      name: "pkt_sb", source: "cmd", monitor: "rsp",
+      match: "out_of_order", matchKey: "out_addr",
+    });
+    return ops.addCoverage(t, "cmd");
+  };
+  const text = tutorial();
+
+  // the tutorial's YAML listing IS what the gestures write (the listing claimed a
+  // config that generated a bench which did not elaborate; now it cannot drift)
+  const doc = readFileSync("docs/tutorial-yapp-buffer.md", "utf8").replace(/\r\n/g, "\n");
+  const listing = /```yaml\n([\s\S]*?)```/.exec(doc)?.[1];
+  assert.ok(listing, "the tutorial has no ```yaml listing");
+  assert.equal(listing, text.replace(/\r\n/g, "\n"),
+    "docs/tutorial-yapp-buffer.md: the YAML listing is not what the mutations write");
+
+  const dir = generate("yapp_buffer", text, [
+    "cmd_if.sv", "rsp_if.sv", "cmd_cov.svh", "yapp_buffer_scoreboard.svh",
+    "yapp_buffer_env.svh", "yapp_buffer_virtual_sequencer.svh", "tb_top.sv",
+  ]);
+  const lint = lintDutConnections(join(dir, "tb"));
+  const top = readFileSync(lint.tops[0], "utf8");
+  // the DUT's reset port IS connected, to a signal that exists (the lint in
+  // generate() proved the second half) ...
+  const rst = lint.connections.filter((c) => c.port === "rst_n");
+  assert.equal(rst.length, 1, `the DUT's rst_n is not connected:\n${top}`);
+  // ... and somebody DRIVES it: the top's generated reset block, active-low
+  assert.match(top, /^\s*logic rst_n;/m, "tb_top does not declare the reset net");
+  assert.match(top, /rst_n = 1'b0;\s*\/\/ assert[\s\S]*rst_n = 1'b1;\s*\/\/ deassert/,
+    "tb_top does not drive the reset (assert low, release high)");
+  for (const f of ["cmd_if.sv", "rsp_if.sv"]) {
+    assert.match(readFileSync(join(dir, "tb", f), "utf8"), /input rst_n\)/,
+      `${f} does not take the reset`);
+  }
+  console.log("  ok    tutorial: the DUT's reset is declared, driven by tb_top and connected");
+
+  // the POLARITY is honoured by the generated block (an active-high `rst`)
+  let high = ops.setDut(ops.newConfigText("hi"), {
+    module: "hi", clock: "clk", reset: "rst", resetActiveLow: false, combinational: false,
+  });
+  high = ops.createAgent(high, {
+    name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  assert.deepEqual(ops.parseQuvm(high).reset, { active_low: false, external: true });
+  const hiDir = generate("reset_active_high", high, ["tb_top.sv"]);
+  assert.match(readFileSync(join(hiDir, "tb", "tb_top.sv"), "utf8"),
+    /rst = 1'b1;\s*\/\/ assert[\s\S]*rst = 1'b0;\s*\/\/ deassert/,
+    "the active-high reset is not asserted high / released low");
+  console.log("  ok    reset: the active-high polarity reaches tb_top's reset generator");
+
+  // MUTATION PROOF — the lint is what catches the old shape. The same bench
+  // without `reset: {external: true}` (what every earlier Architect wrote):
+  // quick-uvm 1.1.0 still exits 0 and the lint names the dangling reference. The
+  // fix merged upstream after 1.1.0 (arcadie-cracan/QuickUVM#119) INFERS the
+  // top-driven reset for this shape — then the bench is the same as the one
+  // above and the lint is clean; a generator that refuses the config instead is
+  // accepted too. All three are told apart here, so this test says which
+  // generator it ran against.
+  const oldShape = ops.setResetDomainField(text, "rst_n", "external", false);
+  assert.equal(ops.parseQuvm(oldShape).reset, undefined, "the old shape has no `reset:` block");
+  const od = mkdtempSync(join(tmpdir(), "quickuvm-e2e-oldreset-"));
+  writeFileSync(join(od, "m.quickuvm.yaml"), oldShape);
+  const r = quickUvm(["generate", "-c", join(od, "m.quickuvm.yaml"), "-o", join(od, "tb")], od);
+  const bad = r.status === 0 ? lintDutConnections(join(od, "tb")).problems : [];
+  if (r.status === 0 && bad.length === 0) {
+    const inferred = readFileSync(join(od, "tb", "tb_top.sv"), "utf8");
+    assert.match(inferred, /^\s*logic rst_n;/m, "clean, but nobody declares the reset net");
+    assert.match(inferred, /rst_n = 1'b1;\s*\/\/ deassert/, "clean, but nobody drives the reset");
+    console.log("  ok    reset: the old shape (no external) — the generator INFERS the top-driven reset (fixed upstream)");
+  } else if (r.status === 0) {
+    assert.equal(bad.length, 1, `the lint should name exactly the reset:\n${bad.join("\n")}`);
+    assert.match(bad[0], /\.rst_n\(cmd_if_inst\.rst_n\).*cmd_if\.sv declares no signal `rst_n`/);
+    console.log("  ok    reset: the old shape (no external) — the generator exits 0, the lint names the dangling reference");
+  } else {
+    console.log("  ok    reset: the old shape (no external) is REFUSED by the generator (fixed upstream)");
+  }
+
+  // the AGENT-DRIVEN shape stays legal: the port among an agent's inputs, no
+  // `external` (setDut derives that), and the interface then has the signal
+  let driven = ops.addAgentPorts(oldShape, "cmd", {
+    inputs: [{ name: "rst_n", width: 1 }], outputs: [],
+  });
+  driven = ops.setDut(driven, {
+    module: "yapp_buffer", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, combinational: false,
+  });
+  assert.equal(ops.parseQuvm(driven).reset, undefined, "external next to an agent-declared reset");
+  generate("reset_agent_driven", driven, ["cmd_if.sv", "tb_top.sv"]);
+  // ... and `external: true` next to it is the generator's own wall — which the
+  // mutation says first (the guard and the wall agree, checked in both directions)
+  assert.throws(() => ops.setResetDomainField(driven, "rst_n", "external", true), /agent's ports/);
+  const both = driven + "reset: { external: true }\n";
+  assert.equal(ops.parseQuvm(both).reset.external, true, "the hand-written pair did not apply");
+  const bd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-bothreset-"));
+  writeFileSync(join(bd, "m.quickuvm.yaml"), both);
+  const rb = quickUvm(["generate", "-c", join(bd, "m.quickuvm.yaml"), "-o", join(bd, "tb")], bd);
+  assert.notEqual(rb.status, 0, "external + agent-declared reset should be refused");
+  assert.match((rb.stdout ?? "") + (rb.stderr ?? ""), /must not also be an agent port/);
+  console.log("  ok    reset: agent-driven (the port in an agent, no external) generates; both at once = REFUSED");
+
+  // `reset_port` (review): an agent drives the reset through its own port. With
+  // dut.reset left at its `rst_n` default the top dangles as before, `external:
+  // true` is REFUSED there — the repair is `clearDutReset`.
+  let rp = ops.createAgent(ops.newConfigText("rp"), {
+    name: "a", inputs: [{ name: "din", width: 8 }, { name: "arst", width: 1 }], outputs: [],
+  });
+  rp = ops.setAgentField(rp, "a", "reset_port", "arst");
+  rp += "dut: { name: rp, clock: clk }\n";
+  assert.equal(ops.parseQuvm(rp).dut.reset, undefined, "the key is absent: the generator's default");
+  const rd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-resetport-"));
+  writeFileSync(join(rd, "m.quickuvm.yaml"), rp);
+  const rr = quickUvm(["generate", "-c", join(rd, "m.quickuvm.yaml"), "-o", join(rd, "tb")], rd);
+  if (rr.status === 0) {
+    assert.match(lintDutConnections(join(rd, "tb")).problems.join("\n"), /\.rst_n\(a_if_inst\.rst_n\)/);
+  }
+  assert.throws(() => ops.setResetDomainField(rp, "rst_n", "external", true), /reset_port/);
+  generate("reset_port_cleared", ops.clearDutReset(rp), ["a_if.sv", "tb_top.sv"]);
+  console.log("  ok    reset: reset_port — the default dut.reset dangles, clearDutReset repairs it");
+
+  // `kind: selftest` (review): a DUT-less top. The kind switch must take
+  // `external: true` away — with it the interfaces take a `rst_n` input the top
+  // never connects, and the drivers wait on it forever (exit 0).
+  let st = ops.setDut(ops.newConfigText("st"), {
+    module: "st", clock: "clk", reset: "rst_n", resetActiveLow: true, combinational: false,
+  });
+  st = ops.createAgent(st, {
+    name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  for (const tname of ops.parseQuvm(st).tests.map((x) => x.name)) {
+    st = ops.removeTest(st, tname);
+  }
+  st = ops.setBenchField(st, "layout", "packaged");
+  assert.deepEqual(ops.parseQuvm(st).reset, { external: true });
+  const selftest = ops.setBenchField(st, "kind", "selftest");
+  assert.equal(ops.parseQuvm(selftest).reset, undefined, "the selftest kept `external: true`");
+  const sd = generate("selftest", selftest, ["a_driver.svh", "a_if.sv"]);
+  const waits = (dir) =>
+    /wait\s*\(\s*vif\.rst_n/.test(readFileSync(
+      listFiles(join(dir, "tb")).find((f) => basename(f) === "a_driver.svh"), "utf8"));
+  // THE INVARIANT, whatever the generator: a driver that waits on the reset needs a
+  // top that drives it. On 1.1.0 the selftest Architect writes has no reset at all;
+  // with the upstream fix the reset is inferred there too and the top generates it.
+  const topOf = (dir) =>
+    readFileSync(listFiles(join(dir, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8");
+  const drivesReset = (dir) => /a_if a_if_inst \(\.clk\(clk\), \.rst_n\(rst_n\)\);/.test(topOf(dir));
+  assert.equal(waits(sd), drivesReset(sd),
+    "the selftest's driver waits on a reset the top does not drive (or the reverse)");
+  // mutation proof: the same selftest WITH the flag — the cascade is load-bearing
+  // on 1.1.0, where the generator hangs the bench instead of driving the reset
+  const stuck = selftest + "reset: { external: true }\n";
+  const xd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-selftest-ext-"));
+  writeFileSync(join(xd, "m.quickuvm.yaml"), stuck);
+  const xr = quickUvm(["generate", "-c", join(xd, "m.quickuvm.yaml"), "-o", join(xd, "tb")], xd);
+  if (xr.status === 0 && drivesReset(xd)) {
+    assert.ok(waits(xd), "the top drives a reset no driver waits on");
+    console.log("  ok    reset: selftest — the selftest top generates the reset (fixed upstream)");
+  } else if (xr.status === 0) {
+    const xtop = topOf(xd);
+    assert.ok(waits(xd), "expected the driver to wait on vif.rst_n");
+    assert.match(xtop, /a_if a_if_inst \(clk\);/, "expected the top to leave rst_n unconnected");
+    console.log("  ok    reset: selftest — no external (with it: drivers wait on a reset the top never connects)");
+  } else {
+    console.log("  ok    reset: selftest — no external (the generator now refuses the pair itself)");
+  }
+}
+
+// --- scenario 16 (docs/08 R24): the "New testbench" TEMPLATES. Each plan is a fold
 // of the mutations above over a new skeleton; here each one is generated for real —
 // a template that writes a config quick-uvm refuses is worse than no template.
 {
