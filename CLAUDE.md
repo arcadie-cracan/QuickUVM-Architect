@@ -1789,7 +1789,9 @@ jog — stored per edge as a skeleton anchored to the pins, dormant when it no
 longer fits, reset from the context menu / the inspector / ⟲;
 `src/webview/wireroute.ts` + `test:wireroute` (45 tests), the `D27:` tests of
 `test:sidecar`, the `edge/override` and `relay/resetRoute` messages. Verified
-in `scripts/harness.html` with scripted pointer events; the gestures, the
-sidebar's "Reset route" and the two-surface refresh still need a manual pass in
-the Extension Development Host.
+in `scripts/harness.html` with scripted pointer events, and **validated by the
+user in the Extension Development Host** (21 Nov 2026): the gestures and the
+cursor shapes in both view families, the sidebar's "Reset route" (the relay
+through the host), ⟲ with its undo, and the refresh of a second surface (the
+panel and a per-file editor on the same level).
 Planul complet: `docs/06-plan-mvp.md`.
