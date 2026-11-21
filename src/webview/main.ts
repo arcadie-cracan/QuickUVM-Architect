@@ -32,6 +32,20 @@ import type { TbNode, TbScene } from "./tbscene";
 import { buildTbScene, canCollapse } from "./tbscene";
 import { anchor, drawTb, drawTbEdges, layoutTb, TbLayout } from "./tbschematic";
 import {
+  dragWire,
+  formatRoute,
+  grabWire,
+  parseRoutes,
+  wireGroup,
+  wireStateText,
+  type WireDragResult,
+  type WireDrawn,
+  type WireEdge,
+  type WireGeom,
+  type WireGrab,
+  type WireOpts,
+} from "./wireroute";
+import {
   rtlWireChoices,
   wireChoices,
   wireChoicesOnCanvas,
@@ -189,6 +203,74 @@ function sidecarNode(viewId: string, nodeId: string): SidecarNode {
   const view = (sidecar.views[viewId] ??= {});
   const nodes = (view.nodes ??= {});
   return (nodes[nodeId] ??= {});
+}
+
+// ----------------------------------- hand-routed wires (docs/04 level 3, D27)
+//
+// The rules are in wireroute.ts (pure, test:wireroute); here are only the
+// mirror, the drawing options and — further down — the pointer gestures.
+
+/** what the edge drawer last drew, per edge: the wire gestures hit-test on it */
+let currentWires: WireDrawn | null = null;
+/** the live preview of a wire drag: its skeletons are drawn over the stored ones */
+let wirePreview: WireDragResult | null = null;
+
+/** the hand-placed routes of a view, in their file form (edge id -> route) */
+function viewRouteText(key = layoutKey()): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [id, e] of Object.entries((key ? sidecar.views[key]?.edges : undefined) ?? {})) {
+    if (typeof e?.route === "string") {
+      out[id] = e.route;
+    }
+  }
+  return out;
+}
+
+/** what the two edge drawers are given on every (re)draw */
+function wireOpts(): WireOpts {
+  const key = layoutKey();
+  const routes = parseRoutes(key ? sidecar.views[key]?.edges : undefined);
+  if (wirePreview) {
+    Object.assign(routes, wirePreview.routes);
+  }
+  return {
+    routes,
+    force: wirePreview ? new Set(wirePreview.moved) : undefined,
+    onDrawn: (drawn) => {
+      currentWires = drawn;
+    },
+  };
+}
+
+/** writes a patch of routes (null = back to automatic) into the mirror and
+ *  sends it to the host (`edge/override`, docs/05) */
+function storeRoutes(key: string, patch: Record<string, string | null>): void {
+  const view = (sidecar.views[key] ??= {});
+  const edges = (view.edges ??= {});
+  for (const [id, text] of Object.entries(patch)) {
+    if (text === null) {
+      delete edges[id];
+    } else {
+      edges[id] = { ...edges[id], route: text };
+    }
+  }
+  if (!Object.keys(edges).length) {
+    delete view.edges;
+  }
+  post({ v: 1, type: "edge/override", viewId: key, edges: patch });
+}
+
+/** what the mirror holds for `ids` now, as a patch (null = no route): the
+ *  state an undo step goes back to. Only the edges a gesture touches — a step
+ *  that restored the view's WHOLE set would delete a route another surface (or
+ *  a restored orphan) added since (review finding) */
+function routePatchOf(key: string, ids: readonly string[]): Record<string, string | null> {
+  const stored = viewRouteText(key);
+  const patch: Record<string, string | null> = {};
+  for (const id of ids) {
+    patch[id] = stored[id] ?? null;
+  }
+  return patch;
 }
 
 /**
@@ -378,6 +460,12 @@ function inspectorCtx(root: HTMLElement, allOpen = false): Parameters<typeof ren
     netOfPin,
     sidecar,
     toggleNetRender,
+    resetNetRoute: (net) => {
+      const edge = currentScene?.edges.find((e) => e.net === net);
+      if (edge) {
+        resetWireRoutes(edge.id);
+      }
+    },
     toggleFold,
     hasSchematic,
     navigateTo,
@@ -647,6 +735,14 @@ window.addEventListener("message", (e: MessageEvent) => {
     case "relay/netRender":
       toggleNetRender(m.net);
       break;
+    case "relay/resetRoute": {
+      // docs/04 level 3 — the sidebar's "Reset route" on the selected net
+      const edge = currentScene?.edges.find((e) => e.net === m.net);
+      if (edge && state.mode === "schematic") {
+        resetWireRoutes(edge.id);
+      }
+      break;
+    }
     case "relay/selectPins":
       selectPins(m.names);
       break;
@@ -893,11 +989,18 @@ function relayoutAll(): void {
   if (!key || state.mode === "symbol") {
     return; // the symbol has no user-owned positions
   }
-  pushPosUndo(capturePositions()); // an accidental ⟲ is undone with Ctrl+Z
+  // an accidental ⟲ is undone with Ctrl+Z — the hand-placed routes it discards too
+  pushPosUndo(capturePositions(), Object.keys(viewRouteText(key)));
   const nodes = sidecar.views[key]?.nodes ?? {};
   for (const n of Object.values(nodes)) {
     delete n.x;
     delete n.y;
+  }
+  // docs/04 level 3 — the hand-placed routes go with the positions: they
+  // describe the arrangement being discarded (the host does the same on
+  // `relayout/request`; the undo step above holds them)
+  if (sidecar.views[key]) {
+    delete sidecar.views[key].edges;
   }
   sessionCameras.delete(key); // fresh fit onto the new layout
   post({ v: 1, type: "relayout/request", viewId: key, scope: "all" });
@@ -1207,6 +1310,10 @@ function drawPin(
  */
 function resetCanvas(): SVGGElement {
   canvas.replaceChildren();
+  // docs/04 level 3: the drawn wires went with the DOM — and a wire drag in
+  // flight with them (its grab holds the geometry of the drawing just replaced)
+  currentWires = null;
+  cancelWireDrag(false, true);
   lodTitlesDirty = true; // docs/08 R6: new titles, none fitted to its box yet
   const defs = el("defs", {});
   const hatch = el("pattern", {
@@ -1738,6 +1845,8 @@ function exportSvg(): void {
   );
   // the status badges are a session diagnostic, not content (docs/05)
   clone.querySelectorAll(".status-badge").forEach((n) => n.remove());
+  // docs/04 level 3 — the wide hit strokes under the wires are interaction, not drawing
+  clone.querySelectorAll(".wire-hit").forEach((n) => n.remove());
   // docs/08 R25 — nor are the simulation results (they are as old as their files)
   clone.querySelectorAll(".result-badge").forEach((n) => n.remove());
   clone
@@ -2638,11 +2747,11 @@ function clearAlignGuides(): void {
 function dragReroute(): void {
   if (state.mode === "tb") {
     if (currentTbScene && currentTbLayout && currentTbEdgesGroup) {
-      drawTbEdges(currentTbScene, currentTbLayout, currentTbEdgesGroup);
+      drawTbEdges(currentTbScene, currentTbLayout, currentTbEdgesGroup, wireOpts());
     }
     repositionCard(); // docs/08 R15: a pinned card follows its dragged box
   } else if (currentScene && currentLayout && currentEdgesGroup) {
-    routeEdges(currentScene, currentLayout, currentEdgesGroup);
+    routeEdges(currentScene, currentLayout, currentEdgesGroup, wireOpts());
   }
   applyFilterEdges(); // docs/08 R23: the redrawn wires keep their filter classes
   // docs/08 R21: a frame's box is its members' bounding box — it follows them
@@ -2684,6 +2793,11 @@ interface LayoutSnap {
    *  does not PIN an un-arranged view, nor cost a layout pass) */
   pos: PosMap | null;
   annot: ViewAnnotations;
+  /** docs/04 level 3 — the routes of the edges this step changed, as they
+   *  were before it (null = none): a wire drag, a "Reset route" or a ⟲ comes
+   *  back with the same Ctrl+Z. null = the step changed no route — a block move
+   *  must not carry (and later write back) the routes of its moment */
+  routes: Record<string, string | null> | null;
 }
 const posHistory = new Map<string, { undo: LayoutSnap[]; redo: LayoutSnap[] }>();
 const POS_HISTORY_MAX = 50;
@@ -2701,14 +2815,19 @@ function capturePositions(): PosMap | null {
   return count ? nodes : null;
 }
 
-/** pushes the state BEFORE a position gesture; a new gesture clears the redo */
-function pushPosUndo(before: PosMap | null): void {
+/** pushes the state BEFORE a position gesture; a new gesture clears the redo.
+ *  `routeIds`: the edges whose hand-placed routes the gesture also changes (⟲) */
+function pushPosUndo(before: PosMap | null, routeIds?: readonly string[]): void {
   const key = layoutKey();
   if (!key || !before) {
     return;
   }
   const h = posHistory.get(key) ?? { undo: [], redo: [] };
-  h.undo.push({ pos: before, annot: viewAnnots() });
+  h.undo.push({
+    pos: before,
+    annot: viewAnnots(),
+    routes: routeIds?.length ? routePatchOf(key, routeIds) : null,
+  });
   if (h.undo.length > POS_HISTORY_MAX) {
     h.undo.shift();
   }
@@ -2729,14 +2848,19 @@ function applyPositions(key: string, nodes: PosMap): void {
 }
 
 /** pushes the secondary notation BEFORE an annotation-only gesture (a colour,
- *  a frame, a note's text): one history step, no positions in it */
-function pushAnnotUndo(): void {
+ *  a frame, a note's text) — or, with `routeIds`, the routes of those edges
+ *  before a wire gesture (docs/04 level 3): one history step, no positions in it */
+function pushAnnotUndo(routeIds?: readonly string[]): void {
   const key = layoutKey();
   if (!key) {
     return;
   }
   const h = posHistory.get(key) ?? { undo: [], redo: [] };
-  h.undo.push({ pos: null, annot: viewAnnots() });
+  h.undo.push({
+    pos: null,
+    annot: viewAnnots(),
+    routes: routeIds?.length ? routePatchOf(key, routeIds) : null,
+  });
   if (h.undo.length > POS_HISTORY_MAX) {
     h.undo.shift();
   }
@@ -2759,14 +2883,27 @@ function undoPositions(redo: boolean): void {
   (redo ? h.undo : h.redo).push({
     pos: snap.pos ? capturePositions() : null,
     annot: viewAnnots(),
+    // the same edges, as they are now: what the opposite step goes back to
+    routes: snap.routes ? routePatchOf(key, Object.keys(snap.routes)) : null,
   });
   const annotChanged = !sameAnnotations(viewAnnots(), snap.annot);
   if (annotChanged) {
     storeAnnots(key, snap.annot); // before the render that draws them
   }
+  // docs/04 level 3 — the routes of the edges that step changed, before the
+  // wires are drawn again
+  const back = snap.routes;
+  const now = back ? routePatchOf(key, Object.keys(back)) : {};
+  const routesChanged = Boolean(back && Object.keys(back).some((id) => back[id] !== now[id]));
+  if (back && routesChanged) {
+    storeRoutes(key, back);
+  }
   if (snap.pos) {
     applyPositions(key, snap.pos);
-  } else if (annotChanged) {
+  } else if (annotChanged || routesChanged) {
+    if (routesChanged) {
+      dragReroute();
+    }
     drawAnnotationsHere();
     applyFiltersHere();
     applySelectionClasses();
@@ -3771,7 +3908,8 @@ function wireStartAt(e: PointerEvent): WireState | undefined {
     hint: null,
   };
   if (state.mode === "tb") {
-    const hit = t.closest<SVGElement>(".tb-porthit");
+    // a hotspot under a wire's hit stroke is still the hotspot (docs/04 level 3)
+    const hit = (belowWires(e.clientX, e.clientY, t) ?? t).closest<SVGElement>(".tb-porthit");
     if (!hit || !currentTbScene || !currentTbLayout || !state.config) {
       return undefined;
     }
@@ -3901,7 +4039,8 @@ function wireTargetAt(cx: number, cy: number): WireTarget | null {
     const id = best.classList.contains("tb-porthit") ? best.dataset.port : best.dataset.id;
     return { id: id ?? "", reason: null, el: best };
   }
-  const under = document.elementFromPoint(cx, cy);
+  // a box or a hotspot under a wire's hit stroke is still the target
+  const under = belowWires(cx, cy, document.elementFromPoint(cx, cy));
   if (!under) {
     return null;
   }
@@ -4090,6 +4229,198 @@ window.addEventListener(
   true
 );
 
+// ------------------------------- hand-routed wires: gestures (docs/04 level 3)
+
+/** how near a press must be to a wire's line / corner, in screen px */
+const WIRE_TOL = 6;
+
+interface WireSegDrag {
+  grab: WireGrab;
+  /** the layout key the drag started on */
+  key: string;
+  startX: number;
+  startY: number;
+  moved: boolean;
+}
+let wdrag: WireSegDrag | undefined;
+
+/** the edges of the current multi-node view, as the wire rules see them */
+function sceneWireEdges(): readonly WireEdge[] {
+  return state.mode === "tb" ? (currentTbScene?.edges ?? []) : (currentScene?.edges ?? []);
+}
+
+/** the edge a pointer event is on (a hover preview's wires are not the view's) */
+function wireEdgeAt(target: EventTarget | null): string | null {
+  const g = (target as Element | null)?.closest?.<SVGElement>(".edge, .tb-edge");
+  return g && !g.closest(".tb-preview") ? (g.dataset.edge ?? null) : null;
+}
+
+/** what a press at a client point holds, in the wire group of `edgeId` */
+function wireGrabAt(edgeId: string, cx: number, cy: number): WireGrab | null {
+  const drawn = currentWires;
+  if (!drawn) {
+    return null;
+  }
+  const geoms = wireGroup(sceneWireEdges(), edgeId)
+    .map((id) => drawn.geoms.get(id))
+    .filter((g): g is WireGeom => Boolean(g));
+  return grabWire(geoms, clientToWorld(cx, cy), Math.max(WIRE_TOL / state.k, 3), GRID);
+}
+
+/** the cursor says what a drag would move: left / right, up / down, both */
+function setWireCursor(kind: "" | WireGrab["kind"], dragging: boolean): void {
+  canvas.classList.toggle("wire-cur-v", kind === "v");
+  canvas.classList.toggle("wire-cur-h", kind === "h");
+  canvas.classList.toggle("wire-cur-c", kind === "corner");
+  canvas.classList.toggle("wire-dragging", dragging);
+}
+
+function hoverWireCursor(e: PointerEvent): void {
+  let kind: "" | WireGrab["kind"] = "";
+  if (e.buttons === 0 && draggable() && !e.shiftKey && !e.ctrlKey && !e.metaKey && !wire) {
+    const edgeId = wireEdgeAt(e.target);
+    // over a port hotspot the press starts the temporary wire, not a segment drag
+    const hotspot =
+      edgeId &&
+      state.mode === "tb" &&
+      belowWires(e.clientX, e.clientY, e.target as Element)?.closest(".tb-porthit");
+    kind = (edgeId && !hotspot && wireGrabAt(edgeId, e.clientX, e.clientY)?.kind) || "";
+  }
+  setWireCursor(kind, false);
+}
+
+/** the end of a wire drag: a drop that is not valid is refused and says why;
+ *  a valid one freezes the whole wire group and is one undo step */
+function wireDragEnd(w: WireSegDrag, cx: number, cy: number): void {
+  const res =
+    layoutKey() === w.key
+      ? dragWire(w.grab, (cx - w.startX) / state.k, (cy - w.startY) / state.k, GRID)
+      : null;
+  wirePreview = res;
+  dragReroute(); // the final preview: its validity is what `bad` reports
+  const bad = res?.moved.map((id) => currentWires?.bad.get(id)).find(Boolean);
+  wirePreview = null;
+  if (!res || !res.moved.length || bad) {
+    redrawWires(); // back to what is stored
+    if (bad) {
+      wireToast(`A hand-placed wire cannot go there: ${wireStateText(bad)}.`, cx, cy);
+    }
+    return;
+  }
+  const patch: Record<string, string | null> = {};
+  // (a sibling whose own route is dormant is not in `routes`: it keeps waiting)
+  for (const [id, route] of Object.entries(res.routes)) {
+    patch[id] = formatRoute(route);
+  }
+  // a hand-placed route belongs to an arrangement: an un-arranged view is
+  // pinned first, like any gesture that fixes a place (D21)
+  pinViewIfUnseeded(w.key);
+  pushAnnotUndo(Object.keys(patch));
+  storeRoutes(w.key, patch);
+  redrawWires();
+}
+
+/** drops a wire drag in flight (Escape, a lost button, a render under it):
+ *  nothing is stored, the wires are drawn again as they are stored. A drag
+ *  past the threshold holds the pointer: its release still clicks the canvas,
+ *  and that click must not clear the selection (`swallowClick`) */
+function cancelWireDrag(redraw = true, swallowClick = false): void {
+  const moved = Boolean(wdrag?.moved);
+  wdrag = undefined;
+  if (wirePreview || moved) {
+    wirePreview = null;
+    setWireCursor("", false);
+    if (moved && swallowClick) {
+      suppressClick = true;
+    }
+    if (redraw) {
+      redrawWires();
+    }
+  }
+}
+
+/** docs/08 R10/R11 keep their hotspots: in the verification view the wires
+ *  are drawn ABOVE the boxes, and a wire's wide hit stroke reaches over the
+ *  port hotspot its own stub ends in — a press there must still start the
+ *  temporary wire, not a segment drag (review finding). The element under a
+ *  point that is not a wire. */
+function belowWires(cx: number, cy: number, top: Element | null): Element | null {
+  if (!top?.closest(".tb-edge, .edge")) {
+    return top;
+  }
+  for (const el of document.elementsFromPoint(cx, cy)) {
+    if (!el.closest(".tb-edge, .edge")) {
+      return el;
+    }
+  }
+  return null;
+}
+
+/** redraws the wires from the mirror, with the selection's classes back on them */
+function redrawWires(): void {
+  dragReroute();
+  applySelectionClasses();
+  refreshMinimap();
+}
+
+/** the edges of `edgeId`'s wire group that have a hand-placed route */
+function routedInGroup(edgeId: string): string[] {
+  const stored = viewRouteText();
+  return wireGroup(sceneWireEdges(), edgeId).filter((id) => id in stored);
+}
+
+/** "Reset route": the whole wire group goes back to the automatic router */
+function resetWireRoutes(edgeId: string): void {
+  const key = layoutKey();
+  const ids = routedInGroup(edgeId);
+  if (!key || !ids.length) {
+    return;
+  }
+  pushAnnotUndo(ids);
+  const patch: Record<string, string | null> = {};
+  for (const id of ids) {
+    patch[id] = null;
+  }
+  storeRoutes(key, patch);
+  redrawWires();
+}
+
+/** every hand-placed route of the view, back to automatic (the palette) */
+function resetAllWireRoutes(): void {
+  const key = layoutKey();
+  const ids = Object.keys(viewRouteText(key));
+  if (!key || !ids.length) {
+    return;
+  }
+  pushAnnotUndo(ids);
+  const patch: Record<string, string | null> = {};
+  for (const id of ids) {
+    patch[id] = null;
+  }
+  storeRoutes(key, patch);
+  redrawWires();
+}
+
+/** the context-menu / palette entries of a wire: nothing unless its group has
+ *  a hand-placed route */
+function wireMenuItems(edgeId: string): CtxItem[] {
+  const ids = routedInGroup(edgeId);
+  if (!ids.length) {
+    return [];
+  }
+  const items: CtxItem[] = [];
+  const why = ids.map((id) => currentWires?.dormant.get(id)).find(Boolean);
+  if (why) {
+    items.push({
+      label: `Hand-placed route suspended: ${wireStateText(why)}`,
+      info: true,
+      action: () => {},
+    });
+  }
+  items.push({ label: "Reset wire route", action: () => resetWireRoutes(edgeId) });
+  return items;
+}
+
 let pan: { x: number; y: number } | undefined;
 canvas.addEventListener("pointerdown", (e) => {
   // any press cancels a scheduled hover peek: otherwise it would fire in the
@@ -4150,6 +4481,18 @@ canvas.addEventListener("pointerdown", (e) => {
         };
       }
       return; // a frame with nothing on screen has no tab; a press here is a click
+    }
+  }
+  // docs/04 level 3 — a press on a wire is a wire-drag candidate (a segment,
+  // a corner, a junction). Shift is the cone gesture and Ctrl the selection
+  // toggle: with either the press stays a click
+  if (e.button === 0 && draggable() && !e.shiftKey && !e.ctrlKey && !e.metaKey) {
+    const edgeId = wireEdgeAt(e.target);
+    const key = layoutKey();
+    const grab = edgeId && key ? wireGrabAt(edgeId, e.clientX, e.clientY) : null;
+    if (grab && key) {
+      wdrag = { grab, key, startX: e.clientX, startY: e.clientY, moved: false };
+      return;
     }
   }
   // drag of a node or of a boundary flag in the schematic, with the left button
@@ -4223,6 +4566,34 @@ canvas.addEventListener("pointermove", (e) => {
       wireBegin();
     }
     wireFollow(e.clientX, e.clientY);
+    return;
+  }
+  if (wdrag && !(e.buttons & 1)) {
+    // the button was let go where the canvas could not hear it (before the
+    // pointer was captured): the candidate must not turn into a drag that
+    // follows a pointer with no button down
+    cancelWireDrag();
+  }
+  if (wdrag) {
+    // docs/04 level 3 — the live preview: always computed from the grab
+    if (!wdrag.moved) {
+      if (
+        Math.abs(e.clientX - wdrag.startX) + Math.abs(e.clientY - wdrag.startY) <
+        DRAG_MIN
+      ) {
+        return; // still a click: it selects the net
+      }
+      wdrag.moved = true;
+      canvas.setPointerCapture(e.pointerId);
+      setWireCursor(wdrag.grab.kind, true);
+    }
+    wirePreview = dragWire(
+      wdrag.grab,
+      (e.clientX - wdrag.startX) / state.k,
+      (e.clientY - wdrag.startY) / state.k,
+      GRID
+    );
+    dragReroute();
     return;
   }
   if (drag) {
@@ -4333,9 +4704,28 @@ canvas.addEventListener("pointermove", (e) => {
     state.ty = e.clientY - pan.y;
     autoCam = false; // the camera is now the user's
     applyTransform();
+    return;
   }
+  hoverWireCursor(e); // docs/04 level 3: what a press here would hold
 });
 canvas.addEventListener("pointerup", (e) => {
+  if (wdrag) {
+    const w = wdrag;
+    wdrag = undefined;
+    if (!w.moved) {
+      return; // a click: the click handler selects the net
+    }
+    canvas.releasePointerCapture(e.pointerId);
+    setWireCursor("", false);
+    wireDragEnd(w, e.clientX, e.clientY);
+    // the pressed wire was redrawn under the pointer: its click may never come
+    // (the frame-tab trap), and must not be the user's next one
+    suppressClick = true;
+    setTimeout(() => {
+      suppressClick = false;
+    }, 0);
+    return;
+  }
   if (wire) {
     if (wire.armed) {
       return; // click-click mode: the drop is the NEXT press
@@ -6451,6 +6841,11 @@ function paletteItems(): PaletteItem[] {
   for (const it of filterMenu(state.selection.size === 1 ? [...state.selection][0] : null)) {
     add("View", it.label, it.action);
   }
+  // docs/04 level 3 — every hand-placed wire of the view back to automatic
+  const handRouted = draggable() ? Object.keys(viewRouteText()).length : 0;
+  if (handRouted) {
+    add("View", `Wires: reset all hand-placed routes (${handRouted})`, resetAllWireRoutes);
+  }
   // docs/08 R25 — the simulation results: re-read the files, open the report
   if (state.mode === "tb" && resultsKnown) {
     add("View", "Results: re-read the regression's files", () => postAction("refreshResults", {}));
@@ -6697,6 +7092,14 @@ window.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Escape") {
+    if (wdrag?.moved) {
+      // docs/04 level 3 — a wire segment being dragged goes back where it was.
+      // The button is still down and the pointer captured: the release's
+      // click lands on the canvas, and must not clear the selection
+      suppressClick = true;
+      cancelWireDrag();
+      return;
+    }
     if (wire) {
       // a wire in flight is cancelled first (docs/08 R10); with the button still
       // held, the release's click must not clear the selection
@@ -7114,7 +7517,12 @@ function rtlMenuItemsFor(t: Element): { items: CtxItem[]; selectId: string | nul
   const block = t.closest<SVGElement>(
     state.mode === "schematic" ? ".inode" : ".node"
   );
-  if (pin) {
+  const wireEl = t.closest<SVGElement>(".edge");
+  if (wireEl?.dataset.edge && state.mode === "schematic") {
+    // docs/04 level 3 — a wire with a hand-placed route: back to automatic
+    items.push(...wireMenuItems(wireEl.dataset.edge));
+    selectId = wireEl.dataset.id ?? null;
+  } else if (pin) {
     const port = pin.dataset.port;
     const owner =
       state.mode === "schematic"
@@ -7185,6 +7593,23 @@ function rtlMenuItemsFor(t: Element): { items: CtxItem[]; selectId: string | nul
 // The actions are the SAME as in the inspector and on the Delete key — `tbDeleteTarget`
 // remains the single source of id->name resolution, and the modal confirmation is the host's.
 canvas.addEventListener("contextmenu", (e) => {
+  // docs/04 level 3 — a wire with a hand-placed route: back to automatic.
+  // FIRST: an interface / reference edge has no `data-id`, and the branch
+  // below takes anything without one for the background ("Add note here")
+  const wireId = draggable() ? wireEdgeAt(e.target) : null;
+  const wireItems = wireId ? wireMenuItems(wireId) : [];
+  if (wireItems.length) {
+    e.preventDefault();
+    const net = (e.target as Element).closest<SVGElement>("[data-id]")?.dataset.id;
+    if (net && !state.selection.has(net)) {
+      state.selection = new Set([net]);
+      applySelectionClasses();
+      postSelection();
+      renderInspectorHere();
+    }
+    openCtxMenu(e.clientX, e.clientY, wireItems);
+    return;
+  }
   // docs/08 R21 — on a note, on a frame's tab, and on the BACKGROUND of a
   // multi-node view ("Add note here"); a block keeps its own menu below
   if (annotatable()) {
@@ -7245,6 +7670,11 @@ canvas.addEventListener("contextmenu", (e) => {
  *  palette's "Selection" group (docs/08 R17): one list, two surfaces */
 function tbMenuItems(id: string): CtxItem[] {
   const items: CtxItem[] = [];
+  // docs/04 level 3 — a selected wire (its id is the net's) with a hand-placed route
+  const wired = currentTbScene?.edges.find((e) => e.net === id);
+  if (wired) {
+    items.push(...wireMenuItems(wired.id));
+  }
   const node = currentTbScene?.nodes.find((n) => n.id === id);
   if (node) {
     const drill = node.drill;
@@ -7775,7 +8205,7 @@ async function presentScene(
   }
   const vp = resetCanvas();
   currentEdgesGroup = drawSchematic(
-    scene, layout, vp, { onToggleFold: toggleFold }
+    scene, layout, vp, { onToggleFold: toggleFold }, wireOpts()
   );
   // fine centering of the {}/[] signs in the chips: immediately, then re-applied on
   // the next frame and after the editor font loads — in the webview the first
@@ -8080,7 +8510,7 @@ async function renderTb(refit: boolean): Promise<void> {
   currentTbScene = scene;
   currentTbLayout = layout;
   const vp = resetCanvas();
-  currentTbEdgesGroup = drawTb(scene, layout, vp);
+  currentTbEdgesGroup = drawTb(scene, layout, vp, wireOpts());
   drawAnnotationsHere(); // docs/08 R21: frames behind, notes on top, tints
   applySelectionClasses();
   contentBounds = withAnnotBounds(tbBounds(layout));

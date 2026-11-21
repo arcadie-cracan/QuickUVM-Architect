@@ -602,6 +602,7 @@
     "test:yamlmap": "node scripts/test-yamlmap.mjs",
     "test:wiring": "node scripts/test-wiring.mjs",
     "test:arrange": "node scripts/test-arrange.mjs",
+    "test:wireroute": "node scripts/test-wireroute.mjs",
     "test:annotations": "node scripts/test-annotations.mjs",
     "test:results": "node scripts/test-results.mjs",
     "test:templates": "node scripts/test-templates.mjs",

@@ -1011,6 +1011,44 @@ text.split-sign {
   stroke-width: 2;
 }
 
+/* docs/04 level 3 (D27) — hand-routed wires. The hit stroke is wide and
+   unpainted: a thin wire is selectable and draggable without pixel hunting.
+   The cursor says what a drag would move (a vertical segment left / right, a
+   horizontal one up / down, a corner or a junction both ways); a drop that is
+   not valid is drawn as such while it is being dragged. */
+.wire-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 9px;
+  /* 9 px on SCREEN at any zoom: scaled with the diagram it was 2 px wide at
+     the overview levels, where a wire is hardest to hit */
+  vector-effect: non-scaling-stroke;
+  pointer-events: stroke;
+}
+/* the hover preview of a composed child takes no pointer events — and this
+   rule would give its wires some (the trap `.tb-name` already paid for) */
+.tb-preview .wire-hit { pointer-events: none; }
+/* a junction dot is drawn over its wire: a press on it is a press on the wire
+   (the junction grab), not on the background (which started a lasso) */
+.junction { pointer-events: none; }
+#canvas.wire-cur-v .edge,
+#canvas.wire-cur-v .tb-edge,
+#canvas.wire-cur-v.wire-dragging { cursor: ew-resize; }
+#canvas.wire-cur-h .edge,
+#canvas.wire-cur-h .tb-edge,
+#canvas.wire-cur-h.wire-dragging { cursor: ns-resize; }
+#canvas.wire-cur-c .edge,
+#canvas.wire-cur-c .tb-edge,
+#canvas.wire-cur-c.wire-dragging { cursor: move; }
+/* `#canvas`: the wire being dragged is under the pointer, and the `:hover`
+   rules further down have the same specificity without it */
+#canvas .edge.wire-bad .edge-line,
+#canvas .tb-edge.wire-bad .tb-edge-line {
+  stroke: var(--vscode-errorForeground, #f14c4c);
+  stroke-dasharray: 5 3;
+  opacity: 1;
+}
+
 /* muchiile vederii de verificare */
 .tb-edge .tb-edge-line {
   fill: none;

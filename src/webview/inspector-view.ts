@@ -78,10 +78,17 @@ export interface InspectorCtx {
   sidecar: {
     views?: Record<
       string,
-      { nets?: Record<string, { render?: string } | undefined> } | undefined
+      | {
+          nets?: Record<string, { render?: string } | undefined>;
+          /** docs/04 level 3 — the hand-placed routes, by edge id */
+          edges?: Record<string, { route?: string } | undefined>;
+        }
+      | undefined
     >;
   } | null;
   toggleNetRender(net: string): void;
+  /** docs/04 level 3 — the net's hand-placed routes back to automatic */
+  resetNetRoute?(net: string): void;
   toggleFold(id: string): void;
   hasSchematic(model: unknown, viewId: string): boolean;
   navigateTo(viewId: string, mode: "schematic" | "symbol"): void;
@@ -2421,6 +2428,19 @@ export function renderInspector(c: InspectorCtx): void {
           true
         )
       );
+      // docs/04 level 3 (D27) — the net's hand-placed routes: how many of its
+      // edges carry one, and the way back to the automatic router
+      const stored = ctx.sidecar?.views?.[ctx.state.viewId ?? ""]?.edges ?? {};
+      const routed = (ctx.scene?.edges ?? []).filter(
+        (e) => e.net === selNet.name && typeof stored[e.id]?.route === "string"
+      ).length;
+      if (routed && effective === "wire" && ctx.resetNetRoute) {
+        const reset = ctx.resetNetRoute;
+        ctx.root.append(
+          h("div", "dim", `hand-routed (${routed} ${routed === 1 ? "edge" : "edges"})`),
+          button("Reset route", true, () => reset(selNet.name), true)
+        );
+      }
       // whitebox probe (K2, slice 3): the XMR path and the width are derived from the model
       // on the host (src/probe.ts) — the webview sends only (viewId, net). The host
       // refuses with a reason if the net is not probeable (unpacked, interface, subsystem

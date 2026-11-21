@@ -45,6 +45,8 @@ export interface LayoutDeps {
   annotationsSet(viewId: string, a: ViewAnnotations): void;
   /** docs/08 R23 — the view's filter rules, replaced whole */
   filtersSet(viewId: string, filters: unknown): void;
+  /** docs/04 level 3 (D27) — hand-placed wire routes, a patch by edge id */
+  edgeRoutes(viewId: string, edges: unknown): void;
 }
 
 export interface PanelDeps {
@@ -441,6 +443,10 @@ export class DiagramPanel {
       case "net/render":
         this.deps.layout?.netRender(m.viewId, m.net, m.render);
         break;
+      case "edge/override":
+        // docs/04 level 3 (D27) — hand-placed wire routes
+        this.deps.layout?.edgeRoutes(m.viewId, m.edges);
+        break;
       case "relayout/request":
         if (m.scope === "all") {
           this.deps.layout?.relayout(m.viewId);
@@ -480,8 +486,8 @@ export class DiagramPanel {
         }
         break;
       default:
-        // the messages declared but not yet implemented (phase 4, docs/04):
-        // ports/reordered (level 2), edge/override (level 3) — they are ignored
+        // the message declared but not yet implemented (phase 4, docs/04):
+        // ports/reordered (level 2) — it is ignored
         break;
     }
   }

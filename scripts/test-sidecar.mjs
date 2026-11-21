@@ -648,4 +648,200 @@ test("R23 review: a view holding ONLY filters survives a frame orphan that keeps
   assert.equal(e.views[V], undefined);
 });
 
+// ------------------------------ hand-routed wires (docs/04 level 3, D27)
+
+const SOC = "demo_top.u_soc";
+/** an edge of the regression view: `sum` runs from the adder to the port */
+const SUM = "sum:u_add.dout-><port>.sum";
+/** the same net's edge ids: while the generate fold is folded / expanded */
+const CH_FOLDED = "ch_out:g_ch[0..2].u_ch.dout-><port>.ch_out";
+const CH_MEMBER = "ch_out:g_ch[1].u_ch.dout-><port>.ch_out";
+
+test("D27: a route is a patch by edge id — set, replace, null = back to automatic; the view goes when empty", () => {
+  const d = ops.emptySidecar();
+  ops.setEdgeRoutes(d, SOC, { [SUM]: "source+16 source-40 target-16" });
+  assert.deepEqual(d.views[SOC], { edges: { [SUM]: { route: "source+16 source-40 target-16" } } });
+  // another edge: the first is not named by the patch and stays (the sender's
+  // mirror may be older than the file)
+  ops.setEdgeRoutes(d, SOC, { [CH_FOLDED]: "target-16" });
+  assert.deepEqual(Object.keys(d.views[SOC].edges).sort(), [CH_FOLDED, SUM].sort());
+  ops.setEdgeRoutes(d, SOC, { [SUM]: "source+24" });
+  assert.equal(d.views[SOC].edges[SUM].route, "source+24");
+  ops.setEdgeRoutes(d, SOC, { [SUM]: null, [CH_FOLDED]: null });
+  assert.equal(d.views[SOC], undefined, "a view holding nothing is not kept");
+  // null for an edge that has no route is a no-op, and creates no view
+  ops.setEdgeRoutes(d, SOC, { [SUM]: null });
+  assert.equal(d.views[SOC], undefined);
+});
+
+test("D27: what arrives is sanitised — a route that does not parse removes the override, never stores junk", () => {
+  const d = ops.emptySidecar();
+  ops.setEdgeRoutes(d, SOC, { [SUM]: "source+40" });
+  for (const junk of ["source+40 target-8", "left+8", 5, {}, [], "", "source+1e9"]) {
+    ops.setEdgeRoutes(d, SOC, { [SUM]: "source+40" });
+    ops.setEdgeRoutes(d, SOC, { [SUM]: junk });
+    assert.equal(d.views[SOC], undefined, `not a route: ${JSON.stringify(junk)}`);
+  }
+  for (const patch of [null, undefined, "x", 5, [["a", "source+8"]]]) {
+    ops.setEdgeRoutes(d, SOC, patch);
+    assert.equal(d.views[SOC], undefined, `not a patch: ${JSON.stringify(patch)}`);
+  }
+  // the canonical form is what is kept
+  ops.setEdgeRoutes(d, SOC, { [SUM]: "  source+40   target-8  target+0 " });
+  assert.equal(d.views[SOC].edges[SUM].route, "source+40 target-8 target+0");
+  // an empty edge id is nobody's
+  ops.setEdgeRoutes(d, SOC, { "": "source+8" });
+  assert.deepEqual(Object.keys(d.views[SOC].edges), [SUM]);
+});
+
+test("D27: the routes survive the file round trip, sorted; a hand-edited entry is read through the sanitiser", () => {
+  const d = ops.emptySidecar();
+  ops.setEdgeRoutes(d, SOC, { "z:a.o->b.i": "source+8", [SUM]: "source+16 source-40 target-16" });
+  ops.setEdgeRoutes(d, "tb:x.yaml|env", { "e:cov:cmd": "target-14" });
+  const text = ops.serializeSidecar(d);
+  assert.match(text, /route: source\+16 source-40 target-16/, "one line per edge");
+  const back = ops.parseSidecar(text);
+  assert.deepEqual(back.views[SOC].edges, d.views[SOC].edges, "the serializer WHITELISTS: edges must be copied");
+  assert.deepEqual(Object.keys(back.views[SOC].edges), [SUM, "z:a.o->b.i"], "sorted keys: a stable diff");
+  assert.deepEqual(back.views["tb:x.yaml|env"].edges, { "e:cov:cmd": { route: "target-14" } });
+  // a hand-edited file: junk entries are dropped at the read, the good one stays
+  const hand = ops.parseSidecar(
+    [
+      "schema_version: 1",
+      "views:",
+      `  ${SOC}:`,
+      "    edges:",
+      "      good: {route: source+8}",
+      "      bad: {route: sideways}",
+      "      empty:",
+      "      scalar: 5",
+      "      even: {route: source+8 target-8}",
+      "  only.junk:",
+      "    edges: [1, 2]",
+      "orphans: []",
+    ].join("\n")
+  );
+  assert.deepEqual(hand.views[SOC].edges, { good: { route: "source+8" } });
+  assert.equal(hand.views["only.junk"].edges, undefined, "a list is not an edge map");
+  // and nothing throws afterwards
+  ops.invalidate(hand, model, "2026-11-21");
+});
+
+test("D27: positions, nets and annotations are untouched by a route; a route-only view is a view", () => {
+  const d = ops.emptySidecar();
+  ops.setNodePos(d, SOC, "u_add", 120, 80);
+  ops.setNetRender(d, SOC, "din", "wire", "label");
+  ops.setEdgeRoutes(d, SOC, { [SUM]: "source+40" });
+  ops.setEdgeRoutes(d, SOC, { [SUM]: null });
+  assert.deepEqual(d.views[SOC], { nodes: { u_add: { x: 120, y: 80 } }, nets: { din: { render: "wire" } } });
+  ops.setEdgeRoutes(d, SOC, { [SUM]: "source+40" });
+  ops.clearPositions(d, SOC);
+  assert.deepEqual(d.views[SOC].edges, { [SUM]: { route: "source+40" } }, "clearPositions clears positions");
+  ops.clearRoutes(d, SOC);
+  assert.equal(d.views[SOC].edges, undefined, "\"Re-arrange all\" takes the routes too");
+  assert.deepEqual(d.views[SOC].nets, { din: { render: "wire" } });
+  // a view whose only content is a route is kept by invalidate
+  const e = ops.emptySidecar();
+  ops.setEdgeRoutes(e, SOC, { [SUM]: "source+40" });
+  assert.equal(ops.invalidate(e, model, "2026-11-21"), false);
+  assert.deepEqual(e.views[SOC], { edges: { [SUM]: { route: "source+40" } } });
+});
+
+test("D27: validEdgeIds knows an edge under every fold state, and a label net's edges too", () => {
+  const ids = ops.validEdgeIds(model, SOC);
+  assert.ok(ids.has(SUM));
+  assert.ok(ids.has(CH_FOLDED), "the generate fold folded");
+  assert.ok(ids.has(CH_MEMBER), "and expanded: another id for the same wire");
+  // `din` is shown as a LABEL (fan-out 9): it has no edges now, but its routes
+  // must wait for the day it is switched to a wire
+  assert.ok([...ids].some((id) => id.startsWith("din:")), "a label net's edges are valid ids");
+  assert.ok(!ids.has("sum:u_add.dout-><port>.nope"));
+  assert.equal(ops.validEdgeIds(model, "no.such.view"), null);
+  assert.equal(ops.validEdgeIds(model, "demo_top.u_soc.u_add"), null, "a leaf has no schematic");
+});
+
+test("D27: invalidate — a route whose edge is gone waits in orphans and returns with it", () => {
+  const d = ops.emptySidecar();
+  ops.setEdgeRoutes(d, SOC, {
+    [SUM]: "source+40",
+    [CH_MEMBER]: "target-16",
+    "sum:u_add.dout-><port>.renamed": "source+8",
+  });
+  assert.equal(ops.invalidate(d, model, "2026-11-21"), true);
+  assert.deepEqual(Object.keys(d.views[SOC].edges).sort(), [CH_MEMBER, SUM].sort(), "both fold states are valid");
+  assert.deepEqual(d.orphans, [
+    {
+      view: SOC,
+      node: "sum:u_add.dout-><port>.renamed",
+      kind: "edge",
+      value: { route: "source+8" },
+      lastSeen: "2026-11-21",
+    },
+  ]);
+  // a second pass moves nothing and piles nothing up
+  assert.equal(ops.invalidate(d, model, "2026-11-22"), false);
+  assert.equal(d.orphans.length, 1);
+  // the edge reappears (the orphan's id is made valid by renaming it to a real one)
+  d.orphans[0].node = CH_FOLDED;
+  assert.equal(ops.invalidate(d, model, "2026-11-23"), true);
+  assert.equal(d.views[SOC].edges[CH_FOLDED].route, "source+8");
+  assert.equal(d.orphans.length, 0);
+});
+
+test("D27: invalidate — a restored route does not step over a newer one; a junk orphan is dropped", () => {
+  const d = ops.emptySidecar();
+  ops.setEdgeRoutes(d, SOC, { [SUM]: "source+24" });
+  d.orphans.push(
+    { view: SOC, node: SUM, kind: "edge", value: { route: "source+80" }, lastSeen: "2026-01-01" },
+    { view: SOC, node: CH_FOLDED, kind: "edge", value: { route: "sideways" }, lastSeen: "2026-01-01" },
+    { view: SOC, node: CH_MEMBER, kind: "edge", value: null, lastSeen: "2026-01-01" }
+  );
+  ops.invalidate(d, model, "2026-11-21");
+  assert.deepEqual(d.views[SOC].edges, { [SUM]: { route: "source+24" } }, "the newer route stays");
+  assert.equal(d.orphans.length, 0, "the orphans are consumed, restored or not");
+});
+
+test("D27: invalidate — a vanished view's routes migrate and come back; a verification view is never touched", () => {
+  const d = ops.emptySidecar();
+  ops.setEdgeRoutes(d, "gone.view", { "n:a.o->b.i": "source+8" });
+  ops.setEdgeRoutes(d, "tb:x.yaml|env", { "e:whatever": "source+8" });
+  ops.setEdgeRoutes(d, "tb:x.yaml|agent:cmd", { "e:drv.if": "target-8" });
+  ops.invalidate(d, model, "2026-11-21");
+  assert.equal(d.views["gone.view"], undefined);
+  assert.deepEqual(d.orphans.map((o) => [o.view, o.node, o.kind]), [["gone.view", "n:a.o->b.i", "edge"]]);
+  assert.deepEqual(d.views["tb:x.yaml|env"].edges, { "e:whatever": { route: "source+8" } });
+  assert.deepEqual(d.views["tb:x.yaml|agent:cmd"].edges, { "e:drv.if": { route: "target-8" } });
+  // the round trip keeps the orphan
+  const back = ops.parseSidecar(ops.serializeSidecar(d));
+  assert.deepEqual(back.orphans, d.orphans);
+});
+
+test("D27: an orphaned route re-orphaned replaces its entry (no duplicates), and cleanEdges caps a file", () => {
+  const d = ops.emptySidecar();
+  const DEAD = "sum:u_add.dout-><port>.dead";
+  d.orphans.push({ view: SOC, node: DEAD, kind: "edge", value: { route: "source+8" }, lastSeen: "2026-01-01" });
+  ops.setEdgeRoutes(d, SOC, { [DEAD]: "source+16" });
+  ops.invalidate(d, model, "2026-11-21");
+  assert.deepEqual(
+    d.orphans.filter((o) => o.node === DEAD).map((o) => o.value.route),
+    ["source+16"],
+    "one entry, the newer route"
+  );
+  const many = {};
+  for (let i = 0; i < ops.EDGE_OVERRIDES_MAX + 50; i++) {
+    many[`e${i}`] = { route: "source+8" };
+  }
+  assert.equal(Object.keys(ops.cleanEdges(many)).length, ops.EDGE_OVERRIDES_MAX);
+  // the same cap on a patch: a full view takes no NEW edge, but an edge it
+  // already holds can still be re-routed or reset
+  const full = ops.emptySidecar();
+  full.views[SOC] = { edges: ops.cleanEdges(many) };
+  ops.setEdgeRoutes(full, SOC, { extra: "source+8", e0: "source+16", e1: null });
+  assert.equal(full.views[SOC].edges.extra, undefined);
+  assert.equal(full.views[SOC].edges.e0.route, "source+16");
+  assert.equal(full.views[SOC].edges.e1, undefined);
+  assert.deepEqual(ops.cleanEdges(null), {});
+  assert.deepEqual(ops.cleanEdges([{ route: "source+8" }]), {});
+});
+
 console.log(`\ntest-sidecar: ${passed} teste au trecut.`);
