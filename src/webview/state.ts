@@ -30,7 +30,13 @@ export interface State {
   statusDecos: StatusDeco[];
   /** docs/08 R25 — the last regression's results (`results/full`), by diagram
    *  id; null = nothing to show */
-  results: { snapshot: ResultsSnapshot; at: number | null; stale: boolean; unparsed: number } | null;
+  results: {
+    snapshot: ResultsSnapshot;
+    at: number | null;
+    stale: boolean;
+    covStale: boolean;
+    unparsed: number;
+  } | null;
   /** the current level of the verification (TB) view (D24): "", "env", "agent:X" */
   tbFocus: string;
   /** docs/08 R12 — the designer-assistance proposals of the view the host shows

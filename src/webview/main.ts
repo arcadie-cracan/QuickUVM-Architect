@@ -78,6 +78,7 @@ import {
   type FilterResult,
 } from "./filters";
 import {
+  countLabel,
   levelResults,
   messageLine,
   resultsChip,
@@ -502,8 +503,15 @@ window.addEventListener("message", (e: MessageEvent) => {
     case "results/full":
       // docs/08 R25 — the last regression's results, read from its files by the
       // host: badges and coverage figures on the blocks, the header's verdicts
+      resultsKnown = true; // this surface is told about results (the panel)
       state.results = m.results
-        ? { snapshot: m.results, at: m.at, stale: m.stale, unparsed: m.unparsed }
+        ? {
+            snapshot: m.results,
+            at: m.at,
+            stale: m.stale,
+            covStale: m.covStale,
+            unparsed: m.unparsed,
+          }
         : null;
       applyResultBadges();
       applyFiltersHere(); // a block with a failing result is dimmed, never hidden
@@ -1902,6 +1910,11 @@ function applyStatusBadges(): void {
 /** the results of the blocks on screen, by node id (also read by the filters:
  *  a block with a failing result is never hidden) */
 let resultByNode: Record<string, NodeResult> = {};
+/** what was reported and has no block on this level (the header says it) */
+let resultElsewhere: NodeResult | null = null;
+/** the host sends `results/full` to this surface (the panel does, the per-file
+ *  editor does not): only then are the results commands offered */
+let resultsKnown = false;
 
 function resultPill(
   cls: string,
@@ -1931,13 +1944,19 @@ function applyResultBadges(): void {
   const r = state.results;
   canvas.classList.toggle("res-stale", Boolean(r?.stale));
   resultByNode = {};
+  resultElsewhere = null;
   const scene = currentTbScene;
   if (state.mode !== "tb" || !scene || !r) {
     updateResultsChip();
     return;
   }
-  resultByNode = levelResults(r.snapshot, scene.focus, scene.nodes.map((n) => n.id));
+  const level = levelResults(r.snapshot, scene.focus, scene.nodes.map((n) => n.id));
+  resultByNode = level.nodes;
+  resultElsewhere = level.elsewhere;
   const staleNote = r.stale ? "\n(stale: the configuration changed after these runs)" : "";
+  const covNote = r.covStale
+    ? "\n(old coverage: the summary is older than the runs or the configuration)"
+    : "";
   canvas.querySelectorAll<SVGGraphicsElement>(".tbnode[data-id]").forEach((g) => {
     const id = g.dataset.id ?? "";
     const res = resultByNode[id];
@@ -1953,14 +1972,12 @@ function applyResultBadges(): void {
     const worst = worstOfNode(res);
     if (worst) {
       g.classList.add(`res-${worst}`);
-      // failures first: a block with errors shows them, not its warnings
-      const n = res.fatals + res.errors || res.warnings;
       const badge = resultPill(
         `res-count sev-${worst}`,
         bb.x + bb.width,
         bb.y + bb.height,
         "end",
-        `${worst === "warning" ? "!" : "✕"} ${n}`,
+        countLabel(res), // failures first: errors, not the warnings beside them
         res.messages.map(messageLine).join("\n") + staleNote
       );
       // the badge is the way in (R3's wrench): the messages, each opening the
@@ -1970,23 +1987,39 @@ function applyResultBadges(): void {
         ev.preventDefault();
         openCtxMenu(ev.clientX, ev.clientY, resultItems(res));
       });
+      // …and the click that follows must not reach the block: it selected it,
+      // and the selection's outline then replaced the severity's (review)
+      badge.addEventListener("click", (ev) => ev.stopPropagation());
       g.append(badge);
     }
     if (res.coverage.length) {
+      // the figures must fit the block they are about: a three-figure pill on
+      // a narrow DUT box ran across the gap onto the next block (review). The
+      // first wording that fits: full, rounded and short, the lowest alone.
+      const pct = (f: { pct: number }): string => `${Math.round(f.pct)}%`;
+      const lowest = [...res.coverage].sort((a, b) => a.pct - b.pct)[0];
+      const wordings = [
+        res.coverage.map((f) => `${f.label} ${pct(f)}`).join(" · "),
+        res.coverage.map((f) => `${f.label[0]} ${pct(f)}`).join(" "),
+        `${lowest.label} ${pct(lowest)}${res.coverage.length > 1 ? " …" : ""}`,
+      ];
+      const fits = (t: string): boolean => Math.round(t.length * 6.1) + 12 <= bb.width + 16;
       g.append(
         resultPill(
-          "res-cov",
+          `res-cov${r.covStale ? " cov-stale" : ""}`,
           bb.x,
           bb.y + bb.height,
           "start",
-          res.coverage.map((f) => `${f.label} ${Math.round(f.pct)}%`).join(" · "),
+          wordings.find(fits) ?? wordings[wordings.length - 1],
           res.coverage
             .map(
               (f) =>
                 `${f.label}: ${f.pct}%` +
                 (f.covered !== null && f.total !== null ? ` (${f.covered}/${f.total})` : "")
             )
-            .join("\n") + staleNote
+            .join("\n") +
+            staleNote +
+            covNote
         )
       );
     }
@@ -2017,7 +2050,7 @@ function resultItems(res: NodeResult): CtxItem[] {
 
 /** the header's verdicts: present while there are results to show (TB view only) */
 function updateResultsChip(): void {
-  head.querySelector(".results-chip")?.remove();
+  head.querySelectorAll(".results-chip").forEach((c) => c.remove());
   const tgl = head.querySelector(".mode-toggle");
   const r = state.results;
   if (!tgl || !r || state.mode !== "tb") {
@@ -2025,13 +2058,34 @@ function updateResultsChip(): void {
   }
   const c = resultsChip(r.snapshot, r.stale);
   const chip = h("button", `results-chip tone-${c.tone}${r.stale ? " stale" : ""}`, c.text);
+  const missed = r.snapshot.missed;
   chip.title =
     "Simulation results, read from the files the regression left" +
     (r.at !== null ? ` (${new Date(r.at).toLocaleString()})` : "") +
     (r.unparsed ? ` — ${r.unparsed} log(s) not parsed: those runs count by verdict only` : "") +
-    (r.stale ? " — STALE: the configuration changed after these runs" : "") +
+    (missed ? ` — ${missed} report(s) the simulator counted could not be read: on no block` : "") +
+    (r.stale ? " — STALE: the configuration changed after at least one of these runs" : "") +
+    (r.covStale ? " — the coverage summary is older than the runs or the configuration" : "") +
     ". Click for the report.";
   chip.addEventListener("click", () => postAction("showResults", {}));
+  // what was reported and has no block on THIS level (the env's own reports
+  // at the env level, the rest of the bench inside an agent): a level must
+  // never look clean because its problems are drawn elsewhere
+  const e = resultElsewhere;
+  if (e) {
+    const worst = worstOfNode(e) ?? "warning";
+    const more = h(
+      "button",
+      `results-chip elsewhere sev-${worst}${r.stale ? " stale" : ""}`,
+      `${countLabel(e)} not on this level`
+    );
+    more.title =
+      "Reported by parts of the bench that have no block on this level:\n" +
+      e.messages.map(messageLine).join("\n") +
+      "\nClick for the report.";
+    more.addEventListener("click", () => postAction("showResults", {}));
+    tgl.prepend(more);
+  }
   tgl.prepend(chip);
 }
 
@@ -6398,7 +6452,7 @@ function paletteItems(): PaletteItem[] {
     add("View", it.label, it.action);
   }
   // docs/08 R25 — the simulation results: re-read the files, open the report
-  if (state.mode === "tb") {
+  if (state.mode === "tb" && resultsKnown) {
     add("View", "Results: re-read the regression's files", () => postAction("refreshResults", {}));
     if (state.results) {
       add("View", "Results: open the report", () => postAction("showResults", {}));
@@ -7844,6 +7898,7 @@ async function renderTb(refit: boolean): Promise<void> {
     currentTbLayout = null;
     renderTbHeader(null);
     resetCanvas();
+    applyResultBadges(); // docs/08 R25: nothing is drawn, the runs' verdicts are still the bench's
     if (configError || unreadable) {
       // docs/08 R8 — a file that does not parse is not "empty": say what is
       // wrong and where, and offer the editor that can fix it

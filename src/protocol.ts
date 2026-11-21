@@ -451,17 +451,20 @@ export type HostMessage =
   // badges on elements + the result of the last generate as a chip in the header;
   // docs/08 R25 — the results of the last regression, READ from the files it
   // left under `<outputDir>/out` (never run by the extension): per element, by
-  // diagram id. `results: null` = nothing to show (never simulated, or hidden);
-  // `stale` = the configuration changed after the runs; `unparsed` = runs
-  // counted by verdict only (a log too large)
+  // diagram id. `results: null` = nothing to show (never simulated, hidden, or
+  // another bench's); `stale` = the configuration changed after at least one
+  // of the runs; `covStale` = the coverage summary is older than the runs or
+  // than the configuration; `unparsed` = runs counted by verdict only
   | {
       v: 1;
       type: "results/full";
       results: ResultsSnapshot | null;
       at: number | null;
       stale: boolean;
+      covStale: boolean;
       unparsed: number;
     }
+  // the quick-uvm status decorations (validations + the last generate):
   // empty decos = clear, generate null = never run
   | {
       v: 1;

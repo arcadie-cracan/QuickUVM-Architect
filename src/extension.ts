@@ -40,7 +40,8 @@ import { VerificationProvider } from "./tbtree";
 import { GenStateService } from "./genstate-service";
 import { ResolveService } from "./resolve-service";
 import { inferredComponents } from "./resolved";
-import { ResultsService } from "./results-service";
+import { benchNames } from "./results";
+import { ResultsService, type ResultsState } from "./results-service";
 import { ownerToNodeId } from "./genstate";
 import { ownerOfFile } from "./trace";
 import { FindingDecorationProvider, GenDecorationProvider } from "./tbdecorations";
@@ -109,18 +110,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // generated Makefile leaves under `<outputDir>/out` (never run from here)
   const results = new ResultsService({
     outDir: () => genState.outDir,
-    names: () => ({
-      agents: (config.current.agents ?? []).map((a) => a.name).filter((n): n is string => Boolean(n)),
-      // the declared scoreboards AND the ones quick-uvm infers (implicit mode):
-      // both are instances of the generated env, both are blocks of the diagram
-      scoreboards: [
-        ...(config.current.analysis?.scoreboards ?? []).map((sb) => sb?.name),
-        ...inferredComponents(resolve.current)
-          .filter((c) => c.kind === "scoreboard")
-          .map((c) => c.name),
-      ].filter((n): n is string => Boolean(n)),
-      subenvs: (config.current.subenvs ?? []).map((x) => x.name).filter((n): n is string => Boolean(n)),
-    }),
+    // pure and defensive (src/results.ts): this runs on every edit, on a live
+    // configuration that may be half typed. The inferred components matter:
+    // in implicit mode the scoreboard is the instance `sbd` and the collector
+    // `cov`, and without them every report of such a bench lands on the env
+    names: () => benchNames(config.current, inferredComponents(resolve.current)),
     ownerOfFile: (file) => {
       const m = genState.currentManifest;
       const owner = m ? ownerOfFile(m, file) : null;
@@ -129,41 +123,70 @@ export function activate(context: vscode.ExtensionContext): void {
     log,
   });
   let resultsMessage: HostMessage | null = null;
-  let resultsStale = false;
   let resultsGen = 0;
-  /** rebuilds `results/full` (staleness needs the configuration's mtime) and
-   *  sends it to the diagram panel */
+  /**
+   * How old the results are against the bench — ONE function for the message
+   * and for the report, so they cannot disagree. `stale`: the configuration has
+   * unsaved edits, or was saved after the OLDEST verdict shown (one fresh run
+   * must not vouch for the old ones). `covStale`: the coverage summary is
+   * older than the newest verdict (a later run did not rewrite it: `COV=0`, a
+   * single `make run`) or than the configuration.
+   */
+  const ageOf = async (st: ResultsState | null): Promise<{ stale: boolean; covStale: boolean }> => {
+    const uri = config.configUri;
+    if (!st || !uri) {
+      return { stale: false, covStale: false };
+    }
+    const dirty = vscode.workspace.textDocuments.some(
+      (d) => d.uri.toString() === uri.toString() && d.isDirty
+    );
+    let saved: number | null = null;
+    try {
+      saved = (await vscode.workspace.fs.stat(uri)).mtime;
+    } catch {
+      // the file is gone: nothing to compare with
+    }
+    const newer = (t: number | null): boolean => t !== null && saved !== null && saved > t;
+    return {
+      stale: dirty || newer(st.oldest),
+      covStale:
+        st.covAt !== null && (dirty || newer(st.covAt) || (st.at !== null && st.covAt < st.at)),
+    };
+  };
+  /** rebuilds `results/full` and sends it to the diagram panel */
   const pushResults = async (): Promise<void> => {
     const gen = ++resultsGen;
     const st = results.shown;
-    let stale = false;
-    const uri = config.configUri;
-    if (st && st.at !== null && uri) {
-      // the bench changed after the runs: an unsaved edit, or a save newer
-      // than the newest verdict
-      stale = vscode.workspace.textDocuments.some(
-        (d) => d.uri.toString() === uri.toString() && d.isDirty
-      );
-      try {
-        stale ||= (await vscode.workspace.fs.stat(uri)).mtime > st.at;
-      } catch {
-        // the file is gone: nothing to compare with
-      }
-    }
+    const age = await ageOf(st);
     if (gen !== resultsGen) {
       return; // a newer build is on its way
     }
-    resultsStale = stale;
     resultsMessage = {
       v: 1,
       type: "results/full",
       results: st?.snapshot ?? null,
       at: st?.at ?? null,
-      stale,
+      stale: age.stale,
+      covStale: age.covStale,
       unparsed: st?.unparsed ?? 0,
     };
     DiagramPanel.current?.postResults();
   };
+  /** the results follow the bench: re-fold (re-read if the output dir moved),
+   *  then tell the panel — never an unhandled rejection on an edit */
+  const followResults = (): void => {
+    results
+      .update()
+      .then(() => pushResults())
+      .catch((e) => log.appendLine(`[results] update failed: ${String(e)}`));
+  };
+  context.subscriptions.push(
+    results,
+    results.onDidChange(() => void pushResults()),
+    // the inferred scoreboard / collector names come from `resolve`, which
+    // races the manifest: a resolve that finishes later must re-attribute
+    resolve.onDidChange(() => followResults())
+  );
   context.subscriptions.push(results, results.onDidChange(() => void pushResults()));
   /** the status payload shared by the panel (getStatus), the sidebar replay and
    *  the live pushes — one shape, so the surfaces cannot disagree */
@@ -989,13 +1012,16 @@ export function activate(context: vscode.ExtensionContext): void {
     // configuration the element names — and an edit makes the results stale
     void genState
       .refresh(config.configUri, config.current)
-      .then(() => results.update())
-      .then(() => pushResults());
+      .then(() => followResults())
+      .catch((e) => log.appendLine(`[results] ${String(e)}`));
   });
   // initial manifest load: onOverlay only fires on a CHANGE, so a config already
   // discovered at activation would otherwise leave the gen-state (badges + the
   // per-item generate) empty until the first edit.
-  void genState.refresh(config.configUri, config.current);
+  void genState
+    .refresh(config.configUri, config.current)
+    .then(() => followResults()) // docs/08 R25: results already on disk at activation
+    .catch((e) => log.appendLine(`[results] ${String(e)}`));
   void resolve.refresh(config.configUri);
 
   // "config unsaved" indicator. Gestures leave the document dirty by design, and
@@ -1437,24 +1463,33 @@ export function activate(context: vscode.ExtensionContext): void {
     // ---- docs/08 R25: the simulation results on the diagram
     vscode.commands.registerCommand("quickuvm.refreshResults", async () => {
       await results.refresh(true);
-      if (!results.current) {
-        const dir = results.resultsDir();
-        void vscode.window.showInformationMessage(
-          dir
+      if (results.current) {
+        return;
+      }
+      const dir = results.resultsDir();
+      void vscode.window.showInformationMessage(
+        results.foreign
+          ? vscode.l10n.t(
+              "QuickUVM Architect: the simulation results under {0} are of DUT \"{1}\", not of the active configuration — not shown.",
+              dir ? vscode.workspace.asRelativePath(dir) : "?",
+              results.foreign
+            )
+          : dir
             ? vscode.l10n.t(
                 "QuickUVM Architect: no simulation results under {0} — run the regression there (`make regress` in the generated bench); the extension only reads them.",
                 vscode.workspace.asRelativePath(dir)
               )
             : vscode.l10n.t("QuickUVM Architect: no active configuration — nothing to read results for.")
-        );
-      }
+      );
     }),
     vscode.commands.registerCommand("quickuvm.showResults", async () => {
       if (!results.current) {
         await results.refresh(true);
       }
       const name = config.configUri ? path.basename(config.configUri.fsPath) : "configuration";
-      if (!(await results.report(name, resultsStale))) {
+      // the report shows `current` (hidden or not): its age is computed for
+      // THAT, here and now — not taken from the last message sent
+      if (!(await results.report(name, await ageOf(results.current)))) {
         void vscode.window.showInformationMessage(
           vscode.l10n.t("QuickUVM Architect: there are no simulation results to report.")
         );

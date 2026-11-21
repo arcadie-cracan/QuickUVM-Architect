@@ -8,40 +8,56 @@
 // quick-uvm 1.1.0 and run on Xcelium 25.09 — the fixtures under
 // scripts/fixtures/results/ are those runs):
 //
-//   <out>/runs/<test>.<seed>/status     PASS | FAIL   (the Makefile's verdict)
+//   <out>/runs/<test>.<seed>/status     PASS | FAIL   (written AFTER the run)
 //   <out>/runs/<test>.<seed>/test.txt, seed.txt
 //   <out>/runs/<test>.<seed>/sim.log    the simulator's log
 //   <out>/cov/summary.txt               imc's text summary of the merged coverage
 //
 // A UVM report line names the component that raised it by its hierarchical
-// path, and the generator's instance names are a function of the configuration
-// (`<agent>_agnt`, `<scoreboard name>`, `<agent>_cov_h`, `vsqr`), so a report is
-// attributed EXACTLY, by path — no pattern on the message text.
+// path, and the generator's instance names follow from the configuration, so a
+// report is attributed by PATH first — never by a pattern on its message. The
+// names are the generator's, probed per mode (see `elementOfPath`); a path this
+// module does not recognise falls back to the OWNER of the report's source file
+// (the generation manifest) and only then to the environment. A report is
+// never dropped.
 //
 // Tested in `npm run test:results`.
 
 export type Severity = "info" | "warning" | "error" | "fatal";
 
+const RANK: Readonly<Record<Severity, number>> = { info: 0, warning: 1, error: 2, fatal: 3 };
+
+/** the reports of one KIND in a log — same severity, reporter, id and source
+ *  line — folded while parsing: a log of a hundred thousand mismatches is a
+ *  handful of these, and nothing of the log's text is kept alive by them */
 export interface UvmReport {
   severity: Severity;
   /** the source file of the reporting macro, as the simulator printed it */
   file: string | null;
   line: number | null;
-  /** simulation time, in the log's own unit */
+  /** simulation time of the FIRST one, in the log's own unit */
   time: number | null;
   /** the reporter's full hierarchical name: `uvm_test_top.e.pkt_sb.cmp` */
   path: string;
   id: string;
+  /** the FIRST message of the kind (the others differ in their data) */
   message: string;
+  count: number;
 }
 
 export interface SimLog {
-  /** the reports of severity WARNING and above (the INFOs are only counted) */
+  /** the kinds of report of severity WARNING and above (INFOs are only counted) */
   reports: UvmReport[];
-  /** the report server's own totals; null when the log has no summary (a crash) */
+  /** the report server's own totals; null when the log has no COMPLETE summary
+   *  (a crash, a run still going, a block cut short) */
   counts: Record<Severity, number> | null;
   /** the simulator reached `$finish` */
   finished: boolean;
+  /** the coverage scope the run was started with (`-covscope <dut>`): the DUT
+   *  the results belong to; null when the run had no coverage */
+  scope: string | null;
+  /** reports of kinds beyond `MAX_KINDS`: parsed, not kept */
+  dropped: number;
 }
 
 const SEVERITY: Readonly<Record<string, Severity>> = {
@@ -53,66 +69,110 @@ const SEVERITY: Readonly<Record<string, Severity>> = {
 
 // UVM_ERROR ../tb/x_comparator.svh(84) @ 65: uvm_test_top.e.pkt_sb.cmp [SB_NOEXP] text
 // UVM_INFO @ 0: reporter [RNTST] Running test x...
+// (an id may hold one level of brackets: `[a[0]]`)
 const REPORT_RE =
-  /^(UVM_(?:INFO|WARNING|ERROR|FATAL)) (?:(\S.*?)\((\d+)\) )?@ (\d+)[^:]*: (\S+) \[([^\]]*)\] ?(.*)$/;
+  /^(UVM_(?:INFO|WARNING|ERROR|FATAL)) (?:(\S.*?)\((\d+)\) )?@ (\d+)[^:]*: (\S+) \[((?:[^[\]]|\[[^[\]]*\])*)\] ?(.*)$/;
 // ** Report counts by severity / UVM_ERROR :  102
 const COUNT_RE = /^(UVM_(?:INFO|WARNING|ERROR|FATAL)) :\s*(\d+)\s*$/;
+const SCOPE_RE = /^\s*-covscope\s+(\S+)/;
+
+/** distinct kinds kept per log; a log with more is pathological and is counted */
+const MAX_KINDS = 2000;
+
+/**
+ * A copy of a string that shares no storage with its source. A regex capture
+ * is a SLICE of the line, which is a slice of the whole log: keeping one
+ * capture kept megabytes alive (measured: one warning retained its 8 MB log).
+ */
+const own = (s: string): string => (s.length ? Array.from(s).join("") : s);
 
 /**
  * Reads a simulation log. Only what the UVM report server prints is trusted:
  * the report lines, its "Report counts by severity" block, and the `$finish`
  * line. (The "caught UVM_ERROR" numbers of the report CATCHER are not errors —
- * they are 0 on a failing run — and are never read.)
+ * they are 0 on a failing run — and are never read.) A report line is a report
+ * even when its text mentions `$finish`.
  */
 export function parseSimLog(text: string): SimLog {
-  const out: SimLog = { reports: [], counts: null, finished: false };
-  let inCounts = false;
+  const out: SimLog = { reports: [], counts: null, finished: false, scope: null, dropped: 0 };
+  const kinds = new Map<string, UvmReport>();
+  let block: Partial<Record<Severity, number>> | null = null;
+  const closeBlock = (): void => {
+    // a block cut short (the log ends inside it) is not a summary: pre-zeroed
+    // counts would read as "no errors"
+    if (block && block.error !== undefined && block.fatal !== undefined) {
+      out.counts = {
+        info: block.info ?? 0,
+        warning: block.warning ?? 0,
+        error: block.error,
+        fatal: block.fatal,
+      };
+    }
+    block = null;
+  };
   for (const raw of text.split(/\r?\n/)) {
-    const line = raw.trimEnd();
+    // Questa prefixes transcript lines with "# "
+    const line = (raw.startsWith("# ") ? raw.slice(2) : raw).trimEnd();
     if (line.startsWith("** Report counts by severity")) {
-      inCounts = true;
-      out.counts = { info: 0, warning: 0, error: 0, fatal: 0 };
+      block = {};
+      out.counts = null; // a later summary (a restart) replaces an earlier one
       continue;
     }
-    if (inCounts) {
+    if (block) {
       const c = COUNT_RE.exec(line);
-      if (c && out.counts) {
-        out.counts[SEVERITY[c[1]]] = Number(c[2]);
+      if (c) {
+        block[SEVERITY[c[1]]] = Number(c[2]);
         continue;
       }
-      inCounts = false;
-    }
-    if (line.includes("Simulation complete via $finish")) {
-      out.finished = true;
-      continue;
+      closeBlock();
     }
     const m = REPORT_RE.exec(line);
     if (!m) {
+      if (line.includes("Simulation complete via $finish")) {
+        out.finished = true;
+      } else if (out.scope === null) {
+        const s = SCOPE_RE.exec(line);
+        if (s) {
+          out.scope = own(s[1]);
+        }
+      }
       continue;
     }
     const severity = SEVERITY[m[1]];
     if (severity === "info") {
       continue;
     }
-    out.reports.push({
-      severity,
-      file: m[2] ?? null,
-      line: m[3] ? Number(m[3]) : null,
-      time: Number(m[4]),
-      path: m[5],
-      id: m[6],
-      message: m[7],
-    });
+    const key = `${severity}\0${m[5]}\0${m[6]}\0${m[2] ?? ""}\0${m[3] ?? ""}`;
+    const seen = kinds.get(key);
+    if (seen) {
+      seen.count++;
+    } else if (kinds.size < MAX_KINDS) {
+      kinds.set(own(key), {
+        severity,
+        file: m[2] ? own(m[2]) : null,
+        line: m[3] ? Number(m[3]) : null,
+        time: Number(m[4]),
+        path: own(m[5]),
+        id: own(m[6]),
+        message: own(m[7]),
+        count: 1,
+      });
+    } else {
+      out.dropped++;
+    }
   }
+  closeBlock();
+  out.reports = [...kinds.values()];
   return out;
 }
 
 export type Verdict = "PASS" | "FAIL" | "UNKNOWN";
 
 /**
- * The verdict of a log by the generated Makefile's own rule: `$finish` was
- * reached AND the severity block counts no error and no fatal. A log without
- * the block (a crash, a run that never started) is a FAIL, never a pass.
+ * The verdict of a COMPLETE log by the generated Makefile's own rule:
+ * `$finish` was reached AND the severity block counts no error and no fatal.
+ * A log without a complete block is a FAIL, never a pass. (Not used for a run
+ * without a `status` file — see `runResult`.)
  */
 export function verdictOf(log: SimLog): Verdict {
   return log.finished && log.counts && log.counts.error === 0 && log.counts.fatal === 0
@@ -126,13 +186,20 @@ export interface RunResult {
   status: Verdict;
   counts: Record<Severity, number>;
   reports: UvmReport[];
+  scope: string | null;
+  /** warnings / errors / fatals the report server counted that are not in
+   *  `reports` (a line format this parser does not know, or kinds beyond the
+   *  cap): they exist, and are not on any block */
+  missed: number;
 }
 
 /**
- * One run from the files of its directory (`<test>.<seed>`). The `status` file
- * is the Makefile's verdict and wins; without it the log decides by the same
- * rule; with neither the run is UNKNOWN (started, or cleaned). The counts are
- * the report server's when the log has them, otherwise what was parsed.
+ * One run from the files of its directory (`<test>.<seed>`). The verdict is the
+ * `status` file's and nothing else's: the Makefile writes it AFTER the
+ * simulator exits, so a run without one is in flight (or was killed) — UNKNOWN,
+ * exactly as the Makefile's own summary skips it. Judging its half-written log
+ * would report a running regression as failing. The counts are the report
+ * server's when the log has them, otherwise what was parsed.
  */
 export function runResult(
   dir: string,
@@ -141,28 +208,98 @@ export function runResult(
   const dot = dir.lastIndexOf(".");
   const log = files.log !== undefined ? parseSimLog(files.log) : null;
   const said = files.status?.trim().toUpperCase();
-  const status: Verdict =
-    said === "PASS" || said === "FAIL" ? said : log ? verdictOf(log) : "UNKNOWN";
   const parsed: Record<Severity, number> = { info: 0, warning: 0, error: 0, fatal: 0 };
   for (const r of log?.reports ?? []) {
-    parsed[r.severity]++;
+    parsed[r.severity] += r.count;
   }
+  const counts = log?.counts ?? parsed;
+  const kept = parsed.warning + parsed.error + parsed.fatal;
   return {
     test: files.test?.trim() || (dot > 0 ? dir.slice(0, dot) : dir),
     seed: files.seed?.trim() || (dot > 0 ? dir.slice(dot + 1) : ""),
-    status,
-    counts: log?.counts ?? parsed,
+    status: said === "PASS" || said === "FAIL" ? said : "UNKNOWN",
+    counts,
     reports: log?.reports ?? [],
+    scope: log?.scope ?? null,
+    missed: log?.counts
+      ? Math.max(0, counts.warning + counts.error + counts.fatal - kept)
+      : log?.dropped ?? 0,
   };
 }
 
 // ------------------------------------------------------------- attribution
 
-/** the names of a bench's elements, from its configuration */
+/** what the attribution needs to know of a bench, from its configuration */
 export interface BenchNames {
+  /** the DUT module: what a run's coverage scope must say */
+  dut?: string | null;
   agents: readonly string[];
+  /** the scoreboards by INSTANCE name: a named one is its name; an unnamed
+   *  declared one and the one implicit mode infers are `sbd` */
   scoreboards: readonly string[];
   subenvs: readonly string[];
+  /** implicit mode (no `analysis:`): the agent whose collector is the single
+   *  instance `cov` (a declared collector is `<agent>_cov_h`) */
+  implicitCoverage?: string | null;
+  /** a bench whose ONE agent is replicated (`replicas`) or instantiated
+   *  (`instances`): its agent instances are `<handle>_agnt`, its scoreboards
+   *  `<handle>_sb` — quick-uvm allows these only on a sole-agent bench */
+  soleAgent?: string | null;
+  hasProbes?: boolean;
+}
+
+const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+const nameOf = (v: unknown): string | null => {
+  const n = v !== null && typeof v === "object" ? (v as { name?: unknown }).name : undefined;
+  return typeof n === "string" && n ? n : null;
+};
+
+/**
+ * The names of a bench from its (live, possibly half-typed) configuration and
+ * the components quick-uvm infers. Defensive by construction: `agents: foo`, a
+ * bare `-` entry, `analysis: {scoreboards: 5}` yield fewer names, never a throw
+ * — this runs on every edit.
+ */
+export function benchNames(
+  config: unknown,
+  inferred: readonly { kind: string; name?: string; source?: string }[] = []
+): BenchNames {
+  const cfg = (config !== null && typeof config === "object" ? config : {}) as Record<string, unknown>;
+  const agentEntries = arr<Record<string, unknown>>(cfg.agents).filter(
+    (a) => a !== null && typeof a === "object"
+  );
+  const agents = agentEntries.map(nameOf).filter((n): n is string => n !== null);
+  const analysis = cfg.analysis;
+  const declared = analysis !== null && typeof analysis === "object";
+  const sbs = declared ? arr<unknown>((analysis as Record<string, unknown>).scoreboards) : [];
+  const scoreboards = new Set<string>();
+  for (const sb of sbs) {
+    if (sb !== null && typeof sb === "object") {
+      scoreboards.add(nameOf(sb) ?? "sbd");
+    }
+  }
+  let implicitCoverage: string | null = null;
+  for (const c of inferred) {
+    if (c.kind === "scoreboard" && c.name) {
+      scoreboards.add(c.name);
+    } else if (c.kind === "coverage" && c.name) {
+      implicitCoverage = c.name;
+    }
+  }
+  const sole = agentEntries.length === 1 ? agentEntries[0] : null;
+  const multiplied =
+    sole !== null &&
+    ((typeof sole.replicas === "number" && sole.replicas > 1) || arr(sole.instances).length > 0);
+  const dut = cfg.dut;
+  return {
+    dut: nameOf(dut),
+    agents,
+    scoreboards: [...scoreboards],
+    subenvs: arr<unknown>(cfg.subenvs).map(nameOf).filter((n): n is string => n !== null),
+    implicitCoverage,
+    soleAgent: multiplied ? nameOf(sole) : null,
+    hasProbes: arr(cfg.probes).length > 0,
+  };
 }
 
 /** the units of an agent the generator instantiates, by instance name */
@@ -174,49 +311,69 @@ const UNIT: Readonly<Record<string, string>> = {
 
 /**
  * The verification-view node a reporter's path belongs to, as ids of the
- * diagram: `agent:<a>` (and `agent:<a>:u.monitor` for a unit inside it),
- * `sb:<name>`, `cov:<agent>`, `vsqr`, `sub:<name>`, `env` for the environment
- * or the test themselves. null when the path is not under the test (the
- * `reporter` pseudo-component, a path of another shape): the caller decides.
+ * diagram: `agent:<a>` (with `unit` for a unit inside it), `sb:<name>`,
+ * `cov:<agent>`, `vsqr`, `probes`, `sub:<name>`, `env` for the environment or
+ * the test themselves. null when the path is not under the test (the
+ * `reporter` pseudo-component). `exact: false` = "somewhere under the env, in
+ * an instance this function does not know": the caller tries the report's
+ * source file before settling on the env.
  *
  * The path is `uvm_test_top.<env instance>.<component>[.<unit>…]`; the env's
- * instance name is not assumed (`e` today), only its position.
+ * instance name is not assumed (`e` today), only its position. A sequence
+ * reports through its sequencer as `…sqr@@<sequence>`: the `@@` tail is not
+ * part of the instance. The instance names, as quick-uvm 1.1.0 generates them:
+ *
+ *   <agent>_agnt[.drv|.mon|.sqr]   an agent and its units
+ *   <handle>_agnt, <handle>_sb     a sole agent's replicas (`cmd_0`) / instances
+ *   <scoreboard name>, `sbd`       a named scoreboard; an unnamed or inferred one
+ *   <agent>_cov_h, `cov`           a declared collector; the implicit mode's
+ *   vsqr, probe_mon, <subenv>      the virtual sequencer, the probes, a sub-env
  */
 export function elementOfPath(
   path: string,
   names: BenchNames
-): { id: string; unit: string | null } | null {
-  const segs = path.split(".");
+): { id: string; unit: string | null; exact: boolean } | null {
+  const segs = path.split(".").map((s) => s.split("@@")[0]);
   if (segs[0] !== "uvm_test_top") {
     return null;
   }
   if (segs.length <= 2) {
-    return { id: "env", unit: null }; // the test, or the environment itself
+    return { id: "env", unit: null, exact: true }; // the test, or the environment itself
   }
   const inst = segs[2];
+  const hit = (id: string, unit: string | null = null) => ({ id, unit, exact: true });
   if (inst.endsWith("_agnt")) {
-    const agent = inst.slice(0, -"_agnt".length);
-    if (names.agents.includes(agent)) {
-      const unit = segs[3] ? UNIT[segs[3]] ?? null : null;
-      return { id: `agent:${agent}`, unit };
+    const base = inst.slice(0, -"_agnt".length);
+    const agent = names.agents.includes(base) ? base : names.soleAgent ?? null;
+    if (agent) {
+      return hit(`agent:${agent}`, segs[3] ? UNIT[segs[3]] ?? null : null);
     }
   }
   if (inst.endsWith("_cov_h")) {
     const agent = inst.slice(0, -"_cov_h".length);
     if (names.agents.includes(agent)) {
-      return { id: `cov:${agent}`, unit: null };
+      return hit(`cov:${agent}`);
     }
   }
+  if (inst === "cov" && names.implicitCoverage) {
+    return hit(`cov:${names.implicitCoverage}`);
+  }
   if (names.scoreboards.includes(inst)) {
-    return { id: `sb:${inst}`, unit: null };
+    return hit(`sb:${inst}`);
+  }
+  if (inst.endsWith("_sb") && names.soleAgent && names.scoreboards.length === 1) {
+    return hit(`sb:${names.scoreboards[0]}`); // a replica's copy of the one scoreboard
   }
   if (names.subenvs.includes(inst)) {
-    return { id: `sub:${inst}`, unit: null };
+    return hit(`sub:${inst}`);
   }
   if (inst === "vsqr") {
-    return { id: "vsqr", unit: null };
+    return hit("vsqr");
   }
-  return { id: "env", unit: null }; // under the env, in a component the diagram does not draw
+  if (inst === "probe_mon" && names.hasProbes) {
+    return hit("probes");
+  }
+  return { id: "env", unit: null, exact: false };
 }
 
 // ---------------------------------------------------------------- coverage
@@ -239,7 +396,8 @@ export interface CoverageRow {
  * imc's `report -summary -text` table: a header row, a rule, then one row per
  * instance with its depth drawn as a tree prefix (`| | |--name`) and one cell
  * per metric — `n/a`, `71.43% (5/7)` or a bare `0.00%`. Columns are separated
- * by two or more spaces (a column NAME may contain one: "Fsm Average").
+ * by two or more spaces (a column NAME may contain one: "Fsm Average"). A row's
+ * figures are the instance's OWN, not its subtree's.
  */
 export function parseImcSummary(text: string): CoverageRow[] {
   const lines = text.split(/\r?\n/).filter((l) => l.trim());
@@ -297,6 +455,7 @@ export interface ElementResult {
   fatals: number;
   errors: number;
   warnings: number;
+  /** at most `MAX_MESSAGES` kinds, the most severe ones, worst first */
   messages: ResultMessage[];
 }
 
@@ -317,27 +476,56 @@ export interface ResultsSnapshot {
   /** by diagram id: `agent:cmd`, `agent:cmd:u.monitor`, `sb:pkt_sb`, `env`… */
   elements: Record<string, ElementResult>;
   coverage: Record<string, CoverageFigure[]>;
+  /** warnings / errors / fatals the simulator counted that are on no block (a
+   *  line format the parser does not know): said, never silently short */
+  missed: number;
 }
 
-const MAX_MESSAGES = 8;
+export const MAX_MESSAGES = 12;
+
+/**
+ * Adds a kind to a capped list WITHOUT losing the worst: when the list is full
+ * the least severe entry gives way to a more severe newcomer — first-come
+ * dropped the fatal that ended the run behind eight earlier warnings.
+ */
+function keep(list: ResultMessage[], m: ResultMessage): void {
+  if (list.length < MAX_MESSAGES) {
+    list.push(m);
+  } else {
+    let weakest = 0;
+    for (let i = 1; i < list.length; i++) {
+      if (RANK[list[i].severity] <= RANK[list[weakest].severity]) {
+        weakest = i; // the LAST of the least severe
+      }
+    }
+    if (RANK[m.severity] > RANK[list[weakest].severity]) {
+      list[weakest] = m;
+    } else {
+      return;
+    }
+  }
+  list.sort((a, b) => RANK[b.severity] - RANK[a.severity]); // stable: order kept within a severity
+}
 
 function bump(e: ElementResult, r: UvmReport, run: string): void {
   if (r.severity === "fatal") {
-    e.fatals++;
+    e.fatals += r.count;
   } else if (r.severity === "error") {
-    e.errors++;
+    e.errors += r.count;
   } else {
-    e.warnings++;
+    e.warnings += r.count;
   }
-  const same = e.messages.find((m) => m.severity === r.severity && m.id === r.id && m.file === r.file && m.line === r.line);
+  const same = e.messages.find(
+    (m) => m.severity === r.severity && m.id === r.id && m.file === r.file && m.line === r.line
+  );
   if (same) {
-    same.count++;
-  } else if (e.messages.length < MAX_MESSAGES) {
-    e.messages.push({
+    same.count += r.count;
+  } else {
+    keep(e.messages, {
       severity: r.severity,
       id: r.id,
       message: r.message,
-      count: 1,
+      count: r.count,
       file: r.file,
       line: r.line,
       run,
@@ -354,15 +542,17 @@ const DUT_METRICS: readonly (readonly [string, string])[] = [
 
 /**
  * Folds the runs and the coverage rows into what the diagram shows. A report
- * goes to the element its path names; when the path is not under the test
- * (`reporter`), to the owner of its source file if `ownerOfFile` knows one
- * (the generation manifest), else to `env` — a report is never dropped: an
- * error nobody can see is worse than one on the wrong box. A unit inside an
- * agent is counted on the agent AND under `agent:<a>:<unit>`, for the agent's
- * own level.
+ * goes to the element its path names; a path that names nothing known — or is
+ * not under the test at all (`reporter`) — goes to the owner of its source file
+ * if `ownerOfFile` knows one (the generation manifest), else to `env`. A report
+ * is never dropped: an error nobody can see is worse than one on the wrong
+ * box. A unit inside an agent is counted on the agent AND under
+ * `agent:<a>:<unit>`, for the agent's own level.
  *
- * Coverage: a collector instance `<agent>_cov_h` puts its covergroup figure on
- * `cov:<agent>`; `dut_inst` puts the code-coverage figures on `dut`.
+ * Coverage: a collector instance (`<agent>_cov_h`, or the implicit mode's
+ * `cov`) puts its covergroup figure on `cov:<agent>`; `dut_inst` puts the
+ * code-coverage figures on `dut` — summed over its SUBTREE (imc's rows are per
+ * instance: a hierarchical DUT's top row alone would speak for its glue logic).
  */
 export function summarizeResults(
   runs: readonly RunResult[],
@@ -376,6 +566,7 @@ export function summarizeResults(
     failed: runs.filter((r) => r.status === "FAIL").length,
     elements: {},
     coverage: {},
+    missed: runs.reduce((n, r) => n + r.missed, 0),
   };
   const at = (id: string): ElementResult =>
     (out.elements[id] ??= { fatals: 0, errors: 0, warnings: 0, messages: [] });
@@ -383,39 +574,74 @@ export function summarizeResults(
     const tag = run.seed ? `${run.test}.${run.seed}` : run.test;
     for (const r of run.reports) {
       const where = elementOfPath(r.path, names);
-      const id = where?.id ?? (r.file ? ownerOfFile?.(r.file) ?? null : null) ?? "env";
+      const byFile = !where?.exact && r.file ? ownerOfFile?.(r.file) ?? null : null;
+      const id = where?.exact ? where.id : byFile ?? where?.id ?? "env";
       bump(at(id), r, tag);
-      if (where?.unit) {
+      if (where?.exact && where.unit) {
         bump(at(`${id}:${where.unit}`), r, tag);
       }
     }
   }
+  const dutSum = new Map<string, { covered: number; total: number; whole: boolean; own: CoverageCell | null }>();
   for (const row of coverage) {
     const leaf = row.path[row.path.length - 1];
+    const cg = row.metrics["CoverGroup Covered"] ?? row.metrics["CoverGroup Average"];
     if (leaf.endsWith("_cov_h")) {
       const agent = leaf.slice(0, -"_cov_h".length);
-      const cg = row.metrics["CoverGroup Covered"] ?? row.metrics["CoverGroup Average"];
       if (cg && names.agents.includes(agent)) {
         out.coverage[`cov:${agent}`] = [{ label: "cg", ...cg }];
       }
-    } else if (leaf === "dut_inst") {
-      const figs: CoverageFigure[] = [];
-      for (const [col, label] of DUT_METRICS) {
+    } else if (leaf === "cov" && cg && names.implicitCoverage) {
+      out.coverage[`cov:${names.implicitCoverage}`] = [{ label: "cg", ...cg }];
+    }
+    const depth = row.path.indexOf("dut_inst");
+    if (depth >= 0) {
+      for (const [col] of DUT_METRICS) {
         const c = row.metrics[col];
-        if (c) {
-          figs.push({ label, ...c });
+        if (!c) {
+          continue;
         }
-      }
-      if (figs.length) {
-        out.coverage.dut = figs;
+        const s = dutSum.get(col) ?? { covered: 0, total: 0, whole: true, own: null };
+        if (c.covered !== null && c.total !== null) {
+          s.covered += c.covered;
+          s.total += c.total;
+        } else {
+          s.whole = false; // a bare percentage cannot be summed
+        }
+        if (depth === row.path.length - 1) {
+          s.own = c;
+        }
+        dutSum.set(col, s);
       }
     }
+  }
+  const figs: CoverageFigure[] = [];
+  for (const [col, label] of DUT_METRICS) {
+    const s = dutSum.get(col);
+    if (!s) {
+      continue;
+    }
+    if (s.whole && s.total > 0) {
+      figs.push({
+        label,
+        pct: Math.round((s.covered / s.total) * 10000) / 100,
+        covered: s.covered,
+        total: s.total,
+      });
+    } else if (s.own) {
+      figs.push({ label, ...s.own }); // the DUT's own row: the best that can be said
+    }
+  }
+  if (figs.length) {
+    out.coverage.dut = figs;
   }
   return out;
 }
 
 /** the worst severity an element shows, or null when it has nothing */
-export function worstOf(e: ElementResult | undefined): "fatal" | "error" | "warning" | null {
+export function worstOf(
+  e: Pick<ElementResult, "fatals" | "errors" | "warnings"> | undefined | null
+): "fatal" | "error" | "warning" | null {
   if (!e) {
     return null;
   }
@@ -433,6 +659,15 @@ export interface NodeResult {
   coverage: CoverageFigure[];
 }
 
+export interface LevelResults {
+  /** by block id of the level */
+  nodes: Record<string, NodeResult>;
+  /** what was reported and has NO block on this level (the env's own reports
+   *  at the env level, the rest of the bench at an agent's level): shown next
+   *  to the header's verdicts, so that no level is ever silently clean */
+  elsewhere: NodeResult | null;
+}
+
 /**
  * The results of the blocks drawn on ONE level of the verification view
  * (`focus`: "" the testbench, "env", "agent:<a>"; `nodeIds`: the level's
@@ -446,28 +681,36 @@ export interface NodeResult {
  *   - at an agent's level, a unit's reports on its `u.<unit>` block (the
  *     snapshot keeps them under `agent:<a>:u.<unit>`).
  *
- * A unit's reports are already counted on its agent, so the unit keys are read
- * ONLY at that agent's level. Coverage is never summed upwards: a figure is a
+ * What has no block on the level is `elsewhere`. A unit's reports are already
+ * counted on its agent, so the unit keys are read ONLY at that agent's level —
+ * where the agent's own total counts for `elsewhere` only by what its drawn
+ * units do not already show. Coverage is never summed upwards: a figure is a
  * property of one instance (`cov:<agent>`, `dut`), shown where that block is.
  */
 export function levelResults(
   snapshot: ResultsSnapshot | null | undefined,
   focus: string,
   nodeIds: readonly string[]
-): Record<string, NodeResult> {
-  const out: Record<string, NodeResult> = {};
+): LevelResults {
+  const nodes: Record<string, NodeResult> = {};
   if (!snapshot) {
-    return out;
+    return { nodes, elsewhere: null };
   }
   const ids = new Set(nodeIds);
   const here = /^agent:[^:]+$/.test(focus) ? focus : null;
-  const at = (id: string): NodeResult =>
-    (out[id] ??= { fatals: 0, errors: 0, warnings: 0, messages: [], coverage: [] });
-  const nodeFor = (key: string): string | null => {
-    const unit = /^(agent:[^:]+):(u\..+)$/.exec(key);
-    if (unit) {
-      return here === unit[1] && ids.has(unit[2]) ? unit[2] : null;
+  const blank = (): NodeResult => ({ fatals: 0, errors: 0, warnings: 0, messages: [], coverage: [] });
+  const elsewhere = blank();
+  const add = (n: NodeResult, e: ElementResult, sign = 1): void => {
+    n.fatals += sign * e.fatals;
+    n.errors += sign * e.errors;
+    n.warnings += sign * e.warnings;
+    if (sign > 0) {
+      for (const m of e.messages) {
+        keep(n.messages, m);
+      }
     }
+  };
+  const nodeFor = (key: string): string | null => {
     if (ids.has(key)) {
       return key;
     }
@@ -477,40 +720,43 @@ export function levelResults(
     return ids.has("env") && key !== "dut" ? "env" : null;
   };
   for (const [key, e] of Object.entries(snapshot.elements)) {
-    const id = nodeFor(key);
-    if (!id) {
+    const unit = /^(agent:[^:]+):(u\..+)$/.exec(key);
+    if (unit) {
+      if (here === unit[1] && ids.has(unit[2])) {
+        add((nodes[unit[2]] ??= blank()), e);
+        add(elsewhere, e, -1); // already inside the agent's total, counted below
+      }
       continue;
     }
-    const n = at(id);
-    n.fatals += e.fatals;
-    n.errors += e.errors;
-    n.warnings += e.warnings;
-    for (const m of e.messages) {
-      if (n.messages.length < MAX_MESSAGES) {
-        n.messages.push(m);
-      }
-    }
+    const id = nodeFor(key);
+    add(id ? (nodes[id] ??= blank()) : elsewhere, e);
   }
   for (const [key, figs] of Object.entries(snapshot.coverage)) {
     if (ids.has(key)) {
-      at(key).coverage = figs;
+      (nodes[key] ??= blank()).coverage = figs;
     }
   }
-  return out;
+  const any = elsewhere.fatals + elsewhere.errors + elsewhere.warnings > 0;
+  return { nodes, elsewhere: any ? elsewhere : null };
 }
 
 /** the worst severity a block shows, or null */
-export function worstOfNode(n: NodeResult | undefined): "fatal" | "error" | "warning" | null {
-  return n ? worstOf({ ...n }) : null;
+export function worstOfNode(n: NodeResult | undefined | null): "fatal" | "error" | "warning" | null {
+  return worstOf(n);
 }
 
 /** one message as a line: `UVM_ERROR [SB_NOEXP] ×102 — text (file:84, test.1)` */
 export function messageLine(m: ResultMessage): string {
   const sev = `UVM_${m.severity.toUpperCase()}`;
-  const where = [m.file ? `${m.file.replace(/^.*[\/]/, "")}${m.line ? `:${m.line}` : ""}` : "", m.run]
-    .filter(Boolean)
-    .join(", ");
+  const base = m.file ? m.file.replace(/^.*[\\/]/, "") : "";
+  const where = [base ? `${base}${m.line ? `:${m.line}` : ""}` : "", m.run].filter(Boolean).join(", ");
   return `${sev} [${m.id}]${m.count > 1 ? ` ×${m.count}` : ""} — ${m.message}${where ? ` (${where})` : ""}`;
+}
+
+/** `✕ 3` / `! 2`: failures first — a block with errors shows them, not its warnings */
+export function countLabel(n: Pick<NodeResult, "fatals" | "errors" | "warnings">): string {
+  const bad = n.fatals + n.errors;
+  return bad ? `✕ ${bad}` : `! ${n.warnings}`;
 }
 
 /** the header's sentence: the VERDICTS of the runs (never an error count: a
@@ -531,25 +777,47 @@ export function resultsChip(
   return { text, tone };
 }
 
+export interface ReportState {
+  snapshot: ResultsSnapshot;
+  dir: string;
+  /** the newest verdict's time (ms), or null */
+  at: number | null;
+  /** runs counted by verdict only (a log too large, or beyond the run limit) */
+  unparsed: number;
+}
+
 /**
  * The results as a document (the "Simulation results" report): the runs, then
  * every element with its folded messages, worst first, then the coverage
- * figures. `stale` and `unparsed` are SAID at the top — a report that looks
- * complete and is not is the failure this row must not have.
+ * figures. What makes the picture incomplete — stale, old coverage, runs
+ * without a verdict, logs not parsed, reports not recognised — is SAID at the
+ * top: a report that looks complete and is not is the failure this row must
+ * not have.
  */
 export function resultsReport(
-  state: { snapshot: ResultsSnapshot; dir: string; at: number | null; unparsed: number },
-  opts: { name: string; stale: boolean }
+  state: ReportState,
+  opts: { name: string; stale: boolean; covStale?: boolean }
 ): string {
   const s = state.snapshot;
+  const other = s.runs.length - s.passed - s.failed;
   const lines: string[] = [`# Simulation results — ${opts.name}`, ""];
   lines.push(
     `${s.runs.length} run${s.runs.length === 1 ? "" : "s"}: ${s.passed} passed, ${s.failed} failed` +
+      (other ? `, ${other} without a verdict (still running, or stopped)` : "") +
       (state.at !== null ? ` — ${new Date(state.at).toISOString().replace("T", " ").slice(0, 16)} UTC` : "")
   );
   lines.push("", `Read from \`${state.dir}\`. Nothing here was run by the extension.`);
   if (opts.stale) {
-    lines.push("", "**Stale:** the configuration changed after these runs — they describe an older bench.");
+    lines.push(
+      "",
+      "**Stale:** the configuration changed after at least one of these runs — they describe an older bench."
+    );
+  }
+  if (opts.covStale) {
+    lines.push(
+      "",
+      "**Old coverage:** the coverage summary is older than the runs (or than the configuration) — it was not rewritten by this regression."
+    );
   }
   if (state.unparsed) {
     lines.push(
@@ -557,9 +825,15 @@ export function resultsReport(
       `**Partial:** ${state.unparsed} log${state.unparsed === 1 ? " was" : "s were"} not parsed (too large, or beyond the run limit) — those runs count by verdict only.`
     );
   }
+  if (s.missed) {
+    lines.push(
+      "",
+      `**Partial:** the simulator counted ${s.missed} more warning / error / fatal report${s.missed === 1 ? "" : "s"} than could be read from the logs — ${s.missed === 1 ? "it is" : "they are"} on no block.`
+    );
+  }
   lines.push("", "## Runs", "", "| test | seed | status |", "| --- | --- | --- |");
   for (const r of s.runs) {
-    lines.push(`| ${r.test} | ${r.seed || "—"} | ${r.status} |`);
+    lines.push(`| ${r.test} | ${r.seed || "—"} | ${r.status === "UNKNOWN" ? "no verdict" : r.status} |`);
   }
   const elements = Object.entries(s.elements)
     .filter(([id]) => !/^agent:[^:]+:u\./.test(id)) // a unit is already in its agent
@@ -583,7 +857,7 @@ export function resultsReport(
     const shown = e.messages.reduce((n, m) => n + m.count, 0);
     const all = e.fatals + e.errors + e.warnings;
     if (all > shown) {
-      lines.push(`- … and ${all - shown} more of other kinds (see the logs)`);
+      lines.push(`- … and ${all - shown} more of other, less severe kinds (see the logs)`);
     }
     lines.push("");
   }

@@ -2138,3 +2138,15 @@ svg.res-stale .result-badge rect { stroke-dasharray: 3 2; }
   background: color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 18%, transparent);
 }
 .results-chip.stale { border-style: dashed; opacity: 0.8; }
+.results-chip.elsewhere.sev-error,
+.results-chip.elsewhere.sev-fatal {
+  border-color: var(--vscode-editorError-foreground, #f14c4c);
+  background: color-mix(in srgb, var(--vscode-editorError-foreground, #f14c4c) 18%, transparent);
+}
+.results-chip.elsewhere.sev-warning {
+  border-color: var(--vscode-editorWarning-foreground, #cca700);
+  background: color-mix(in srgb, var(--vscode-editorWarning-foreground, #cca700) 18%, transparent);
+}
+/* a coverage figure older than the runs or the configuration */
+.result-badge.cov-stale { opacity: 0.55; }
+.result-badge.cov-stale rect { stroke-dasharray: 3 2; }

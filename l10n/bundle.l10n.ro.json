@@ -226,5 +226,6 @@
   "QuickUVM Architect: no simulation results under {0} — run the regression there (`make regress` in the generated bench); the extension only reads them.": "QuickUVM Architect: niciun rezultat de simulare sub {0} — rulează regresia acolo (`make regress` în bench-ul generat); extensia doar le citește.",
   "QuickUVM Architect: no active configuration — nothing to read results for.": "QuickUVM Architect: nicio configurație activă — nu există rezultate de citit.",
   "QuickUVM Architect: there are no simulation results to report.": "QuickUVM Architect: nu există rezultate de simulare de raportat.",
-  "QuickUVM Architect: {0} is not in the generated bench.": "QuickUVM Architect: {0} nu se află în bench-ul generat."
+  "QuickUVM Architect: {0} is not in the generated bench.": "QuickUVM Architect: {0} nu se află în bench-ul generat.",
+  "QuickUVM Architect: the simulation results under {0} are of DUT \"{1}\", not of the active configuration — not shown.": "QuickUVM Architect: rezultatele de simulare de sub {0} sunt ale DUT-ului „{1}”, nu ale configurației active — nu sunt afișate."
 }

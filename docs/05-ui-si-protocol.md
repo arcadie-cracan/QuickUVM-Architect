@@ -691,49 +691,81 @@ mesajele tot aici, la implementare.
   `runs/<test>.<seed>/{status, test.txt, seed.txt, sim.log}` and
   `cov/summary.txt` (imc's text summary) — when they change (a watcher on the
   `status` files and the summary: what a finished run writes last), on
-  "Refresh Simulation Results", and when the configuration changes (the
-  attribution depends on the element names; the files are not re-read for
-  that). The parsing and the attribution are pure (`src/results.ts`,
-  `test:results`, on logs of real Xcelium runs): a UVM report names its
-  reporter by hierarchical path, and the generator's instance names are a
-  function of the configuration (`<agent>_agnt[.drv|.mon|.sqr]`, the
-  scoreboard's name, `<agent>_cov_h`, `vsqr`), so a report is attributed
-  EXACTLY, by path — never by a pattern on its text. A report from outside the
-  test (`reporter`) goes to the owner of its source file (the manifest), else
-  to the environment: a report is never dropped. The run's verdict is the
-  Makefile's (`status`); without it, the same rule on the log (`$finish`
-  reached, no error, no fatal); a log without the report server's summary is a
-  FAIL, never a pass.
-  One message, `results/full {results, at, stale, unparsed}` (host → panel,
-  whole, on every change; `results: null` = nothing to show). On the level on
-  screen (`levelResults`): a count pill at a block's bottom-right corner —
-  `✕ n` for errors and fatals, `! n` for warnings alone — with the block's
-  outline in the severity's colour; the pill's tooltip lists the folded
-  messages, a click opens a menu of them (each opens the source line that
-  raised it, looked up by file name under the generated bench — the
-  `openResultSource {file, line}` action) and "Open the results report". A
-  coverage figure sits at the bottom-left of the blocks that have one: `cg` on
-  a coverage collector, `block` / `expr` / `toggle` on the DUT. A result is
-  drawn on the block that REPRESENTS its element on that level: its own block
-  where there is one; at the testbench level the Env block carries everything
-  inside it; at an agent's level its units carry theirs. Coverage is never
-  summed upwards. The header shows the runs' VERDICTS ("Runs: 3/4 passed"),
-  never an error count; a click opens the report — a read-only document
-  (`quickuvm.showResults`, the `showResults` action): the runs, every element
-  worst first with its folded messages, the coverage figures.
-  Three things are always SAID, never implied: **stale** — the configuration
-  was edited or saved after the newest verdict: the chip says "(stale)", the
-  pills are dimmed and dashed, no outline is tinted, the report opens with it;
-  **partial** — a log above 16 MB, or runs beyond the first 200, count by
-  verdict only (`unparsed`, on the chip's tooltip and in the report); and
-  **absent** — with no `out/runs` there is no chip and no pill: a bench that
-  was never simulated is not a bench that passed. "Hide Simulation Results"
-  hides the results that are there now; different ones (another regression)
-  show again. The result pills are a session's reading, not content: the SVG
-  export leaves them out, and a block with a failing result is never hidden by
-  a filter rule (R23) — it is dimmed. The per-file editor shows no results:
-  they are the ACTIVE bench's (its output directory), like the generation
-  manifest.
+  "Refresh Simulation Results", and when the configuration or the resolved
+  topology changes (the attribution depends on the element names; the files
+  are not re-read for that, and a run whose files did not change is not parsed
+  again). The parsing and the attribution are pure (`src/results.ts`,
+  `test:results`, on logs of real Xcelium runs).
+  **The verdict of a run is its `status` file and nothing else.** The Makefile
+  writes it after the simulator exits, so a run without one is in flight (or
+  was stopped): "without a verdict", exactly as the Makefile's own summary
+  skips it — its half-written log is never judged. Reports are folded by KIND
+  while the log is read (severity, reporter, id, source line; a log of a
+  hundred thousand mismatches is a handful of entries, and nothing of its text
+  is kept in memory). Only the report server's output is trusted: its report
+  lines and its "Report counts by severity" block — not the report catcher's
+  "caught" numbers, which are 0 on a failing run.
+  **Attribution** is by the reporter's hierarchical PATH first: the
+  generator's instance names follow from the configuration (probed per mode on
+  quick-uvm 1.1.0): `<agent>_agnt[.drv|.mon|.sqr]` (a sequence reports as
+  `sqr@@<sequence>`), a named scoreboard by its name, an unnamed or inferred
+  one as `sbd`, a declared collector as `<agent>_cov_h` and the implicit
+  mode's as `cov`, `vsqr`, `probe_mon`, a sub-environment by its name, and —
+  on a bench whose one agent is replicated or instantiated —
+  `<handle>_agnt` / `<handle>_sb`. A path that names nothing known, or is not
+  under the test at all (`reporter`), goes to the OWNER of the report's source
+  file (the generation manifest), and only then to the environment: a report
+  is never dropped, and never matched by a pattern on its text.
+  One message, `results/full {results, at, stale, covStale, unparsed}` (host →
+  panel, whole, on every change; `results: null` = nothing to show). On the
+  level on screen (`levelResults`): a count pill at a block's bottom-right
+  corner — `✕ n` for errors and fatals, `! n` for warnings alone — with the
+  block's outline in the severity's colour; the pill's tooltip lists the
+  folded messages (at most 12 kinds, the WORST kept: a late fatal is not
+  dropped behind earlier warnings), a click opens a menu of them (each opens
+  the source line that raised it, looked up by file name under the generated
+  bench — the `openResultSource {file, line}` action) and "Open the results
+  report"; the click does not select the block. A coverage figure sits at the
+  bottom-left of the blocks that have one, worded to fit the block: `cg` on a
+  coverage collector, `block` / `expr` / `toggle` on the DUT — summed over the
+  DUT's SUBTREE (imc's rows are per instance). A result is drawn on the block
+  that REPRESENTS its element on that level: its own block where there is one;
+  at the testbench level the Env block carries everything inside it; at an
+  agent's level its units carry theirs. What was reported and has NO block on
+  the level (the environment's own reports at the Env level, the rest of the
+  bench inside an agent) is a second chip in the header — "✕ n not on this
+  level" — so no level looks clean because its problems are drawn elsewhere.
+  Coverage is never summed upwards. The header shows the runs' VERDICTS
+  ("Runs: 3/4 passed, 1 without a verdict"), never an error count; a click
+  opens the report — a read-only document (`quickuvm.showResults`, the
+  `showResults` action): the runs, every element worst first with its folded
+  messages, the coverage figures.
+  What makes the picture incomplete is always SAID, never implied:
+  **stale** — the configuration has unsaved edits or was saved after the
+  OLDEST verdict shown (one fresh run does not vouch for the old ones): the
+  chip says "(stale)", the pills are dimmed and dashed, no outline is tinted,
+  the report opens with it; **old coverage** (`covStale`) — the summary is
+  older than the newest verdict (a later run did not rewrite it: `COV=0`, a
+  single `make run`) or than the configuration: the coverage pills are dimmed,
+  the chip's tooltip and the report say so; **partial** — a log above 16 MB,
+  or runs beyond the first 200, count by verdict only (`unparsed`), and
+  reports the simulator counted that could not be read from the log
+  (`missed`: a line format the parser does not know) are on no block — both
+  on the chip's tooltip and in the report; **another bench's** — the runs say
+  which DUT they covered (`-covscope`), and when that is not the active
+  configuration's DUT nothing is shown (`quickuvm.outputDir` is one folder for
+  the workspace; "Refresh Simulation Results" says whose results they are);
+  and **absent** — with no `out/runs` there is no chip and no pill: a bench
+  that was never simulated is not a bench that passed. "Hide Simulation
+  Results" hides the regression that is there now; another one shows again.
+  The result pills are a session's reading, not content: the SVG export leaves
+  them out, and a block with a failing result is never hidden by a filter rule
+  (R23) — it is dimmed. The per-file editor shows no results (and offers no
+  results command): they are the ACTIVE bench's, like the generation manifest.
+  Known limits of this slice: the `$finish` line, `-covscope` and the coverage
+  summary are Xcelium's and imc's (the UVM report format is the
+  simulator-independent part); a run without coverage cannot be told from
+  another bench's; a hand-edited generated file is not "stale".
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU
