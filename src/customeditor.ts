@@ -354,6 +354,14 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         case "view/pins":
           this.layout.viewPins(m.viewId, m.hidden);
           break;
+        case "view/annotations":
+          // docs/08 R21 — the secondary notation goes into the SHARED sidecar
+          this.layout.annotationsSet(m.viewId, {
+            frames: m.frames,
+            notes: m.notes,
+            colors: m.colors,
+          });
+          break;
         case "node/flipped":
           this.layout.nodeFlipped(m.viewId, m.nodeId, m.flipH, m.flipV);
           break;

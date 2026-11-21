@@ -14,11 +14,16 @@
 
 import { parse, stringify } from "yaml";
 import type { ProjectModel } from "./model";
-import type {
-  SidecarData,
-  SidecarNode,
-  SidecarOrphan,
-  SidecarView,
+import {
+  ANNOT_COLORS,
+  type AnnotColor,
+  type SidecarData,
+  type SidecarFrame,
+  type SidecarNode,
+  type SidecarNote,
+  type SidecarOrphan,
+  type SidecarView,
+  type ViewAnnotations,
 } from "./protocol";
 import { buildSchematicScene } from "./webview/scene";
 
@@ -81,6 +86,22 @@ export function serializeSidecar(data: SidecarData): string {
     if (v.hidePins) {
       out.hidePins = true; // docs/08 R18: a view-level override
     }
+    // docs/08 R21 — the secondary notation (this function WHITELISTS what it
+    // copies: a key not named here is lost at the first save)
+    if (v.frames && Object.keys(v.frames).length) {
+      const frames: Record<string, SidecarFrame> = {};
+      for (const k of Object.keys(v.frames).sort()) {
+        frames[k] = v.frames[k];
+      }
+      out.frames = frames;
+    }
+    if (v.notes && Object.keys(v.notes).length) {
+      const notes: Record<string, SidecarNote> = {};
+      for (const k of Object.keys(v.notes).sort()) {
+        notes[k] = v.notes[k];
+      }
+      out.notes = notes;
+    }
     views[viewId] = out;
   }
   return stringify(
@@ -106,6 +127,18 @@ function nodeOf(data: SidecarData, viewId: string, nodeId: string): SidecarNode 
   return n;
 }
 
+/** does the view hold no override of any kind? Every view-level key must be
+ *  named HERE: a view judged empty is deleted with whatever it still holds */
+function viewEmpty(view: SidecarView): boolean {
+  return (
+    !view.nodes &&
+    !view.nets &&
+    !view.hidePins &&
+    !(view.frames && Object.keys(view.frames).length) &&
+    !(view.notes && Object.keys(view.notes).length)
+  );
+}
+
 /** deletes the entries left without content (the file holds only overrides) */
 function prune(data: SidecarData, viewId: string, nodeId?: string): void {
   const view = data.views[viewId];
@@ -115,6 +148,12 @@ function prune(data: SidecarData, viewId: string, nodeId?: string): void {
   if (view.nets && Object.keys(view.nets).length === 0) {
     delete view.nets;
   }
+  if (view.frames && Object.keys(view.frames).length === 0) {
+    delete view.frames;
+  }
+  if (view.notes && Object.keys(view.notes).length === 0) {
+    delete view.notes;
+  }
   if (nodeId && view.nodes) {
     const n = view.nodes[nodeId];
     if (
@@ -122,7 +161,8 @@ function prune(data: SidecarData, viewId: string, nodeId?: string): void {
       n.x === undefined &&
       n.collapsed === undefined &&
       n.flipH === undefined &&
-      n.flipV === undefined
+      n.flipV === undefined &&
+      n.color === undefined
     ) {
       delete view.nodes[nodeId];
     }
@@ -130,7 +170,7 @@ function prune(data: SidecarData, viewId: string, nodeId?: string): void {
       delete view.nodes;
     }
   }
-  if (!view.nodes && !view.nets && !view.hidePins) {
+  if (viewEmpty(view)) {
     delete data.views[viewId];
   }
 }
@@ -213,6 +253,110 @@ export function setHidePins(data: SidecarData, viewId: string, hidden: boolean):
     view.hidePins = true;
   } else {
     delete view.hidePins;
+  }
+  prune(data, viewId);
+  return data;
+}
+
+// ---------------------------------------- secondary notation (docs/08 R21)
+
+const isColor = (c: unknown): c is AnnotColor =>
+  typeof c === "string" && (ANNOT_COLORS as readonly string[]).includes(c);
+
+const TITLE_MAX = 80;
+const NOTE_MAX = 2000;
+
+/** the secondary notation of a view, as a detached copy (frames, notes, and
+ *  the node colours gathered from the node entries) */
+export function getAnnotations(data: SidecarData, viewId: string): ViewAnnotations {
+  const view = data.views[viewId];
+  const out: ViewAnnotations = { frames: {}, notes: {}, colors: {} };
+  for (const [id, f] of Object.entries(view?.frames ?? {})) {
+    out.frames[id] = { ...f, members: [...f.members] };
+  }
+  for (const [id, n] of Object.entries(view?.notes ?? {})) {
+    out.notes[id] = { ...n };
+  }
+  for (const [id, n] of Object.entries(view?.nodes ?? {})) {
+    if (n.color) {
+      out.colors[id] = n.color;
+    }
+  }
+  return out;
+}
+
+/**
+ * Replaces the secondary notation of a view with `a` (the webview sends the
+ * whole set after each gesture). What arrives is SANITISED, not trusted: the
+ * file is hand-editable and the message crosses a process boundary — a frame
+ * needs a title and at least one member (an empty frame is deleted: it has
+ * nothing to draw around), a note a finite position and some text, a colour a
+ * name from the palette. A node belongs to ONE frame: a later frame's claim on
+ * an already-framed member is dropped. Positions, folds and flips are untouched.
+ */
+export function setAnnotations(
+  data: SidecarData,
+  viewId: string,
+  a: ViewAnnotations
+): SidecarData {
+  const view = viewOf(data, viewId);
+  const frames: Record<string, SidecarFrame> = {};
+  const claimed = new Set<string>();
+  for (const id of Object.keys(a.frames ?? {}).sort()) {
+    const f = a.frames[id];
+    if (!/^frame:\d+$/.test(id) || !f || !Array.isArray(f.members)) {
+      continue;
+    }
+    const members: string[] = [];
+    for (const m of f.members) {
+      if (typeof m === "string" && m && !claimed.has(m)) {
+        claimed.add(m);
+        members.push(m);
+      }
+    }
+    if (!members.length) {
+      continue;
+    }
+    const frame: SidecarFrame = {
+      title: (typeof f.title === "string" ? f.title : "").trim().slice(0, TITLE_MAX),
+      members,
+    };
+    if (isColor(f.color)) {
+      frame.color = f.color;
+    }
+    frames[id] = frame;
+  }
+  const notes: Record<string, SidecarNote> = {};
+  for (const [id, n] of Object.entries(a.notes ?? {})) {
+    if (
+      !/^note:\d+$/.test(id) ||
+      !n ||
+      !Number.isFinite(n.x) ||
+      !Number.isFinite(n.y) ||
+      typeof n.text !== "string" ||
+      !n.text.trim()
+    ) {
+      continue;
+    }
+    const note: SidecarNote = { x: n.x, y: n.y, text: n.text.slice(0, NOTE_MAX) };
+    if (isColor(n.color)) {
+      note.color = n.color;
+    }
+    notes[id] = note;
+  }
+  view.frames = frames;
+  view.notes = notes;
+  // the colours live on the node entries: clear the old ones, set the new
+  for (const id of Object.keys(view.nodes ?? {})) {
+    if (view.nodes?.[id].color !== undefined) {
+      delete view.nodes[id].color;
+      prune(data, viewId, id);
+    }
+  }
+  for (const [id, c] of Object.entries(a.colors ?? {})) {
+    if (id && isColor(c)) {
+      nodeOf(data, viewId, id).color = c;
+    }
   }
   prune(data, viewId);
   return data;
@@ -351,6 +495,30 @@ export function invalidate(
       }
       continue;
     }
+    if (o.kind === "frame" || o.kind === "note") {
+      // docs/08 R21 — a note comes back with its view, a frame once one of its
+      // members is a key of the view again; an id taken meanwhile keeps the
+      // newer annotation (the orphan is dropped, as for a node)
+      const keys = keysFor(o.view);
+      const back =
+        keys !== null &&
+        (o.kind === "note" ||
+          (o.value as SidecarFrame).members.some((m) => keys.has(m)));
+      if (!back) {
+        still.push(o);
+        continue;
+      }
+      const view = viewOf(data, o.view);
+      if (o.kind === "note") {
+        if (!view.notes?.[o.node]) {
+          (view.notes ??= {})[o.node] = o.value as SidecarNote;
+        }
+      } else if (!view.frames?.[o.node]) {
+        (view.frames ??= {})[o.node] = o.value as SidecarFrame;
+      }
+      changed = true;
+      continue;
+    }
     const keys = keysFor(o.view);
     if (keys?.has(o.node)) {
       const existing = data.views[o.view]?.nodes?.[o.node];
@@ -413,15 +581,43 @@ export function invalidate(
     // docs/08 R18 — a view-level override (`hidePins`) is not a node: it stays
     // while the view is a view. A LEAF instance has no schematic keys (`keys ===
     // null`) but its symbol is a valid view, so the override on it stays too —
-    // the first cut lost the DUT's hidden pins on every recompile (review finding)
+    // the first cut lost the DUT's hidden pins on every recompile (review finding).
+    // docs/08 R21: the same for its frames and notes (the leaf's boundary view
+    // can carry them, and there are no keys to judge a frame's members by)
+    const hasAnnot = !viewEmpty({ frames: view.frames, notes: view.notes });
     const leafView =
-      keys === null && Boolean(view.hidePins) && model.instances.some((i) => i.path === viewId);
+      keys === null &&
+      (Boolean(view.hidePins) || hasAnnot) &&
+      model.instances.some((i) => i.path === viewId);
+    if (keys !== null) {
+      // docs/08 R21 — a frame none of whose members is a key any more has
+      // nothing to draw around: it migrates WHOLE (title, colour, members), and
+      // comes back when a member does. A frame with one live member stays, its
+      // dead member ids inert — they are restored with their nodes, not pruned
+      for (const [id, f] of Object.entries(view.frames ?? {})) {
+        const live = f.members.some((m) => keys.has(m) || Boolean(view.notes?.[m]));
+        if (!live) {
+          data.orphans.push({ view: viewId, node: id, kind: "frame", value: f, lastSeen: today });
+          delete view.frames![id];
+          changed = true;
+        }
+      }
+      if (view.frames && Object.keys(view.frames).length === 0) {
+        delete view.frames;
+      }
+    }
     if (keys === null && !leafView) {
       // the view itself disappeared: the positions migrated into orphans (the
-      // protected asset, docs/04)
+      // protected asset, docs/04) — and so do its frames and notes (R21)
+      for (const [id, f] of Object.entries(view.frames ?? {})) {
+        data.orphans.push({ view: viewId, node: id, kind: "frame", value: f, lastSeen: today });
+      }
+      for (const [id, n] of Object.entries(view.notes ?? {})) {
+        data.orphans.push({ view: viewId, node: id, kind: "note", value: n, lastSeen: today });
+      }
       delete data.views[viewId];
       changed = true;
-    } else if (!view.nodes && !view.nets && !view.hidePins) {
+    } else if (viewEmpty(view)) {
       delete data.views[viewId];
     }
   }

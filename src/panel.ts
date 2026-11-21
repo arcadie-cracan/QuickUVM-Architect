@@ -8,7 +8,7 @@ import { resolveLocPath } from "./filelistops";
 import { Loc, ProjectModel } from "./model";
 import type { QuvmConfig } from "./quickuvm";
 import type { ResolvedConfig } from "./resolved";
-import type { ElementCard, ProposalSet } from "./protocol";
+import type { ElementCard, ProposalSet, ViewAnnotations } from "./protocol";
 import {
   ActionKind,
   GenerateStatus,
@@ -41,6 +41,8 @@ export interface LayoutDeps {
   /** docs/08 R18 — a TB block collapsed to its header; an RTL view's pins hidden */
   nodeCollapsed(viewId: string, nodeId: string, collapsed: boolean): void;
   viewPins(viewId: string, hidden: boolean): void;
+  /** docs/08 R21 — the view's frames, notes and node colours, replaced whole */
+  annotationsSet(viewId: string, a: ViewAnnotations): void;
 }
 
 export interface PanelDeps {
@@ -410,6 +412,14 @@ export class DiagramPanel {
         break;
       case "view/pins":
         this.deps.layout?.viewPins(m.viewId, m.hidden);
+        break;
+      case "view/annotations":
+        // docs/08 R21 — frames, notes and node colours of the view, whole
+        this.deps.layout?.annotationsSet(m.viewId, {
+          frames: m.frames,
+          notes: m.notes,
+          colors: m.colors,
+        });
         break;
       case "net/render":
         this.deps.layout?.netRender(m.viewId, m.net, m.render);

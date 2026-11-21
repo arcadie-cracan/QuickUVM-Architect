@@ -9,7 +9,7 @@ import * as fs from "fs";
 import * as path from "path";
 import * as vscode from "vscode";
 import type { ProjectModel } from "./model";
-import type { SidecarData } from "./protocol";
+import type { SidecarData, ViewAnnotations } from "./protocol";
 import {
   cleanOrphans,
   clearPositions,
@@ -17,6 +17,7 @@ import {
   invalidate,
   parseSidecar,
   serializeSidecar,
+  setAnnotations,
   setCollapsed,
   setFlip,
   setFold,
@@ -80,6 +81,13 @@ export class LayoutStore implements vscode.Disposable {
   /** docs/08 R18 — a TB block collapsed to its header (per level) */
   nodeCollapsed(viewId: string, nodeId: string, collapsed: boolean): void {
     setCollapsed(this.data, viewId, nodeId, collapsed);
+    this.scheduleSave();
+  }
+
+  /** docs/08 R21 — the secondary notation of a view (frames, notes, colours),
+   *  replaced whole */
+  annotationsSet(viewId: string, a: ViewAnnotations): void {
+    setAnnotations(this.data, viewId, a);
     this.scheduleSave();
   }
 
