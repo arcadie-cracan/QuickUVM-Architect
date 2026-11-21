@@ -125,7 +125,7 @@ npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, 
 npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
 npm run test:preview     # the diff preview (docs/08 R19): the +/- line summary of a gesture, the files that change
 npm run test:trace       # diagram <-> generated code (docs/08 R20): file owner, identifier pattern, lit lines, lenses, report
-npm run test:e2e         # yamlops -> quick-uvm generate real (cere quick-uvm)
+npm run test:e2e         # yamlops -> real quick-uvm generate + the elaboration lint of every generated top (needs quick-uvm)
 ```
 
 F5 în VSCode (configurația "Rulează extensia (examples/)") deschide un
@@ -301,10 +301,11 @@ coliziunea de nume.
   (regresie reală pe common_cells). Sufixele active-jos includ `_ni`/`_bi`
   (convenția PULP — `src_rst_ni`); nu restrânge regexul la `_n|_b` —
   `ACTIVE_LOW_RE` stă în `src/heuristics.ts` (pur) și e blocat de
-  `test:heuristics`. ATENȚIE 1.0: polaritatea/externalitatea NU se mai scriu
-  pe `dut` (`reset_active_low`/`external_reset` sunt RESPINSE cu eroare-ghid)
-  — `setDut` scrie maparea TOP-LEVEL `reset: {active_low, external}` și nu
-  atinge o LISTĂ `reset:` scrisă de mână (domenii multi-reset).
+  `test:heuristics`. NOTE 1.0: the polarity/externality are no longer written
+  on `dut` (`reset_active_low`/`external_reset` are REJECTED with a teaching
+  error) — `setDut` writes the TOP-LEVEL mapping `reset: {active_low, external}`
+  and does not touch a hand-written `reset:` LIST (multi-reset domains);
+  `external` is DERIVED, not asked (the reset pitfall below, D25).
 - **Validarea compunerii (`subenvs`) s-a călit în quick-uvm** (re-sondat pe
   build-ul curent 0.9.2, iul. 2026 — utilizatorul a mai lucrat la generator;
   `models.py` a crescut de la ~2600 la 3216 de linii). Reguli DURE noi de care
@@ -332,6 +333,51 @@ coliziunea de nume.
   gestul compune blocul + FRAȚII lui în părintele imediat (≥2). Restul faptelor
   despre probe (cele 3 bug-uri, regulile de validare) rămân VALIDE pe acest
   build — re-confirmate empiric.
+- **`generate` exiting 0 is NOT "the bench elaborates" — and the reset is where it
+  bit** (Nov 2026, D25). The MVP was validated on the generator's exit code; the
+  first real compile of the tutorial bench (Xcelium 25.09) failed at
+  elaboration: `tb_top` connected the DUT to `cmd_if_inst.rst_n`, a signal
+  `cmd_if` does not have. Probed on quick-uvm 1.1.0 (the table is
+  `docs/quickuvm-schema-reference.md` §1.4.1): a single-reset bench has two
+  WORKING shapes — `reset: {external: true}` (tb_top declares the net, drives it
+  from a generated `initial` block with the polarity honoured, passes it into
+  every interface) or the port among an agent's ports (a field of that agent's
+  sequence item) — and a third that validates, exits 0 and does not elaborate:
+  neither. Architect keeps reset pins out of agents (the reset role), so the
+  third shape was EVERY Architect bench with a reset. Rules that follow, each
+  locked by a test: (1) `reset.external` means external to the AGENTS — `true`
+  is the shape where the testbench top DOES generate the reset; the schema
+  reference, docs/03 and the inspector's "Driven by" labels all had it backwards.
+  (2) `setDut` DERIVES `external: true` (`resetNeedsExternal` in
+  `src/yamlops.ts`: a reset port, a clocked DUT, no agent declaring the port) —
+  `DutSpec.externalReset` and the "External reset" checkbox are gone; do not
+  reintroduce a choice whose other answer is a broken bench. (3) Never clean
+  `external: true` away as a "default": `collapseResets` restores it,
+  `addResetDomain` drops it only because a LIST is always top-driven (and
+  refuses an AGENT-driven reset — quick-uvm rejects the agent port that collides
+  with the domain net; the old refusal of an EXTERNAL reset was the inverted
+  reading, and would now block every bench). (4) The walls: `combinational` +
+  `external: true` is refused and a combinational DUT's reset is left
+  unconnected (so "Set as DUT" assigns no reset on a combinational DUT);
+  `external: true` + an agent port is refused; in a composition a NON-external
+  clocked leaf gets no reset connection at all in the subsystem top (floating,
+  no error). (5) Old configs: `reset-undriven` (`undrivenReset` in
+  `src/configcheck.ts`, an ERROR, `test:configcheck`) on the reset pin and on
+  Env, repaired by `editReset set external true` — the badge fix, the Problems
+  quick-fix (`ConfigFixProvider`, command `quickuvm.fixResetUndriven`) and the
+  inspector row are ONE gesture. It is silent for a combinational DUT, a pure
+  subsystem top, a bench with a `from_vip` agent, and a DUT the model knows not
+  to have the port (an absent `dut.reset` defaults to `rst_n` in the generator:
+  flagged without a model, not when the model says there is no such pin).
+  `setResetDomainField` returns the ORIGINAL text on a no-op. (6) `test:e2e`
+  lints every generated top (`lintDutConnections`: each signal connected to a
+  DUT port must be declared in the top or in the interface it is taken from),
+  compares the tutorial's YAML listing with what the mutations write, and keeps
+  the old shape as a mutation proof — when a quick-uvm release refuses it, that
+  branch says "fixed upstream" (the gap is written up in
+  `docs/upstream-quickuvm-reset-undriven.md`). The lint proves declarations,
+  not behaviour: only a simulator proves the bench runs, and the extension has
+  none — say "generates", never "works", about anything not compiled.
 - **Blocul `analysis:` comută QuickUVM între mod implicit și declarat**
   (probat pe 0.9.2, RE-CONFIRMAT pe 1.0.0; `test:e2e` scenariul 4): FĂRĂ cheia `analysis:`, generatorul intră în
   mod **implicit** și auto-cablează un scoreboard ȘI un colector de coverage la
@@ -1136,4 +1182,9 @@ editors, `quickuvm.codeFollowsSelection` docks its primary file beside, a
 CodeLens per generated file leads back to the verification view (inferred
 elements flagged), `quickuvm.traceabilityReport`; `src/trace.ts` +
 `test:trace`, `src/trace-service.ts`.
+**The reset mapping was corrected** (Nov 2026, D25): the tutorial bench generated
+cleanly and did not elaborate. `setDut` now writes `reset: {external: true}`
+(derived), old configs get the `reset-undriven` error with its repair, and
+`test:e2e` lints every generated top; see the pitfall above. "MVP validated"
+means validated against the generator — a simulator compile is the user's.
 Planul complet: `docs/06-plan-mvp.md`.

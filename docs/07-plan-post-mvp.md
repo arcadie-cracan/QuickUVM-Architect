@@ -551,9 +551,15 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
 - **P4b LIVRAT — domenii de reset.** Simetric cu ceasurile, plus două invariante pe
   care ceasurile nu le au: sub LISTĂ `dut.reset` numește un DOMENIU declarat (nu un
   port), iar poarta `clock:` a unui domeniu trebuie să numească un domeniu de ceas
-  declarat. Trei lucruri ieșite din construcție: (a) `external` există DOAR pe maparea
-  simplă — intrările din listă resping cheia, deci conversia unui reset extern e
-  REFUZATĂ în loc să piardă tăcut faptul că TB-ul nu conduce resetul; (b) redenumirea
+  declarat. Trei lucruri ieșite din construcție: (a) `external` exists ONLY on the
+  single mapping — list entries reject the key. **Corrected Nov 2026**: the
+  conversion of an external reset used to be REFUSED, on the reading that
+  `external` meant "the TB does not drive the reset". It means the opposite (the
+  testbench TOP drives it — docs/03, "Who drives the reset"), and a list is
+  always top-driven, so the conversion now simply drops the key; what is refused
+  instead is converting an AGENT-driven reset (quick-uvm rejects the agent port
+  that collides with the domain net), and collapsing a list restores
+  `external: true`; (b) redenumirea
   unui domeniu **cascadează** peste `dut.reset` și peste agenții porniți de el
   (dovedit prin mutație: fără cascadă, quick-uvm refuză); (c) un reset cu totul
   implicit nu scrie niciun bloc `reset:`, deci prima abatere trebuie să-l CREEZE —

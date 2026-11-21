@@ -7,20 +7,67 @@ QuickUVM (secțiunea "Config format") și modelele Pydantic din
 *editează*, nu îl deține — orice câmp pe care extensia nu îl înțelege se
 păstrează neatins la rescriere (editări chirurgicale, nu serializare completă).
 
-## Desemnarea DUT-ului
+## Designating the DUT
 
-Selecție: un bloc (instanță sau definiție) → comanda "Setează ca DUT".
+Selection: a block (instance or definition) → the "Set as DUT" command.
 
-| Sursă în model | Câmp YAML | Regulă |
+| Source in the model | YAML field | Rule |
 |---|---|---|
-| `instances[].module` | `dut.name` | numele definiției, nu al instanței |
-| port cu nume `clk*`/`*clk*`, width=1, dir=in | `dut.clock` + `clock:` | euristic; chip de confirmat în UI, niciodată aplicat tacit |
-| port `rst*`/`*rst*`, width=1, dir=in | `dut.reset` | polaritate: sufix `_n`/`_b` → `reset_active_low: true` |
-| niciun candidat de ceas | `dut.combinational: true` | propus, confirmat de utilizator |
-| resetul nu e port al DUT | `dut.external_reset` | decizie explicită a utilizatorului (checkbox), nu euristică |
+| `instances[].module` | `dut.name` | the definition's name, not the instance's |
+| port named `clk*`/`*clk*`, width=1, dir=in | `dut.clock` + `clock:` | heuristic; a chip to confirm in the UI, never applied silently |
+| port `rst*`/`*rst*`, width=1, dir=in | `dut.reset` (the port NAME only) | heuristic, confirmed like the clock; only on a clocked DUT |
+| the reset's polarity | top-level `reset: {active_low: false}` | suffix `_n`/`_b`/`_ni`/`_bi` → active-low, which is QuickUVM's default and writes nothing; only an active-high reset writes the key |
+| who drives the reset | top-level `reset: {external: true}` | **derived, not asked** — written whenever no agent declares the reset port (see below) |
+| no clock candidate | `dut.combinational: true`, `dut.reset: ''` | proposed, confirmed by the user; a combinational DUT gets no reset |
 
-Porturile alese ca ceas/reset primesc rol distinct în overlay și sunt excluse
-din maparea pe agenți.
+The ports chosen as clock/reset get a distinct role in the overlay and are
+excluded from the mapping onto agents.
+
+### Who drives the reset — and what "external" means
+
+`reset.external` is QuickUVM's word, and it does **not** mean "the reset is not
+a DUT port" (the meaning this document gave it until Nov 2026, under the
+pre-1.0 key `dut.external_reset`). It means *external to the agents*: the
+testbench top drives the reset instead of an agent. Probed on quick-uvm 1.1.0 —
+the single-reset mapping has exactly three shapes, two of which work:
+
+| Shape | What `tb_top.sv` gets | Verdict |
+|---|---|---|
+| `reset: {external: true}` | `logic rst_n;`, a generated `initial` block (assert, 5 clocks, deassert — the polarity follows `active_low`), every interface declared `(input clk, input rst_n)`, drivers/monitors wait for the release | **what Architect writes** |
+| not external, an agent declares the port (`ports.inputs`) | the port is a field of that agent's sequence item, driven like any stimulus; the DUT is wired to that agent's interface | legal, hand-written only (it is the shape of quick-uvm's own `init` scaffold) |
+| not external, **no** agent declares the port | `.rst_n(<first agent>_if_inst.rst_n)` — a signal that interface does not have. `generate` exits 0; **elaboration fails** | the `reset-undriven` finding |
+
+Architect keeps the reset pin out of every agent (the role above), so the third
+shape is what *every* Architect bench with a reset used to be — including the
+tutorial's. `setDut` (`src/yamlops.ts`) now derives `external: true` from the
+document (`resetNeedsExternal`): a reset port, a clocked DUT, no agent that
+declares the port. The same rule on the neighbouring gestures: collapsing a
+one-domain reset list restores `external: true`; adding a reset domain drops it
+(under a LIST the top drives every domain — that is what the list means, which
+is why the list entry schema has no `external`) and is refused when an agent
+declares the port (quick-uvm: "collides with a clock/reset net").
+
+The walls around it, all from the generator:
+
+- `combinational: true` + `reset: {external: true}` is **refused** ("a
+  combinational DUT has no reset"), and a combinational DUT's reset port is left
+  unconnected — so "Set as DUT" assigns no reset role on a combinational DUT;
+  the pin stays unmapped, for an agent or a waiver.
+- `external: true` + the port among an agent's ports is **refused** ("An
+  external reset must not also be an agent port").
+- the reset port cannot be waived (`dut.unverified_ports`): "the bench itself
+  drives it".
+- in a composition, a clocked leaf whose own config is **not** external gets no
+  reset connection at all in the subsystem top (the port floats — no error);
+  with `external: true` the top declares, drives and connects `<subenv>_<reset>`.
+
+Configs written before this are repaired by the validation
+(`reset-undriven` in `src/configcheck.ts`, an error): on the DUT's reset pin and
+on the Env box in the diagram, in the Problems panel on `dut.reset`, with the
+one-click fix "Let the testbench top drive it" (`editReset set external true`).
+It is silent where the YAML cannot tell: a combinational DUT, a pure subsystem
+top, a bench with a `from_vip` agent (its ports live in the VIP manifest), and a
+DUT the model knows not to have the port.
 
 ## Agenți din selecție de pini
 

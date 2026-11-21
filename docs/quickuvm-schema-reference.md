@@ -134,7 +134,43 @@ Value error, `reset:` (single-reset mapping) accepts ['active_low', 'external'] 
 | key | type | default |
 |-----|------|---------|
 | `active_low` | bool | `true` |
-| `external` | bool | `false` (`true`: the TB does not generate the reset; the environment/DUT drives it) |
+| `external` | bool | `false` — **corrected Nov 2026, see §1.4.1**: `true` = the testbench TOP generates the reset (external to the *agents*); `false` = an agent drives it and must declare the port |
+
+#### 1.4.1 Who drives the reset (probed on 1.1.0, Nov 2026) {#reset-driver}
+
+This row used to read "`true`: the TB does not generate the reset; the
+environment/DUT drives it". The generated code says the opposite, and the
+difference broke every Architect bench with a reset (Xcelium 25.09:
+`xmelab: *E,CUVUNF … Hierarchical name component lookup failed for 'rst_n'`).
+Generated and inspected, one variant at a time, on the tutorial bench
+(`dut: {name: yapp_buffer, clock: clk, reset: rst_n}`, agents `cmd`, `rsp`):
+
+| config | `tb_top.sv` | interfaces | exit |
+|---|---|---|---|
+| no `reset:` block, no agent declares `rst_n` | `.rst_n(cmd_if_inst.rst_n)` — **dangling** | `interface cmd_if (input clk);`, no `rst_n` anywhere | **0** |
+| the same with `dut.reset` absent (default `rst_n`) or `reset: {active_low: false}` | the same dangling reference | — | **0** |
+| `reset: {external: true}` | `logic rst_n;` + `initial begin rst_n = 1'b0; repeat (5) @(posedge clk); rst_n = 1'b1; end` (pragma `reset_generator`), `cmd_if cmd_if_inst (.clk(clk), .rst_n(rst_n))`, DUT `.rst_n(cmd_if_inst.rst_n)` | `(input clk, input rst_n)`; driver/monitor `wait (vif.rst_n === 1'b1)` | 0 |
+| `reset: {external: true, active_low: false}`, port `rst` | the same, asserted `1'b1`, released `1'b0` | — | 0 |
+| `rst_n` in the FIRST agent's `inputs` | `.rst_n(cmd_if_inst.rst_n)` | `logic rst_n;`, a clocking-block output; `rand bit rst_n` in the sequence item, `cmd_seq` constrains it to `'1`, coverage gets `dorst`/`norst` | 0 |
+| `rst_n` in the SECOND agent's `inputs` / in `outputs` / in `inouts` | wired to THAT agent's interface | declared there | 0 |
+| `reset:` LIST (`[{name: rst_n}]`, also with a second domain) | per-domain `logic` + `reset_generator_<name>` block, DUT `.rst_n(rst_n)` | `(input clk, input rst_n)` | 0 |
+| LIST + an agent declaring the port | — | — | 1: `agent 'cmd' port 'rst_n' collides with a clock/reset net of the same name` |
+| `external: true` + an agent declaring the port | — | — | 1: `` `reset: {external: true}` is set but dut.reset 'rst_n' is an agent port. An external reset must not also be an agent port `` |
+| `combinational: true` + `reset: rst_n` | no clock and **no reset connection** on the DUT | — | 0 |
+| `combinational: true` + `reset: {external: true}` | — | — | 1: `dut.combinational and `reset: {external: true}` are mutually exclusive (a combinational DUT has no reset)` |
+| `dut.unverified_ports: [rst_n]` | — | — | 1: `is the bench clock/reset net — the bench itself drives it` |
+| `reset_port: rst_n` on an agent that does not declare it | — | — | 1: `reset_port 'rst_n' is not one of its input ports` |
+| composition, clocked leaf **not** external | the leaf DUT gets `.clk(u_a_clk)` and **no reset connection** | — | 0 |
+| composition, clocked leaf `external: true` | `logic u_a_rst_n;` + `reset_generator_u_a_rst_n`, `.rst_n(u_a_rst_n)` | `(.clk(u_a_clk), .rst_n(u_a_rst_n))` | 0 |
+| pure subsystem top with `dut.reset: rst_n` (or absent) | byte-identical to `reset: ''` — ignored | — | 0 |
+
+So a single-reset bench has two working shapes — the top drives the reset
+(`external: true`), or an agent does (the port among its ports) — and one that
+validates and does not elaborate. **Architect writes `external: true`** whenever
+no agent declares the reset port (`resetNeedsExternal` in `src/yamlops.ts`) and
+reports the third shape (`reset-undriven`, `src/configcheck.ts`). The generator
+gap itself is written up for upstream in
+`docs/upstream-quickuvm-reset-undriven.md`.
 
 `reset:` list entries (`ResetConfig`): `{name: str (required), active_low: bool = true, clock: str|null}`.
 Under a list, `dut.reset` must name one of the domains:
@@ -528,6 +564,7 @@ generated trees on this commit.
 | `regress:` | presence adds `Makefile` (+ enables `tests[].seeds`) | file-set diff | removing it orphans `tests[].seeds` → now a **validation error** (§1.9); remove the seeds too |
 | `register_model:` | presence adds `reg_adapter.svh`, `<dut>_reg_test.svh` + env/test wiring | file-set diff | plain content key; safe to remove as a unit |
 | `clock:` / `reset:` | **mapping vs LIST are different modes** even at length 1 (list engages multi-domain nets/clkgen; proven: `clkgen.sv`+`tb_top.sv` differ) | tree diff | never collapse a 1-element list to a mapping (or vice versa) as a "cleanup" |
+| `reset: {external: …}` | **who drives the reset** (§1.4.1): `true` ⇒ tb_top's generated block; absent/`false` ⇒ an agent, which must declare the port — and if none does, a dangling reference, exit 0 | generate probe, Nov 2026 | never delete `external: true` as a "default cleanup" unless an agent declares the port |
 | `layout:` / `kind:` / `top_name:` | plain value knobs | — | no presence semantics |
 
 ---
