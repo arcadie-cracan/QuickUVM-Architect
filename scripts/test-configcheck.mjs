@@ -27,7 +27,7 @@ await esbuild.build({
     js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
   },
 });
-const { checkConfig, WIDTH_CODE } = await import(pathToFileURL(outFile));
+const { checkConfig, undrivenReset, RESET_CODE, WIDTH_CODE } = await import(pathToFileURL(outFile));
 
 let passed = 0;
 function test(name, fn) {
@@ -175,9 +175,10 @@ agents:
 });
 
 test("dut inexistent in model: warning; fara model, tacere", () => {
-  const r = check(`dut: { name: nope }\n`, MODEL);
+  // (`reset: ''`: the reset rule is YAML-internal and has its own tests below)
+  const r = check(`dut: { name: nope, reset: '' }\n`, MODEL);
   assert.deepEqual(kinds(r), ["dut-missing"]);
-  const noModel = check(`dut: { name: nope }\n`, undefined);
+  const noModel = check(`dut: { name: nope, reset: '' }\n`, undefined);
   assert.deepEqual(kinds(noModel), []);
 });
 
@@ -210,7 +211,7 @@ subenvs: [ { name: blk, config: blk.quickuvm.yaml } ]
 });
 
 test("R3: no finding when every endpoint names a declared agent; works without a model", () => {
-  const text = `dut: { name: soc_top }
+  const text = `dut: { name: soc_top, reset: '' }
 agents:
   - { name: a, ports: { inputs: [ { name: din, width: 8 } ] } }
   - { name: b, ports: { outputs: [ { name: sum, width: 8 } ] } }
@@ -242,6 +243,117 @@ analysis:
   assert.deepEqual(f[0].params, { sb: "sbd", field: "source", agent: "ghost", named: 0, node: "sbd#2" });
   // #3 has no source: not drawn at all (no `node`), still reported
   assert.deepEqual(f[1].params, { sb: "sbd", field: "monitor", agent: "ghost", named: 0 });
+});
+
+// --- reset-undriven (Nov 2026): the tutorial bench did not elaborate. quick-uvm
+// 1.1.0 wires the DUT's reset to `<first agent>_if_inst.<reset>` unless the
+// single-reset mapping is `external: true` or an agent declares the port — and
+// validates none of it (exit 0). Every shape below was generated and inspected.
+
+const RST_MODEL = {
+  modules: {
+    buf: {
+      ports: [
+        { name: "clk", width: 1 },
+        { name: "rst_n", width: 1 },
+        { name: "din", width: 8 },
+      ],
+    },
+  },
+};
+const AGENT = `agents:
+  - name: cmd
+    ports:
+      inputs: [ { name: din, width: 8 } ]
+`;
+const undriven = (r) => r.findings.filter((f) => f.kind === "reset-undriven");
+
+test("reset-undriven: the OLD Architect shape (dut.reset set, nobody drives it) is an error with a fix", () => {
+  const r = check(`dut: { name: buf, clock: clk, reset: rst_n }\n${AGENT}`, RST_MODEL);
+  const f = undriven(r);
+  assert.equal(f.length, 1);
+  assert.equal(f[0].severity, "error", "the bench does not elaborate");
+  assert.deepEqual(f[0].params, { port: "rst_n" });
+  assert.equal(f[0].code, `${RESET_CODE}:rst_n`, "the quick-fix reads the port from the code");
+  // the span is the `dut.reset` VALUE — where the Problems entry lands
+  assert.equal(r.text.slice(f[0].span[0], f[0].span[1]), "rst_n");
+  // a YAML-internal rule: the same without a model, and with zero agents yet
+  assert.equal(undriven(check(`dut: { name: buf, reset: rst_n }\n${AGENT}`, undefined)).length, 1);
+  assert.equal(undriven(check(`dut: { name: buf, reset: rst_n }\n`, RST_MODEL)).length, 1);
+  // polarity alone does not drive anything
+  assert.equal(
+    undriven(check(`dut: { name: buf, reset: rst_n }\nreset: { active_low: false }\n${AGENT}`, RST_MODEL)).length,
+    1
+  );
+});
+
+test("reset-undriven: the three driven shapes are clean", () => {
+  // 1. the testbench top drives it — what setDut writes now
+  assert.deepEqual(
+    kinds(check(`dut: { name: buf, clock: clk, reset: rst_n }\nreset: { external: true }\n${AGENT}`, RST_MODEL)),
+    []
+  );
+  // 2. an agent declares the port, on any side (the interface then has the signal)
+  for (const side of ["inputs", "outputs", "inouts"]) {
+    const r = check(
+      `dut: { name: buf, reset: rst_n }
+agents:
+  - name: cmd
+    ports:
+      inputs: [ { name: din, width: 8 } ]
+  - name: rsp
+    ports:
+      ${side}: [ { name: rst_n } ]
+`,
+      RST_MODEL
+    );
+    assert.deepEqual(undriven(r), [], `declared in a NON-primary agent's ${side}`);
+  }
+  // 3. a reset LIST: tb_top drives every domain
+  assert.deepEqual(
+    undriven(check(`dut: { name: buf, reset: rst_n }\nreset:\n  - { name: rst_n }\n${AGENT}`, RST_MODEL)),
+    []
+  );
+  // no reset port at all
+  assert.deepEqual(undriven(check(`dut: { name: buf, reset: '' }\n${AGENT}`, RST_MODEL)), []);
+});
+
+test("reset-undriven: an ABSENT dut.reset is the generator's default `rst_n`", () => {
+  // quick-uvm defaults the key to rst_n and emits the same dangling reference
+  const absent = check(`dut: { name: buf, clock: clk }\n${AGENT}`, RST_MODEL);
+  assert.deepEqual(undriven(absent).map((f) => f.params.port), ["rst_n"]);
+  assert.ok(undriven(absent)[0].span, "no dut.reset node: the span falls back to dut.name");
+  // ... but when the model KNOWS the DUT and it has no such pin, this is not the
+  // defect `external: true` repairs (the config needs `dut.reset: ''`): silent
+  assert.deepEqual(undriven(check(`dut: { name: soc_top, clock: clk }\n${AGENT}`, MODEL)), []);
+  assert.deepEqual(undriven(check(`dut: { name: soc_top, reset: gone_n }\n${AGENT}`, MODEL)), []);
+});
+
+test("reset-undriven: silent where the YAML cannot tell, or the generator wires no reset", () => {
+  // combinational: quick-uvm connects no reset and REFUSES `external: true` on it
+  assert.equal(undrivenReset({ dut: { name: "buf", reset: "rst_n", combinational: true } }), null);
+  // a PURE subsystem top instantiates no DUT of its own (its dut.reset is ignored) ...
+  assert.equal(
+    undrivenReset({ dut: { name: "sys", reset: "rst_n" }, subenvs: [{ name: "u_a", config: "a.yaml" }] }),
+    null
+  );
+  // ... a HYBRID top (boundary agents) does
+  assert.equal(
+    undrivenReset({
+      dut: { name: "sys", reset: "rst_n" },
+      subenvs: [{ name: "u_a", config: "a.yaml" }],
+      agents: [{ name: "edge", ports: { inputs: [{ name: "z" }] } }],
+    }),
+    "rst_n"
+  );
+  // a `from_vip` agent: its ports live in the VIP manifest, not in this file
+  assert.equal(
+    undrivenReset({ dut: { name: "buf", reset: "rst_n" }, agents: [{ name: "io", from_vip: "v.qvip" }] }),
+    null
+  );
+  // no dut yet: nothing to say
+  assert.equal(undrivenReset({}), null);
+  assert.equal(undrivenReset({ dut: {} }), null);
 });
 
 console.log(`\ntest-configcheck: ${passed} teste au trecut.`);

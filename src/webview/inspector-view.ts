@@ -584,8 +584,11 @@ function tbRegress(cfg: QuvmConfig): void {
  * The reset-domains editor (docs/07 line 3, P4b). Same union shape as the clocks, plus
  * two invariants clocks do not have: under a LIST `dut.reset` names a declared DOMAIN
  * (not a port), and a domain's `clock:` gate must name a declared clock domain. The
- * single mapping also has an `external` flag the list form does not — so converting an
- * external reset is refused host-side rather than silently dropping it.
+ * single mapping also has an `external` flag the list form does not: `true` = the
+ * testbench top generates the reset (what a list always does), `false` = an agent
+ * drives it and must declare the port — the state Architect's own gestures never
+ * produce, and the `reset-undriven` finding when no agent does (probed on
+ * quick-uvm 1.1.0; the two labels were the wrong way round until Nov 2026).
  */
 function tbResetDomains(cfg: QuvmConfig): void {
   const reset = cfg.reset;
@@ -665,25 +668,39 @@ function tbResetDomains(cfg: QuvmConfig): void {
           "Driven by",
           tbSelect(
             [
-              ["false", "The testbench"],
-              ["true", "The environment/DUT (external)"],
+              ["true", "The testbench top (generated reset)"],
+              ["false", "An agent (the port is one of its ports)"],
             ],
             single?.external ? "true" : "false",
             (v) => send("external", v)
           )
         )
       );
+      // the agent-driven choice is only real when an agent declares the port;
+      // otherwise it is the state the `reset-undriven` finding reports
+      const port = cfg.dut?.reset ?? "";
+      const owner = (cfg.agents ?? []).find((a) =>
+        (["inputs", "outputs", "inouts"] as const).some((side) =>
+          (a.ports?.[side] ?? []).some((p) => p.name === port)
+        )
+      );
+      if (!single?.external) {
+        ctx.root.append(
+          h(
+            "div",
+            "note",
+            owner
+              ? `driven by agent "${owner.name ?? ""}" as a field of its sequence item`
+              : `no agent declares "${port}" — the generated tb_top would reference a signal that does not exist; choose the testbench top`
+          )
+        );
+      }
     }
   }
 
   ctx.root.append(
     button("Add reset domain…", true, () => ctx.postAction("editReset", { op: "add" }), true)
   );
-  if (single?.external) {
-    ctx.root.append(
-      h("div", "note", "an external reset cannot become a domain list (list entries have no `external`)")
-    );
-  }
   if (isList && domains.length === 1) {
     ctx.root.append(
       button("Back to a single reset", true, () => ctx.postAction("editReset", { op: "collapse" }), true)

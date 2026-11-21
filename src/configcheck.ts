@@ -14,6 +14,9 @@ import type { QuvmConfig } from "./quickuvm";
 
 /** the prefix of the diagnostic code that carries the width quick-fix */
 export const WIDTH_CODE = "quickuvm.width";
+/** the prefix of the diagnostic code that carries the reset quick-fix
+ *  (`quickuvm.reset-undriven:<port>`) */
+export const RESET_CODE = "quickuvm.reset-undriven";
 
 export type FindingKind =
   /** dut.name does not exist in the current model — {module} */
@@ -31,7 +34,13 @@ export type FindingKind =
    *  {sb, field, agent}; quick-uvm refuses it only at generate (docs/08 R3) */
   | "sb-unknown-agent"
   /** an analysis.coverage entry names no agent of this config — {agent} */
-  | "cov-unknown-agent";
+  | "cov-unknown-agent"
+  /** the DUT's reset port is driven by nobody — {port}: `dut.reset` names a port,
+   *  the single-reset mapping is not `external: true` and no agent declares the
+   *  port. quick-uvm (1.1.0) accepts it, exits 0 and emits a tb_top that connects
+   *  the DUT to `<first agent>_if_inst.<port>`, a signal that interface does not
+   *  have — the bench does not elaborate. Carries `code` (the quick-fix). */
+  | "reset-undriven";
 
 export interface Finding {
   kind: FindingKind;
@@ -215,5 +224,75 @@ export function checkConfig(
       });
     }
   });
+  // When the model KNOWS the DUT and it has no port of that name, this is a
+  // different defect (`dut.reset` names a pin that is not there — typically the
+  // key left to its `rst_n` default on a DUT without a reset); `external: true`
+  // would not repair it, so it is not reported as this one.
+  const undriven = undrivenReset(cfg);
+  if (undriven && !(def && !modelPorts.has(undriven))) {
+    findings.push({
+      kind: "reset-undriven",
+      span:
+        spanOf(ydoc.getIn(["dut", "reset"], true)) ??
+        spanOf(ydoc.getIn(["dut", "name"], true)),
+      severity: "error",
+      params: { port: undriven },
+      code: `${RESET_CODE}:${undriven}`,
+    });
+  }
   return { findings, orphans };
+}
+
+/**
+ * The reset port nobody drives, or null. A YAML-internal rule (model or not),
+ * replicating what quick-uvm 1.1.0 GENERATES rather than what it validates — it
+ * validates nothing here (probed, Nov 2026):
+ *
+ *   - `dut.reset` absent defaults to `rst_n`; `''` means "no reset port";
+ *   - a `reset:` LIST is always driven by tb_top (one generator per domain);
+ *   - `reset: {external: true}` is driven by tb_top;
+ *   - a port an agent declares (inputs / outputs / inouts) is wired to that
+ *     agent's interface, which then has the signal.
+ *
+ * Deliberately silent where the YAML alone cannot tell:
+ *   - a combinational DUT — quick-uvm connects no reset at all and refuses
+ *     `external: true` on it, so there is neither a dangling reference nor this
+ *     repair (a hand-written `dut: {combinational: true}` with the key absent
+ *     would otherwise be flagged for a port it does not have);
+ *   - a PURE subsystem top (subenvs, no agents of its own) — it instantiates
+ *     no DUT of its own, its `dut.reset` is ignored;
+ *   - a bench with a `from_vip` agent — the referenced agent's ports live in
+ *     the VIP manifest, not in this file.
+ */
+export function undrivenReset(cfg: QuvmConfig): string | null {
+  const dut = cfg.dut;
+  if (!dut?.name || dut.combinational === true) {
+    return null;
+  }
+  const port = dut.reset === undefined || dut.reset === null ? "rst_n" : dut.reset;
+  if (typeof port !== "string" || !port) {
+    return null;
+  }
+  const reset: unknown = cfg.reset;
+  if (Array.isArray(reset)) {
+    return null;
+  }
+  if ((reset as { external?: unknown } | undefined)?.external === true) {
+    return null;
+  }
+  const agents = cfg.agents ?? [];
+  if (!agents.length && (cfg.subenvs ?? []).length) {
+    return null;
+  }
+  for (const a of agents) {
+    if (a.from_vip) {
+      return null;
+    }
+    for (const side of ["inputs", "outputs", "inouts"] as const) {
+      if ((a.ports?.[side] ?? []).some((p) => p.name === port)) {
+        return null;
+      }
+    }
+  }
+  return port;
 }

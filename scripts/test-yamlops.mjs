@@ -29,7 +29,6 @@ const DUT = {
   clock: "clk",
   reset: "rst_n",
   resetActiveLow: true,
-  externalReset: false,
   combinational: false,
 };
 
@@ -58,28 +57,73 @@ test("setDut: scrie dut-ul si pastreaza restul", () => {
   assert.equal(cfg.dut.name, "soc_top");
   assert.equal(cfg.dut.clock, "clk");
   assert.equal(cfg.dut.reset, "rst_n");
-  assert.equal(cfg.reset, undefined); // defaults -> no `reset:` block
+  // a reset port no agent declares is driven by the testbench top — ALWAYS
+  // written: without it quick-uvm wires the DUT to `<first agent>_if_inst.rst_n`,
+  // a signal that interface does not have (exit 0, elaboration fails)
+  assert.deepEqual(cfg.reset, { external: true });
   assert.equal(cfg.project.name, "demo");
 });
 
 test("setDut: abaterile de reset merg in cheia TOP-LEVEL `reset:` (1.0)", () => {
   let text = ops.setDut(ops.newConfigText("demo"), {
-    ...DUT, resetActiveLow: false, externalReset: true,
+    ...DUT, resetActiveLow: false,
   });
   assert.deepEqual(ops.parseQuvm(text).reset,
     { active_low: false, external: true });
   // the old keys on dut are NO longer written (1.0 rejects them with a guide-error)
   assert.ok(!/reset_active_low|external_reset/.test(text));
-  // returning to defaults deletes the block
+  // returning to the default polarity drops `active_low`; `external` stays
   text = ops.setDut(text, DUT);
+  assert.deepEqual(ops.parseQuvm(text).reset, { external: true });
+  // a DUT without a reset port: the whole block disappears
+  text = ops.setDut(text, { ...DUT, reset: null });
   assert.equal(ops.parseQuvm(text).reset, undefined);
+  assert.equal(ops.parseQuvm(text).dut.reset, "");
+});
+
+test("setDut: `external` is DERIVED — an agent that declares the reset port drives it", () => {
+  // the agent-driven shape (quick-uvm's own `init` scaffold): the reset is a
+  // field of that agent's sequence item. `external: true` next to it is a hard
+  // generator error ("An external reset must not also be an agent port").
+  let text = ops.setDut(ops.newConfigText("demo"), DUT);
+  text = ops.createAgent(text, {
+    name: "cmd",
+    inputs: [{ name: "rst_n", width: 1 }, { name: "din", width: 8 }],
+    outputs: [],
+  });
+  text = ops.setDut(text, DUT);
+  assert.equal(ops.parseQuvm(text).reset, undefined, "external next to an agent-declared reset");
+  // on any side: a sampled/bidirectional declaration also puts the signal on the interface
+  for (const side of ["outputs", "inouts"]) {
+    let t = ops.setDut(ops.newConfigText("demo"), DUT);
+    t = ops.createAgent(t, { name: "a", inputs: [], outputs: [], [side]: [{ name: "rst_n", width: 1 }] });
+    assert.equal(ops.parseQuvm(ops.setDut(t, DUT)).reset, undefined, side);
+  }
+  // an agent that declares OTHER ports changes nothing
+  let other = ops.setDut(ops.newConfigText("demo"), DUT);
+  other = ops.createAgent(other, { name: "a", inputs: [{ name: "din", width: 8 }], outputs: [] });
+  assert.deepEqual(ops.parseQuvm(ops.setDut(other, DUT)).reset, { external: true });
+});
+
+test("setDut: a combinational DUT never gets `external` (quick-uvm refuses the pair)", () => {
+  // "dut.combinational and `reset: {external: true}` are mutually exclusive"
+  const text = ops.setDut(ops.newConfigText("demo"), { ...DUT, clock: null, combinational: true });
+  assert.equal(ops.parseQuvm(text).reset, undefined);
+  // ... and switching a clocked DUT to combinational takes it away
+  const back = ops.setDut(ops.setDut(ops.newConfigText("demo"), DUT),
+    { ...DUT, clock: null, reset: null, combinational: true });
+  assert.equal(ops.parseQuvm(back).reset, undefined);
 });
 
 test("setDut: o LISTA `reset:` scrisa de mana nu se atinge", () => {
-  const withList = ops.setDut(ops.newConfigText("demo"), DUT) +
-    "reset:\n  - {name: wrst_n, clock: wclk}\n";
+  // (the base has no reset port, so no `reset:` mapping is there to collide with)
+  const withList = ops.setDut(ops.newConfigText("demo"), { ...DUT, reset: null }) +
+    "reset:\n  - {name: rst_n}\n  - {name: wrst_n, clock: wclk}\n";
   const text = ops.setDut(withList, { ...DUT, resetActiveLow: false });
-  assert.ok(Array.isArray(ops.parseQuvm(text).reset));
+  const cfg = ops.parseQuvm(text);
+  assert.ok(Array.isArray(cfg.reset));
+  // no `external`, no `active_low` smuggled into the list or next to it
+  assert.deepEqual(cfg.reset, [{ name: "rst_n" }, { name: "wrst_n", clock: "wclk" }]);
 });
 
 test("setDut combinational: reset gol + combinational true", () => {
@@ -252,7 +296,7 @@ test("topConfigPaths: scaffold-urile copiilor nu devin config-ul activ", () => {
   ]);
   const chan = ops.setDut(ops.newConfigText("chan"), {
     module: "chan", clock: null, reset: null,
-    resetActiveLow: true, externalReset: false, combinational: true,
+    resetActiveLow: true, combinational: true,
   });
   const tops = ops.topConfigPaths([
     { path: "C:\\ws\\examples\\chan.quickuvm.yaml", text: chan },
@@ -285,7 +329,7 @@ test("isComposedChild: copilul compus e detectat (avertismentul K2 #2)", () => {
   ]);
   const chan = ops.setDut(ops.newConfigText("chan"), {
     module: "chan", clock: null, reset: null,
-    resetActiveLow: true, externalReset: false, combinational: true,
+    resetActiveLow: true, combinational: true,
   });
   const files = [
     { path: "C:\\ws\\examples\\chan.quickuvm.yaml", text: chan },
@@ -656,16 +700,64 @@ test("reset domains: conversie, invariantul dut.reset, redenumire in cascada", (
     "`reset:` de pe agent nu are sens fara lista de domenii");
 });
 
-test("reset domains: `external: true` REFUZA conversia (lista nu are cheia)", () => {
-  // schema listei de reset e {name, active_low, clock} — fara `external`. O conversie
-  // tacuta ar pierde faptul ca TB-ul NU conduce resetul.
-  let text = ops.setDut(ops.newConfigText("s"), { ...DUT, externalReset: true });
-  assert.equal(ops.parseQuvm(text).reset.external, true);
-  assert.throws(() => ops.addResetDomain(text, "srst_n"), /external/);
-  // scoasa externalitatea, conversia trece
-  text = ops.setDut(text, { ...DUT, externalReset: false });
-  assert.deepEqual(ops.parseQuvm(ops.addResetDomain(text, "srst_n")).reset.map((d) => d.name),
-    ["rst_n", "srst_n"]);
+test("reset domains: `external: true` converts (a list is always testbench-driven)", () => {
+  // The list entry schema is {name, active_low, clock} — no `external`, because
+  // under a list tb_top drives EVERY domain (probed on quick-uvm 1.1.0). So the
+  // conversion drops the key and loses nothing. (Until Nov 2026 it was refused,
+  // on the misreading that external meant "the TB does not drive the reset" —
+  // which would have blocked every Architect bench now that setDut writes it.)
+  let text = ops.setDut(ops.newConfigText("s"), { ...DUT, resetActiveLow: false });
+  assert.deepEqual(ops.parseQuvm(text).reset, { active_low: false, external: true });
+  const list = ops.addResetDomain(text, "srst_n");
+  assert.deepEqual(ops.parseQuvm(list).reset,
+    [{ name: "rst_n", active_low: false }, { name: "srst_n" }]);
+
+  // the conversion quick-uvm DOES refuse: an agent-driven reset. Under a list the
+  // domain is a tb_top net of that name and the agent port collides with it.
+  let driven = ops.setDut(ops.newConfigText("s"), DUT);
+  driven = ops.createAgent(driven, { name: "a", inputs: [{ name: "rst_n", width: 1 }], outputs: [] });
+  driven = ops.setDut(driven, DUT);
+  assert.throws(() => ops.addResetDomain(driven, "srst_n"), /driven by an agent/);
+});
+
+test("reset domains: collapsing a list restores `external: true`", () => {
+  // list -> mapping: tb_top drove the reset under the list; a bare mapping would
+  // hand it to an agent that does not declare the port (the undriven state)
+  let text = ops.setDut(ops.newConfigText("s"), DUT);
+  text = ops.removeResetDomain(ops.addResetDomain(text, "srst_n"), "srst_n");
+  assert.deepEqual(ops.parseQuvm(text).reset, [{ name: "rst_n" }]);
+  const collapsed = ops.collapseResets(text);
+  assert.deepEqual(ops.parseQuvm(collapsed).reset, { external: true });
+  assert.equal(ops.parseQuvm(collapsed).dut.reset, "rst_n");
+  // the polarity deviation survives next to it
+  let high = ops.setResetDomainField(text, "rst_n", "active_low", false);
+  high = ops.collapseResets(high);
+  assert.deepEqual(ops.parseQuvm(high).reset, { active_low: false, external: true });
+});
+
+test("setResetDomainField: a no-op returns the ORIGINAL text (the reset-undriven repair)", () => {
+  // the repair of an OLD-shape config (dut.reset set, no `reset:` block, no agent port)
+  const old = [
+    "# hand-kept comment",
+    "project: {name: demo}",
+    "dut:   {name: soc_top, clock: clk, reset: rst_n}",
+    "agents: []",
+    "",
+  ].join("\n");
+  const fixed = ops.setResetDomainField(old, "rst_n", "external", true);
+  assert.deepEqual(ops.parseQuvm(fixed).reset, { external: true });
+  assert.ok(fixed.includes("# hand-kept comment"));
+  // applying it again changes nothing — byte-identical, no phantom WorkspaceEdit
+  assert.equal(ops.setResetDomainField(fixed, "rst_n", "external", true), fixed);
+  // a default written onto a bench with no `reset:` block is a no-op too (it used
+  // to re-serialise the document — here the flow maps' spacing would have changed)
+  assert.equal(ops.setResetDomainField(old, "rst_n", "external", false), old);
+  assert.equal(ops.setResetDomainField(old, "rst_n", "active_low", true), old);
+  // a real change still lands
+  assert.equal(
+    ops.parseQuvm(ops.setResetDomainField(old, "rst_n", "active_low", false)).reset.active_low,
+    false
+  );
 });
 
 test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () => {
@@ -1246,7 +1338,7 @@ test("setAgentField writes emit_when, and the default deletes it", () => {
   let t = ops.newConfigText("d");
   t = ops.setDut(t, {
     module: "d", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "pkt",

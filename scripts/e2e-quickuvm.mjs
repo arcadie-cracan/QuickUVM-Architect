@@ -76,6 +76,101 @@ function quickUvmComposed(topText, producerText, consumerText) {
   return { status: r.status, out: (r.stdout ?? "") + (r.stderr ?? "") };
 }
 
+// ---------------------------------------------------------------------------
+// THE ELABORATION LINT (Nov 2026). `quick-uvm generate` exiting 0 proves the
+// config VALIDATES, not that the bench elaborates: the tutorial bench itself was
+// generated cleanly for months with `.rst_n(cmd_if_inst.rst_n)` in tb_top and no
+// `rst_n` in `cmd_if` (xmelab *E,CUVUNF on the first real compile). This script
+// cannot run a simulator, so it checks the generated TEXT: every signal the top
+// connects to a DUT port must be declared — in the top itself (a bare net) or in
+// the interface it is taken from (`<inst>.<signal>`). `generate()` runs it on
+// every bench of every scenario.
+
+const stripComments = (sv) =>
+  sv.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/\/\/[^\n]*/g, " ");
+
+/** the declarations of an interface / of the top: comments, clocking blocks and
+ *  modports removed (they REFERENCE signals, they do not declare them) */
+function declText(sv) {
+  return stripComments(sv)
+    .replace(/\bclocking\b[\s\S]*?\bendclocking\b/g, " ")
+    .replace(/\bmodport\b[^;]*;/g, " ");
+}
+
+function declares(sv, sig) {
+  const s = sig.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const text = declText(sv);
+  return (
+    // `logic [7:0] a, sig;`  /  `interface x (input clk, input sig);`
+    new RegExp(
+      `\\b(?:input|output|inout|logic|wire|bit|reg|var|tri\\w*)\\b[^;)]*\\b${s}\\b`
+    ).test(text) ||
+    // a user-typed signal: `my_struct_t sig;`
+    new RegExp(`(?:^|[;\\n])\\s*\\w+(?:\\s*\\[[^\\]]*\\])*\\s+${s}\\b\\s*(?:\\[[^\\]]*\\]\\s*)*[;,=]`).test(text)
+  );
+}
+
+/**
+ * Returns the problems of a generated bench (empty = clean) and the DUT port
+ * connections it found, as `{port, expr}`.
+ */
+function lintDutConnections(tbDir) {
+  const files = listFiles(tbDir);
+  const problems = [];
+  const connections = [];
+  const tops = files.filter(
+    (f) => /\.sv$/.test(f) && /pragma quickuvm custom dut_connections begin/.test(readFileSync(f, "utf8"))
+  );
+  for (const topFile of tops) {
+    const raw = readFileSync(topFile, "utf8");
+    const top = stripComments(raw);
+    // `<type> [#(...)] <inst> (` — the instances of the top, by name
+    const typeOf = new Map();
+    for (const m of top.matchAll(/^\s*([A-Za-z_]\w*)\s*(?:#\s*\([^;]*?\)\s*)?([A-Za-z_]\w*)\s*\(/gm)) {
+      typeOf.set(m[2], m[1]);
+    }
+    const blocks = raw.matchAll(
+      /pragma quickuvm custom dut_connections begin([\s\S]*?)\/\/ pragma quickuvm custom dut_connections end/g
+    );
+    for (const b of blocks) {
+      for (const c of stripComments(b[1]).matchAll(/\.([A-Za-z_]\w*)\s*\(([^()]*)\)/g)) {
+        const [, port, exprRaw] = c;
+        const expr = exprRaw.trim();
+        connections.push({ port, expr });
+        // sized literals (`8'hFF`, `'0`) are not names
+        const names = expr
+          .replace(/\d*'[sS]?[bBdDhHoO]?[0-9a-fA-F_xXzZ?]+/g, " ")
+          .match(/[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*/g);
+        for (const ref of names ?? []) {
+          const [head, ...rest] = ref.split(".");
+          if (!rest.length) {
+            if (!declares(top, head)) {
+              problems.push(`${basename(topFile)}: .${port}(${expr}) — net \`${head}\` is not declared in the top`);
+            }
+            continue;
+          }
+          const type = typeOf.get(head);
+          if (!type) {
+            problems.push(`${basename(topFile)}: .${port}(${expr}) — \`${head}\` is not an instance of the top`);
+            continue;
+          }
+          const ifFile = files.find((f) => basename(f) === `${type}.sv`);
+          if (!ifFile) {
+            problems.push(`${basename(topFile)}: .${port}(${expr}) — no ${type}.sv was generated for \`${head}\``);
+            continue;
+          }
+          if (!declares(readFileSync(ifFile, "utf8"), rest[0])) {
+            problems.push(
+              `${basename(topFile)}: .${port}(${expr}) — ${type}.sv declares no signal \`${rest[0]}\``
+            );
+          }
+        }
+      }
+    }
+  }
+  return { problems, connections, tops };
+}
+
 function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const dir = mkdtempSync(join(tmpdir(), `quickuvm-e2e-${name}-`));
   const cfg = join(dir, `${name}.quickuvm.yaml`);
@@ -93,6 +188,13 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   for (const f of expectFiles) {
     assert.ok(existsSync(join(dir, "tb", f)), `lipseste ${f} (in ${dir})`);
   }
+  // exit 0 is not enough — see lintDutConnections
+  const lint = lintDutConnections(join(dir, "tb"));
+  assert.deepEqual(
+    lint.problems,
+    [],
+    `${name}: the generated top connects the DUT to signals that do not exist (in ${dir})`
+  );
   console.log(`  ok    ${name}: testbench generat (${expectFiles.length}+ fisiere) in ${dir}`);
   return dir;
 }
@@ -107,7 +209,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: null,
     reset: null,
     resetActiveLow: true,
-    externalReset: false,
     combinational: true,
   });
   text = ops.createAgent(text, {
@@ -135,7 +236,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   });
   text = ops.createAgent(text, {
@@ -174,7 +274,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: null,
     reset: null,
     resetActiveLow: true,
-    externalReset: false,
     combinational: true,
   });
   const clocked = (m) => ({
@@ -182,7 +281,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   });
   const child = (m, w, dut) =>
@@ -196,7 +294,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   });
   top = ops.createSubenvs(top, [
@@ -204,7 +301,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     { name: "u_inv", config: "inverter.quickuvm.yaml", params: {} },
     { name: "u_ch", config: "chan.quickuvm.yaml", params: {} },
   ]);
-  generate(
+  const compDir = generate(
     "soc_top",
     top,
     [
@@ -225,6 +322,17 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
       "chan.quickuvm.yaml": child("chan", 16, clocked),
     }
   );
+  // THE CLOCKED LEAF'S RESET IS CONNECTED. In a composition the old shape failed
+  // differently, and more quietly: a leaf whose reset was not `external` got NO
+  // reset connection at all in the subsystem top (the port left floating — no
+  // elaboration error, a DUT that is never reset). With the reset setDut writes
+  // now, the top declares a per-leaf net, drives it and connects it.
+  const comp = lintDutConnections(join(compDir, "tb"));
+  const chanRst = comp.connections.filter((c) => c.port === "rst_n");
+  assert.deepEqual(chanRst.map((c) => c.expr), ["u_ch_rst_n"],
+    "the clocked leaf's reset port is not connected in the subsystem top");
+  assert.match(readFileSync(comp.tops[0], "utf8"), /u_ch_rst_n = 1'b1;\s*\/\/ deassert/);
+  console.log("  ok    composition: the clocked leaf's reset is declared, driven and connected in tb_top");
 }
 
 // --- scenario 4: DELETION (slice 2 of the verification view) — removeAgent's
@@ -239,7 +347,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   };
   let text = ops.setDut(ops.newConfigText("soc_top"), soc);
@@ -334,7 +441,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     clock: "clk",
     reset: "rst_n",
     resetActiveLow: true,
-    externalReset: false,
     combinational: false,
   };
   let text = ops.setDut(ops.newConfigText("soc_top"), soc);
@@ -406,7 +512,6 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
         clock: null,
         reset: null,
         resetActiveLow: true,
-        externalReset: false,
         combinational: true,
       }),
       { name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }] }
@@ -452,7 +557,7 @@ agents:
   // the top, built through the real MUTATIONS: setDut + createSubenvs + addConnections
   let top = ops.setDut(ops.newConfigText("sys_top"), {
     module: "sys_top", clock: "clk", reset: null,
-    resetActiveLow: false, externalReset: false, combinational: true,
+    resetActiveLow: false, combinational: true,
   });
   top = ops.createSubenvs(top, [
     { name: "p1", config: "producer.quickuvm.yaml", params: {} },
@@ -534,7 +639,7 @@ agents:
   const base = () => {
     let t = ops.setDut(ops.newConfigText("rsp_dut"), {
       module: "rsp_dut", clock: "clk", reset: "rst_n",
-      resetActiveLow: true, externalReset: false, combinational: false,
+      resetActiveLow: true, combinational: false,
     });
     return ops.createAgent(t, {
       name: "rd",
@@ -612,7 +717,7 @@ endpackage
 
   let t = ops.setDut(ops.newConfigText("cfg"), {
     module: "cfg", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "host",
@@ -675,7 +780,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("bid"), {
     module: "bid", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -764,7 +869,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("win"), {
     module: "win", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "es",
@@ -819,7 +924,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("cov"), {
     module: "cov", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "cmd",
@@ -886,7 +991,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("mc"), {
     module: "mc", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "core", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -943,7 +1048,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("mr"), {
     module: "mr", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "core", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -1001,7 +1106,7 @@ endpackage
 {
   let t = ops.setDut(ops.newConfigText("i2c"), {
     module: "i2c", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   t = ops.createAgent(t, {
     name: "bus",
@@ -1058,7 +1163,7 @@ endpackage
   const child = (name, agent) => {
     let c = ops.setDut(ops.newConfigText(name), {
       module: name, clock: "clk", reset: "rst_n",
-      resetActiveLow: true, externalReset: false, combinational: false,
+      resetActiveLow: true, combinational: false,
     });
     return ops.createAgent(c, {
       name: agent,
@@ -1073,7 +1178,7 @@ endpackage
 
   let top = ops.setDut(ops.newConfigText("sys"), {
     module: "sys", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: true,
+    resetActiveLow: true, combinational: true,
   });
   top = ops.createSubenvs(top, [
     { name: "p1", config: "producer.quickuvm.yaml", params: {} },
@@ -1111,7 +1216,7 @@ endpackage
   // 1. the VIP: packaged layout, kind: vip, no bench-layer sections
   let vip = ops.setDut(ops.newConfigText("iovip"), {
     module: "iovip", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   vip = ops.createAgent(vip, {
     name: "io", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
@@ -1132,7 +1237,7 @@ endpackage
   // 2. the consuming bench: `{name, from_vip}` with the path RELATIVE to the config
   let bench = ops.setDut(ops.newConfigText("user"), {
     module: "user", clock: "clk", reset: "rst_n",
-    resetActiveLow: true, externalReset: false, combinational: false,
+    resetActiveLow: true, combinational: false,
   });
   // addVipAgent also switches the bench to `layout: packaged` — consuming by
   // reference requires it, and quick-uvm refuses otherwise
@@ -1163,6 +1268,122 @@ endpackage
     "alt motiv de esec decat referinta imbogatita"
   );
   console.log("  ok    VIP: referinta poarta DOAR name + from_vip (restul: REFUZ)");
+}
+
+// --- scenario 15 (Nov 2026): THE TUTORIAL BENCH, gesture by gesture
+// (docs/tutorial-yapp-buffer.md) — and the reset wiring that was broken in it.
+{
+  const tutorial = () => {
+    let t = ops.setDut(ops.newConfigText("yapp_buffer"), {
+      module: "yapp_buffer", clock: "clk", reset: "rst_n",
+      resetActiveLow: true, combinational: false,
+    });
+    t = ops.createAgent(t, {
+      name: "cmd",
+      inputs: [
+        { name: "in_data", width: 8 },
+        { name: "in_addr", width: 2 },
+        { name: "in_valid", width: 1 },
+      ],
+      outputs: [{ name: "in_ready", width: 1 }],
+    });
+    t = ops.createAgent(t, {
+      name: "rsp",
+      inputs: [{ name: "out_ready", width: 1 }],
+      outputs: [
+        { name: "out_data", width: 8 },
+        { name: "out_addr", width: 2 },
+        { name: "out_valid", width: 1 },
+      ],
+    });
+    t = ops.addScoreboard(t, {
+      name: "pkt_sb", source: "cmd", monitor: "rsp",
+      match: "out_of_order", matchKey: "out_addr",
+    });
+    return ops.addCoverage(t, "cmd");
+  };
+  const text = tutorial();
+
+  // the tutorial's YAML listing IS what the gestures write (the listing claimed a
+  // config that generated a bench which did not elaborate; now it cannot drift)
+  const doc = readFileSync("docs/tutorial-yapp-buffer.md", "utf8").replace(/\r\n/g, "\n");
+  const listing = /```yaml\n([\s\S]*?)```/.exec(doc)?.[1];
+  assert.ok(listing, "the tutorial has no ```yaml listing");
+  assert.equal(listing, text.replace(/\r\n/g, "\n"),
+    "docs/tutorial-yapp-buffer.md: the YAML listing is not what the mutations write");
+
+  const dir = generate("yapp_buffer", text, [
+    "cmd_if.sv", "rsp_if.sv", "cmd_cov.svh", "yapp_buffer_scoreboard.svh",
+    "yapp_buffer_env.svh", "yapp_buffer_virtual_sequencer.svh", "tb_top.sv",
+  ]);
+  const lint = lintDutConnections(join(dir, "tb"));
+  const top = readFileSync(lint.tops[0], "utf8");
+  // the DUT's reset port IS connected, to a signal that exists (the lint in
+  // generate() proved the second half) ...
+  const rst = lint.connections.filter((c) => c.port === "rst_n");
+  assert.equal(rst.length, 1, `the DUT's rst_n is not connected:\n${top}`);
+  // ... and somebody DRIVES it: the top's generated reset block, active-low
+  assert.match(top, /^\s*logic rst_n;/m, "tb_top does not declare the reset net");
+  assert.match(top, /rst_n = 1'b0;\s*\/\/ assert[\s\S]*rst_n = 1'b1;\s*\/\/ deassert/,
+    "tb_top does not drive the reset (assert low, release high)");
+  for (const f of ["cmd_if.sv", "rsp_if.sv"]) {
+    assert.match(readFileSync(join(dir, "tb", f), "utf8"), /input rst_n\)/,
+      `${f} does not take the reset`);
+  }
+  console.log("  ok    tutorial: the DUT's reset is declared, driven by tb_top and connected");
+
+  // the POLARITY is honoured by the generated block (an active-high `rst`)
+  let high = ops.setDut(ops.newConfigText("hi"), {
+    module: "hi", clock: "clk", reset: "rst", resetActiveLow: false, combinational: false,
+  });
+  high = ops.createAgent(high, {
+    name: "a", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "dout", width: 8 }],
+  });
+  assert.deepEqual(ops.parseQuvm(high).reset, { active_low: false, external: true });
+  const hiDir = generate("reset_active_high", high, ["tb_top.sv"]);
+  assert.match(readFileSync(join(hiDir, "tb", "tb_top.sv"), "utf8"),
+    /rst = 1'b1;\s*\/\/ assert[\s\S]*rst = 1'b0;\s*\/\/ deassert/,
+    "the active-high reset is not asserted high / released low");
+  console.log("  ok    reset: the active-high polarity reaches tb_top's reset generator");
+
+  // MUTATION PROOF — the lint is what catches the old shape. The same bench
+  // without `reset: {external: true}` (what every earlier Architect wrote):
+  // quick-uvm still exits 0 and the lint names the dangling reference. If a later
+  // quick-uvm refuses the config itself, that is the fix landing upstream — the
+  // branch below accepts it, and the `reset-undriven` finding can then cite it.
+  const oldShape = ops.setResetDomainField(text, "rst_n", "external", false);
+  assert.equal(ops.parseQuvm(oldShape).reset, undefined, "the old shape has no `reset:` block");
+  const od = mkdtempSync(join(tmpdir(), "quickuvm-e2e-oldreset-"));
+  writeFileSync(join(od, "m.quickuvm.yaml"), oldShape);
+  const r = quickUvm(["generate", "-c", join(od, "m.quickuvm.yaml"), "-o", join(od, "tb")], od);
+  if (r.status === 0) {
+    const bad = lintDutConnections(join(od, "tb")).problems;
+    assert.equal(bad.length, 1, `the lint should name exactly the reset:\n${bad.join("\n")}`);
+    assert.match(bad[0], /\.rst_n\(cmd_if_inst\.rst_n\).*cmd_if\.sv declares no signal `rst_n`/);
+    console.log("  ok    reset: the old shape (no external) — the generator exits 0, the lint names the dangling reference");
+  } else {
+    console.log("  ok    reset: the old shape (no external) is REFUSED by the generator (fixed upstream)");
+  }
+
+  // the AGENT-DRIVEN shape stays legal: the port among an agent's inputs, no
+  // `external` (setDut derives that), and the interface then has the signal
+  let driven = ops.addAgentPorts(oldShape, "cmd", {
+    inputs: [{ name: "rst_n", width: 1 }], outputs: [],
+  });
+  driven = ops.setDut(driven, {
+    module: "yapp_buffer", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, combinational: false,
+  });
+  assert.equal(ops.parseQuvm(driven).reset, undefined, "external next to an agent-declared reset");
+  generate("reset_agent_driven", driven, ["cmd_if.sv", "tb_top.sv"]);
+  // ... and `external: true` next to it is the generator's own wall
+  const both = ops.setResetDomainField(driven, "rst_n", "external", true);
+  const bd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-bothreset-"));
+  writeFileSync(join(bd, "m.quickuvm.yaml"), both);
+  const rb = quickUvm(["generate", "-c", join(bd, "m.quickuvm.yaml"), "-o", join(bd, "tb")], bd);
+  assert.notEqual(rb.status, 0, "external + agent-declared reset should be refused");
+  assert.match((rb.stdout ?? "") + (rb.stderr ?? ""), /must not also be an agent port/);
+  console.log("  ok    reset: agent-driven (the port in an agent, no external) generates; both at once = REFUSED");
 }
 
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

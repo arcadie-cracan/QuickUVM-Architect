@@ -126,6 +126,24 @@ export function decosFromFindings(
           ],
         });
         break;
+      case "reset-undriven": {
+        // the DUT's reset pin (RTL) and the Env box (TB root: the bench as a whole
+        // does not elaborate) — the repair is the SAME gesture as the inspector's
+        // "Driven by: the testbench top" row (`editReset set external true`)
+        const msg = text(
+          `reset "${port}" is driven by nobody: no agent declares it and reset.external is not true — the generated tb_top would reference a signal that does not exist`
+        );
+        const fixes: StatusFix[] = [
+          {
+            label: `Let the testbench top drive "${port}" (reset: {external: true})`,
+            action: "editReset",
+            args: { op: "set", name: port, field: "external", value: "true" },
+          },
+        ];
+        out.push({ scope: "port", port, severity: f.severity, message: msg, fixes });
+        out.push({ scope: "env", severity: f.severity, message: msg, fixes });
+        break;
+      }
     }
   }
   return out;

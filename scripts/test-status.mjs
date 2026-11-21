@@ -152,6 +152,30 @@ test("R3: the unknown-agent findings target the scoreboard/coverage box with a r
   });
 });
 
+test("reset-undriven: the reset PIN and the Env box, both with the editReset repair", () => {
+  const decos = decosFromFindings([F("reset-undriven", "error", { port: "rst_n" })]);
+  assert.deepEqual(decos.map((d) => d.scope), ["port", "env"]);
+  assert.equal(decos[0].port, "rst_n");
+  for (const d of decos) {
+    assert.equal(d.severity, "error");
+    assert.match(d.message, /rst_n.*driven by nobody/);
+    // the SAME gesture as the inspector's "Driven by: the testbench top" row
+    assert.deepEqual(d.fixes.map((f) => [f.action, f.args]), [
+      ["editReset", { op: "set", name: "rst_n", field: "external", value: "true" }],
+    ]);
+  }
+  // RTL: the badge lands on the DUT's reset pin (symbol view and parent schematic)
+  const rtl = statusIdsRtl(decos, {
+    viewModule: "buf", dut: "buf", nodes: [{ id: "u_buf", module: "buf" }],
+  });
+  assert.equal(rtl.get("<port>.rst_n").severity, "error");
+  assert.equal(rtl.get("u_buf.rst_n").severity, "error");
+  // TB root: on Env, with the repair one click away; the tree mirrors it
+  const tb = statusIdsTb(decos, new Set(["dut", "env"]));
+  assert.equal(tb.get("env").fixes[0].action, "editReset");
+  assert.equal(statusIdsTree(decos).get("env").fixes.length, 1);
+});
+
 test("R3: the width repair rides on both the pin and the agent; ignored gets un-ignore", () => {
   const decos = decosFromFindings([
     F("width-mismatch", "warning", { port: "din", declared: 8, expected: 16, agent: "cmd" }),
