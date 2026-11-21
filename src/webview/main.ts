@@ -64,9 +64,26 @@ import {
   setFrameTitle,
   setNoteText,
 } from "./annotations";
-import { drawAnnotations, redrawFrames, type NoteRects } from "./annotations-view";
+import { applyTints, drawAnnotations, redrawFrames, type NoteRects } from "./annotations-view";
+import {
+  applyFilters,
+  edgeEffect,
+  emptyFilters,
+  FILTER_EFFECTS,
+  filterSummary,
+  MAX_RULES,
+  sanitizeFilters,
+  type FilterItem,
+  type FilterResult,
+} from "./filters";
 import { analysisMatrix, connectionsMatrix, worthOffering, type Matrix } from "./matrix";
-import { ANNOT_COLORS, type AnnotColor, type ViewAnnotations } from "../protocol";
+import {
+  ANNOT_COLORS,
+  type AnnotColor,
+  type FilterRule,
+  type ViewAnnotations,
+  type ViewFilters,
+} from "../protocol";
 import {
   alignItems,
   distributeItems,
@@ -473,6 +490,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       genStale = new Set(m.genStale);
       applyStatusBadges();
       applyGenBadges();
+      applyFiltersHere(); // docs/08 R23: what has a finding may not be hidden
       updateGenChip();
       refreshCard(); // a pinned card shows the new ●/U/M state and flags
       break;
@@ -2239,10 +2257,12 @@ function marqueeCandidates(): { id: string; r: DOMRect }[] {
       : state.mode === "tb"
         ? ".tbnode[data-id], .tb-bport[data-id], .note[data-id]"
         : ".pin[data-id]";
-  return [...canvas.querySelectorAll<SVGGElement>(sel)].map((g) => ({
-    id: g.dataset.id ?? "",
-    r: g.getBoundingClientRect(),
-  }));
+  return [...canvas.querySelectorAll<SVGGElement>(sel)]
+    .filter((g) => !g.classList.contains("f-hide")) // docs/08 R23: not drawn, not picked
+    .map((g) => ({
+      id: g.dataset.id ?? "",
+      r: g.getBoundingClientRect(),
+    }));
 }
 
 // --- polymorphic drag: the same mechanics for the RTL schematic and the
@@ -2358,6 +2378,7 @@ function dragReroute(): void {
   } else if (currentScene && currentLayout && currentEdgesGroup) {
     routeEdges(currentScene, currentLayout, currentEdgesGroup);
   }
+  applyFilterEdges(); // docs/08 R23: the redrawn wires keep their filter classes
   // docs/08 R21: a frame's box is its members' bounding box — it follows them
   if (viewport && annotatable()) {
     redrawFrames(viewport, viewAnnots(), rectOf, noteRects, annotMeasure());
@@ -2481,6 +2502,7 @@ function undoPositions(redo: boolean): void {
     applyPositions(key, snap.pos);
   } else if (annotChanged) {
     drawAnnotationsHere();
+    applyFiltersHere();
     applySelectionClasses();
     refreshMinimap();
   }
@@ -4630,6 +4652,7 @@ function commitAnnots(next: ViewAnnotations, undo = true): boolean {
   }
   storeAnnots(key, next);
   drawAnnotationsHere();
+  applyFiltersHere(); // docs/08 R23: the redraw re-tinted from the annotations alone
   applySelectionClasses();
   refreshMinimap();
   return true;
@@ -5186,6 +5209,383 @@ function renderMatrix(): void {
   }
 }
 
+// --- per-view filter rules (docs/08 R23) ------------------------------------
+//
+// hide / dim / show / colour x kind x name pattern, per view, in the sidecar.
+// PRESENTATION over the same scene: classes on the drawn elements — nothing is
+// laid out again, a hidden block keeps its place (and stays an obstacle for the
+// wires that are still drawn). The rules and what they match are pure
+// (`filters.ts`, test:filters). Three things keep "hidden wires = hidden
+// dependencies" honest: rules exist only because the user wrote them, the
+// header ALWAYS says what they do to this view while any exists, and an element
+// with a finding is never hidden — it is dimmed instead.
+
+let filterResult: FilterResult | null = null;
+let filterBox: HTMLElement | null = null;
+
+const TB_KIND: Readonly<Record<string, string>> = {
+  tbagent: "agent",
+  tbsb: "scoreboard",
+  tbcov: "coverage",
+  tbvsqr: "vsqr",
+  tbprobe: "probes",
+  tbsubenv: "subenv",
+  tbunit: "unit",
+  tbdut: "dut",
+  tbenv: "env",
+};
+
+/** the filter rules of a view (the current one by default): a detached copy */
+function viewFilters(key = layoutKey()): ViewFilters {
+  const f = key ? sidecar.views[key]?.filters : undefined;
+  return f ? sanitizeFilters(f) : emptyFilters();
+}
+
+/** what a rule can match in the current view: its blocks and its flags */
+function filterItems(): FilterItem[] {
+  if (state.mode === "tb") {
+    const s = currentTbScene;
+    return s
+      ? [
+          ...s.nodes.map((n) => ({ id: n.id, kind: TB_KIND[n.kind] ?? n.kind, name: n.label })),
+          ...s.boundary.map((b) => ({ id: b.id, kind: "port", name: b.label })),
+        ]
+      : [];
+  }
+  const s = currentScene;
+  return s
+    ? [
+        ...s.nodes.map((n) => ({ id: n.id, kind: n.kind as string, name: n.name })),
+        ...s.boundary.map((b) => ({ id: b.id, kind: "port", name: b.name })),
+      ]
+    : [];
+}
+
+function filterKinds(): string[] {
+  return [...new Set(filterItems().map((i) => i.kind))].sort();
+}
+
+/** the wires' classes: a wire goes with a hidden / dimmed END (redone after
+ *  every re-route — a drag redraws the edge elements) */
+function applyFilterEdges(): void {
+  const res = filterResult;
+  canvas.querySelectorAll<SVGElement>(".edge[data-src], .tb-edge[data-src]").forEach((g) => {
+    const fx = res ? edgeEffect(res, g.dataset.src ?? "", g.dataset.dst ?? "") : null;
+    g.classList.toggle("f-hide", fx === "hide");
+    g.classList.toggle("f-dim", fx === "dim");
+  });
+}
+
+/** applies the view's rules to what is drawn, and says so in the header */
+function applyFiltersHere(): void {
+  if (!annotatable()) {
+    filterResult = null;
+    updateFilterChip();
+    return;
+  }
+  const filters = viewFilters();
+  const res = applyFilters(filterItems(), filters);
+  // the diagram never hides a problem: an element with a finding is dimmed,
+  // not hidden (the R18 rule for hidden pins, applied to blocks)
+  for (const id of [...res.hidden]) {
+    if (statusByElement.has(id)) {
+      res.hidden.delete(id);
+      res.dimmed.add(id);
+    }
+  }
+  filterResult = res;
+  canvas
+    .querySelectorAll<SVGElement>(
+      ".inode[data-id], .bport[data-id], .tbnode[data-id], .tb-bport[data-id]"
+    )
+    .forEach((g) => {
+      const id = g.dataset.id ?? "";
+      g.classList.toggle("f-hide", res.hidden.has(id));
+      g.classList.toggle("f-dim", res.dimmed.has(id));
+    });
+  applyFilterEdges();
+  applyTints(canvas, viewAnnots(), res.colors);
+  // a hidden block cannot stay selected: nothing on screen says what the
+  // selection is, and Delete would still reach it
+  const lost = [...state.selection].filter((id) => res.hidden.has(id));
+  if (lost.length) {
+    for (const id of lost) {
+      state.selection.delete(id);
+    }
+    applySelectionClasses();
+    postSelection();
+    renderInspectorHere();
+  }
+  updateFilterChip();
+}
+
+/** the header's indicator: present whenever the view HAS rules, even lifted */
+function updateFilterChip(): void {
+  head.querySelector(".filter-chip")?.remove();
+  const tgl = head.querySelector(".mode-toggle");
+  const filters = annotatable() ? viewFilters() : emptyFilters();
+  const text = filterResult ? filterSummary(filters, filterResult) : "";
+  if (!tgl || !text) {
+    return;
+  }
+  const chip = h("button", `filter-chip${filters.off ? " off" : ""}`, text);
+  chip.title = "The filter rules of this view — click to edit, lift or clear them";
+  chip.addEventListener("click", openFilterBox);
+  tgl.prepend(chip);
+}
+
+/** replaces the view's rules: mirror + host + what is drawn */
+function storeFilters(next: ViewFilters, rebuild = true): void {
+  const key = layoutKey();
+  if (!key || !annotatable()) {
+    return;
+  }
+  const clean = sanitizeFilters(next);
+  const view = (sidecar.views[key] ??= {});
+  if (clean.rules.length) {
+    view.filters = clean;
+  } else {
+    delete view.filters;
+  }
+  post({
+    v: 1,
+    type: "view/filters",
+    viewId: key,
+    rules: clean.rules,
+    ...(clean.off ? { off: true as const } : {}),
+  });
+  applyFiltersHere();
+  refreshMinimap();
+  if (rebuild) {
+    renderFilterBox();
+  } else {
+    updateFilterCounts();
+  }
+}
+
+function addFilterRule(rule: FilterRule): void {
+  const f = viewFilters();
+  if (f.rules.length >= MAX_RULES) {
+    return;
+  }
+  // a new rule goes FIRST: the first matching rule decides, and the rule just
+  // written is the one the user means now
+  storeFilters({ rules: [rule, ...f.rules] });
+}
+
+const escapeRegex = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+function closeFilterBox(): void {
+  filterBox?.remove();
+  filterBox = null;
+}
+
+function openFilterBox(): void {
+  if (!annotatable()) {
+    return;
+  }
+  if (!filterBox) {
+    filterBox = h("div", "filterbox");
+    filterBox.setAttribute("role", "dialog");
+    filterBox.setAttribute("aria-label", "Filter rules of this view");
+    filterBox.addEventListener("keydown", (e) => {
+      e.stopPropagation(); // nothing typed here reaches the diagram
+      if (e.key === "Escape") {
+        e.preventDefault();
+        closeFilterBox();
+      }
+    });
+    document.body.append(filterBox);
+  }
+  renderFilterBox();
+  filterBox.querySelector<HTMLElement>("select, button")?.focus();
+}
+
+/** the per-rule match counts and pattern errors, without rebuilding the rows
+ *  (a rebuild under a field being typed in would take the caret) */
+function updateFilterCounts(): void {
+  const res = filterResult;
+  filterBox?.querySelectorAll<HTMLElement>(".frule").forEach((row, i) => {
+    const out = row.querySelector<HTMLElement>(".fcount");
+    const err = res?.errors[i] ?? null;
+    if (out) {
+      out.textContent = err ? "!" : `${res?.counts[i] ?? 0}×`;
+      out.title = err ?? "elements of this view the rule matches";
+      out.classList.toggle("err", Boolean(err));
+    }
+    row.querySelector("input")?.classList.toggle("invalid", Boolean(err));
+  });
+}
+
+function renderFilterBox(): void {
+  const box = filterBox;
+  if (!box) {
+    return;
+  }
+  if (!annotatable()) {
+    closeFilterBox();
+    return;
+  }
+  const f = viewFilters();
+  const kinds = filterKinds();
+  box.replaceChildren();
+  const top = h("div", "fhead");
+  top.append(h("span", "ftitle", "Filters of this view"));
+  const close = h("button", "mclose", "×");
+  close.title = "Close (Escape)";
+  close.setAttribute("aria-label", "Close");
+  close.addEventListener("click", closeFilterBox);
+  top.append(close);
+  box.append(top);
+  box.append(
+    h(
+      "div",
+      "fnote",
+      f.rules.length
+        ? "The first rule that matches an element decides whether it is shown, hidden or dimmed."
+        : "No rules: everything in this view is drawn."
+    )
+  );
+  const set = (i: number, patch: Partial<FilterRule>, rebuild = true): void => {
+    const cur = viewFilters();
+    const rule = { ...cur.rules[i], ...patch };
+    for (const k of ["kind", "name"] as const) {
+      if (!rule[k]) {
+        delete rule[k];
+      }
+    }
+    cur.rules[i] = rule;
+    storeFilters(cur, rebuild);
+  };
+  f.rules.forEach((rule, i) => {
+    const row = h("div", "frule");
+    const effect = h("select", "prop");
+    for (const e of FILTER_EFFECTS) {
+      const o = h("option", "", e === "hide" || e === "dim" || e === "show" ? e : `colour: ${e}`);
+      o.value = e;
+      o.selected = e === rule.effect;
+      effect.append(o);
+    }
+    effect.setAttribute("aria-label", `Rule ${i + 1}: effect`);
+    effect.addEventListener("change", () => set(i, { effect: effect.value as FilterRule["effect"] }));
+    const kind = h("select", "prop");
+    for (const k of ["", ...new Set([...kinds, ...(rule.kind ? [rule.kind] : [])])]) {
+      const o = h("option", "", k || "any kind");
+      o.value = k;
+      o.selected = k === (rule.kind ?? "");
+      kind.append(o);
+    }
+    kind.setAttribute("aria-label", `Rule ${i + 1}: kind`);
+    kind.addEventListener("change", () => set(i, { kind: kind.value }));
+    const name = h("input", "prop");
+    name.type = "text";
+    name.spellcheck = false;
+    name.value = rule.name ?? "";
+    name.placeholder = "any name (regular expression)";
+    name.setAttribute("aria-label", `Rule ${i + 1}: name pattern`);
+    // live while typing, without rebuilding the row under the caret
+    name.addEventListener("input", () => set(i, { name: name.value }, false));
+    const count = h("span", "fcount", "");
+    const move = (d: number): void => {
+      const cur = viewFilters();
+      const j = i + d;
+      if (j < 0 || j >= cur.rules.length) {
+        return;
+      }
+      [cur.rules[i], cur.rules[j]] = [cur.rules[j], cur.rules[i]];
+      storeFilters(cur);
+    };
+    const up = h("button", "fbtn", "↑");
+    up.title = "Move up (an earlier rule wins)";
+    up.setAttribute("aria-label", `Rule ${i + 1}: move up`);
+    up.disabled = i === 0;
+    up.addEventListener("click", () => move(-1));
+    const down = h("button", "fbtn", "↓");
+    down.title = "Move down";
+    down.setAttribute("aria-label", `Rule ${i + 1}: move down`);
+    down.disabled = i === f.rules.length - 1;
+    down.addEventListener("click", () => move(1));
+    const del = h("button", "fbtn", "×");
+    del.title = "Delete this rule";
+    del.setAttribute("aria-label", `Rule ${i + 1}: delete`);
+    del.addEventListener("click", () => {
+      const cur = viewFilters();
+      cur.rules.splice(i, 1);
+      storeFilters(cur);
+    });
+    row.append(effect, kind, name, count, up, down, del);
+    box.append(row);
+  });
+  const foot = h("div", "ffoot");
+  const add = h("button", "nextbtn", "+ Add rule");
+  add.disabled = f.rules.length >= MAX_RULES;
+  add.addEventListener("click", () => {
+    // never "everything": a new rule starts on the kind of the selected block,
+    // or on the first kind of the view
+    const sel = filterItems().find((it) => state.selection.has(it.id));
+    addFilterRule({ effect: "dim", kind: sel?.kind ?? kinds[0] });
+  });
+  foot.append(add);
+  if (f.rules.length) {
+    const lift = h("button", "nextbtn", f.off ? "Apply the rules" : "Lift all (keep the rules)");
+    lift.addEventListener("click", () => {
+      const cur = viewFilters();
+      if (cur.off) {
+        delete cur.off;
+      } else {
+        cur.off = true;
+      }
+      storeFilters(cur);
+    });
+    const clear = h("button", "nextbtn", "Delete all rules");
+    clear.addEventListener("click", () => storeFilters(emptyFilters()));
+    foot.append(lift, clear);
+  }
+  box.append(foot);
+  updateFilterCounts();
+}
+
+/** the filter entries of a context menu: on a block, or on the background */
+function filterMenu(id: string | null): CtxItem[] {
+  if (!annotatable()) {
+    return [];
+  }
+  const items: CtxItem[] = [];
+  const it = id ? filterItems().find((x) => x.id === id) : undefined;
+  if (it) {
+    items.push(
+      {
+        label: "Filter: hide this block",
+        action: () =>
+          addFilterRule({ effect: "hide", kind: it.kind, name: `^${escapeRegex(it.name)}$` }),
+      },
+      {
+        label: `Filter: dim every ${it.kind}`,
+        action: () => addFilterRule({ effect: "dim", kind: it.kind }),
+      }
+    );
+  }
+  const f = viewFilters();
+  if (!id || f.rules.length) {
+    items.push({ label: "Filters…", action: openFilterBox });
+  }
+  if (f.rules.length) {
+    items.push({
+      label: f.off ? "Apply the filters" : "Lift all filters",
+      action: () => {
+        const cur = viewFilters();
+        if (cur.off) {
+          delete cur.off;
+        } else {
+          cur.off = true;
+        }
+        storeFilters(cur);
+      },
+    });
+  }
+  return items;
+}
+
 // --- align / distribute / straighten (docs/08 R7) ---------------------------
 //
 // Pure geometry on the grid (src/webview/arrange.ts, test:arrange) over the
@@ -5625,6 +6025,10 @@ function paletteItems(): PaletteItem[] {
   // (the same list as the context menu's icon row)
   for (const a of arrangeActions()) {
     add("Arrange", a.label, a.run);
+  }
+  // docs/08 R23 — the view's filter rules
+  for (const it of filterMenu(state.selection.size === 1 ? [...state.selection][0] : null)) {
+    add("View", it.label, it.action);
   }
   // docs/08 R22 — the matrix editor, whatever the size (the header button
   // appears only from about 4x4 upwards)
@@ -6257,7 +6661,7 @@ function rtlContextMenu(e: MouseEvent): void {
   openCtxMenu(
     e.clientX,
     e.clientY,
-    onBlock ? [...items, ...onBlock.items] : items,
+    onBlock ? [...items, ...onBlock.items, ...filterMenu(selectId)] : items,
     arrangeActions(selectId),
     onBlock?.colors ?? null
   );
@@ -6354,6 +6758,9 @@ canvas.addEventListener("contextmenu", (e) => {
     if (an?.dataset.id || !t.closest("[data-id]")) {
       const id = an?.dataset.id ?? null;
       const m = annotMenu(id, clientToWorld(e.clientX, e.clientY));
+      if (!id) {
+        m.items.push(...filterMenu(null)); // docs/08 R23: on the background
+      }
       if (m.items.length || m.colors) {
         e.preventDefault();
         if (id && !state.selection.has(id)) {
@@ -6393,7 +6800,7 @@ canvas.addEventListener("contextmenu", (e) => {
   openCtxMenu(
     e.clientX,
     e.clientY,
-    [...tbMenuItems(id), ...an.items],
+    [...tbMenuItems(id), ...an.items, ...filterMenu(id)],
     arrangeActions(id),
     an.colors
   );
@@ -6597,6 +7004,9 @@ async function render(refit = false): Promise<void> {
     return renderTb(refit);
   }
   closeMatrix(); // docs/08 R22: the matrix is the verification view's
+  if (state.mode === "symbol") {
+    closeFilterBox(); // docs/08 R23: the symbol view has no rules
+  }
   if (bannerIsTb) {
     hideBanner(); // back in a design view: the TB view's banner does not follow
   }
@@ -6944,6 +7354,7 @@ async function presentScene(
   applySelectionClasses();
   applyStatusBadges();
   applyGenBadges();
+  applyFiltersHere(); // docs/08 R23: after the badges — a finding is never hidden
   contentBounds = withAnnotBounds(layoutBounds(layout));
   refreshMinimap();
   return true;
@@ -7234,6 +7645,7 @@ async function renderTb(refit: boolean): Promise<void> {
   contentBounds = withAnnotBounds(tbBounds(layout));
   applyStatusBadges();
   applyGenBadges();
+  applyFiltersHere(); // docs/08 R23: after the badges — a finding is never hidden
   refreshMinimap();
   renderInspectorHere();
   applyCameraAfterRender(refit);

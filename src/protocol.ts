@@ -228,6 +228,25 @@ export interface ViewAnnotations {
   colors: Record<string, AnnotColor>;
 }
 
+/** docs/08 R23 — what a filter rule does to the elements it matches */
+export type FilterEffect = "show" | "hide" | "dim" | AnnotColor;
+
+/** docs/08 R23 — one rule of a view: effect x kind x name pattern */
+export interface FilterRule {
+  effect: FilterEffect;
+  /** an element kind of the view ("agent", "instance", …); absent = any */
+  kind?: string;
+  /** a regular expression on the element's name, case-insensitive; absent = any */
+  name?: string;
+}
+
+/** docs/08 R23 — the filter rules of ONE view: presentation only, never model */
+export interface ViewFilters {
+  rules: FilterRule[];
+  /** the rules are kept but not applied (the "lift all" switch) */
+  off?: true;
+}
+
 export interface SidecarNode {
   x?: number;
   y?: number;
@@ -257,15 +276,23 @@ export interface SidecarView {
    *  verification model (decision D25); keyed `frame:<n>` / `note:<n>` */
   frames?: Record<string, SidecarFrame>;
   notes?: Record<string, SidecarNote>;
+  /** docs/08 R23 — the view's filter rules (hide / dim / colour by kind and
+   *  name): presentation over the same scene, like the positions */
+  filters?: ViewFilters;
 }
 
 /** orphan override: the key disappeared from the model (graceful invalidation) */
 export interface SidecarOrphan {
   view: string;
   node: string;
-  value: SidecarNode | { render: "wire" | "label" } | SidecarFrame | SidecarNote;
+  value:
+    | SidecarNode
+    | { render: "wire" | "label" }
+    | SidecarFrame
+    | SidecarNote
+    | ViewFilters;
   /** the kind of the orphan key; absent = node (compatibility) */
-  kind?: "net" | "frame" | "note";
+  kind?: "net" | "frame" | "note" | "filters";
   /** the date of the last valid view (ISO 8601) */
   lastSeen: string;
 }
@@ -488,6 +515,8 @@ export type WebviewMessage =
   // colours), sent WHOLE after every annotation gesture: the set is small, a
   // whole replace needs no per-gesture message and makes undo one message
   | ({ v: 1; type: "view/annotations"; viewId: string } & ViewAnnotations)
+  // docs/08 R23 — the filter rules of a view, whole (`rules: []` clears them)
+  | ({ v: 1; type: "view/filters"; viewId: string } & ViewFilters)
   | {
       v: 1;
       type: "ports/reordered";

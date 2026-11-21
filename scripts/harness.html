@@ -196,6 +196,15 @@
             );
           }, 60);
         }
+        if (m.type === "view/filters") {
+          // docs/08 R23 — the host's setFilters, in miniature
+          const sc = loadSidecar();
+          const view = (sc.views[m.viewId] ??= {});
+          if (m.rules.length) view.filters = { rules: m.rules, ...(m.off ? { off: true } : {}) };
+          else delete view.filters;
+          window.__sidecar = sc;
+          sessionStorage.setItem("__sidecar", JSON.stringify(sc));
+        }
         if (m.type === "view/annotations") {
           // docs/08 R21 — the host's setAnnotations, in miniature: frames and
           // notes on the view, colours on its node entries

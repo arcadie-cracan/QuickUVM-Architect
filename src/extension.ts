@@ -697,6 +697,7 @@ export function activate(context: vscode.ExtensionContext): void {
       nodeCollapsed: (v, n, c) => layout.nodeCollapsed(v, n, c),
       viewPins: (v, h) => layout.viewPins(v, h),
       annotationsSet: (v, a) => layout.annotationsSet(v, a, PANEL_ORIGIN), // docs/08 R21
+    filtersSet: (v, f) => layout.filtersSet(v, f, PANEL_ORIGIN), // docs/08 R23
     },
     onTbFocus: (focus, select) => {
       // the webview navigated across levels (drill/breadcrumb): the host keeps

@@ -523,6 +523,9 @@ function edgeElement(spec: SceneEdge, d: string): SVGGElement {
   if (spec.net) {
     g.dataset.id = spec.net;
   }
+  // docs/08 R23 — a filter hides or dims a wire WITH one of its ends
+  g.dataset.src = spec.source;
+  g.dataset.dst = spec.target;
   g.append(
     // no direction arrow in the schematic view: the direction is implicit from the
     // port's side (inputs on west, outputs on east) — the user's decision. In

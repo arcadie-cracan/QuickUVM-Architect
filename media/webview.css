@@ -1981,3 +1981,98 @@ text.split-sign {
   outline: 2px solid var(--vscode-focusBorder);
   outline-offset: 1px;
 }
+
+/* ------------------------------ per-view filter rules (docs/08 R23) */
+/* presentation over the same scene: a hidden element keeps its place in the
+   layout and is simply not drawn; a dimmed one stays readable. Plain classes,
+   NOT behind `#canvas` like the level of detail: an SVG export shows what the
+   view shows, filters included. */
+.f-hide { display: none; }
+.f-dim { opacity: 0.28; }
+.f-dim.selected { opacity: 0.7; }
+/* the header's indicator: always there while the view has rules */
+.filter-chip {
+  margin-right: 8px;
+  padding: 1px 8px;
+  border: 1px solid var(--vscode-charts-yellow, #cca700);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--vscode-charts-yellow, #cca700) 18%, transparent);
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.filter-chip.off {
+  border-style: dashed;
+  background: transparent;
+  opacity: 0.8;
+}
+.filterbox {
+  position: fixed;
+  z-index: 101;
+  top: 44px;
+  right: 16px;
+  width: min(560px, 92vw);
+  max-height: 70vh;
+  overflow: auto;
+  padding-bottom: 8px;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.filterbox .fhead {
+  display: flex;
+  align-items: center;
+  padding: 6px 8px 6px 10px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+}
+.filterbox .ftitle { font-weight: 600; }
+.filterbox .mclose {
+  margin-left: auto;
+  padding: 0 8px;
+  border: none;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-size: 15px;
+  cursor: pointer;
+}
+.filterbox .fnote {
+  padding: 6px 10px;
+  font-style: italic;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+}
+.filterbox .frule {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 10px;
+}
+.filterbox .frule select,
+.filterbox .frule input {
+  height: 22px;
+  border: 1px solid var(--vscode-input-border, var(--vscode-editorWidget-border, transparent));
+  background: var(--vscode-input-background);
+  color: var(--vscode-input-foreground);
+  font-family: inherit;
+  font-size: 12px;
+}
+.filterbox .frule input { flex: 1 1 120px; min-width: 60px; padding: 0 4px; font-family: var(--vscode-editor-font-family); }
+.filterbox .frule input.invalid { border-color: var(--vscode-inputValidation-errorBorder, #f14c4c); }
+.filterbox .fcount { min-width: 30px; text-align: right; opacity: 0.7; font-variant-numeric: tabular-nums; }
+.filterbox .fcount.err { color: var(--vscode-errorForeground, #f14c4c); opacity: 1; font-weight: 600; }
+.filterbox .fbtn {
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+.filterbox .fbtn:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+.filterbox .fbtn:disabled { opacity: 0.3; cursor: default; }
+.filterbox .ffoot { display: flex; gap: 6px; flex-wrap: wrap; padding: 8px 10px 0; }
+.filterbox :focus-visible { outline: 2px solid var(--vscode-focusBorder); outline-offset: 1px; }

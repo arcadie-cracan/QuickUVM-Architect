@@ -552,4 +552,76 @@ test("R21: invalidate never touches a verification (tb:) view's annotations, nor
   assert.equal(d.orphans.length, 0);
 });
 
+// ---------------------------------------------------------------- docs/08 R23
+test("R23: setFilters keeps the rules in ORDER, sanitised; no rules, no key; a round trip survives", () => {
+  const d = ops.emptySidecar();
+  ops.setFilters(d, V, {
+    rules: [
+      { effect: "show", name: "^u_add$" },
+      { effect: "hide", kind: "instance" },
+      { effect: "bogus" },
+      { effect: "red", kind: " fold " },
+    ],
+    off: true,
+  });
+  assert.deepEqual(d.views[V].filters, {
+    rules: [
+      { effect: "show", name: "^u_add$" },
+      { effect: "hide", kind: "instance" },
+      { effect: "red", kind: "fold" },
+    ],
+    off: true,
+  }, "the order is the meaning: the first matching rule decides");
+  const back = ops.parseSidecar(ops.serializeSidecar(d));
+  assert.deepEqual(back.views[V].filters, d.views[V].filters, "the serializer whitelists: filters must be copied");
+  ops.setFilters(d, V, { rules: [] });
+  assert.equal(d.views[V], undefined, "no rules: the key goes, and the empty view with it");
+  assert.doesNotThrow(() => ops.setFilters(d, V, null));
+  assert.doesNotThrow(() => ops.setFilters(d, V, "x"));
+});
+
+test("R23: a view holding only filters is a view; a hand-edited rule list is read through the sanitiser", () => {
+  const d = ops.emptySidecar();
+  ops.setFilters(d, V, { rules: [{ effect: "dim", kind: "instance" }] });
+  ops.setHidePins(d, V, true);
+  ops.setHidePins(d, V, false);
+  assert.deepEqual(Object.keys(d.views[V]), ["filters"], "another mutation's prune does not judge it empty");
+  assert.equal(ops.invalidate(d, model, "2026-11-21"), false, "the view exists: its rules stay");
+  assert.deepEqual(d.views[V].filters.rules, [{ effect: "dim", kind: "instance" }]);
+  const e = ops.parseSidecar(
+    `schema_version: 1\nviews:\n  ${V}:\n    filters:\n      rules: [{effect: hide, name: 7}, nope, {effect: explode}]\n      off: true\norphans: []\n`
+  );
+  assert.deepEqual(e.views[V].filters, { rules: [{ effect: "hide" }], off: true });
+  const f = ops.parseSidecar(`schema_version: 1\nviews:\n  ${V}:\n    filters: 5\norphans: []\n`);
+  assert.equal(f.views[V].filters, undefined);
+});
+
+test("R23: invalidate — a vanished view's rules wait in orphans and return with it; a tb: view and a leaf keep theirs", () => {
+  const d = ops.emptySidecar();
+  const rules = { rules: [{ effect: "hide", kind: "instance", name: "^u_" }] };
+  ops.setFilters(d, "demo_top.not_there", rules);
+  ops.setFilters(d, "tb:demo.quickuvm.yaml|env", rules);
+  const leaf = model.instances.find((i) => !model.views[i.path]).path;
+  ops.setFilters(d, leaf, rules);
+  ops.invalidate(d, model, "2026-11-21");
+  assert.equal(d.views["demo_top.not_there"], undefined);
+  assert.deepEqual(d.orphans.map((o) => [o.kind, o.node]), [["filters", "filters"]]);
+  assert.deepEqual(d.views["tb:demo.quickuvm.yaml|env"].filters, rules);
+  assert.deepEqual(d.views[leaf].filters, rules);
+  // twice: replaced, not duplicated
+  ops.setFilters(d, "demo_top.not_there", rules);
+  ops.invalidate(d, model, "2026-11-22");
+  assert.equal(d.orphans.length, 1);
+  // the view is back: restored — unless newer rules were written meanwhile
+  d.orphans[0].view = V;
+  ops.invalidate(d, model, "2026-11-23");
+  assert.deepEqual(d.views[V].filters, rules);
+  assert.equal(d.orphans.length, 0);
+  const n = ops.emptySidecar();
+  ops.setFilters(n, V, { rules: [{ effect: "dim" }] });
+  n.orphans.push({ view: V, node: "filters", kind: "filters", value: rules, lastSeen: "x" });
+  ops.invalidate(n, model, "2026-11-23");
+  assert.deepEqual(n.views[V].filters, { rules: [{ effect: "dim" }] }, "the newer rules stay");
+});
+
 console.log(`\ntest-sidecar: ${passed} teste au trecut.`);

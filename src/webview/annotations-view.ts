@@ -194,10 +194,19 @@ export function redrawFrames(
   });
 }
 
-/** the node tints: a class on the box group (the RTL and the TB boxes alike) */
-export function applyTints(canvas: SVGSVGElement, a: ViewAnnotations): void {
+/**
+ * The node tints: a class on the box group (the RTL and the TB boxes alike).
+ * A colour the user gave a block by hand wins over one a filter rule gives it
+ * (docs/08 R23, `ruled`): the explicit choice is the more specific one.
+ */
+export function applyTints(
+  canvas: SVGSVGElement,
+  a: ViewAnnotations,
+  ruled?: ReadonlyMap<string, AnnotColor>
+): void {
   canvas.querySelectorAll<SVGElement>(".inode[data-id], .tbnode[data-id]").forEach((g) => {
-    const c = a.colors[g.dataset.id ?? ""];
+    const id = g.dataset.id ?? "";
+    const c = a.colors[id] ?? ruled?.get(id);
     for (const name of ANNOT_COLORS) {
       g.classList.toggle(`tint-${name}`, name === c);
     }
