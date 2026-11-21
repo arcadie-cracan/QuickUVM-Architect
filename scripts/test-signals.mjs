@@ -139,4 +139,60 @@ test("a shape nobody can walk never throws", () => {
   }
 });
 
+test("review: a reset's Unconnected agents land on the reset RELEASED ON THEIR CLOCK, else the first", () => {
+  const t = buildSignalsTree(MULTI);
+  // dst samples dst_clk_i and has no `reset:`: quick-uvm gives it dst_rst_ni
+  // (probed, locked in test:e2e) — the folder used to say "src_rst_ni, the first"
+  assert.equal(find(t, "reset:/dst").description, "→ dst_rst_ni");
+  assert.equal(find(t, "reset:/mon").description, "→ src_rst_ni", "no clock of its own: the first clock's reset");
+  assert.match(find(t, "reset:").description, /the reset released on its clock, else src_rst_ni/);
+  // a clock's own rule is unchanged: the first domain
+  assert.equal(find(t, "clock:/mon").description, "→ src_clk_i");
+  // resets with no `clock:` bind nobody: everyone follows the first entry
+  const loose = buildSignalsTree({ ...MULTI, reset: [{ name: "r0" }, { name: "r1" }], dut: { ...MULTI.dut, reset: "r0" } });
+  assert.equal(find(loose, "reset:/dst").description, "→ r0");
+  // an agent on an UNDECLARED clock samples the first one, so its reset follows that
+  assert.match(find(t, "reset:/odd").description, /→ src_rst_ni/);
+});
+
+test("review: under a single clock / reset an agent's own key is flagged — the generator refuses it", () => {
+  const cfg = {
+    dut: { name: "d", clock: "clk_i", reset: "rst_n" },
+    clock: { period: 10 },
+    agents: [{ name: "ok" }, { name: "dflt", clock: "clk" }, { name: "port", clock: "clk_i" }, { name: "rst", reset: "rst_n" }],
+  };
+  const t = buildSignalsTree(cfg);
+  assert.equal(find(t, "clock:clk_i/ok").description, undefined);
+  assert.equal(find(t, "clock:clk_i/dflt").description, undefined, "`clk` is the single clock's own name");
+  assert.match(find(t, "clock:clk_i/port").description, /clock: clk_i — not a declared clock: quick-uvm refuses it/,
+    "the DUT's clock PORT is not the clock's name");
+  assert.match(find(t, "reset:rst_n/rst").description, /reset: rst_n — not a declared reset/);
+  const named = buildSignalsTree({ ...cfg, clock: { name: "core" }, agents: [{ name: "a", clock: "core" }] });
+  assert.equal(find(named, "clock:clk_i/a").description, undefined);
+});
+
+test("review: a clock list with a plain reset mapping is said to generate NO reset", () => {
+  const cfg = {
+    dut: { name: "d", clock: "a_clk", reset: "rst_n" },
+    clock: [{ name: "a_clk" }, { name: "b_clk" }],
+    agents: [{ name: "a", clock: "a_clk" }],
+  };
+  assert.match(find(buildSignalsTree(cfg), "reset:rst_n").description, /NOT GENERATED: with a clock list/);
+  assert.doesNotMatch(find(buildSignalsTree({ ...cfg, reset: { external: true } }), "reset:rst_n").description, /NOT GENERATED/);
+  assert.doesNotMatch(find(buildSignalsTree({ ...cfg, reset: [{ name: "rst_n" }] }), "reset:rst_n").description, /NOT GENERATED/);
+  assert.doesNotMatch(find(buildSignalsTree(SINGLE), "reset:rst_n").description, /NOT GENERATED/);
+});
+
+test("review: tree ids are unique even with a name written twice", () => {
+  const cfg = {
+    dut: { name: "d", clock: "c0", reset: "" },
+    clock: [{ name: "c0" }, { name: "c0" }, { name: "c1" }],
+    agents: [{ name: "a" }, { name: "a" }, { name: "b", clock: "c1" }, { name: "b", clock: "c1" }],
+  };
+  const ids = [];
+  const walk = (n) => { ids.push(n.id); n.children.forEach(walk); };
+  buildSignalsTree(cfg).forEach(walk);
+  assert.equal(new Set(ids).size, ids.length, ids.join(" "));
+});
+
 console.log(`\ntest-signals: ${passed} tests passed.`);

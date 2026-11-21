@@ -408,10 +408,17 @@ export function planWireEdits(
     // active ("agent ... is active and would drive ...") — with find(), the
     // second agent stayed active and the gesture reported success on a broken state
     // (pre-existing bug, empirically confirmed at the adversarial review).
-    const owners = (parseQuvm(text).agents ?? []).filter(
+    // an existing block config is the user's file: a bare `-` under `agents:`
+    // (a null entry) or a port list that is not a list must not throw here
+    const agentsOf = parseQuvm(text).agents;
+    const owners = (Array.isArray(agentsOf) ? agentsOf : []).filter(
       (a) =>
+        a &&
+        typeof a === "object" &&
         a.name &&
-        (a.ports?.inputs ?? []).some((p) => p.name && drivenPorts.has(p.name))
+        (Array.isArray(a.ports?.inputs) ? a.ports.inputs : []).some(
+          (p) => p && p.name && drivenPorts.has(p.name)
+        )
     );
     if (!owners.length) {
       plan.manual.push(sink);

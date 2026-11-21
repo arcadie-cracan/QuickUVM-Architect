@@ -1216,14 +1216,56 @@ endpackage
   assert.match(clkTop, /src_if src_if_inst \(\.clk\(src_clk_i\), \.src_rst_ni\(src_rst_ni\)\)/);
   assert.match(clkTop, /dst_if dst_if_inst \(\.clk\(dst_clk_i\), \.dst_rst_ni\(dst_rst_ni\)\)/,
     "each agent's interface is on ITS clock and reset");
-  assert.match(clkTop, /\.dst_rst_ni\(dst_rst_ni\)\s*\)/, "both resets reach the DUT");
+  // both resets reach the DUT itself (not only the interfaces asserted above)
+  const dutInst = /cdc_fifo dut_inst \(([\s\S]*?)\);/.exec(clkTop)?.[1] ?? "";
+  assert.match(dutInst, /\.src_rst_ni\(src_rst_ni\)/, "the first reset is connected to the DUT");
+  assert.match(dutInst, /\.dst_rst_ni\(dst_rst_ni\)/, "the second reset is connected to the DUT");
 
-  // the fact the Signals view's "Unconnected" folder states: an agent with no
-  // `clock:` of its own lands on the FIRST domain of the list
-  const loose = ops.setAgentField(ops.setAgentField(clk.text, "dst", "clock", ""), "dst", "reset", "");
-  assert.match(tbTop(generate("tpl_unassigned", loose, ["tb_top.sv"])),
+  // what the Signals view's "Unconnected" folders state (two DIFFERENT rules,
+  // probed one key at a time):
+  //  - no `clock:` of its own → the FIRST clock domain of the list;
+  const noClock = ops.setAgentField(ops.setAgentField(clk.text, "dst", "clock", ""), "dst", "reset", "");
+  assert.match(tbTop(generate("tpl_no_clock", noClock, ["tb_top.sv"])),
     /dst_if dst_if_inst \(\.clk\(src_clk_i\), \.src_rst_ni\(src_rst_ni\)\)/,
-    "quick-uvm no longer puts an unassigned agent on the first domain — the Signals view's folder lies");
+    "quick-uvm no longer puts an agent without `clock:` on the first domain — the Signals view lies");
+  //  - no `reset:` of its own → the reset RELEASED ON ITS CLOCK, not the first
+  const noReset = ops.setAgentField(clk.text, "dst", "reset", "");
+  assert.match(tbTop(generate("tpl_no_reset", noReset, ["tb_top.sv"])),
+    /dst_if dst_if_inst \(\.clk\(dst_clk_i\), \.dst_rst_ni\(dst_rst_ni\)\)/,
+    "quick-uvm no longer binds an agent without `reset:` to its clock's reset — the Signals view lies");
+
+  // ONE reset under a clock list: the template declares it as a one-entry list,
+  // because with the plain mapping quick-uvm generates no reset at all
+  const bridge = {
+    schema_version: 1,
+    tops: ["bridge"],
+    modules: {
+      bridge: {
+        ports: [
+          port("clk", "in"), port("rst_n", "in"), port("fast_clk", "in"),
+          port("req", "in"), port("ack", "out"), port("fast_data", "in", 4), port("fast_vld", "out"),
+        ],
+        iface_ports: [],
+        loc: null,
+      },
+    },
+    instances: [{ path: "bridge", module: "bridge", params: {}, loc: null }],
+    views: {},
+  };
+  const shared = T.planTemplate(bridge, "bridge", "per-clock");
+  const sharedTop = tbTop(generate("tpl_shared_reset", shared.text, ["clkgen.sv", "tb_top.sv"]));
+  const sharedDut = /bridge dut_inst \(([\s\S]*?)\);/.exec(sharedTop)?.[1] ?? "";
+  assert.match(sharedDut, /\.rst_n\(rst_n\)/, "the shared reset is connected to the DUT");
+  assert.match(sharedTop, /fast_if fast_if_inst \(\.clk\(fast_clk\), \.rst_n\(rst_n\)\)/,
+    "the agent of the other domain gets the shared reset");
+  // the hazard itself, locked: the same bench with the reset as a MAPPING has no reset
+  // (`collapseResets` is the Properties panel's own gesture: a one-entry list
+  // back to the single mapping — which, under a clock list, is this hazard)
+  const mapped = ops.collapseResets(shared.text);
+  assert.equal(ops.parseQuvm(mapped).reset, undefined);
+  const mappedTop = tbTop(generate("tpl_shared_reset_mapping", mapped, ["tb_top.sv"]));
+  assert.doesNotMatch(/bridge dut_inst \(([\s\S]*?)\);/.exec(mappedTop)?.[1] ?? "", /rst_n/,
+    "quick-uvm now wires a single reset under a clock list — resetAsList and the Signals view's warning can go");
 
   // composition from the sub-blocks, on the regression design: 5 subenvs, 3 block
   // configs with a boundary agent each

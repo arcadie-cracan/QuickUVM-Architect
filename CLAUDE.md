@@ -1125,25 +1125,64 @@ coliziunea de nume.
   and tb_top wires BOTH resets to the DUT; the clock domain names must be the
   DUT's clock PORT names (tb_top connects `.name(name)`); an agent with no
   `clock:` under a list lands on the FIRST entry of the list, whatever
-  `dut.clock` says — the Signals view's "Unconnected" folder states exactly
-  that, and `test:e2e` (scenario 15) fails if the generator changes it.
+  `dut.clock` says; an agent with no `reset:` gets the reset RELEASED ON ITS
+  CLOCK (the entry whose `clock:` is that clock) and only without one the
+  first entry — two DIFFERENT rules, which the Signals view's "Unconnected"
+  folders state per agent (`→ <domain>`) and `test:e2e` (scenario 15) locks
+  one key at a time (the first cut cleared both keys together, could not tell
+  the rules apart, and the reset folder stated the wrong domain — review).
+  Under a single clock / reset (a mapping) an agent's own key is REFUSED
+  unless it is the single clock's own name (`clock.name`, default `clk` — NOT
+  the DUT's clock port): the tree flags it. **A clock LIST with the plain
+  reset MAPPING generates NO reset** — quick-uvm's multi-domain path reads
+  only a reset list (or `external: true`): no reset net, no generator, the
+  DUT's port unconnected, exit 0. So the per-clock template ALWAYS declares
+  the reset as a list, one entry included (`resetAsList`; `addResetDomain`
+  can only make two), and the Signals row of such a reset says "NOT
+  GENERATED". The hazard is reachable from shipped gestures too
+  (`addClockDomain` on a single-reset bench, `collapseResets` under a clock
+  list): it has no `checkConfig` finding yet.
   `dutGuess` is the ONE DUT heuristic ("Set as DUT", the subenv skeletons, the
-  templates); a reset is a 1-bit input that matches the reset regex and NOT
-  the clock one. The per-clock template assigns pins by the clock's name TAG
+  templates); a reset is a 1-bit input that matches the reset regex — a name
+  that says both (`clk_rst_n`, Qsys' `clk_reset_reset_n`) is a RESET, as the
+  old inline heuristic had it — and a clock is one that matches the clock
+  regex, is not a reset and is not a clock's CONTROL (`CLOCK_QUALIFIER_RE`:
+  `clk_en_i` made a single-clock module "multi-clock" with a clock generator
+  on its enable; a divided or gated clock is still a clock). Polarity is
+  `resetIsActiveLow`, not `ACTIVE_LOW_RE` alone (`aresetn` / `rstn` were
+  written active HIGH, unattended). The per-clock template assigns pins by the clock's name TAG
   (`domainTag`: `src_clk_i` → `src`, a fused `wclk` → `w` as a bare prefix);
   what no tag claims goes to an untagged clock's domain if there is one, else
-  it is NAMED in the notes — a template never guesses silently, and every
-  plan carries `notes` shown before a file exists (`confirmGesture` kind
-  `create`: asked in every `previewEdits` mode, even for one file). The
+  it is NAMED in the notes; a pin two tags claim is NOT the default domain's
+  and is named too; a reset no domain binds is named — a template never
+  guesses silently, and every plan carries `notes` shown before a file exists
+  (`confirmGesture` kind `create`: asked in every `previewEdits` mode, even
+  for one file; under `always` the plan is read in a modal FIRST, whose only
+  way on is the preview — the question over the diff tabs is a QuickPick
+  title and flattened the notes into one line). From the same review: an
+  interface port that gets no agent (no modport, an unresolved instance) and
+  every skipped modport signal are noted, as the interactive flow reports
+  them; `templateOffers` turns ANY error into an unavailable offer with the
+  reason (a null `agents:` entry in an existing block config threw out of
+  `planWireEdits` and took all three offers down, silently — the host calls
+  the command with `void`); the composition leaves out an instance of the
+  view's own module (a recursive module composed its config into itself and
+  listed the file twice) and a block with no port an agent could carry
+  (quick-uvm refuses a block config without an agent). The
   composition's block configs get ONE boundary agent `<module>_a` (the module
   name is in it: composed blocks share a namespace) — the R12 prefix groups
   would leave unprefixed pins without an agent, and a connection wires agent
   ports; no `params:` are passed (a block agent would have to declare
   `parameters:`), the elaborated widths are used and the note says so. An
   existing block config is never recreated: it is in the plan only if the
-  wiring edited it (an agent set passive). The host never overwrites
-  `<module>.quickuvm.yaml` and creates files WITHOUT `ignoreIfExists` (a file
-  that appeared meanwhile fails the edit). `SignalsProvider` is created before
+  wiring edited it (an agent set passive) — and the host SAVES such a file
+  with the creation (quick-uvm reads the disk; a dirty child next to a top on
+  disk does not generate). The host never overwrites
+  `<module>.quickuvm.yaml` — anywhere in the workspace, not only in the
+  active configuration's folder — and creates files WITHOUT `ignoreIfExists`
+  (a file that appeared meanwhile fails the edit). "Made the active
+  configuration" is said only when it is: `quickuvm.configFile` pins another
+  one, and discovery goes back to it. `SignalsProvider` is created before
   `actions` in `activate` — its `assign` callback binds late. A drop's value
   crosses a serialisation boundary (a JSON string when it leaves the extension
   host's memory): `handleDrop` accepts both. The files written with the Write

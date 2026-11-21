@@ -639,9 +639,12 @@ mesajele tot aici, la implementare.
   a `clock:` LIST with one domain per clock port (named after the port, as the
   generator assumes), one agent per domain carrying the pins that bear the
   domain's TAG (`src_clk_i` → `src_*`, `wclk` → `w*`; an untagged `clk` is the
-  default domain and takes what no tag claims), each with its `clock:`; when
-  the resets are per domain too, a `reset:` list bound to the clocks and a
-  `reset:` on each agent — one shared reset stays a single reset;
+  default domain and takes what no tag claims), each with its `clock:`; the
+  resets as a `reset:` LIST bound to the clocks — always a list, even for one
+  shared reset (with a clock list quick-uvm generates no reset from the plain
+  mapping) — and, when the resets are per domain, a `reset:` on each agent. A
+  clock's enable / gate / select (`clk_en_i`) is not a clock; `aresetn` /
+  `rstn` are active low;
   **composition from the sub-blocks** — the direct sub-blocks as `subenvs`
   (the top a combinational shell, `layout: packaged`), one block configuration
   per MODULE with a boundary agent (`<module>_a`: composed blocks share one
@@ -662,10 +665,18 @@ mesajele tot aici, la implementare.
   pure, `test:signals`; the provider is `src/signals-view.ts`). With ONE clock
   or reset (a mapping) every agent is on it and there is nothing to assign.
   Under a domain LIST, an agent with no `clock:` / `reset:` of its own is in an
-  **Unconnected** folder, whose description says where the generator puts it:
-  on the FIRST domain of the list (probed on quick-uvm 1.1.0 and locked in
-  `test:e2e` — not the domain `dut.clock` names). An agent naming a domain that
-  is not declared is shown there too, with what it says. **Drag an agent onto
+  **Unconnected** folder, and each such agent says where the generator puts it
+  (`→ <domain>`; probed on quick-uvm 1.1.0 and locked in `test:e2e`, one key at
+  a time): a clock — the FIRST domain of the list (not the one `dut.clock`
+  names); a reset — the one RELEASED ON THE AGENT'S CLOCK, and only without
+  such an entry the first. An agent naming a domain that is not declared is
+  shown there too, with what it says. Under a single clock or reset an agent
+  that carries the key anyway is flagged: the generator refuses it (the single
+  clock's own name is `clock.name`, default `clk` — not the DUT's clock port).
+  A single reset next to a clock LIST is marked "NOT GENERATED": quick-uvm's
+  multi-domain path reads only a reset list, so the bench would have no reset
+  at all (the per-clock template therefore always writes a list, even of one
+  entry). **Drag an agent onto
   a domain** to assign it — the TARGET decides the key (a clock domain writes
   `clock:`, a reset domain `reset:`); onto Unconnected, the key is removed. A
   multi-selection is one edit (`assignDomain`, one WorkspaceEdit). Refused with

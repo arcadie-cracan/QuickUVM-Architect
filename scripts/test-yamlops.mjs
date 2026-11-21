@@ -1468,6 +1468,33 @@ test("docs/08 R9: one field folded over several agents is ONE text change, comme
   );
 });
 
+test("R24 resetAsList: the single reset as a ONE-entry list, named after dut.reset, polarity kept", () => {
+  const base = ops.setDut(ops.newConfigText("d"), {
+    module: "d", clock: "clk", reset: "rst", resetActiveLow: false, externalReset: false, combinational: false,
+  });
+  const listed = ops.resetAsList(base);
+  assert.deepEqual(ops.parseQuvm(listed).reset, [{ name: "rst", active_low: false }]);
+  assert.equal(ops.parseQuvm(listed).dut.reset, "rst", "dut.reset now names the entry");
+  assert.equal(ops.resetAsList(listed), listed, "already a list: the same text");
+  // an all-default reset has no `reset:` block at all: the entry is just the name
+  const low = ops.setDut(ops.newConfigText("d"), {
+    module: "d", clock: "clk", reset: "rst_n", resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  assert.deepEqual(ops.parseQuvm(ops.resetAsList(low)).reset, [{ name: "rst_n" }]);
+  // the list composes with the domain mutations (the template's fold)
+  const two = ops.setResetDomainField(ops.addResetDomain(ops.resetAsList(low), "b_rst_n"), "b_rst_n", "clock", "b_clk");
+  assert.deepEqual(ops.parseQuvm(two).reset, [{ name: "rst_n" }, { name: "b_rst_n", clock: "b_clk" }]);
+  // no reset: nothing to declare; an external reset cannot become a list entry
+  const none = ops.setDut(ops.newConfigText("d"), {
+    module: "d", clock: "clk", reset: null, resetActiveLow: true, externalReset: false, combinational: false,
+  });
+  assert.equal(ops.resetAsList(none), none);
+  const ext = ops.setDut(ops.newConfigText("d"), {
+    module: "d", clock: "clk", reset: "rst_n", resetActiveLow: true, externalReset: true, combinational: false,
+  });
+  assert.throws(() => ops.resetAsList(ext), /external/);
+});
+
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

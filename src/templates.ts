@@ -28,10 +28,11 @@ import {
   subenvName,
 } from "./compose";
 import {
-  ACTIVE_LOW_RE,
+  CLOCK_QUALIFIER_RE,
   CLOCK_RE,
   DIR_SUFFIX_RE,
   RESET_RE,
+  resetIsActiveLow,
   SV_IDENT_RE,
   SV_KEYWORDS,
 } from "./heuristics";
@@ -97,11 +98,16 @@ export const configFileOf = (module: string): string => `${module}.quickuvm.yaml
 // ------------------------------------------------------------ shared pieces
 
 const oneBitIn = (p: Port): boolean => p.dir === "in" && p.width === 1;
-export const isClockPin = (p: Port): boolean => oneBitIn(p) && CLOCK_RE.test(p.name);
-/** a reset by name — unless the name is a clock's (`clk_rst_gen`-style names
- *  match both; the clock wins, as it does in `setDut`) */
-export const isResetPin = (p: Port): boolean =>
-  oneBitIn(p) && RESET_RE.test(p.name) && !CLOCK_RE.test(p.name);
+/** a reset by name. A name that says both (`clk_rst_n`, Qsys' `clk_reset_reset_n`)
+ *  is a RESET: it resets, whatever clock it belongs to */
+export const isResetPin = (p: Port): boolean => oneBitIn(p) && RESET_RE.test(p.name);
+/** a clock by name — not a reset, and not a clock's enable / gate / select
+ *  (`clk_en_i` is a data pin; `CLOCK_QUALIFIER_RE`) */
+export const isClockPin = (p: Port): boolean =>
+  oneBitIn(p) &&
+  CLOCK_RE.test(p.name) &&
+  !RESET_RE.test(p.name) &&
+  !CLOCK_QUALIFIER_RE.test(p.name);
 
 /** a port an agent can carry as it is: sized, not `ref`, not an unpacked array
  *  (the interactive flow ASKS about those; a template does not guess) */
@@ -121,7 +127,7 @@ export function dutGuess(module: string, def: ModuleDef | undefined): ops.DutSpe
     module,
     clock,
     reset,
-    resetActiveLow: reset ? ACTIVE_LOW_RE.test(reset) : true,
+    resetActiveLow: reset ? resetIsActiveLow(reset) : true,
     externalReset: false,
     combinational: !clock,
   };
@@ -148,26 +154,36 @@ function pinSpecs(ports: readonly Port[]): PortSpecs {
 
 /** the signals of an interface port's modport as agent ports (the rules of
  *  "Agent from interface": the interface clock is the DUT's, not a port) */
-function ifaceSpecs(model: ProjectModel, inst: Instance, ifp: IfacePort): PortSpecs | null {
+function ifaceSpecs(
+  model: ProjectModel,
+  inst: Instance,
+  ifp: IfacePort
+): { specs: PortSpecs | null; skipped: string[] } {
   const iface = connectedIface(model, inst, ifp.name, ifp.interface)?.iface;
   const modport = iface?.modports[ifp.modport ?? ""];
   if (!iface || !modport) {
-    return null;
+    return { specs: null, skipped: [] };
   }
   const widths = new Map(iface.signals.map((s) => [s.name, s.width]));
   const out: PortSpecs = { inputs: [], outputs: [], inouts: [] };
+  // what the interactive flow reports as skipped is reported here too
+  const skipped: string[] = [];
   for (const [signal, dir] of Object.entries(modport)) {
     const width = widths.get(signal) ?? null;
-    if (width === null || (width === 1 && CLOCK_RE.test(signal))) {
-      continue;
+    if (width === 1 && CLOCK_RE.test(signal)) {
+      continue; // the interface clock is the DUT's clock, by rule — not a port
     }
-    if (dir === "in") {
+    if (width === null) {
+      skipped.push(`${signal} (no fixed size)`);
+    } else if (dir === "in") {
       out.inputs.push({ name: signal, width });
     } else if (dir === "out") {
       out.outputs.push({ name: signal, width });
+    } else {
+      skipped.push(`${signal} (${dir} in a modport is not supported)`);
     }
   }
-  return out.inputs.length + out.outputs.length ? out : null;
+  return { specs: out.inputs.length + out.outputs.length ? out : null, skipped };
 }
 
 const count = (s: PortSpecs): number => s.inputs.length + s.outputs.length + s.inouts.length;
@@ -222,7 +238,11 @@ function planPerInterface(
     let specs: PortSpecs | null = null;
     if (p.kind === "agent-iface") {
       const ifp = def.iface_ports.find((x) => x.name === p.args.port);
-      specs = ifp ? ifaceSpecs(model, inst, ifp) : null;
+      const r = ifp ? ifaceSpecs(model, inst, ifp) : { specs: null, skipped: [] };
+      specs = r.specs;
+      if (r.skipped.length) {
+        notes.push(`interface ${name}: left out ${r.skipped.join(", ")}`);
+      }
     } else if (p.kind === "agent-group") {
       const pins = new Set(
         (Array.isArray(p.args.pins) ? p.args.pins : []).map((id) =>
@@ -259,6 +279,16 @@ function planPerInterface(
     summary.push(`${describe(name, specs)} (no interface or name group: the whole boundary)`);
   } else if (rest.length) {
     notes.push(`without an agent (no name group): ${rest.map((p) => p.name).join(", ")}`);
+  }
+  // an interface port that got no agent (no modport, an instance that cannot be
+  // resolved, nothing usable in it) is NAMED: the template's title promises one
+  // agent per interface, and a missing one must not look like "none needed"
+  for (const ifp of def.iface_ports) {
+    if (!taken.has(ifp.name)) {
+      notes.push(
+        `interface port ${ifp.name} (${ifp.interface}${ifp.modport ? `.${ifp.modport}` : ", no modport"}): no agent — its signals could not be resolved; use "Agent from interface" on the diagram`
+      );
+    }
   }
   leftOut(notes, free);
   if (!taken.size) {
@@ -325,8 +355,9 @@ interface Domain {
   pins: Port[];
 }
 
-/** the domain a pin belongs to by its name, or null (no tag fits, or several do) */
-function domainOf(pin: string, domains: readonly Domain[]): Domain | null {
+/** the domain a pin belongs to by its name: null when no tag fits, "ambiguous"
+ *  when several do and none is the longest */
+function domainOf(pin: string, domains: readonly Domain[]): Domain | "ambiguous" | null {
   const stem = stemOf(pin).toLowerCase();
   const fits = (d: Domain): boolean => {
     const t = d.tag.toLowerCase();
@@ -344,7 +375,7 @@ function domainOf(pin: string, domains: readonly Domain[]): Domain | null {
   // nested tags (`a` and `a_b`): the longest one that fits, if it is alone
   const longest = Math.max(...hits.map((d) => d.tag.length));
   const best = hits.filter((d) => d.tag.length === longest);
-  return best.length === 1 ? best[0] : null;
+  return best.length === 1 ? best[0] : "ambiguous";
 }
 
 function planPerClock(
@@ -374,7 +405,8 @@ function planPerClock(
   const fallback = domains.find((d) => !d.tag) ?? null;
 
   // resets: the one that carries a domain's tag is that domain's; an untagged
-  // one is the default domain's, or — with no default — a reset every domain shares
+  // one is the default domain's, or — with no default — a reset every domain
+  // shares. One that fits nowhere is NAMED below, never dropped.
   const resets = def.ports.filter(isResetPin);
   let shared: string | null = null;
   for (const r of resets) {
@@ -382,19 +414,23 @@ function planPerClock(
     const d = tag ? domains.find((x) => x.tag.toLowerCase() === tag.toLowerCase()) : fallback;
     if (d && !d.reset) {
       d.reset = r.name;
-    } else if (!tag && !shared) {
+    } else if (!tag && !fallback && !shared) {
       shared = r.name;
-    } else {
-      notes.push(`reset ${r.name} matches no clock domain — bind it by hand`);
     }
   }
 
   const stray: string[] = [];
+  const torn: string[] = [];
   for (const p of def.ports) {
     if (isClockPin(p) || isResetPin(p) || !usable(p)) {
       continue;
     }
-    const d = domainOf(p.name, domains) ?? fallback;
+    const hit = domainOf(p.name, domains);
+    if (hit === "ambiguous") {
+      torn.push(p.name); // two domains claim it: not the default domain's by default
+      continue;
+    }
+    const d = hit ?? fallback;
     if (d) {
       d.pins.push(p);
     } else {
@@ -412,14 +448,20 @@ function planPerClock(
   // the bench: the first domain is the one `dut.clock` names; `addClockDomain`
   // turns the mapping into a list on the first add (the first domain keeps the
   // mapping's period and unit)
-  const perDomainResets = domains.filter((d) => d.reset).length > 1;
   const first = domains[0];
-  const dutReset = first.reset ?? shared ?? domains.find((d) => d.reset)?.reset ?? null;
+  // the reset entries, the DUT's first: each domain's own, then a shared one
+  // (released on the first clock)
+  const entries: { name: string; clock: string }[] = [
+    ...domains.filter((d) => d.reset).map((d) => ({ name: d.reset as string, clock: d.clock })),
+    ...(shared ? [{ name: shared, clock: first.clock }] : []),
+  ];
+  const dutReset = first.reset ?? shared ?? entries[0]?.name ?? null;
+  entries.sort((a, b) => Number(b.name === dutReset) - Number(a.name === dutReset));
   const spec: ops.DutSpec = {
     module,
     clock: first.clock,
     reset: dutReset,
-    resetActiveLow: dutReset ? ACTIVE_LOW_RE.test(dutReset) : true,
+    resetActiveLow: dutReset ? resetIsActiveLow(dutReset) : true,
     externalReset: false,
     combinational: false,
   };
@@ -428,24 +470,30 @@ function planPerClock(
     text = ops.addClockDomain(text, d.clock);
   }
   const summary = [dutLine(spec), `clock domains: ${domains.map((d) => d.clock).join(", ")}`];
-  if (perDomainResets) {
-    // a reset LIST: `dut.reset` names the first entry (addResetDomain keeps that
-    // binding); every entry says which clock its release is synchronised to
-    const listed = domains.filter((d) => d.reset);
-    for (const d of listed) {
-      if (d.reset !== dutReset) {
-        text = ops.addResetDomain(text, d.reset as string);
+  if (entries.length) {
+    // ALWAYS a reset list under a clock list — even for one reset: quick-uvm's
+    // multi-domain path reads only a list, and with the plain mapping it
+    // generates NO reset and leaves the DUT's port unconnected, exit 0 (probed;
+    // review finding). `resetAsList` names the first entry after `dut.reset`;
+    // every entry says which clock its release is synchronised to.
+    text = ops.resetAsList(text);
+    for (const e of entries.slice(1)) {
+      text = ops.addResetDomain(text, e.name);
+    }
+    for (const e of entries) {
+      text = ops.setResetDomainField(text, e.name, "clock", e.clock);
+      if (e.name !== dutReset && !resetIsActiveLow(e.name)) {
+        // (the first entry carries the polarity `setDut` wrote)
+        text = ops.setResetDomainField(text, e.name, "active_low", false);
       }
     }
-    for (const d of listed) {
-      text = ops.setResetDomainField(text, d.reset as string, "clock", d.clock);
-      if (!ACTIVE_LOW_RE.test(d.reset as string)) {
-        text = ops.setResetDomainField(text, d.reset as string, "active_low", false);
-      }
-    }
-    summary.push(`reset domains: ${listed.map((d) => `${d.reset} (${d.clock})`).join(", ")}`);
-  } else if (resets.length > 1 && !shared) {
-    notes.push("one reset is declared (dut.reset); the others stay undriven — bind them by hand");
+    summary.push(`reset domains: ${entries.map((e) => `${e.name} (${e.clock})`).join(", ")}`);
+  }
+  const unbound = resets.filter((r) => !entries.some((e) => e.name === r.name));
+  if (unbound.length) {
+    notes.push(
+      `reset${unbound.length === 1 ? "" : "s"} ${unbound.map((r) => r.name).join(", ")}: no clock domain by name — not declared; bind ${unbound.length === 1 ? "it" : "them"} by hand`
+    );
   }
 
   const taken = new Set<string>();
@@ -462,9 +510,12 @@ function planPerClock(
     const specs = pinSpecs(d.pins);
     text = ops.createAgent(text, { name, ...specs, seqItemStyle: opts.seqItemStyle });
     text = ops.setAgentField(text, name, "clock", d.clock);
-    if (perDomainResets && d.reset) {
+    if (entries.length > 1 && d.reset) {
+      // with one entry every agent is on it; with several, the agent's own is
+      // written out (quick-uvm would pick the reset released on its clock —
+      // the same one — but the YAML should not rely on a default to be read)
       text = ops.setAgentField(text, name, "reset", d.reset);
-    } else if (perDomainResets) {
+    } else if (entries.length > 1) {
       notes.push(`agent "${name}": its domain has no reset of its own — it follows ${dutReset}`);
     }
     taken.add(name);
@@ -472,6 +523,11 @@ function planPerClock(
   }
   if (stray.length) {
     notes.push(`not on any clock domain by name: ${stray.join(", ")} — add them to an agent`);
+  }
+  if (torn.length) {
+    notes.push(
+      `claimed by more than one clock domain's name: ${torn.join(", ")} — not assigned; add them to the right agent`
+    );
   }
   leftOut(notes, def.ports.filter((p) => !usable(p)));
   return { id: "per-clock", module, file: configFileOf(module), text, children: [], summary, notes };
@@ -506,16 +562,33 @@ function planComposition(
     byName.set(n, [...(byName.get(n) ?? []), rel]);
   }
   const chosen: { rel: string; name: string; child: Instance }[] = [];
+  const carries = (mod: string): boolean =>
+    (model.modules[mod]?.ports ?? []).some((p) => usable(p) && !isClockPin(p) && !isResetPin(p));
   for (const [name, list] of byName) {
     const child = model.instances.find((i) => i.path === `${viewId}.${list[0]}`);
     if (list.length > 1 || !child) {
       notes.push(`${list.join(", ")}: the same subenv name (${name}) — left out`);
       continue;
     }
+    if (child.module === module) {
+      // a recursive module (common_cells' popcount): its block configuration
+      // would be the top's own file — composed into itself, listed twice
+      notes.push(`${name}: an instance of ${module} itself — a bench cannot compose its own configuration; left out`);
+      continue;
+    }
+    if (!existing.has(configFileOf(child.module)) && !carries(child.module)) {
+      // quick-uvm refuses a block configuration without an agent ("At least
+      // one agent must be defined"): composing it would write a bench that
+      // does not generate
+      notes.push(`${name} (${child.module}): no port an agent could carry — left out (quick-uvm refuses a block without an agent)`);
+      continue;
+    }
     chosen.push({ rel: list[0], name, child });
   }
   if (chosen.length < 2) {
-    throw new TemplateError("fewer than two sub-blocks can be named unambiguously");
+    throw new TemplateError(
+      "fewer than two sub-blocks can be composed" + (notes.length ? ` — ${notes.join("; ")}` : "")
+    );
   }
 
   // the block configurations: one per MODULE (instances share it). A new one
@@ -546,14 +619,11 @@ function planComposition(
     const ports = (cdef?.ports ?? []).filter(
       (p) => usable(p) && !isClockPin(p) && !isResetPin(p)
     );
-    if (ports.length) {
-      const specs = pinSpecs(ports);
-      const aname = boundaryAgentName(mod);
-      ctext = ops.createAgent(ctext, { name: aname, ...specs, seqItemStyle: opts.seqItemStyle });
-      summary.push(`${file}: ${describe(aname, specs)}`);
-    } else {
-      notes.push(`${mod}: no port an agent could carry — its block configuration has no agent`);
-    }
+    // (a block with no usable port was left out above)
+    const specs = pinSpecs(ports);
+    const aname = boundaryAgentName(mod);
+    ctext = ops.createAgent(ctext, { name: aname, ...specs, seqItemStyle: opts.seqItemStyle });
+    summary.push(`${file}: ${describe(aname, specs)}`);
     if ((cdef?.ports ?? []).filter(isClockPin).length > 1) {
       notes.push(`${mod}: several clocks — quick-uvm composes single-clock blocks only`);
     }
@@ -653,10 +723,17 @@ export function templateOffers(
       const plan = planTemplate(model, viewId, id, opts);
       return { id, title: TEMPLATE_TITLES[id], available: true, detail: plan.summary.join(" • ") };
     } catch (e) {
-      if (!(e instanceof TemplateError)) {
-        throw e;
-      }
-      return { id, title: TEMPLATE_TITLES[id], available: false, detail: e.message };
+      // a TemplateError says the template does not apply; anything else is a
+      // mutation (or a shape of the user's files) refusing — an offer that
+      // cannot be planned is unavailable WITH the reason, never an exception
+      // that takes the other two offers down with it (review finding)
+      const why = e instanceof Error ? e.message : String(e);
+      return {
+        id,
+        title: TEMPLATE_TITLES[id],
+        available: false,
+        detail: e instanceof TemplateError ? why : `cannot be planned: ${why}`,
+      };
     }
   });
 }

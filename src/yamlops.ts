@@ -1920,6 +1920,38 @@ export function addResetDomain(text: string, name: string): string {
 }
 
 /**
+ * Declares the single reset as a ONE-entry domain list (docs/08 R24). Needed
+ * the moment the bench has a clock LIST: quick-uvm's multi-domain path reads
+ * only a reset list (or `external: true`) — with a clock list and the plain
+ * mapping, NO reset is generated and the DUT's reset port is left unconnected,
+ * silently (probed on 1.1.0: generate exits 0). The entry is named after
+ * `dut.reset` and carries the mapping's polarity. No-op (the same text) on a
+ * list, and without a `dut.reset`. Refused, like `addResetDomain`, when the
+ * reset is `external: true`: a list entry has no such key.
+ */
+export function resetAsList(text: string): string {
+  const doc = parse(text);
+  const reset = doc.getIn(["reset"]);
+  const dutReset = doc.getIn(["dut", "reset"]);
+  if (isSeq(reset) || typeof dutReset !== "string" || !dutReset) {
+    return text;
+  }
+  if (isMap(reset) && reset.get("external") === true) {
+    throw new Error(
+      "the single reset is `external: true`, and a reset-domain entry has no `external` key — take externality off first"
+    );
+  }
+  const first: Record<string, unknown> = { name: dutReset };
+  if (isMap(reset) && reset.get("active_low") !== undefined) {
+    first.active_low = reset.get("active_low");
+  }
+  const seq = doc.createNode([first]) as YAMLSeq;
+  (seq.items[0] as YAMLMap).flow = true;
+  doc.setIn(["reset"], seq);
+  return doc.toString(TO_STRING);
+}
+
+/**
  * Removes a reset domain. Refused when an agent is gated by it, when it is the one
  * `dut.reset` binds (that would leave the DUT's reset port pointing at nothing), or
  * when it is the last one — QuickUVM rejects each of those.

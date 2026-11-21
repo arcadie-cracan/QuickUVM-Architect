@@ -204,6 +204,27 @@ export async function confirmGesture(provider: PreviewProvider, g: GestureConfir
     return pick === g.verb;
   }
   const summary = vscode.l10n.t("Changes: {0}", changesLabel(changed));
+  if (mode === "always" && g.kind === "create" && g.detail) {
+    // the plan (what it creates, what it LEFT OUT) is several lines: the
+    // question over the diff tabs is a QuickPick title, which would flatten
+    // them into one. So the plan is read first, in a modal whose only way on
+    // is the preview the user asked to always see (review finding).
+    const PREVIEW = vscode.l10n.t("Preview changes");
+    const pick = await ask(
+      g.message,
+      { modal: true, detail: [g.detail, summary].join("\n") },
+      PREVIEW
+    );
+    if (pick !== PREVIEW) {
+      return false;
+    }
+    const open = await provider.show(changed, g.title);
+    try {
+      return await askOverPreview(g.message, summary, g.verb, open);
+    } finally {
+      await open.close();
+    }
+  }
   if (mode === "ask") {
     const PREVIEW = vscode.l10n.t("Preview changes");
     const pick = await ask(

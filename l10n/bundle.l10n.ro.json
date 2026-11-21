@@ -217,5 +217,10 @@
   "New testbench: {0}": "Testbench nou: {0}",
   "QuickUVM Architect: could not create the testbench files.": "QuickUVM Architect: fișierele testbench-ului nu au putut fi create.",
   "QuickUVM Architect: {0} created and made the active configuration{1}.": "QuickUVM Architect: {0} a fost creat și e acum configurația activă{1}.",
-  " — {0} note(s) in the Output panel": " — {0} observație(i) în panoul Output"
+  " — {0} note(s) in the Output panel": " — {0} observație(i) în panoul Output",
+  "Clocks": "Ceasuri",
+  "Resets": "Reseturi",
+  "Unconnected": "Neconectați",
+  "QuickUVM Architect: {0}.": "QuickUVM Architect: {0}.",
+  "QuickUVM Architect: {0} created{1}. Another configuration is pinned as active (quickuvm.configFile) — use \"Choose Active Config\" to switch.": "QuickUVM Architect: {0} a fost creat{1}. O altă configurație e fixată ca activă (quickuvm.configFile) — folosește „Choose Active Config” ca să comuți."
 }

@@ -19,7 +19,7 @@ import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
 import { kindBlockers, layoutBlockers } from "./benchid";
 import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
-import { ACTIVE_LOW_RE, CLOCK_RE, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
+import { CLOCK_RE, resetIsActiveLow, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
 import { MULTI_FIELDS } from "./inspector";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import type { FileChange } from "./preview";
@@ -102,7 +102,7 @@ export class Actions {
       });
     }
     if (reset) {
-      const low = ACTIVE_LOW_RE.test(reset);
+      const low = resetIsActiveLow(reset);
       items.push({
         id: "reset",
         label: vscode.l10n.t(
@@ -151,7 +151,7 @@ export class Actions {
       module: inst.module,
       clock,
       reset: has("reset") && reset ? reset : null,
-      resetActiveLow: reset ? ACTIVE_LOW_RE.test(reset) : true,
+      resetActiveLow: reset ? resetIsActiveLow(reset) : true,
       externalReset: has("external"),
       combinational,
     };
@@ -235,17 +235,23 @@ export class Actions {
         return false;
       }
     };
-    if (await exists(topUri)) {
+    // the same file name anywhere in the workspace is the same bench: a second
+    // `<module>.quickuvm.yaml` in another folder would shadow or be shadowed
+    const elsewhere = (await this.config.listConfigs()).find(
+      (u) => path.basename(u.fsPath) === configFileOf(module) && u.toString() !== topUri.toString()
+    );
+    if (elsewhere || (await exists(topUri))) {
+      const there = elsewhere ?? topUri;
       const OPEN = vscode.l10n.t("Open it");
       const pick = await vscode.window.showInformationMessage(
         vscode.l10n.t(
           "QuickUVM Architect: {0} already exists — a template never overwrites a configuration.",
-          configFileOf(module)
+          vscode.workspace.asRelativePath(there)
         ),
         OPEN
       );
       if (pick === OPEN) {
-        await vscode.commands.executeCommand("vscode.open", topUri);
+        await vscode.commands.executeCommand("vscode.open", there);
       }
       return;
     }
@@ -372,16 +378,37 @@ export class Actions {
       );
       return;
     }
+    // an existing block config the plan edited (an agent set passive) is saved
+    // WITH the files that were just created: quick-uvm reads the disk, and a
+    // bench whose top is on disk while a child's edit sits in a dirty buffer
+    // does not generate
+    for (const c of plan.children) {
+      if (!c.created) {
+        await docs.get(c.file)?.save();
+      }
+    }
     await this.config.activate(topUri);
     this.log.appendLine(
       `[actions] newTestbench ${picked.id} ${module}: ${changes.map((c) => c.label).join(", ")}`
     );
+    const notesTail = plan.notes.length
+      ? vscode.l10n.t(" — {0} note(s) in the Output panel", plan.notes.length)
+      : "";
+    // `quickuvm.configFile` pins the active configuration: discovery goes back
+    // to it, and saying "made active" would be false
+    const isActive = this.config.configUri?.toString() === topUri.toString();
     void vscode.window.showInformationMessage(
-      vscode.l10n.t(
-        "QuickUVM Architect: {0} created and made the active configuration{1}.",
-        plan.file,
-        plan.notes.length ? vscode.l10n.t(" — {0} note(s) in the Output panel", plan.notes.length) : ""
-      )
+      isActive
+        ? vscode.l10n.t(
+            "QuickUVM Architect: {0} created and made the active configuration{1}.",
+            plan.file,
+            notesTail
+          )
+        : vscode.l10n.t(
+            "QuickUVM Architect: {0} created{1}. Another configuration is pinned as active (quickuvm.configFile) — use \"Choose Active Config\" to switch.",
+            plan.file,
+            notesTail
+          )
     );
     for (const n of plan.notes) {
       this.log.appendLine(`[actions] newTestbench note: ${n}`);
@@ -403,8 +430,11 @@ export class Actions {
     if (!cfg.configUri || (field !== "clock" && field !== "reset")) {
       return;
     }
+    const agentsNow = cfg.current.agents;
     const known = new Set(
-      (cfg.current.agents ?? []).filter((a) => !a.from_vip).map((a) => a.name)
+      (Array.isArray(agentsNow) ? agentsNow : [])
+        .filter((a) => a && typeof a === "object" && !a.from_vip)
+        .map((a) => a.name)
     );
     const targets = [...new Set(names)].filter((n) => known.has(n));
     if (!targets.length) {

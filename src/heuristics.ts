@@ -13,6 +13,25 @@ export const RESET_RE = /rst|reset/i;
 /** active-low suffixes: classic _n/_b + _ni/_bi (the PULP convention) */
 export const ACTIVE_LOW_RE = /(_n|_b|_ni|_bi)$/i;
 
+/**
+ * Active-low by name, for a RESET: the suffixes above, or the reset token
+ * fused with `n` — AXI's `aresetn`, `rstn`, `resetn_i` (docs/08 R24, review:
+ * `ACTIVE_LOW_RE` alone wrote `aresetn` as active HIGH, unattended).
+ */
+export function resetIsActiveLow(name: string): boolean {
+  return ACTIVE_LOW_RE.test(name) || /(?:rst|reset)n(?:_[a-z]{1,2})?$/i.test(name);
+}
+
+/**
+ * A clock-RELATED control that is not a clock: an enable, a gate, a select, a
+ * "stable" / "locked" flag (a divided or gated clock — `clk_div2`, `clk_gated`
+ * — IS a clock and is not excluded). `clk_en_i` matches the clock
+ * regex and is a data pin — counted as a clock it made a single-clock module
+ * "multi-clock" and got a clock generator on its enable (review finding).
+ */
+export const CLOCK_QUALIFIER_RE =
+  /(^|_)(en|ena|enable|gate|gating|sel|select|req|ack|stable|locked|lock|valid|ready)(_|\d|$)/i;
+
 /** valid SystemVerilog identifier (agent/probe/subenv name) */
 export const SV_IDENT_RE = /^[a-zA-Z_][a-zA-Z0-9_]*$/;
 

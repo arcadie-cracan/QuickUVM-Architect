@@ -108,7 +108,8 @@ test("per-interface: pin groups by prefix (the R12 proposals); no group at all =
   assert.equal(cfg.agents[0].seq_item_style, "field_macros");
   // `reg` is an SV keyword: an agent of that name compiles nowhere — refused, and said
   assert.ok(p.notes.some((n) => /"reg" is not a usable agent name/.test(n)));
-  assert.ok(p.notes.some((n) => /without an agent.*reg_addr.*irq|without an agent.*irq/.test(n)));
+  const left = p.notes.find((n) => /without an agent/.test(n)) ?? "";
+  assert.ok(left.includes("reg_addr") && left.includes("reg_wdata") && left.includes("irq"), left);
 
   const flat = T.planTemplate(model, "demo_top.u_soc.u_add", "per-interface");
   const add = parseQuvm(flat.text);
@@ -172,7 +173,7 @@ test("per-clock: fused names (wclk / rclk), an active-high reset, a domain nobod
   assert.ok(p.notes.some((n) => /scan_clk: no pin carries its name/.test(n)));
 });
 
-test("per-clock: an untagged clock is the default domain; one shared reset stays a single reset", () => {
+test("per-clock: an untagged clock is the default domain; ONE reset is still a reset LIST (review)", () => {
   const m = single("bridge", [
     port("clk", "in"), port("rst_n", "in"), port("fast_clk", "in"),
     port("req", "in"), port("ack", "out"),
@@ -181,13 +182,50 @@ test("per-clock: an untagged clock is the default domain; one shared reset stays
   const p = T.planTemplate(m, "bridge", "per-clock");
   const cfg = parseQuvm(p.text);
   assert.deepEqual(cfg.clock.map((d) => d.name), ["clk", "fast_clk"]);
-  assert.equal(cfg.reset, undefined, "one reset: no list, no `reset:` on the agents");
+  // with a clock LIST quick-uvm reads only a reset list: the plain mapping
+  // generated NO reset and left the DUT's port unconnected, exit 0 (probed)
+  assert.deepEqual(cfg.reset, [{ name: "rst_n", clock: "clk" }], "one entry, named after dut.reset");
   assert.equal(cfg.dut.reset, "rst_n");
   assert.deepEqual(
     cfg.agents.map((a) => [a.name, a.clock, a.reset, a.ports.inputs.map((x) => x.name)]),
     [["clk", "clk", undefined, ["req"]], ["fast", "fast_clk", undefined, ["fast_data"]]],
-    "what no tag claims goes to the default domain"
+    "what no tag claims goes to the default domain; one reset needs no `reset:` on the agents"
   );
+  assert.ok(p.summary.some((s) => /reset domains: rst_n \(clk\)/.test(s)));
+  // an active-high single reset keeps its polarity through the conversion
+  const hi = single("b2", [port("a_clk", "in"), port("b_clk", "in"), port("rst", "in"), port("a_d", "in", 8), port("b_d", "in", 8)]);
+  assert.deepEqual(parseQuvm(T.planTemplate(hi, "b2", "per-clock").text).reset, [
+    { name: "rst", active_low: false, clock: "a_clk" },
+  ], "a shared reset is released on the first clock");
+});
+
+test("per-clock (review): one domain with a reset, a reset nobody can bind, a pin two domains claim", () => {
+  // exactly ONE tagged reset: still a list, and the other domain's agent follows it
+  const one = single("m1", [
+    port("a_clk", "in"), port("a_rst_n", "in"), port("b_clk", "in"),
+    port("a_d", "in", 8), port("b_d", "in", 8),
+  ]);
+  const p1 = T.planTemplate(one, "m1", "per-clock");
+  assert.deepEqual(parseQuvm(p1.text).reset, [{ name: "a_rst_n", clock: "a_clk" }]);
+  assert.deepEqual(parseQuvm(p1.text).agents.map((a) => a.reset), [undefined, undefined]);
+  // a second untagged reset next to a default domain's: declared nowhere, and SAID
+  const two = single("m2", [
+    port("clk", "in"), port("fast_clk", "in"), port("rst_n", "in"), port("reset", "in"),
+    port("d", "in", 8), port("fast_d", "in", 8),
+  ]);
+  const p2 = T.planTemplate(two, "m2", "per-clock");
+  assert.deepEqual(parseQuvm(p2.text).reset.map((d) => d.name), ["rst_n"]);
+  assert.ok(p2.notes.some((n) => /reset reset: no clock domain by name — not declared/.test(n)), p2.notes.join(" | "));
+  // a pin two tags claim is not the default domain's by default
+  const torn = single("m3", [
+    port("clk", "in"), port("a_clk", "in"), port("b_clk", "in"),
+    port("a_to_b", "in", 8), port("a_d", "in", 8), port("b_d", "in", 8), port("x", "in"),
+  ]);
+  const p3 = T.planTemplate(torn, "m3", "per-clock");
+  const all = parseQuvm(p3.text).agents.flatMap((a) => a.ports.inputs.map((x) => x.name));
+  assert.equal(all.includes("a_to_b"), false);
+  assert.ok(all.includes("x"), "an unclaimed pin still goes to the default domain");
+  assert.ok(p3.notes.some((n) => /claimed by more than one clock domain's name: a_to_b/.test(n)));
 });
 
 test("per-clock: refused with one clock, with none, and when no pin can be told apart", () => {
@@ -300,6 +338,85 @@ test("composition: refused below two blocks; names that collide are left out, an
   const p = T.planTemplate(clash, "sys", "composition");
   assert.deepEqual(parseQuvm(p.text).subenvs.map((s) => s.name), ["u_p", "u_c"]);
   assert.ok(p.notes.some((n) => /the same subenv name \(g_0_u\)/.test(n)));
+});
+
+test("clock and reset by name (review): an enable is not a clock, `aresetn` is active low, `clk_rst_n` is a reset", () => {
+  // a clock ENABLE made a single-clock module "multi-clock", with a clkgen on it
+  const gated = single("gated", [
+    port("clk_i", "in"), port("rst_ni", "in"), port("clk_en_i", "in"),
+    port("wr_en_i", "in"), port("data_i", "in", 8), port("data_o", "out", 8),
+  ]);
+  assert.match(offer(gated, "gated", "per-clock").detail, /one clock \(clk_i\)/);
+  const g = parseQuvm(T.planTemplate(gated, "gated", "per-interface").text);
+  assert.ok(g.agents[0].ports.inputs.some((x) => x.name === "clk_en_i"), "the enable is a pin an agent drives");
+  // …while a divided or gated clock IS one
+  const div = single("div", [port("clk", "in"), port("clk_div2", "in"), port("d", "in"), port("div2_d", "in")]);
+  assert.equal(offer(div, "div", "per-clock").available, true);
+  // AXI: `aresetn` is active LOW (the suffix regex alone wrote `active_low: false`)
+  const axi = single("axi", [port("aclk", "in"), port("aresetn", "in"), port("s_valid", "in"), port("s_ready", "out")]);
+  const a = parseQuvm(T.planTemplate(axi, "axi", "per-interface").text);
+  assert.equal(a.dut.reset, "aresetn");
+  assert.equal(a.reset, undefined, "active low is the default: no `reset:` block at all");
+  assert.equal(T.dutGuess("x", { ports: [port("clk", "in"), port("rstn", "in")], iface_ports: [] }).resetActiveLow, true);
+  assert.equal(T.dutGuess("x", { ports: [port("clk", "in"), port("rst", "in")], iface_ports: [] }).resetActiveLow, false);
+  // a name that says both is a RESET (the old heuristic's answer), never the clock
+  const both = T.dutGuess("x", { ports: [port("clk", "in"), port("clk_rst_n", "in")], iface_ports: [] });
+  assert.deepEqual([both.clock, both.reset], ["clk", "clk_rst_n"]);
+  const qsys = T.dutGuess("x", { ports: [port("clk_reset_reset_n", "in"), port("clk_clk", "in")], iface_ports: [] });
+  assert.deepEqual([qsys.clock, qsys.reset], ["clk_clk", "clk_reset_reset_n"]);
+});
+
+test("per-interface (review): an interface without an agent and a skipped modport signal are SAID", () => {
+  const m = structuredClone(model);
+  m.modules.soc_top.iface_ports.find((p) => p.name === "bus").modport = null;
+  const p = T.planTemplate(m, "demo_top.u_soc", "per-interface");
+  assert.ok(p.notes.some((n) => /interface port bus \(.*no modport\): no agent/.test(n)), p.notes.join(" | "));
+  const odd = structuredClone(model);
+  const bus = odd.instances.find((i) => i.iface);
+  const mp = Object.values(bus.iface.modports)[0];
+  const [sig0, sig1] = Object.keys(mp);
+  mp[sig1] = "inout";
+  bus.iface.signals.find((s) => s.name === sig0).width = null;
+  const q = T.planTemplate(odd, "demo_top.u_soc", "per-interface");
+  const note = q.notes.find((n) => /^interface bus: left out/.test(n)) ?? "";
+  assert.ok(note.includes(`${sig0} (no fixed size)`), note);
+  assert.ok(note.includes(`${sig1} (inout in a modport is not supported)`), note);
+});
+
+test("offers (review): a plan that cannot be made is an unavailable offer with the reason, never a throw", () => {
+  // an existing block config with a bare `-` under `agents:` (a null entry)
+  const bad = new Map([["cons.quickuvm.yaml", "project: {name: cons}\ndut: {name: cons}\nagents:\n  -\n"]]);
+  let offers;
+  assert.doesNotThrow(() => { offers = T.templateOffers(SYS, "sys", { existing: bad }); });
+  assert.equal(offers.length, 3);
+  const comp = offers.find((o) => o.id === "composition");
+  assert.equal(comp.available, true, "the null entry is skipped: nothing to set passive there");
+  const plan = T.planTemplate(SYS, "sys", "composition", { existing: bad });
+  assert.ok(plan.notes.some((n) => /no agent to set passive on: u_c/.test(n)));
+});
+
+test("composition (review): a recursive module and a block nobody can drive are left out, and said", () => {
+  const rec = structuredClone(SYS);
+  rec.instances.push({ path: "sys.u_self", module: "sys", params: {}, loc: null });
+  const p = T.planTemplate(rec, "sys", "composition");
+  assert.deepEqual(parseQuvm(p.text).subenvs.map((s) => s.name), ["u_p", "u_c"]);
+  assert.equal(p.children.some((c) => c.file === p.file), false, "the top's own file is never a block config");
+  assert.equal(new Set([p.file, ...p.children.map((c) => c.file)]).size, 1 + p.children.length, "no file twice");
+  assert.ok(p.notes.some((n) => /u_self: an instance of sys itself/.test(n)));
+  // a block with clock and reset only: quick-uvm refuses a block config without an agent
+  const bare = structuredClone(SYS);
+  bare.modules.tick = { ports: [port("clk", "in"), port("rst_n", "in")], iface_ports: [], loc: null };
+  bare.instances.push({ path: "sys.u_t", module: "tick", params: {}, loc: null });
+  const q = T.planTemplate(bare, "sys", "composition");
+  assert.deepEqual(parseQuvm(q.text).subenvs.map((s) => s.name), ["u_p", "u_c"]);
+  assert.equal(q.children.some((c) => c.module === "tick"), false);
+  assert.ok(q.notes.some((n) => /u_t \(tick\): no port an agent could carry — left out/.test(n)));
+  // …and when that leaves fewer than two, the offer says why
+  const lone = structuredClone(bare);
+  lone.instances = lone.instances.filter((i) => i.path !== "sys.u_c");
+  const o = offer(lone, "sys", "composition");
+  assert.equal(o.available, false);
+  assert.match(o.detail, /fewer than two sub-blocks can be composed — .*u_t \(tick\)/);
 });
 
 console.log(`\ntest-templates: ${passed} tests passed.`);

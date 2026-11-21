@@ -67,8 +67,17 @@ export class SignalsProvider
   }
 
   getTreeItem(node: SignalNode): vscode.TreeItem {
+    // the fixed labels are localised here (the model is pure, no vscode)
+    const label =
+      node.kind === "group"
+        ? node.field === "clock"
+          ? vscode.l10n.t("Clocks")
+          : vscode.l10n.t("Resets")
+        : node.kind === "unassigned"
+          ? vscode.l10n.t("Unconnected")
+          : node.label;
     const item = new vscode.TreeItem(
-      node.label,
+      label,
       node.kind === "agent" || node.kind === "note"
         ? vscode.TreeItemCollapsibleState.None
         : vscode.TreeItemCollapsibleState.Expanded
@@ -127,7 +136,9 @@ export class SignalsProvider
     const plan = dropPlan(this.config, on, agents);
     if (!plan.ok) {
       if (plan.reason !== "already there") {
-        void vscode.window.showInformationMessage(`QuickUVM Architect: ${plan.reason}.`);
+        void vscode.window.showInformationMessage(
+          vscode.l10n.t("QuickUVM Architect: {0}.", plan.reason)
+        );
       }
       return;
     }

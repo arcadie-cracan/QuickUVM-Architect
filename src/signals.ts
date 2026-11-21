@@ -2,11 +2,16 @@
 //
 // The bench's clock and reset domains as a tree, with the agents under the
 // domain they are on. Under a domain LIST an agent without a `clock:` /
-// `reset:` of its own is in an "Unconnected" folder: quick-uvm puts it on the
-// FIRST domain of the list (probed on 1.1.0 — the first entry, not the one
-// `dut.clock` names), and the folder says so instead of hiding the default.
+// `reset:` of its own is in an "Unconnected" folder, which says where the
+// generator puts it instead of hiding the default (probed on quick-uvm 1.1.0):
+//   clock — the FIRST domain of the list (not the one `dut.clock` names);
+//   reset — the reset RELEASED ON THE AGENT'S CLOCK (the entry whose `clock:`
+//           is that clock), and only without one, the first entry.
 // Dragging an agent onto a domain writes that key; onto "Unconnected", removes
-// it. With a single clock or reset (a mapping) there is nothing to assign.
+// it. With a single clock or reset (a mapping) there is nothing to assign —
+// and an agent that names one anyway is refused by the generator, so it is
+// flagged. A clock list with a plain reset MAPPING generates no reset at all:
+// that is said on the reset's row.
 //
 // Tested in `npm run test:signals`.
 
@@ -37,10 +42,19 @@ const isObj = (v: unknown): v is Record<string, unknown> =>
 interface DomainInfo {
   name: string;
   description: string;
+  /** a reset domain: the clock its release is synchronised to */
+  clock?: string;
+}
+
+interface Domains {
+  listed: boolean;
+  domains: DomainInfo[];
+  /** a mapping: the name an agent's own key may carry ("" = none is accepted) */
+  declared?: string;
 }
 
 /** the declared clock domains; `listed` = a LIST (agents can be assigned) */
-function clockDomains(cfg: QuvmConfig): { listed: boolean; domains: DomainInfo[] } {
+function clockDomains(cfg: QuvmConfig): Domains {
   const describe = (d: Record<string, unknown>): string =>
     `${typeof d.period === "number" ? d.period : 10} ${typeof d.unit === "string" ? d.unit : "ns"}` +
     (d.source === "dut" ? " — driven by the DUT" : "");
@@ -55,14 +69,14 @@ function clockDomains(cfg: QuvmConfig): { listed: boolean; domains: DomainInfo[]
     };
   }
   const map = isObj(raw) ? raw : {};
-  const name =
-    (typeof map.name === "string" && map.name) ||
-    (typeof cfg.dut?.clock === "string" && cfg.dut.clock) ||
-    "clk";
-  return { listed: false, domains: [{ name, description: describe(map) }] };
+  // the row is labelled with the DUT's clock PORT; the single clock's own name
+  // (what an agent's `clock:` would have to say) is `clock.name`, default "clk"
+  const declared = (typeof map.name === "string" && map.name) || "clk";
+  const name = (typeof cfg.dut?.clock === "string" && cfg.dut.clock) || declared;
+  return { listed: false, domains: [{ name, description: describe(map) }], declared };
 }
 
-function resetDomains(cfg: QuvmConfig): { listed: boolean; domains: DomainInfo[] } {
+function resetDomains(cfg: QuvmConfig): Domains {
   const raw = cfg.reset as unknown;
   const polarity = (d: Record<string, unknown>): string =>
     d.active_low === false ? "active high" : "active low";
@@ -78,6 +92,7 @@ function resetDomains(cfg: QuvmConfig): { listed: boolean; domains: DomainInfo[]
             polarity(d) +
             (typeof d.clock === "string" && d.clock ? `, released on ${d.clock}` : "") +
             (cfg.dut?.reset === d.name ? " — the DUT's reset port" : ""),
+          ...(typeof d.clock === "string" && d.clock ? { clock: d.clock } : {}),
         })),
     };
   }
@@ -86,31 +101,57 @@ function resetDomains(cfg: QuvmConfig): { listed: boolean; domains: DomainInfo[]
     return { listed: false, domains: [] };
   }
   const map = isObj(raw) ? raw : {};
+  // quick-uvm's multi-domain path (a clock LIST) reads only a reset list, or
+  // `external: true`: with the plain mapping no reset is generated and the
+  // DUT's reset port stays unconnected, exit 0 (probed on 1.1.0)
+  const unwired = Array.isArray(cfg.clock) && map.external !== true;
   return {
     listed: false,
     domains: [
       {
         name,
-        description: polarity(map) + (map.external === true ? ", external (not driven by the bench)" : ""),
+        description:
+          polarity(map) +
+          (map.external === true ? ", external (not driven by the bench)" : "") +
+          (unwired
+            ? " — NOT GENERATED: with a clock list quick-uvm needs the reset declared as a domain (Add Reset Domain)"
+            : ""),
       },
     ],
+    declared: "", // an agent `reset:` under a single reset is refused ("not a declared reset")
   };
 }
+
+/** the value of an agent's own `clock:` / `reset:` key ("" = none) */
+const ownKey = (a: QuvmAgent, field: SignalField): string => {
+  const v = (a as Record<string, unknown>)[field];
+  return typeof v === "string" ? v : "";
+};
 
 function group(
   field: SignalField,
   label: string,
-  info: { listed: boolean; domains: DomainInfo[] },
+  info: Domains,
   agents: readonly QuvmAgent[],
-  empty: string
+  empty: string,
+  /** resets only: the clock domain an agent samples (its own, or the first) */
+  clockOf?: (a: QuvmAgent) => string
 ): SignalNode {
   const root: SignalNode = { id: field, kind: "group", label, field, children: [] };
   if (!info.domains.length) {
     root.children.push({ id: `${field}:none`, kind: "note", label: empty, children: [] });
     return root;
   }
+  // a TreeItem id must be unique in the tree: two agents (or two entries) with
+  // one name — a copy mid-edit — get a `#n` suffix instead of colliding
+  const seen = new Map<string, number>();
+  const uid = (id: string): string => {
+    const n = (seen.get(id) ?? 0) + 1;
+    seen.set(id, n);
+    return n === 1 ? id : `${id}#${n}`;
+  };
   const agentNode = (a: QuvmAgent, parent: string, description?: string): SignalNode => ({
-    id: `${parent}/${a.name}`,
+    id: uid(`${parent}/${a.name}`),
     kind: "agent",
     label: a.name ?? "?",
     description,
@@ -120,8 +161,11 @@ function group(
     children: [],
   });
   const named = agents.filter((a) => a.name);
+  const own = (a: QuvmAgent): string => ownKey(a, field);
   if (!info.listed) {
-    // one domain: every agent is on it, by construction — nothing to assign
+    // one domain: every agent is on it, by construction — nothing to assign.
+    // An agent that names one ANYWAY is refused by the generator unless it is
+    // the single clock's own name ("not a declared clock / reset"): flagged
     const d = info.domains[0];
     root.children.push({
       id: `${field}:${d.name}`,
@@ -130,43 +174,59 @@ function group(
       description: d.description,
       field,
       domain: d.name,
-      children: named.map((a) => agentNode(a, `${field}:${d.name}`)),
+      children: named.map((a) =>
+        agentNode(
+          a,
+          `${field}:${d.name}`,
+          own(a) && own(a) !== info.declared
+            ? `${field}: ${own(a)} — not a declared ${field}: quick-uvm refuses it (remove the key)`
+            : undefined
+        )
+      ),
     });
     return root;
   }
   const declared = new Set(info.domains.map((d) => d.name));
-  const own = (a: QuvmAgent): string => {
-    const v = (a as Record<string, unknown>)[field];
-    return typeof v === "string" ? v : "";
-  };
   for (const d of info.domains) {
+    const id = uid(`${field}:${d.name}`);
     root.children.push({
-      id: `${field}:${d.name}`,
+      id,
       kind: "domain",
       label: d.name,
       description: d.description,
       field,
       domain: d.name,
-      children: named
-        .filter((a) => own(a) === d.name)
-        .map((a) => agentNode(a, `${field}:${d.name}`)),
+      children: named.filter((a) => own(a) === d.name).map((a) => agentNode(a, id)),
     });
   }
   // no key of their own — or one naming a domain that is not declared, which
   // quick-uvm refuses: shown here with what it says, never dropped from the tree
   const loose = named.filter((a) => !declared.has(own(a)));
+  const first = info.domains[0].name;
+  // where the generator puts an agent with no key: a clock — the first domain;
+  // a reset — the one released on the agent's clock, else the first
+  const lands = (a: QuvmAgent): string =>
+    (clockOf && info.domains.find((d) => d.clock && d.clock === clockOf(a))?.name) || first;
   root.children.push({
     id: `${field}:`,
     kind: "unassigned",
     label: "Unconnected",
-    description: `${loose.length ? "" : "none — "}quick-uvm puts these on ${info.domains[0].name}, the first domain`,
+    description:
+      (loose.length ? "" : "none — ") +
+      (clockOf
+        ? `quick-uvm gives each the reset released on its clock, else ${first}`
+        : `quick-uvm puts these on ${first}, the first domain`),
     field,
     domain: "",
     children: loose.map((a) =>
       agentNode(
         a,
         `${field}:`,
-        own(a) ? `${field}: ${own(a)} — not a declared domain` : a.from_vip ? "VIP reference" : undefined
+        own(a)
+          ? `${field}: ${own(a)} — not a declared domain`
+          : a.from_vip
+            ? "VIP reference"
+            : `→ ${lands(a)}`
       )
     ),
   });
@@ -179,9 +239,17 @@ export function buildSignalsTree(config: QuvmConfig | null | undefined): SignalN
     return [];
   }
   const agents = list<QuvmAgent>(config.agents).filter(isObj) as QuvmAgent[];
+  const clocks = clockDomains(config);
+  // the clock an agent samples: its own when that is a declared domain, else
+  // the first (under a mapping there is one)
+  const clockNames = new Set(clocks.domains.map((d) => d.name));
+  const clockOf = (a: QuvmAgent): string => {
+    const own = ownKey(a, "clock");
+    return clocks.listed && clockNames.has(own) ? own : clocks.domains[0]?.name ?? "";
+  };
   return [
-    group("clock", "Clocks", clockDomains(config), agents, "no clock"),
-    group("reset", "Resets", resetDomains(config), agents, "no reset (dut.reset is empty)"),
+    group("clock", "Clocks", clocks, agents, "no clock"),
+    group("reset", "Resets", resetDomains(config), agents, "no reset (dut.reset is empty)", clockOf),
   ];
 }
 
