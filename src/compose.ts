@@ -48,24 +48,33 @@ export function parentComposition(
   if (!parent) {
     return null; // top module: no parent
   }
-  const p = parent;
-  const childRels: string[] = [];
+  return { parentPath: parent.path, childRels: directBlockChildren(model, parent.path) };
+}
+
+/**
+ * The rels of an instance's DIRECT block children (no other instance between
+ * them and it — a generate member `g_ch[0].u_ch` is direct, its own children
+ * are not). Interfaces are not blocks. Shared by "Compose into parent bench"
+ * and the composition template (docs/08 R24).
+ */
+export function directBlockChildren(model: ProjectModel, parentPath: string): string[] {
+  const rels: string[] = [];
   for (const i of model.instances) {
-    if (i.iface || !i.path.startsWith(`${p.path}.`)) {
+    if (i.iface || !i.path.startsWith(`${parentPath}.`)) {
       continue;
     }
     const between = model.instances.some(
       (j) =>
-        j.path !== p.path &&
+        j.path !== parentPath &&
         j.path !== i.path &&
-        j.path.startsWith(`${p.path}.`) &&
+        j.path.startsWith(`${parentPath}.`) &&
         i.path.startsWith(`${j.path}.`)
     );
     if (!between) {
-      childRels.push(i.path.slice(p.path.length + 1));
+      rels.push(i.path.slice(parentPath.length + 1));
     }
   }
-  return { parentPath: p.path, childRels };
+  return rels;
 }
 
 /** `g_ch[1].u_ch` -> `g_ch_1_u_ch` (SV identifier for subenvs[].name) */
@@ -399,10 +408,17 @@ export function planWireEdits(
     // active ("agent ... is active and would drive ...") — with find(), the
     // second agent stayed active and the gesture reported success on a broken state
     // (pre-existing bug, empirically confirmed at the adversarial review).
-    const owners = (parseQuvm(text).agents ?? []).filter(
+    // an existing block config is the user's file: a bare `-` under `agents:`
+    // (a null entry) or a port list that is not a list must not throw here
+    const agentsOf = parseQuvm(text).agents;
+    const owners = (Array.isArray(agentsOf) ? agentsOf : []).filter(
       (a) =>
+        a &&
+        typeof a === "object" &&
         a.name &&
-        (a.ports?.inputs ?? []).some((p) => p.name && drivenPorts.has(p.name))
+        (Array.isArray(a.ports?.inputs) ? a.ports.inputs : []).some(
+          (p) => p && p.name && drivenPorts.has(p.name)
+        )
     );
     if (!owners.length) {
       plan.manual.push(sink);

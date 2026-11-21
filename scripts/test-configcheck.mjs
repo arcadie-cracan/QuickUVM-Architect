@@ -372,6 +372,20 @@ agents:
   assert.deepEqual(undriven(check(text.replace("clock: clk", "clock: clk, reset: ''"), undefined)), []);
 });
 
+test("reset-undriven: a plain reset mapping under a clock LIST (docs/08 R24's hazard) is reported", () => {
+  // quick-uvm's multi-domain path reads only a reset list or `external: true`:
+  // with the plain mapping it generates no reset at all, exit 0. The same
+  // finding names it, and its `external` repair is one of the two ways out.
+  const cfg = {
+    dut: { name: "bridge", clock: "clk", reset: "rst_n" },
+    clock: [{ name: "clk" }, { name: "fast_clk" }],
+    agents: [{ name: "a", clock: "fast_clk", ports: { inputs: [{ name: "req", width: 1 }] } }],
+  };
+  assert.deepEqual(undrivenReset(cfg), { port: "rst_n", repair: "external" });
+  assert.equal(undrivenReset({ ...cfg, reset: { external: true } }), null);
+  assert.equal(undrivenReset({ ...cfg, reset: [{ name: "rst_n", clock: "clk" }] }), null);
+});
+
 test("reset-undriven: silent where the YAML cannot tell, or the generator wires no reset", () => {
   // combinational: quick-uvm connects no reset and REFUSES `external: true` on it
   assert.equal(undrivenReset({ dut: { name: "buf", reset: "rst_n", combinational: true } }), null);

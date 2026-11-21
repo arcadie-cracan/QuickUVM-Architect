@@ -71,4 +71,24 @@ test("identificator SV: valid vs invalid", () => {
   }
 });
 
+const { resetIsActiveLow, CLOCK_QUALIFIER_RE } = await import(pathToFileURL(outFile));
+
+test("reset polarity by name: the suffixes, and the reset token fused with n (docs/08 R24)", () => {
+  for (const s of ["rst_n", "rst_ni", "src_rst_ni", "aresetn", "rstn", "resetn_i", "ARESETN", "s_axi_aresetn"]) {
+    assert.ok(resetIsActiveLow(s), `${s} is active low`);
+  }
+  for (const s of ["rst", "reset", "areset", "rst_i", "srst", "reset_in"]) {
+    assert.ok(!resetIsActiveLow(s), `${s} is active high`);
+  }
+});
+
+test("a clock's control is not a clock: enable / gate / select; a divided clock still is", () => {
+  for (const s of ["clk_en", "clk_en_i", "clk_enable", "clk_gate_i", "clk_sel", "clk_sel0", "clk_locked", "ref_clk_valid"]) {
+    assert.ok(CLOCK_QUALIFIER_RE.test(s), `${s} is a control`);
+  }
+  for (const s of ["clk", "clk_i", "src_clk_i", "clk_div2", "clk_gated", "sysclk", "enet_clk", "selclk"]) {
+    assert.ok(!CLOCK_QUALIFIER_RE.test(s), `${s} is a clock name`);
+  }
+});
+
 console.log(`\ntest-heuristics: ${passed} teste au trecut.`);

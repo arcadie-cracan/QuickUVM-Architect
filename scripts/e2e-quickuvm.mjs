@@ -1572,4 +1572,157 @@ endpackage
   }
 }
 
+// --- scenario 16 (docs/08 R24): the "New testbench" TEMPLATES. Each plan is a fold
+// of the mutations above over a new skeleton; here each one is generated for real —
+// a template that writes a config quick-uvm refuses is worse than no template.
+{
+  await esbuild.build({
+    entryPoints: ["src/templates.ts"],
+    outfile: join(outDir, "templates.mjs"),
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    logLevel: "silent",
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
+  });
+  const T = await import(pathToFileURL(join(outDir, "templates.mjs")));
+  const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
+  const port = (name, dir, width = 1) => ({
+    name, dir, type: "logic", width, unpacked_dims: null, elem_width: null, loc: null,
+  });
+  const tbTop = (dir) =>
+    readFileSync(listFiles(join(dir, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8");
+
+  // one agent per interface, on the regression design
+  const iface = T.planTemplate(model, "demo_top.u_soc", "per-interface");
+  generate("tpl_per_interface", iface.text, ["bus_if.sv", "tb_top.sv"]);
+
+  // one agent per clock domain: two clocks, two resets, each agent on its own
+  const cdc = {
+    schema_version: 1,
+    tops: ["cdc_fifo"],
+    modules: {
+      cdc_fifo: {
+        ports: [
+          port("src_clk_i", "in"), port("src_rst_ni", "in"),
+          port("src_data_i", "in", 8), port("src_valid_i", "in"), port("src_ready_o", "out"),
+          port("dst_clk_i", "in"), port("dst_rst_ni", "in"),
+          port("dst_data_o", "out", 8), port("dst_valid_o", "out"), port("dst_ready_i", "in"),
+        ],
+        iface_ports: [],
+        loc: null,
+      },
+    },
+    instances: [{ path: "cdc_fifo", module: "cdc_fifo", params: {}, loc: null }],
+    views: {},
+  };
+  const clk = T.planTemplate(cdc, "cdc_fifo", "per-clock");
+  const clkTop = tbTop(generate("tpl_per_clock", clk.text, ["clkgen.sv", "src_if.sv", "dst_if.sv"]));
+  assert.match(clkTop, /src_if src_if_inst \(\.clk\(src_clk_i\), \.src_rst_ni\(src_rst_ni\)\)/);
+  assert.match(clkTop, /dst_if dst_if_inst \(\.clk\(dst_clk_i\), \.dst_rst_ni\(dst_rst_ni\)\)/,
+    "each agent's interface is on ITS clock and reset");
+  // both resets reach the DUT itself (not only the interfaces asserted above)
+  const dutInst = /cdc_fifo dut_inst \(([\s\S]*?)\);/.exec(clkTop)?.[1] ?? "";
+  assert.match(dutInst, /\.src_rst_ni\(src_rst_ni\)/, "the first reset is connected to the DUT");
+  assert.match(dutInst, /\.dst_rst_ni\(dst_rst_ni\)/, "the second reset is connected to the DUT");
+
+  // what the Signals view's "Unconnected" folders state (two DIFFERENT rules,
+  // probed one key at a time):
+  //  - no `clock:` of its own → the FIRST clock domain of the list;
+  const noClock = ops.setAgentField(ops.setAgentField(clk.text, "dst", "clock", ""), "dst", "reset", "");
+  assert.match(tbTop(generate("tpl_no_clock", noClock, ["tb_top.sv"])),
+    /dst_if dst_if_inst \(\.clk\(src_clk_i\), \.src_rst_ni\(src_rst_ni\)\)/,
+    "quick-uvm no longer puts an agent without `clock:` on the first domain — the Signals view lies");
+  //  - no `reset:` of its own → the reset RELEASED ON ITS CLOCK, not the first
+  const noReset = ops.setAgentField(clk.text, "dst", "reset", "");
+  assert.match(tbTop(generate("tpl_no_reset", noReset, ["tb_top.sv"])),
+    /dst_if dst_if_inst \(\.clk\(dst_clk_i\), \.dst_rst_ni\(dst_rst_ni\)\)/,
+    "quick-uvm no longer binds an agent without `reset:` to its clock's reset — the Signals view lies");
+
+  // ONE reset under a clock list: the template declares it as a one-entry list,
+  // because with the plain mapping quick-uvm generates no reset at all
+  const bridge = {
+    schema_version: 1,
+    tops: ["bridge"],
+    modules: {
+      bridge: {
+        ports: [
+          port("clk", "in"), port("rst_n", "in"), port("fast_clk", "in"),
+          port("req", "in"), port("ack", "out"), port("fast_data", "in", 4), port("fast_vld", "out"),
+        ],
+        iface_ports: [],
+        loc: null,
+      },
+    },
+    instances: [{ path: "bridge", module: "bridge", params: {}, loc: null }],
+    views: {},
+  };
+  const shared = T.planTemplate(bridge, "bridge", "per-clock");
+  const sharedTop = tbTop(generate("tpl_shared_reset", shared.text, ["clkgen.sv", "tb_top.sv"]));
+  const sharedDut = /bridge dut_inst \(([\s\S]*?)\);/.exec(sharedTop)?.[1] ?? "";
+  assert.match(sharedDut, /\.rst_n\(rst_n\)/, "the shared reset is connected to the DUT");
+  assert.match(sharedTop, /fast_if fast_if_inst \(\.clk\(fast_clk\), \.rst_n\(rst_n\)\)/,
+    "the agent of the other domain gets the shared reset");
+  // `collapseResets` is the Properties panel's own gesture: a one-entry list
+  // back to the single mapping. Since D25 the mapping it writes is TOP-DRIVEN
+  // (`external: true`), which quick-uvm's multi-domain path does read — so the
+  // gesture no longer walks into the hazard below
+  const mapped = ops.collapseResets(shared.text);
+  assert.deepEqual(ops.parseQuvm(mapped).reset, { external: true });
+  const dutOf = (top) => /bridge dut_inst \(([\s\S]*?)\);/.exec(top)?.[1] ?? "";
+  const mappedTop = tbTop(generate("tpl_shared_reset_mapping", mapped, ["tb_top.sv"]));
+  assert.match(dutOf(mappedTop), /\.rst_n\(rst_n\)/,
+    "a top-driven single reset under a clock list is not connected to the DUT");
+  // the hazard itself, locked: the same bench with the PLAIN mapping (no
+  // `external` — a hand-written or pre-D25 config) has no reset on quick-uvm
+  // 1.1.0. A generator that infers the top-driven reset wires it; both are told
+  // apart, so this says which generator it ran against.
+  const plain = ops.setResetDomainField(mapped, "rst_n", "external", false);
+  assert.equal(ops.parseQuvm(plain).reset, undefined);
+  const plainTop = tbTop(generate("tpl_shared_reset_plain", plain, ["tb_top.sv"]));
+  if (/\.rst_n\(rst_n\)/.test(dutOf(plainTop))) {
+    console.log("  ok    templates: a plain reset mapping under a clock list — the generator INFERS the top-driven reset (fixed upstream)");
+  } else {
+    assert.doesNotMatch(dutOf(plainTop), /rst_n/, "the DUT's reset is connected to something else");
+    console.log("  ok    templates: a plain reset mapping under a clock list — NO reset is generated (resetAsList and the Signals view's warning stay)");
+  }
+
+  // composition from the sub-blocks, on the regression design: 5 subenvs, 3 block
+  // configs with a boundary agent each
+  const comp = T.planTemplate(model, "demo_top.u_soc", "composition");
+  generate("soc_top", comp.text, ["tb_top.sv"],
+    Object.fromEntries(comp.children.map((c) => [c.file, c.text])));
+
+  // ... and with a connection the design draws: the physical assign, the
+  // destination's agent passive (an active one is refused — scenario 6)
+  const sys = {
+    schema_version: 1,
+    tops: ["sys"],
+    modules: {
+      sys: { ports: [port("din", "in", 8), port("dout", "out", 8)], iface_ports: [], loc: null },
+      prod: { ports: [port("d_i", "in", 8), port("q_o", "out", 8)], iface_ports: [], loc: null },
+      cons: { ports: [port("d_i", "in", 8), port("q_o", "out", 8)], iface_ports: [], loc: null },
+    },
+    instances: [
+      { path: "sys", module: "sys", params: {}, loc: null },
+      { path: "sys.u_p", module: "prod", params: {}, loc: null },
+      { path: "sys.u_c", module: "cons", params: {}, loc: null },
+    ],
+    views: {
+      sys: {
+        module: "sys",
+        pins: [],
+        nets: [{ name: "mid", endpoints: ["u_p.q_o", "u_c.d_i"], fanout: 1, render: "wire" }],
+      },
+    },
+  };
+  const wired = T.planTemplate(sys, "sys", "composition");
+  const wiredTop = tbTop(generate("sys", wired.text, ["tb_top.sv"],
+    Object.fromEntries(wired.children.map((c) => [c.file, c.text]))));
+  assert.match(wiredTop, /assign\s+\S*d_i\s*=\s*\S*q_o/, "the connection is a physical assign in tb_top");
+  console.log("  ok    templates: per-interface, per-clock (+ the unassigned default), composition (+ wired)");
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

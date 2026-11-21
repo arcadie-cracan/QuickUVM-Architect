@@ -2510,6 +2510,9 @@ export function renderInspector(c: InspectorCtx): void {
     selPins.length > 0 && selPins.every((p) => roles[p.name] === "ignored");
   ctx.root.append(
     button("Set as DUT", Boolean(inst), () => ctx.postAction("setDut", {})),
+    // docs/08 R24 — a whole bench for this module from a template; the host
+    // shows what each template would create (and refuses to overwrite a config)
+    button("New testbench…", Boolean(inst), () => ctx.postAction("newTestbench", {})),
     button(
       `Agent from selection${selectable.length ? ` (${selectable.length})` : ""}`,
       selectable.length > 0,

@@ -44,8 +44,10 @@ export interface GestureConfirm {
   title: string;
   changes: readonly FileChange[];
   /** `destructive`: a modal in every mode; `multi-file`: a question only when
-   *  more than one file changes, and none on `never` */
-  kind: "destructive" | "multi-file";
+   *  more than one file changes, and none on `never`; `create` (docs/08 R24, a
+   *  template): asked in every mode like a destructive gesture — the plan's
+   *  notes (what it left out) must be read before a file exists, even one file */
+  kind: "destructive" | "multi-file" | "create";
 }
 
 /** an opened preview: whether any of its tabs is still open, and the closer */
@@ -188,6 +190,9 @@ export async function confirmGesture(provider: PreviewProvider, g: GestureConfir
   }
   const mode = previewSetting();
   const multi = g.kind === "multi-file";
+  // creating a bench is not a warning: the same modal, the information icon
+  const ask =
+    g.kind === "create" ? vscode.window.showInformationMessage : vscode.window.showWarningMessage;
   if (multi && changed.length < 2) {
     return true; // one file: an immediate gesture, never previewed (the row's own caveat)
   }
@@ -195,13 +200,34 @@ export async function confirmGesture(provider: PreviewProvider, g: GestureConfir
     if (multi) {
       return true;
     }
-    const pick = await vscode.window.showWarningMessage(g.message, { modal: true, detail: g.detail }, g.verb);
+    const pick = await ask(g.message, { modal: true, detail: g.detail }, g.verb);
     return pick === g.verb;
   }
   const summary = vscode.l10n.t("Changes: {0}", changesLabel(changed));
+  if (mode === "always" && g.kind === "create" && g.detail) {
+    // the plan (what it creates, what it LEFT OUT) is several lines: the
+    // question over the diff tabs is a QuickPick title, which would flatten
+    // them into one. So the plan is read first, in a modal whose only way on
+    // is the preview the user asked to always see (review finding).
+    const PREVIEW = vscode.l10n.t("Preview changes");
+    const pick = await ask(
+      g.message,
+      { modal: true, detail: [g.detail, summary].join("\n") },
+      PREVIEW
+    );
+    if (pick !== PREVIEW) {
+      return false;
+    }
+    const open = await provider.show(changed, g.title);
+    try {
+      return await askOverPreview(g.message, summary, g.verb, open);
+    } finally {
+      await open.close();
+    }
+  }
   if (mode === "ask") {
     const PREVIEW = vscode.l10n.t("Preview changes");
-    const pick = await vscode.window.showWarningMessage(
+    const pick = await ask(
       g.message,
       { modal: true, detail: [g.detail, summary].filter(Boolean).join("\n") },
       g.verb,

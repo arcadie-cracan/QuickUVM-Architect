@@ -35,6 +35,7 @@ import {
 } from "./protocol";
 import { PropertiesViewProvider } from "./propertiesview";
 import { LayoutStore } from "./sidecar";
+import { SignalsProvider } from "./signals-view";
 import { VerificationProvider } from "./tbtree";
 import { GenStateService } from "./genstate-service";
 import { ResolveService } from "./resolve-service";
@@ -131,9 +132,20 @@ export function activate(context: vscode.ExtensionContext): void {
   const vTreeView = vscode.window.createTreeView("quickuvm.verification", {
     treeDataProvider: vtree,
   });
+  // docs/08 R24 — the clock / reset domains with the agents on them; a drop
+  // assigns (the provider is created before `actions`, hence the late binding)
+  const signals = new SignalsProvider((agents, field, value) =>
+    actions.assignDomain(agents, field, value)
+  );
+  const signalsView = vscode.window.createTreeView("quickuvm.signals", {
+    treeDataProvider: signals,
+    dragAndDropController: signals,
+    canSelectMany: true,
+  });
   context.subscriptions.push(
     treeView,
     vTreeView,
+    signalsView,
     vscode.languages.registerCodeActionsProvider(
       { scheme: "file", pattern: "**/*.{yaml,yml}" },
       new ConfigFixProvider(),
@@ -264,6 +276,9 @@ export function activate(context: vscode.ExtensionContext): void {
       switch (action) {
         case "setDut":
           void actions.setDut(target);
+          break;
+        case "newTestbench":
+          void actions.newTestbench(target); // docs/08 R24
           break;
         case "createAgentFromPins":
           void actions.createAgentFromPins(target, pins);
@@ -862,6 +877,7 @@ export function activate(context: vscode.ExtensionContext): void {
       config.configUri ? config.current : null,
       config.configUri ? vscode.workspace.asRelativePath(config.configUri) : null
     );
+    signals.setConfig(config.configUri ? config.current : null); // docs/08 R24
     // recompute the "not generated" decoration from the (possibly changed) config
     void genState.refresh(config.configUri, config.current);
   });
@@ -1072,6 +1088,19 @@ export function activate(context: vscode.ExtensionContext): void {
         void actions.setDut(viewId);
       }
     ),
+
+    // docs/08 R24 — a bench from a template, for the module of the tree row, of
+    // the design view on screen, or of the top
+    vscode.commands.registerCommand("quickuvm.newTestbench", (arg?: InstanceNode) => {
+      const shown = DiagramPanel.current?.currentView;
+      const isInstance = (p: string | undefined): p is string =>
+        Boolean(p && model?.instances.some((i) => i.path === p)); // the module-level `model`
+      void actions.newTestbench(
+        arg?.inst?.path ?? (isInstance(shown) ? shown : model?.tops[0])
+      );
+    }),
+    vscode.commands.registerCommand("quickuvm.addClockDomain", () => actions.editClock("add", {})),
+    vscode.commands.registerCommand("quickuvm.addResetDomain", () => actions.editReset("add", {})),
 
     vscode.commands.registerCommand("quickuvm.createAgentFromSelection", () => {
       const p = DiagramPanel.current;

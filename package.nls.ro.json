@@ -66,5 +66,11 @@
   "view.verification.name": "Ierarhia verificării",
   "welcome.hierarchy": "Nu există încă un model de proiect.\n[Setează modulul top](command:quickuvm.setTop)\n[Încarcă modelul](command:quickuvm.reloadModel)\nSursele se caută prin Bender.yml, printr-un fișier .f (setarea quickuvm.fileList) sau prin glob (quickuvm.sourceGlob).",
   "welcome.verification": "Niciun testbench QuickUVM configurat încă.\nSelectează DUT-ul în Design Hierarchy, apoi apasă „Set as DUT” în panoul Properties — mediul de verificare apare aici.",
-  "welcome.verificationEmpty": "Configurația nu are încă nicio componentă.\nSelectează porturi în vederea designului și apasă „Agent from selection” în panoul Properties.\n[Deschide vederea de verificare](command:quickuvm.openVerificationView)"
+  "welcome.verificationEmpty": "Configurația nu are încă nicio componentă.\nSelectează porturi în vederea designului și apasă „Agent from selection” în panoul Properties.\n[Deschide vederea de verificare](command:quickuvm.openVerificationView)",
+  "cmd.newTestbench": "Testbench nou…",
+  "cmd.addClockDomain": "Adaugă domeniu de ceas",
+  "cmd.addResetDomain": "Adaugă domeniu de reset",
+  "view.signals.name": "Semnale",
+  "view.signals.contextualTitle": "QuickUVM Architect — ceasuri și reseturi",
+  "welcome.signals": "Aici apar domeniile de ceas și de reset ale testbench-ului activ, cu agenții de pe fiecare.\nTrage un agent pe un domeniu ca să-l asignezi.\n[Testbench nou…](command:quickuvm.newTestbench)"
 }

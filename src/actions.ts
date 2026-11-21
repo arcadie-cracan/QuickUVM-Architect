@@ -7,6 +7,7 @@ import * as path from "path";
 import * as vscode from "vscode";
 import {
   deriveConnections,
+  directBlockChildren,
   parentComposition,
   planWireEdits,
   singleConnection,
@@ -18,7 +19,7 @@ import { ConfigService, TbEditTarget } from "./config";
 // the name-based heuristics (including the _ni/_bi pitfall) live in heuristics (pure, tested)
 import { kindBlockers, layoutBlockers } from "./benchid";
 import { coveredAgent, parseBinSpec, scoreboardEndpoints } from "./coverage";
-import { ACTIVE_LOW_RE, CLOCK_RE, RESET_RE, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
+import { CLOCK_RE, resetIsActiveLow, SV_IDENT_RE, SV_KEYWORDS } from "./heuristics";
 import { MULTI_FIELDS } from "./inspector";
 import { Instance, ModuleDef, Port, ProjectModel } from "./model";
 import type { FileChange } from "./preview";
@@ -27,6 +28,16 @@ import { probeCoverageAllowed, proposeProbe } from "./probe";
 import { connectedIface } from "./proposals";
 import type { ProposalApply } from "./protocol";
 import { scoreboardNodeIds, type QuvmConfig } from "./quickuvm";
+import type { SignalField } from "./signals";
+import {
+  configFileOf,
+  dutGuess,
+  isResetPin,
+  planTemplate,
+  templateOffers,
+  TemplateError,
+  type TemplateOptions,
+} from "./templates";
 import { inferredComponents, type ResolvedConfig } from "./resolved";
 import * as ops from "./yamlops";
 
@@ -65,8 +76,13 @@ export class Actions {
     }
     const { inst, def } = r;
     const oneBitIns = def.ports.filter((p) => p.dir === "in" && p.width === 1);
-    let clock = oneBitIns.find((p) => CLOCK_RE.test(p.name))?.name ?? null;
-    const reset = oneBitIns.find((p) => RESET_RE.test(p.name))?.name ?? null;
+    // ONE heuristic for "Set as DUT", the subenv skeletons and the templates
+    const guess = dutGuess(inst.module, def);
+    let clock = guess.clock;
+    // the reset CANDIDATE, offered even without a clock candidate (the user may
+    // choose the clock by hand below); `dutGuess` itself gives a clockless DUT
+    // no reset, and the spec below applies the same rule to what is confirmed
+    const reset = guess.reset ?? def.ports.find(isResetPin)?.name ?? null;
 
     type Item = vscode.QuickPickItem & { id: string };
     const items: Item[] = [];
@@ -90,7 +106,7 @@ export class Actions {
       });
     }
     if (reset) {
-      const low = ACTIVE_LOW_RE.test(reset);
+      const low = resetIsActiveLow(reset);
       // No "external" checkbox any more (Nov 2026): who drives the reset is
       // DERIVED by `ops.setDut` — the testbench top, unless an agent declares
       // the port. The unchecked box used to be the default and generated a
@@ -148,7 +164,7 @@ export class Actions {
       module: inst.module,
       clock,
       reset: !combinational && has("reset") && reset ? reset : null,
-      resetActiveLow: reset ? ACTIVE_LOW_RE.test(reset) : true,
+      resetActiveLow: reset ? resetIsActiveLow(reset) : true,
       combinational,
     };
     // active config on a DIFFERENT dut: explicit choice — overwrite the dut of
@@ -199,6 +215,257 @@ export class Actions {
         // decides", and `quickuvm.autoSaveConfig` covers that if wanted.
         await (await vscode.workspace.openTextDocument(uri)).save();
       }
+    }
+  }
+
+  // ------------------------------------------- templates (docs/08 R24)
+
+  /**
+   * "New Testbench…": a bench for the module of `viewId` from one of three
+   * templates (src/templates.ts — pure, each a fold of the mutations above).
+   * The plan is shown before anything exists: what it creates, what it LEFT
+   * OUT, and the files as a diff on request. Never overwrites: an existing
+   * `<module>.quickuvm.yaml` is opened instead.
+   */
+  async newTestbench(viewId: string | undefined): Promise<void> {
+    const model = this.getModel();
+    const r = this.resolve(viewId);
+    const root = vscode.workspace.workspaceFolders?.[0];
+    if (!model || !r || !viewId || !root) {
+      return;
+    }
+    const module = r.inst.module;
+    const dir = this.config.configUri
+      ? vscode.Uri.joinPath(this.config.configUri, "..")
+      : root.uri;
+    const topUri = vscode.Uri.joinPath(dir, configFileOf(module));
+    const exists = async (uri: vscode.Uri): Promise<boolean> => {
+      try {
+        await vscode.workspace.fs.stat(uri);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    // the same file name anywhere in the workspace is the same bench: a second
+    // `<module>.quickuvm.yaml` in another folder would shadow or be shadowed
+    const elsewhere = (await this.config.listConfigs()).find(
+      (u) => path.basename(u.fsPath) === configFileOf(module) && u.toString() !== topUri.toString()
+    );
+    if (elsewhere || (await exists(topUri))) {
+      const there = elsewhere ?? topUri;
+      const OPEN = vscode.l10n.t("Open it");
+      const pick = await vscode.window.showInformationMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: {0} already exists — a template never overwrites a configuration.",
+          vscode.workspace.asRelativePath(there)
+        ),
+        OPEN
+      );
+      if (pick === OPEN) {
+        await vscode.commands.executeCommand("vscode.open", there);
+      }
+      return;
+    }
+
+    // the block configurations already next to it (composition reuses them)
+    const existing = new Map<string, string>();
+    const docs = new Map<string, vscode.TextDocument>();
+    for (const rel of directBlockChildren(model, viewId)) {
+      const child = model.instances.find((i) => i.path === `${viewId}.${rel}`);
+      const file = child ? configFileOf(child.module) : undefined;
+      if (!file || existing.has(file)) {
+        continue;
+      }
+      try {
+        const doc = await vscode.workspace.openTextDocument(vscode.Uri.joinPath(dir, file));
+        existing.set(file, doc.getText());
+        docs.set(file, doc);
+      } catch {
+        // not there: the plan creates it
+      }
+    }
+    const opts: TemplateOptions = {
+      seqItemStyle: vscode.workspace
+        .getConfiguration("quickuvm")
+        .get<"manual" | "field_macros">("seqItemStyle", "manual"),
+      existing,
+    };
+
+    type Item = vscode.QuickPickItem & { id: string; available: boolean; why: string };
+    const items: Item[] = templateOffers(model, viewId, opts).map((o) => ({
+      id: o.id,
+      available: o.available,
+      why: o.detail,
+      label: `${o.available ? "$(new-file)" : "$(circle-slash)"} ${o.title}`,
+      description: o.available ? undefined : vscode.l10n.t("not for this module"),
+      detail: o.detail,
+    }));
+    const picked = await vscode.window.showQuickPick(items, {
+      title: vscode.l10n.t("New testbench for {0}", module),
+      placeHolder: vscode.l10n.t("Choose a starting point — nothing is written before you confirm"),
+      matchOnDetail: true,
+    });
+    if (!picked) {
+      return;
+    }
+    if (!picked.available) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t("QuickUVM Architect: this template does not apply to {0} — {1}.", module, picked.why)
+      );
+      return;
+    }
+    let plan;
+    try {
+      plan = planTemplate(model, viewId, picked.id as Parameters<typeof planTemplate>[2], opts);
+    } catch (e) {
+      // a TemplateError is the template saying it does not apply; anything else
+      // is a mutation refusing — both are the user's to read, neither is silent
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t(
+          "QuickUVM Architect: {0}",
+          e instanceof TemplateError || e instanceof Error ? e.message : String(e)
+        )
+      );
+      return;
+    }
+
+    const changes: FileChange[] = [
+      { label: plan.file, created: true, oldText: "", newText: plan.text },
+      ...plan.children.map((c) => ({
+        label: c.file,
+        created: c.created,
+        oldText: c.created ? "" : existing.get(c.file) ?? "",
+        newText: c.text,
+      })),
+    ];
+    const go = await confirmGesture(this.preview, {
+      kind: "create",
+      message: vscode.l10n.t(
+        "Create {0} ({1} file(s)) from the template?",
+        plan.file,
+        changes.length
+      ),
+      detail: [
+        ...plan.summary,
+        ...(plan.notes.length ? ["", vscode.l10n.t("Left out:"), ...plan.notes.map((n) => `• ${n}`)] : []),
+      ].join("\n"),
+      verb: vscode.l10n.t("Create"),
+      title: vscode.l10n.t("New testbench: {0}", module),
+      changes,
+    });
+    if (!go) {
+      return;
+    }
+    // what was shown is what is written: a file that appeared, or a block
+    // config edited while the question waited, cancels
+    const stale =
+      (await exists(topUri)) ||
+      plan.children.some((c) =>
+        c.created ? false : docs.get(c.file)?.getText() !== existing.get(c.file)
+      );
+    if (stale) {
+      this.warnStalePreview();
+      return;
+    }
+    const edit = new vscode.WorkspaceEdit();
+    edit.createFile(topUri, { contents: Buffer.from(plan.text, "utf8") });
+    for (const c of plan.children) {
+      const uri = vscode.Uri.joinPath(dir, c.file);
+      const doc = docs.get(c.file);
+      if (c.created) {
+        // not `ignoreIfExists`: a file that appeared meanwhile fails the edit
+        edit.createFile(uri, { contents: Buffer.from(c.text, "utf8") });
+      } else if (doc) {
+        edit.replace(
+          uri,
+          new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length)),
+          c.text
+        );
+      }
+    }
+    if (!(await vscode.workspace.applyEdit(edit))) {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t("QuickUVM Architect: could not create the testbench files.")
+      );
+      return;
+    }
+    // an existing block config the plan edited (an agent set passive) is saved
+    // WITH the files that were just created: quick-uvm reads the disk, and a
+    // bench whose top is on disk while a child's edit sits in a dirty buffer
+    // does not generate
+    for (const c of plan.children) {
+      if (!c.created) {
+        await docs.get(c.file)?.save();
+      }
+    }
+    await this.config.activate(topUri);
+    this.log.appendLine(
+      `[actions] newTestbench ${picked.id} ${module}: ${changes.map((c) => c.label).join(", ")}`
+    );
+    const notesTail = plan.notes.length
+      ? vscode.l10n.t(" — {0} note(s) in the Output panel", plan.notes.length)
+      : "";
+    // `quickuvm.configFile` pins the active configuration: discovery goes back
+    // to it, and saying "made active" would be false
+    const isActive = this.config.configUri?.toString() === topUri.toString();
+    void vscode.window.showInformationMessage(
+      isActive
+        ? vscode.l10n.t(
+            "QuickUVM Architect: {0} created and made the active configuration{1}.",
+            plan.file,
+            notesTail
+          )
+        : vscode.l10n.t(
+            "QuickUVM Architect: {0} created{1}. Another configuration is pinned as active (quickuvm.configFile) — use \"Choose Active Config\" to switch.",
+            plan.file,
+            notesTail
+          )
+    );
+    for (const n of plan.notes) {
+      this.log.appendLine(`[actions] newTestbench note: ${n}`);
+    }
+  }
+
+  /**
+   * docs/08 R24 — the Signals view's drop: `clock:` / `reset:` of several
+   * agents in ONE edit ("" removes the key: back on the first domain). The
+   * legality is `dropPlan`'s (pure); here only what the file says now is
+   * re-checked — a VIP reference takes neither key.
+   */
+  async assignDomain(
+    names: string[],
+    field: SignalField,
+    value: string,
+    cfg: TbEditTarget = this.config
+  ): Promise<void> {
+    if (!cfg.configUri || (field !== "clock" && field !== "reset")) {
+      return;
+    }
+    const agentsNow = cfg.current.agents;
+    const known = new Set(
+      (Array.isArray(agentsNow) ? agentsNow : [])
+        .filter((a) => a && typeof a === "object" && !a.from_vip)
+        .map((a) => a.name)
+    );
+    const targets = [...new Set(names)].filter((n) => known.has(n));
+    if (!targets.length) {
+      return;
+    }
+    try {
+      if (
+        await cfg.apply((t) =>
+          targets.reduce((acc, n) => ops.setAgentField(acc, n, field, value), t)
+        )
+      ) {
+        this.log.appendLine(
+          `[actions] assignDomain ${targets.join(",")} .${field} = ${value || "(first domain)"}`
+        );
+      }
+    } catch (e) {
+      void vscode.window.showErrorMessage(
+        vscode.l10n.t("QuickUVM Architect: {0}", e instanceof Error ? e.message : String(e))
+      );
     }
   }
 
@@ -710,7 +977,7 @@ export class Actions {
       } catch {
         newConfigs.set(p.module, {
           uri,
-          spec: heuristicDut(p.module, this.getModel()?.modules[p.module]),
+          spec: dutGuess(p.module, this.getModel()?.modules[p.module]),
         });
       }
     }
@@ -3147,23 +3414,6 @@ function expandFold(rel: string): string[] {
     out.push(rel.replace(m[0], `[${i}]`));
   }
   return out;
-}
-
-/** the heuristic dut of a child block (the skeleton from createSubenv, docs/03) */
-function heuristicDut(module: string, def: ModuleDef | undefined): ops.DutSpec {
-  const oneBitIns = (def?.ports ?? []).filter(
-    (p) => p.dir === "in" && p.width === 1
-  );
-  const clock = oneBitIns.find((p) => CLOCK_RE.test(p.name))?.name ?? null;
-  const reset = oneBitIns.find((p) => RESET_RE.test(p.name))?.name ?? null;
-  return {
-    module,
-    clock,
-    // no clock => combinational => no reset (see setDut above)
-    reset: clock ? reset : null,
-    resetActiveLow: reset ? ACTIVE_LOW_RE.test(reset) : true,
-    combinational: !clock,
-  };
 }
 
 /** Agent name suggestion from the common prefix of the selected pins. */

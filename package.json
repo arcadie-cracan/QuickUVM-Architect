@@ -72,6 +72,13 @@
           "contextualTitle": "%view.verification.contextualTitle%"
         },
         {
+          "id": "quickuvm.signals",
+          "name": "%view.signals.name%",
+          "icon": "media/icon.svg",
+          "contextualTitle": "%view.signals.contextualTitle%",
+          "visibility": "collapsed"
+        },
+        {
           "id": "quickuvm.properties",
           "name": "%view.properties.name%",
           "type": "webview",
@@ -94,6 +101,10 @@
         "view": "quickuvm.verification",
         "contents": "%welcome.verificationEmpty%",
         "when": "quickuvm.hasConfig"
+      },
+      {
+        "view": "quickuvm.signals",
+        "contents": "%welcome.signals%"
       }
     ],
     "commands": [
@@ -127,6 +138,24 @@
         "command": "quickuvm.setDut",
         "title": "%cmd.setDut%",
         "category": "QuickUVM Architect"
+      },
+      {
+        "command": "quickuvm.newTestbench",
+        "title": "%cmd.newTestbench%",
+        "category": "QuickUVM Architect",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "quickuvm.addClockDomain",
+        "title": "%cmd.addClockDomain%",
+        "category": "QuickUVM Architect",
+        "icon": "$(add)"
+      },
+      {
+        "command": "quickuvm.addResetDomain",
+        "title": "%cmd.addResetDomain%",
+        "category": "QuickUVM Architect",
+        "icon": "$(add)"
       },
       {
         "command": "quickuvm.createAgentFromSelection",
@@ -283,6 +312,21 @@
           "group": "quickuvm@1"
         },
         {
+          "command": "quickuvm.newTestbench",
+          "when": "view == quickuvm.hierarchy && viewItem == instance",
+          "group": "quickuvm@1"
+        },
+        {
+          "command": "quickuvm.addClockDomain",
+          "when": "view == quickuvm.signals && viewItem == signals-group-clock",
+          "group": "inline"
+        },
+        {
+          "command": "quickuvm.addResetDomain",
+          "when": "view == quickuvm.signals && viewItem == signals-group-reset",
+          "group": "inline"
+        },
+        {
           "command": "quickuvm.openVerificationView",
           "when": "view == quickuvm.hierarchy && viewItem == instance && quickuvm.hasConfig",
           "group": "quickuvm@2"
@@ -315,6 +359,14 @@
       ],
       "commandPalette": [
         {
+          "command": "quickuvm.addClockDomain",
+          "when": "quickuvm.hasConfig"
+        },
+        {
+          "command": "quickuvm.addResetDomain",
+          "when": "quickuvm.hasConfig"
+        },
+        {
           "command": "quickuvm.regenerateItem",
           "when": "false"
         },
@@ -343,6 +395,11 @@
         {
           "command": "quickuvm.generate",
           "when": "view == quickuvm.properties",
+          "group": "navigation"
+        },
+        {
+          "command": "quickuvm.newTestbench",
+          "when": "view == quickuvm.hierarchy",
           "group": "navigation"
         }
       ]
@@ -519,6 +576,8 @@
     "test:wiring": "node scripts/test-wiring.mjs",
     "test:arrange": "node scripts/test-arrange.mjs",
     "test:annotations": "node scripts/test-annotations.mjs",
+    "test:templates": "node scripts/test-templates.mjs",
+    "test:signals": "node scripts/test-signals.mjs",
     "test:matrix": "node scripts/test-matrix.mjs",
     "test:filters": "node scripts/test-filters.mjs",
     "test:proposals": "node scripts/test-proposals.mjs",
