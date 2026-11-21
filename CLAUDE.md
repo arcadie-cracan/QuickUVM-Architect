@@ -124,6 +124,7 @@ npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (do
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
 npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
+npm run test:overlay     # the design views' configuration overlay: claimed pins (inouts included), roles, boundary coverage
 npm run test:results     # simulation results (docs/08 R25): UVM log + run verdict + attribution by reporter path + imc summary + the per-level projection, on real Xcelium runs
 npm run test:templates   # "New testbench" templates (docs/08 R24): per interface, per clock domain, composition — what each plan writes and what it leaves out
 npm run test:signals     # the Signals view's model (docs/08 R24): clock / reset domains with their agents, the Unconnected folder, what a drop writes
@@ -133,6 +134,7 @@ npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin gro
 npm run test:preview     # the diff preview (docs/08 R19): the +/- line summary of a gesture, the files that change
 npm run test:trace       # diagram <-> generated code (docs/08 R20): file owner, identifier pattern, lit lines, lenses, report
 npm run test:e2e         # yamlops -> real quick-uvm generate + the elaboration lint of every generated top (needs quick-uvm)
+npm run shots            # the tutorials' figures: the real webview, captured (docs/tutorial-shots/); `-- --arrange` to place the blocks by hand first
 ```
 
 F5 în VSCode (configurația "Rulează extensia (examples/)") deschide un
@@ -1340,6 +1342,36 @@ coliziunea de nume.
   quick-uvm 1.1.0 wires `.rst_n(<primary agent>_if_inst.rst_n)` in tb_top,
   while Architect keeps reset pins out of agents — such a bench generates
   clean and fails elaboration (`*E,CUVUNF`).
+
+- **The tutorials' figures are CAPTURED, never drawn** (`npm run shots`,
+  `scripts/capture-shots.mjs`, Nov 2026): the shipped `dist/webview.js` in
+  `scripts/harness.html`, fed by a SCENE file (`?scene=<url>`: model, config,
+  overlay, resolved, proposals, results, selection — what a host would send,
+  in the host's order) and photographed by a headless Chrome / Edge at 2x.
+  The inputs are real — a `svmodel` run of the fixture, the YAML the mutations
+  write gesture by gesture (the router's too: built from the walkthrough's
+  steps, NOT read from QuickUVM's hand-written example, whose constraint is at
+  agent level while the step sets it on the port), `overlayOf`
+  (`src/overlay.ts`, extracted from `ConfigService` so both build the same
+  one), `proposalsFor`, a real `quick-uvm resolve`, and for the results figure
+  the Xcelium fixtures. After a UI change, re-run it and READ the figures
+  against the steps' text: the walkthrough still said "MORE" / "ADVANCED"
+  three months after R16 renamed them "ALL". `docs/tutorial-shots/layouts.json`
+  is the user's HAND ARRANGEMENT (`--arrange`: every drag in the served
+  harness is POSTed back and saved, one sidecar per bench — the views of a
+  bench share it); it is keyed by the layout keys, so renaming a scene's
+  config path orphans it (the keys were migrated once, by hand). Traps: a
+  headless Chrome window is never narrower than ~500 px — a 420 px capture is
+  a CLIPPED 500 px layout (the panel's right edge cut); the panel captures
+  need the side bar's own structure (`body.sidebar`, the panel as the page),
+  not the harness's flex row; `spawnSync` of the browser blocks the script's
+  own HTTP server (the browser is awaited); the first snapshot of a headless
+  run needs `--virtual-time-budget` (ELK is asynchronous); the arrange server
+  takes ~20 s to answer (svmodel + one `resolve` per scene come first). The
+  captures are NOT VS Code windows: no activity bar, tree or QuickPick — said
+  in the tutorial and in the shots' README. The overlay test that came with
+  the extraction caught `agentPorts` ignoring `inouts` (an agent's inout pin
+  was drawn unmapped and counted against the coverage).
 
 
 ## Faza curentă

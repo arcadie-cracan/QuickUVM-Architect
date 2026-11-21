@@ -4,8 +4,23 @@
     {
       "name": "harness",
       "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "8123"],
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "8123"
+      ],
       "port": 8123
+    },
+    {
+      "name": "shots-arrange",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [
+        "scripts/capture-shots.mjs",
+        "--arrange",
+        "--port",
+        "8140"
+      ],
+      "port": 8140
     }
   ]
 }

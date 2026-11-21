@@ -44,6 +44,25 @@
     --vscode-terminal-ansiCyan: #29b8db;
     --vscode-terminal-ansiMagenta: #d670d6;
   }
+  /* figure captures (scripts/capture-shots.mjs): `?only=canvas` — the diagram
+     webview as the editor shows it (no inspector column); `?only=inspector` —
+     the Properties panel alone, as the side bar shows it; `?side=left` — the
+     panel on the left of the diagram, where the side bar is */
+  body.only-canvas #inspector { display: none; }
+  body.only-inspector #head,
+  body.only-inspector #canvas,
+  body.only-inspector #assist,
+  body.only-inspector #banner,
+  body.only-inspector #empty { display: none !important; }
+  /* the side bar's own structure: the panel is the page (propertiesview.ts) */
+  body.only-inspector #main { display: block; }
+  body.only-inspector #inspector { width: 100%; border-left: none; }
+  body.side-left #main { flex-direction: row-reverse; }
+  body.side-left #inspector {
+    width: 300px;
+    border-left: none;
+    border-right: 1px solid var(--vscode-panel-border);
+  }
 </style>
 </head>
 <body>
@@ -58,6 +77,22 @@
 <script>
   // stub-ul API-ului VSCode: host-ul e simulat aici
   const params = new URLSearchParams(location.search);
+  if (params.get("only")) {
+    document.body.classList.add(`only-${params.get("only")}`);
+    if (params.get("only") === "inspector") {
+      document.body.classList.add("sidebar"); // the side bar view's own styling (propertiesview.ts)
+    }
+  }
+  if (params.get("side") === "left") {
+    document.body.classList.add("side-left");
+  }
+  // ?scene=<url> — a SCENE file replaces the built-in fixtures: the model, the
+  // configuration, the overlay and the follow-up messages a real host would
+  // send, as JSON (written by scripts/capture-shots.mjs from a real svmodel run
+  // and from the YAML the real mutations write). Keys, all optional:
+  //   model, configPath, config, resolved, children, overlay, sidecar,
+  //   viewId, mode, focus, select[], proposals[], status, results
+  const SCENE_URL = params.get("scene");
   // config de verificare pentru mode=tb: DUT + 2 agenti (activ/pasiv) +
   // scoreboard/coverage/vseq/proba, ca toate nivelurile (top/env/agent) sa fie
   // populate la drill
@@ -229,6 +264,68 @@
           if (m.flipV) n.flipV = true; else delete n.flipV;
           window.__sidecar = sc;
           sessionStorage.setItem("__sidecar", JSON.stringify(sc));
+        }
+        if (m.type === "relayout/request" && window.__saveUrl) {
+          // "Re-arrange all": the host drops the view's positions (the webview
+          // has already dropped its own and lays out afresh)
+          const sc = loadSidecar();
+          for (const n of Object.values(sc.views[m.viewId]?.nodes ?? {})) {
+            delete n.x;
+            delete n.y;
+          }
+          window.__sidecar = sc;
+        }
+        // arrange mode (scripts/capture-shots.mjs --arrange): what the gesture
+        // changed in the sidecar is saved for the captures
+        if (
+          window.__saveUrl &&
+          ["layout/snapshot", "node/flipped", "view/annotations", "view/filters", "relayout/request"].includes(m.type)
+        ) {
+          void fetch(window.__saveUrl, { method: "POST", body: JSON.stringify(loadSidecar()) });
+        }
+        if (m.type === "ready" && SCENE_URL) {
+          void (async () => {
+            const sc = await (await fetch(SCENE_URL)).json();
+            const send = (msg) => window.postMessage({ v: 1, ...msg }, "*");
+            const mode = sc.mode ?? "symbol";
+            const viewId = mode === "tb" ? `tb:${sc.configPath}` : sc.viewId;
+            // the scene's own layout (never the session's: scenes of different
+            // benches share view ids), and where an arrangement is saved to
+            window.__sidecar = sc.sidecar ?? { schema_version: 1, views: {}, orphans: [] };
+            window.__saveUrl = sc.saveUrl;
+            // the host's order (panel.ts): layout, model, overlay, config, view
+            send({ type: "layout/full", sidecar: window.__sidecar });
+            if (sc.model) {
+              send({ type: "model/full", model: sc.model });
+            }
+            if (sc.overlay) {
+              send({ type: "overlay/config", ...sc.overlay });
+            }
+            send({
+              type: "config/full",
+              configPath: sc.configPath ?? null,
+              config: sc.config ?? null,
+              children: sc.children,
+              resolved: sc.resolved ?? null,
+            });
+            if (sc.status) {
+              send({ type: "status/decorations", ...sc.status });
+            }
+            send({ type: "view/show", viewId, mode });
+            if (mode === "tb" && sc.focus !== undefined) {
+              send({ type: "tb/navigate", focus: sc.focus, select: null });
+            }
+            if (sc.proposals) {
+              send({ type: "proposals/full", viewId, mode, items: sc.proposals });
+            }
+            if (sc.results) {
+              send({ type: "results/full", ...sc.results });
+            }
+            if (sc.select?.length) {
+              send({ type: "select/reveal", ids: sc.select });
+            }
+          })();
+          return;
         }
         if (m.type === "ready") {
           void (async () => {
