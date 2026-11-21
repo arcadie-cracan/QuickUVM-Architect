@@ -1,0 +1,252 @@
+# Upstream note for QuickUVM — `generate` exits 0 with a reset nobody wires
+
+Two gaps, the same family: a config that validates, generates with exit 0, and
+yields a bench that cannot run because of how the reset is (not) connected.
+**1** is the one that broke real benches; **2** was found while fixing 1.
+
+# 1. A dangling reset reference
+
+*Written from QuickUVM Architect's side; observed on quick-uvm 1.1.0, Nov 2026.
+The fix described below was merged upstream on 21 Nov 2026 as
+[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119)
+(QuickUVM `main` at `89b02a0`). It is in no release yet: quick-uvm 1.1.0, the
+version this note was probed on, does not have it.*
+
+## Summary
+
+When `dut.reset` names a port that **no agent declares** and the single-reset
+mapping is **not** `external: true`, `quick-uvm generate` exits 0 and emits a
+`tb_top.sv` that connects the DUT's reset to a signal of the first agent's
+interface — a signal that interface does not declare. The bench does not
+elaborate.
+
+`dut.reset` defaults to `rst_n` and `reset.external` defaults to `false`, so
+this is also what a config that says nothing about the reset gets.
+
+## Minimal reproduction
+
+```yaml
+project: {name: demo}
+dut: {name: demo, clock: clk, reset: rst_n}
+agents:
+  - name: a
+    interface: a_if
+    sequence_item: a_item
+    ports:
+      inputs: [{name: din, width: 8}]
+```
+
+```
+$ quick-uvm generate -c demo.yaml -o tb ; echo $?
+0
+```
+
+`tb/tb_top.sv`:
+
+```systemverilog
+  a_if a_if_inst (clk);
+
+  demo dut_inst (
+    .din(a_if_inst.din),
+    .clk(clk),
+    .rst_n(a_if_inst.rst_n)  );      // <-- no such signal
+```
+
+`tb/a_if.sv` — `rst_n` appears nowhere in the file:
+
+```systemverilog
+interface a_if (input clk);
+  logic [7:0] din;
+  ...
+```
+
+Xcelium 25.09, on the same shape with two agents (`cmd`, `rsp`):
+
+```
+    .rst_n(cmd_if_inst.rst_n)  );
+xmelab: *E,CUVUNF (../tb/tb_top.sv,35|27): Hierarchical name component lookup
+failed for 'rst_n' at 'tb_top'.
+```
+
+## What the neighbouring shapes do (same bench, one change each)
+
+| change | result |
+|---|---|
+| `reset: {external: true}` | `logic rst_n;` + the generated `reset_generator` block in `tb_top`, interfaces `(input clk, input rst_n)` — elaborates and runs |
+| `rst_n` added to an agent's `ports.inputs` | the interface declares `logic rst_n`, the driver drives it from the sequence item — consistent |
+| `reset: [{name: rst_n}]` (a list) | per-domain net + generator in `tb_top` — consistent |
+| `reset: {external: true}` **and** `rst_n` in an agent's ports | refused: *"An external reset must not also be an agent port"* |
+| `dut.reset: ''` | no reset connection — consistent |
+
+So the validator already knows the rule from the other side (external **and**
+an agent port is an error); the complementary case — **neither** — is the one
+that passes.
+
+## A second, quieter instance: composition
+
+A clocked leaf whose own config is in this state (reset named, not external, no
+agent port), composed as a `subenvs` child: the subsystem `tb_top.sv`
+instantiates the leaf DUT with its clock and **no reset connection at all**
+(`la u_a_dut (.dout(...), .din(...), .clk(u_a_clk));`). No dangling reference,
+so it elaborates — with the leaf's reset port floating. With
+`reset: {external: true}` on the leaf, the top declares, drives and connects
+`u_a_rst_n`.
+
+A combinational DUT with a reset name (`combinational: true, reset: rst_n`)
+likewise gets no reset connection; `external: true` is refused there
+(*"a combinational DUT has no reset"*), which is consistent, but the named port
+is silently dropped rather than reported.
+
+The same reference dangles with an agent that uses `reset_port: arst` and a
+`dut.reset` left at its default: the top connects `.arst(a_if_inst.arst)` **and**
+`.rst_n(a_if_inst.rst_n)`. `dut.reset: ''` (or `dut.reset: arst`) is clean, and
+`external: true` is refused there (*"reset_port is an AGENT-DRIVEN reset…"*) —
+so with `reset_port` the default `dut.reset` is itself the trap.
+
+## The fix, and why it is an inference rather than a wall
+
+Both were prototyped on the generator and measured on its own suite (931 tests,
+quick-uvm 1.1.0 at `9486362`):
+
+| option | what it does | tests that change | examples that change |
+|---|---|---|---|
+| a validation error ("driven by nobody") | refuses the shape | **130** in 21 files — the suite's own minimal fixture, `DutConfig(name=...)`, IS the shape | 0 |
+| inference | an unset `external` resolves to the top-driven reset when no agent declares the port | **1** — the test that pinned the broken default output | 0 |
+
+The 130 are the finding: the defaults produce the shape, so a wall would make
+every config that says nothing about the reset invalid. With no agent declaring
+the port there is exactly one way left to drive it, so the generator can take
+it — and report it. The wall is kept for the two cases where the config SAYS
+otherwise: an explicit `external: false` with no agent declaring the port, and
+a `reset_port` next to a `dut.reset` that names a different, undeclared port.
+
+The inference applies to every `kind`, so that a `vip` and the bench or
+`selftest` around it agree on whether the interfaces take the reset. It is never
+applied to a combinational DUT, a reset domain list, a subsystem top, or next
+to a `reset_port`. A composed clocked leaf gets it through its own config, which
+is what gives its DUT a reset connection in the subsystem top.
+
+`quick-uvm resolve` gains a `reset` entry —
+`{name, driver: top | agent:<name>, origin: declared | inferred}` — because this
+is the one default that changes the generated INTERFACES.
+
+The cost: generated output changes for configs in the shape (their interfaces
+gain a reset input, their drivers and monitors wait for it). Those benches did
+not elaborate, unless the `dut_connections` pragma had been hand-edited — in
+which case the hand-written connection is preserved and the top additionally
+generates a reset for the interfaces. A VIP has to be regenerated together with
+the benches that consume it by reference.
+
+# 2. `kind: selftest` + `reset: {external: true}` — exit 0, and the bench hangs
+
+```yaml
+project: {name: demo}
+kind: selftest
+layout: packaged
+reset: {external: true}
+dut: {name: demo, clock: clk, reset: rst_n}
+agents:
+  - name: a
+    interface: a_if
+    sequence_item: a_item
+    ports:
+      inputs: [{name: din, width: 8}]
+      outputs: [{name: dout, width: 8, randomize: false}]
+```
+
+`quick-uvm generate` exits 0. The generated selftest top has no DUT and no reset
+net, and instantiates the interface with the clock only:
+
+```systemverilog
+  a_if a_if_inst (clk);
+```
+
+while `external: true` made the interface take the reset and the driver and
+monitor wait for it:
+
+```systemverilog
+interface a_if (input clk, input rst_n);          // a_if.sv
+    wait (vif.rst_n === 1'b1);                    // a_driver.svh, a_monitor.svh
+```
+
+`rst_n` is an unconnected input, so the wait never ends. (Read in the generated
+text; not simulated.) Without `external: true` the same selftest has no reset
+anywhere and is consistent.
+
+The fix: the selftest top gets the same `logic rst_n` + `reset_generator` block
+a bench top gets and passes the reset to the interfaces — so a VIP built with a
+top-driven reset can be self-tested as it is. (Refusing the pair would have been
+simpler, and would have left such a VIP without a selftest.)
+
+A related consistency point, not a bug in one file: a `kind: vip` built without
+`external: true` has interfaces `(input clk)`, and a bench that consumes it by
+reference with `external: true` instantiates them `(.clk(clk), .rst_n(rst_n))` —
+nothing checks that the two agree.
+
+## Also worth a line in the docs
+
+`reset.external` reads as "the reset comes from outside the testbench" — which
+is how QuickUVM Architect's own reference documented it ("the TB does not
+generate the reset; the environment/DUT drives it") until the generated code
+was read. It means *external to the agents*: `true` is the shape in which
+`tb_top` **does** generate the reset.
+
+## The fix upstream
+
+[arcadie-cracan/QuickUVM#119](https://github.com/arcadie-cracan/QuickUVM/pull/119), merged into `main` as `89b02a0`
+("the prototype" in the tables and the list below: they were measured on its
+branch, `fix/undriven-reset`, before the merge; the merge changed nothing in
+the tree):
+`quick_uvm/models.py` (`_infer_reset_driver`, `undriven_reset`, the `reset`
+entry of `resolved()`), `quick_uvm/templates/selftest_top.sv.j2`,
+`quick_uvm/svcheck.py` (`find_dangling_dut_connections` — the static gate that
+checks, on the generated top, that every signal the `dut_connections` pragma
+uses is declared; it runs over every example, next to the type-shadowing gate),
+`tests/test_undriven_reset.py`, `CHANGELOG.md`, `README.md`.
+
+Not covered by it: the `.qvip` manifest does not record whether the VIP's
+interfaces take the reset, so a stale VIP and a regenerated consumer can still
+disagree. `scripts/xrun_gate.sh` (every example, `xrun -compile`) was not run:
+the examples regenerate byte-identically, so it would compile the same text as
+on `main`.
+
+## On the simulator
+
+Xcelium 25.09-s002, 2026-11-21, `xrun -uvm -access +rwc -top tb_top -f run.f
++UVM_TESTNAME=<test>` — compile, elaborate and simulate. The tutorial benches
+use the real `examples-yapp/yapp_buffer.sv` in place of the generated stub.
+
+| bench | generator | result |
+|---|---|---|
+| tutorial, as Architect writes it now (`external: true`) | 1.1.0 | elaborates, runs; stops at 65 ns on the generator's own `UNFILLED_PREDICTOR` guard (the reference-model seam is a stub) — the first transaction after the 5-clock reset reached the scoreboard |
+| the same, scoreboard removed (coverage only) | 1.1.0 | **runs to completion**: `$finish` at 1065 ns, 0 UVM errors, 0 fatals |
+| tutorial, OLD shape (no `reset:` block) | 1.1.0 | `xmelab: *E,CUVUNF (./tb_top.sv,35|27): Hierarchical name component lookup failed for 'rst_n' at 'tb_top'.` — the original failure, reproduced |
+| tutorial, OLD shape | prototype | elaborates and runs exactly like the first row (65 ns, the predictor guard) |
+| OLD shape, scoreboard removed | prototype | **runs to completion**: `$finish` at 1065 ns, 0 errors, 0 fatals |
+| composition, two clocked leaves, reset unset | 1.1.0 | elaborates with `*W,CUVWSI … 1 input port was not connected: rst_n` on each leaf; the first transaction is at **15 ns** — the leaves are never reset |
+| the same composition | prototype | no warning; the first transaction is at **65 ns**, after the generated per-leaf reset |
+| `kind: selftest` + `external: true` | 1.1.0 | `*W,CUVWSI … 1 input port was not connected` (`rst_n`), then **hangs** after `Running test test1...` — killed after 90 s |
+| the same selftest | prototype | runs past the reset to the predictor guard at 65 ns |
+
+The explicit-`external` tutorial bench is byte-identical between 1.1.0 and the
+prototype, so it was simulated once. What this does NOT show: a scoreboard
+passing — that needs the user's reference model in the `prediction_logic` seam.
+
+## What Architect does, with either generator
+
+- `setDut` writes `reset: {external: true}` whenever the DUT has a reset port
+  that no agent declares (decision D25, `docs/06-plan-mvp.md`) — explicit, so it
+  means the same on 1.1.0 and on a generator with the inference;
+- existing configs get a `reset-undriven` error with a one-click repair
+  (`external: true`, or `dut.reset: ''` where the top cannot drive the reset).
+  Once a generator with the inference is the minimum version, the `external`
+  half of that finding is moot (the generator resolves it) and should be gated
+  on the version; the `reset_port` half becomes the generator's own error;
+- a `kind: selftest` bench never carries `external: true` (the kind switch
+  drops it) — needed on 1.1.0, harmless after;
+- `npm run test:e2e` lints every generated top (each signal connected to a DUT
+  port must be declared in the top or in the interface it is taken from), and
+  keeps the reproductions above as mutation proofs that tell the generators
+  apart: it passes on 1.1.0 ("the lint names the dangling reference") and on
+  the prototype ("the generator INFERS the top-driven reset (fixed upstream)"),
+  checked with `PYTHONPATH=<QuickUVM checkout> npm run test:e2e`.
