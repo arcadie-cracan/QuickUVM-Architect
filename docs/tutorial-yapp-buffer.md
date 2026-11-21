@@ -229,8 +229,8 @@ Key files to expect:
   **QuickUVM Architect** output channel.
 
 ```yaml
-# Configuratie QuickUVM — creata de QuickUVM Architect, editabila si manual.
-# Extensia pastreaza comentariile si campurile pe care nu le cunoaste.
+# QuickUVM configuration — created by QuickUVM Architect, editable by hand too.
+# The extension keeps the comments and the fields it does not know.
 project:
   name: yapp_buffer
 

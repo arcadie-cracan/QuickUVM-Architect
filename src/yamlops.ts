@@ -285,8 +285,8 @@ function lineAt(text: string, offset: number): number | null {
 /** The skeleton of a new configuration; dut/agents come from the dedicated operations. */
 export function newConfigText(projectName: string): string {
   return [
-    "# Configuratie QuickUVM — creata de QuickUVM Architect, editabila si manual.",
-    "# Extensia pastreaza comentariile si campurile pe care nu le cunoaste.",
+    "# QuickUVM configuration — created by QuickUVM Architect, editable by hand too.",
+    "# The extension keeps the comments and the fields it does not know.",
     "project:",
     `  name: ${projectName}`,
     "",
