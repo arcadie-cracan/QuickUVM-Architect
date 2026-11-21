@@ -189,6 +189,43 @@ test("connections: the canonical src/dst keys are read through from/to (parseQuv
   assert.equal(at(m, "ch0.dout", "u_add.b").on, true);
 });
 
+test("analysis: a monitor on a WINDOWED scoreboard says the window goes (review)", () => {
+  // setScoreboardField drops `window` when a monitor arrives (a window is
+  // single-stream only): the cell must say so, not let the user find out
+  const cfg = {
+    agents: [{ name: "a" }, { name: "b" }],
+    analysis: { scoreboards: [{ name: "w", source: "a", window: { boundary: "last", length: 4 } }, { name: "p", source: "a" }] },
+  };
+  const m = analysisMatrix(cfg);
+  const cell = at(m, "b", "sb0.monitor");
+  assert.equal(cell.warn, true);
+  assert.match(cell.title, /window is removed/);
+  assert.deepEqual(cell.click, { action: "editScoreboard", args: { name: "w", field: "monitor", value: "b" } });
+  const plain = at(m, "b", "sb1.monitor");
+  assert.equal(plain.warn, undefined, "no window, nothing to warn about");
+  assert.doesNotMatch(plain.title, /window/);
+});
+
+test("connections: a child configuration with a shape nobody can walk never throws (review)", () => {
+  // the children are read from OTHER files and are not shape-checked like the
+  // active config; the matrix is built on the header's render path
+  const top = { subenvs: [{ name: "x" }, { name: "y" }, { name: "z" }] };
+  const odd = {
+    x: { agents: [{ name: "a", ports: { outputs: 5, inputs: "nope" } }, null, "str", { ports: null }] },
+    y: { agents: [{ name: "b", ports: { outputs: [null, "s", { name: "o", width: 8 }], inputs: [{ name: "i", width: 8 }, 7] } }] },
+    z: { agents: "foo" },
+  };
+  const m = connectionsMatrix({ ...top, connections: "nope" }, odd);
+  // x and z contribute nothing; y alone has both ends on ONE block
+  assert.deepEqual(m.rows.map((r) => r.id), ["y.o"]);
+  assert.deepEqual(m.cols.map((c) => c.id), ["y.i"]);
+  assert.match(at(m, "y.o", "y.i").disabled, /same block/);
+  const ok = connectionsMatrix(top, { ...odd, x: { agents: [{ name: "a", ports: { inputs: [{ name: "din", width: 8 }], outputs: { not: "a list" } } }] } });
+  assert.deepEqual(ok.rows.map((r) => r.id), ["y.o"]);
+  assert.deepEqual(ok.cols.map((c) => c.id), ["x.din", "y.i"]);
+  assert.equal(at(ok, "y.o", "x.din").disabled, undefined, "8 = 8, another block");
+});
+
 test("worth offering: from about 4x4 upwards", () => {
   assert.equal(worthOffering(null), false);
   assert.equal(worthOffering(analysisMatrix(CFG)), false, "3 agents x 5 columns = 15");

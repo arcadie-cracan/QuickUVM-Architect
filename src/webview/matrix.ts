@@ -31,6 +31,9 @@ export interface MatrixCell {
   click?: MatrixAction;
   /** the tooltip: what a click does, or why it cannot */
   title: string;
+  /** the click also removes something the user did not point at (a scoreboard's
+   *  `window` when it gets a monitor) — drawn marked, the title says what */
+  warn?: true;
 }
 
 export interface MatrixColumn {
@@ -140,11 +143,18 @@ export function analysisMatrix(
             action: "editScoreboard",
             args: { name: sb.name, field, value: on ? "" : row.id },
           };
+          // a monitor makes the scoreboard two-stream, which a window cannot be:
+          // the mutation drops `window` with it — said here, not found out later
+          const windowed = field === "monitor" && !sb.monitor && sb.window != null;
           cell.title = on
             ? `Clear the monitor of ${sb.name} — single-stream again (match and match_key go too)`
             : field === "source"
               ? `Make ${row.id} the source of ${sb.name}`
-              : `Make ${row.id} the monitor of ${sb.name}`;
+              : `Make ${row.id} the monitor of ${sb.name}` +
+                (windowed ? " — its window is removed (a window is single-stream only)" : "");
+          if (windowed) {
+            cell.warn = true;
+          }
         }
         cell.title ||= cell.disabled ?? "";
         out.push(cell);

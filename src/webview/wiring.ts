@@ -62,6 +62,21 @@ export type WireOrigin =
 
 type Children = Readonly<Record<string, QuvmConfig>> | undefined;
 
+/** a child configuration is read from ANOTHER file and is not shape-checked
+ *  like the active one (`shapeError`): `agents: foo`, a bare `-` entry or
+ *  `outputs: 5` must read as "nothing known", never throw on a render path */
+const arr = <T>(v: unknown): T[] => (Array.isArray(v) ? (v as T[]) : []);
+type PortList = NonNullable<NonNullable<QuvmConfig["agents"]>[number]["ports"]>["outputs"];
+type PortEntry = NonNullable<PortList>[number];
+function childPorts(children: Children, subenv: string, dir: "out" | "in"): PortEntry[] {
+  const out: PortEntry[] = [];
+  for (const a of arr<NonNullable<QuvmConfig["agents"]>[number]>(children?.[subenv]?.agents)) {
+    const list = dir === "out" ? a?.ports?.outputs : a?.ports?.inputs;
+    out.push(...arr<PortEntry>(list).filter((p) => p && typeof p === "object"));
+  }
+  return out;
+}
+
 /** the width of a block's port from its child config — the agents' `outputs`
  *  for `out`, `inputs` for `in`; null when the child or the port is unknown */
 export function subPortWidth(
@@ -70,16 +85,13 @@ export function subPortWidth(
   port: string,
   dir: "out" | "in"
 ): number | null {
-  for (const a of children?.[subenv]?.agents ?? []) {
-    const list = dir === "out" ? a.ports?.outputs : a.ports?.inputs;
-    const p = list?.find((x) => x.name === port);
-    if (p) {
-      // a width from a parameter, packed dims, a struct or a user type: the
-      // effective width is not `width` — unknown, never "1" (review finding)
-      return p.width_param || p.packed_dims || p.struct || p.type ? null : p.width ?? 1;
-    }
+  const p = childPorts(children, subenv, dir).find((x) => x.name === port);
+  if (!p) {
+    return null;
   }
-  return null;
+  // a width from a parameter, packed dims, a struct or a user type: the
+  // effective width is not `width` — unknown, never "1" (review finding)
+  return p.width_param || p.packed_dims || p.struct || p.type ? null : p.width ?? 1;
 }
 
 /** the port exists on the child's agents in that direction — or the child is
@@ -89,9 +101,7 @@ function knownPort(children: Children, subenv: string, port: string, dir: "out" 
   if (!child) {
     return true;
   }
-  return (child.agents ?? []).some((a) =>
-    (dir === "out" ? a.ports?.outputs : a.ports?.inputs)?.some((x) => x.name === port)
-  );
+  return childPorts(children, subenv, dir).some((x) => x.name === port);
 }
 
 /** the connection already driving `<subenv>.<port>`: its source, or null */

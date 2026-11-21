@@ -1907,6 +1907,12 @@ text.split-sign {
   font-weight: 600;
 }
 .matrix .mclose { margin-left: auto; font-size: 15px; line-height: 1; }
+/* a click that also removes something else (docs/08 R22): marked, the tooltip says what */
+.matrix .mcell.warn::after {
+  content: "!";
+  color: var(--vscode-editorWarning-foreground, #cca700);
+  font-weight: 700;
+}
 .matrix .mnote {
   padding: 6px 10px;
   color: var(--vscode-descriptionForeground, var(--vscode-foreground));

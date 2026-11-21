@@ -569,10 +569,16 @@ mesajele tot aici, la implementare.
   reason; an unnamed or duplicate-named scoreboard; a child's coverage, which
   belongs to its own file). On an implicit-mode bench (no `analysis:` key) the
   analysis matrix is read-only: declaring one component there would drop the
-  inferred ones — the proposal strip materialises the set first. The table
+  inferred ones — the proposal strip materialises the set first. A cell
+  whose click also removes something the user did not point at is marked
+  (`!`) and says so in its tooltip: a monitor set on a scoreboard that has a
+  `window` drops the window (a window is single-stream only). The table
   stays open across the edit and is rebuilt when the YAML comes back, keeping
-  the focus on the toggled cell; `Escape` closes it, and no key typed in it
-  reaches the diagram.
+  the focus where it was (the toggled cell, a tab) — but only while the
+  diagram has the focus: a rebuild caused by typing in the YAML never takes
+  the focus from the text editor. `Escape` closes it, from inside the table
+  and from the canvas, and no key typed in it reaches the diagram. A child
+  configuration whose port lists cannot be read contributes no rows.
 - **Proba whitebox** (felia 3, K2, iul. 2026): se selectează un **net** în
   vederea-schemă → butonul „Create probe" din secțiunea Net trimite
   `createProbe {net}` (`viewId` e injectat de `postAction`). Webview-ul NU

@@ -1026,7 +1026,23 @@ coliziunea de nume.
   disabled that cell, so the next key cannot fall through to the diagram — and
   stops key propagation itself (the window `keydown` guard knows inputs and
   the inspector's buttons, not this dialog). The palette rows run on
-  `pointerdown`: a scripted `click` in the harness does nothing.
+  `pointerdown`: a scripted `click` in the harness does nothing. From the
+  adversarial review: (1) the children's configs are read from OTHER files
+  and are NOT shape-checked like the active one (`shapeError`) — `outputs: 5`
+  or a bare `-` agent threw `list?.find is not a function` in `subPortWidth`
+  / `knownPort`, and `matrixOf` runs in `renderTbHeader`, OUTSIDE the scene's
+  try/catch: the port lists go through `childPorts` (wiring.ts) and
+  `matrixOf` catches; (2) the focus is restored only where it WAS (a cell, a
+  tab — a clicked tab is destroyed by its own rebuild and left the focus on
+  `<body>`) and only while `document.hasFocus()`: a `.focus()` on every
+  `config/full` pulled the focus out of the YAML editor the user was typing
+  in; (3) the dialog's key handler hears a key only while the focus is inside
+  it, so the window `keydown` Escape chain closes the matrix too (after the
+  context menu, before the card and the selection); (4) a monitor set on a
+  scoreboard with a `window` DROPS the window (`setScoreboardField`'s
+  cascade, the single editor's too) — the cell is marked (`warn`) and its
+  tooltip says so; `document.hasFocus()` is false for scripted events in the
+  harness — test the focus with a real click.
 
 
 ## Faza curentă

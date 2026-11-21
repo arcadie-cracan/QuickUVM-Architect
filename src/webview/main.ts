@@ -5015,9 +5015,15 @@ function matrixOf(kind: MatrixKind): Matrix | null {
   if (state.mode !== "tb") {
     return null;
   }
-  return kind === "analysis"
-    ? analysisMatrix(state.config, state.childAgents)
-    : connectionsMatrix(state.config, childConfigs);
+  try {
+    return kind === "analysis"
+      ? analysisMatrix(state.config, state.childAgents)
+      : connectionsMatrix(state.config, childConfigs);
+  } catch {
+    // the header calls this on every render, outside the scene's try/catch: a
+    // shape nobody foresaw must cost the Matrix button, not the header
+    return null;
+  }
 }
 
 function closeMatrix(): void {
@@ -5061,7 +5067,12 @@ function renderMatrix(): void {
     return;
   }
   matrixKind = m.kind;
-  const focused = (document.activeElement as HTMLElement | null)?.dataset.cell ?? null;
+  // where the focus was BEFORE the rebuild: every button below is replaced, and
+  // a focus left on <body> sends the next key to the diagram
+  const active = document.activeElement as HTMLElement | null;
+  const inside = box.contains(active);
+  const focused = inside ? active?.dataset.cell ?? null : null;
+  const onTab = inside && Boolean(active?.classList.contains("mtab"));
   const scroll = box.querySelector(".mscroll");
   const keep = scroll ? { x: scroll.scrollLeft, y: scroll.scrollTop } : null;
   box.replaceChildren();
@@ -5131,6 +5142,9 @@ function renderMatrix(): void {
         `${row.id} / ${m.cols[c].group} ${m.cols[c].label}: ${cell.on ? "on" : "off"}. ${cell.title}`
       );
       b.setAttribute("aria-pressed", String(cell.on));
+      if (cell.warn) {
+        b.classList.add("warn");
+      }
       if (cell.click) {
         const click = cell.click;
         b.addEventListener("click", () => postAction(click.action, click.args));
@@ -5150,17 +5164,24 @@ function renderMatrix(): void {
     wrap.scrollLeft = keep.x;
     wrap.scrollTop = keep.y;
   }
-  if (focused) {
+  // The focus comes back only where it WAS, and only while this document has
+  // it: the matrix is rebuilt on every `config/full`, and a `.focus()` on a
+  // host message would pull the focus out of the YAML editor the user is
+  // typing in (the table follows the text, it does not interrupt it).
+  if (inside && document.hasFocus()) {
     // a toggled cell keeps the focus; if the toggle disabled it (a source that
-    // just moved here cannot be clicked again) the focus must still be IN the
-    // matrix, or the next key would go to the diagram
-    const again = [...box.querySelectorAll<HTMLElement>("button.mcell")].find(
-      (b) => b.dataset.cell === focused
-    );
-    if (again && !(again as HTMLButtonElement).disabled) {
+    // just moved here cannot be clicked again), or a tab was clicked, the focus
+    // must still be IN the matrix, or the next key would go to the diagram
+    const again = focused
+      ? [...box.querySelectorAll<HTMLButtonElement>("button.mcell")].find(
+          (b) => b.dataset.cell === focused
+        )
+      : undefined;
+    const tab = onTab ? box.querySelector<HTMLElement>("button.mtab.active") : null;
+    if (again && !again.disabled) {
       again.focus();
     } else {
-      close.focus();
+      (tab ?? close).focus();
     }
   }
 }
@@ -5855,6 +5876,14 @@ window.addEventListener("keydown", (e) => {
     }
     if (ctxMenu) {
       closeCtxMenu(); // Escape closes the context menu first, not the selection
+      return;
+    }
+    if (matrixBox) {
+      // docs/08 R22 — the matrix has its own key handler, but it only hears a
+      // key while the focus is inside it; a click on the canvas takes the
+      // focus out, and Escape must still close the table before the selection
+      e.preventDefault();
+      closeMatrix();
       return;
     }
     if (card) {
