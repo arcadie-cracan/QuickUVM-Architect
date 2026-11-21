@@ -290,21 +290,21 @@
           window.__sidecar = sc;
           sessionStorage.setItem("__sidecar", JSON.stringify(sc));
         }
-        if (m.type === "relayout/request" && window.__saveUrl) {
-          // "Re-arrange all": the host drops the view's positions (the webview
-          // has already dropped its own and lays out afresh)
-          const sc = loadSidecar();
-          for (const n of Object.values(sc.views[m.viewId]?.nodes ?? {})) {
-            delete n.x;
-            delete n.y;
-          }
-          window.__sidecar = sc;
-        }
         // arrange mode (scripts/capture-shots.mjs --arrange): what the gesture
-        // changed in the sidecar is saved for the captures
+        // changed in the sidecar is saved for the captures. Every type listed
+        // here is applied to the sidecar ABOVE this point — `relayout/request`
+        // (the positions and the hand-placed routes go) and `edge/override`
+        // (docs/04 level 3: a figure can carry a hand-routed wire) included
         if (
           window.__saveUrl &&
-          ["layout/snapshot", "node/flipped", "view/annotations", "view/filters", "relayout/request"].includes(m.type)
+          [
+            "layout/snapshot",
+            "node/flipped",
+            "view/annotations",
+            "view/filters",
+            "relayout/request",
+            "edge/override",
+          ].includes(m.type)
         ) {
           void fetch(window.__saveUrl, { method: "POST", body: JSON.stringify(loadSidecar()) });
         }

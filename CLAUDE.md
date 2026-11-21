@@ -1435,7 +1435,12 @@ coliziunea de nume.
   is the user's HAND ARRANGEMENT (`--arrange`: every drag in the served
   harness is POSTed back and saved, one sidecar per bench — the views of a
   bench share it); it is keyed by the layout keys, so renaming a scene's
-  config path orphans it (the keys were migrated once, by hand). Traps: a
+  config path orphans it (the keys were migrated once, by hand). The POST
+  is fired for a LIST of message types in `scripts/harness.html`, after the
+  blocks that apply each of them to the harness sidecar: a new sidecar
+  message must be added to both, or the gesture is not saved —
+  `edge/override` is in it, so a figure can carry a hand-routed wire (docs/04
+  level 3). Traps: a
   headless Chrome window is never narrower than ~500 px — a 420 px capture is
   a CLIPPED 500 px layout (the panel's right edge cut); the panel captures
   need the side bar's own structure (`body.sidebar`, the panel as the page),
