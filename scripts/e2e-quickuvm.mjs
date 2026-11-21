@@ -1458,16 +1458,24 @@ endpackage
 
   // MUTATION PROOF — the lint is what catches the old shape. The same bench
   // without `reset: {external: true}` (what every earlier Architect wrote):
-  // quick-uvm still exits 0 and the lint names the dangling reference. If a later
-  // quick-uvm refuses the config itself, that is the fix landing upstream — the
-  // branch below accepts it, and the `reset-undriven` finding can then cite it.
+  // quick-uvm 1.1.0 still exits 0 and the lint names the dangling reference. The
+  // fix prototyped upstream (QuickUVM branch `fix/undriven-reset`) INFERS the
+  // top-driven reset for this shape — then the bench is the same as the one
+  // above and the lint is clean; a generator that refuses the config instead is
+  // accepted too. All three are told apart here, so this test says which
+  // generator it ran against.
   const oldShape = ops.setResetDomainField(text, "rst_n", "external", false);
   assert.equal(ops.parseQuvm(oldShape).reset, undefined, "the old shape has no `reset:` block");
   const od = mkdtempSync(join(tmpdir(), "quickuvm-e2e-oldreset-"));
   writeFileSync(join(od, "m.quickuvm.yaml"), oldShape);
   const r = quickUvm(["generate", "-c", join(od, "m.quickuvm.yaml"), "-o", join(od, "tb")], od);
-  if (r.status === 0) {
-    const bad = lintDutConnections(join(od, "tb")).problems;
+  const bad = r.status === 0 ? lintDutConnections(join(od, "tb")).problems : [];
+  if (r.status === 0 && bad.length === 0) {
+    const inferred = readFileSync(join(od, "tb", "tb_top.sv"), "utf8");
+    assert.match(inferred, /^\s*logic rst_n;/m, "clean, but nobody declares the reset net");
+    assert.match(inferred, /rst_n = 1'b1;\s*\/\/ deassert/, "clean, but nobody drives the reset");
+    console.log("  ok    reset: the old shape (no external) — the generator INFERS the top-driven reset (fixed upstream)");
+  } else if (r.status === 0) {
     assert.equal(bad.length, 1, `the lint should name exactly the reset:\n${bad.join("\n")}`);
     assert.match(bad[0], /\.rst_n\(cmd_if_inst\.rst_n\).*cmd_if\.sv declares no signal `rst_n`/);
     console.log("  ok    reset: the old shape (no external) — the generator exits 0, the lint names the dangling reference");
@@ -1537,15 +1545,25 @@ endpackage
   const waits = (dir) =>
     /wait\s*\(\s*vif\.rst_n/.test(readFileSync(
       listFiles(join(dir, "tb")).find((f) => basename(f) === "a_driver.svh"), "utf8"));
-  assert.equal(waits(sd), false, "the selftest's driver waits on a reset");
+  // THE INVARIANT, whatever the generator: a driver that waits on the reset needs a
+  // top that drives it. On 1.1.0 the selftest Architect writes has no reset at all;
+  // with the upstream fix the reset is inferred there too and the top generates it.
+  const topOf = (dir) =>
+    readFileSync(listFiles(join(dir, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8");
+  const drivesReset = (dir) => /a_if a_if_inst \(\.clk\(clk\), \.rst_n\(rst_n\)\);/.test(topOf(dir));
+  assert.equal(waits(sd), drivesReset(sd),
+    "the selftest's driver waits on a reset the top does not drive (or the reverse)");
   // mutation proof: the same selftest WITH the flag — the cascade is load-bearing
+  // on 1.1.0, where the generator hangs the bench instead of driving the reset
   const stuck = selftest + "reset: { external: true }\n";
   const xd = mkdtempSync(join(tmpdir(), "quickuvm-e2e-selftest-ext-"));
   writeFileSync(join(xd, "m.quickuvm.yaml"), stuck);
   const xr = quickUvm(["generate", "-c", join(xd, "m.quickuvm.yaml"), "-o", join(xd, "tb")], xd);
-  if (xr.status === 0) {
-    const xtop = readFileSync(
-      listFiles(join(xd, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8");
+  if (xr.status === 0 && drivesReset(xd)) {
+    assert.ok(waits(xd), "the top drives a reset no driver waits on");
+    console.log("  ok    reset: selftest — the selftest top generates the reset (fixed upstream)");
+  } else if (xr.status === 0) {
+    const xtop = topOf(xd);
     assert.ok(waits(xd), "expected the driver to wait on vif.rst_n");
     assert.match(xtop, /a_if a_if_inst \(clk\);/, "expected the top to leave rst_n unconnected");
     console.log("  ok    reset: selftest — no external (with it: drivers wait on a reset the top never connects)");
