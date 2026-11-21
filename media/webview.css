@@ -1863,3 +1863,115 @@ text.split-sign {
 /* at the overview level a note keeps its box and loses its text, like a
    block's compartments (docs/08 R6); a frame's title stays — it IS a title */
 #canvas[data-lod="low"] .note-text { display: none; }
+
+/* ------------------------------------ the matrix editor (docs/08 R22) */
+/* a table over the canvas: agents x scoreboards / coverage, block outputs x
+   block inputs. A cell is a button — its state is the mark AND `aria-pressed`,
+   its tooltip says what a click does or why it cannot */
+.matrix {
+  position: fixed;
+  z-index: 101;
+  top: 44px;
+  left: 50%;
+  transform: translateX(-50%);
+  max-width: min(92vw, 1100px);
+  max-height: 78vh;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  border-radius: 4px;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+}
+.matrix .mhead {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+}
+.matrix .mtab,
+.matrix .mclose {
+  padding: 2px 10px;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.matrix .mtab.active {
+  background: var(--vscode-button-secondaryBackground, var(--vscode-list-hoverBackground));
+  font-weight: 600;
+}
+.matrix .mclose { margin-left: auto; font-size: 15px; line-height: 1; }
+.matrix .mnote {
+  padding: 6px 10px;
+  color: var(--vscode-descriptionForeground, var(--vscode-foreground));
+  font-style: italic;
+  max-width: 720px;
+}
+.matrix .mscroll { overflow: auto; padding: 6px 8px 10px; }
+.mtable { border-collapse: collapse; }
+.mtable th {
+  padding: 2px 8px;
+  font-weight: 400;
+  white-space: nowrap;
+  text-align: center;
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+}
+.mtable th.mgroup {
+  font-weight: 600;
+  border-left: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+}
+.mtable th.mcorner { text-align: left; opacity: 0.6; font-style: italic; }
+.mtable th.mcol { opacity: 0.8; }
+.mtable th.mrow {
+  text-align: left;
+  position: sticky;
+  left: 0;
+  background: var(--vscode-editorWidget-background, var(--vscode-editor-background));
+}
+.mtable td { padding: 1px; text-align: center; }
+.mcell {
+  width: 26px;
+  height: 22px;
+  padding: 0;
+  border: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+  border-radius: 2px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  font-family: var(--vscode-editor-font-family);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.mcell:hover:not(:disabled) { background: var(--vscode-list-hoverBackground); }
+.mcell.on {
+  background: var(--vscode-button-background);
+  color: var(--vscode-button-foreground);
+  border-color: var(--vscode-button-background);
+}
+/* a cell that cannot be toggled: hatched, so "illegal" is a pattern and not
+   only a paler colour; an ON cell that cannot change (a scoreboard's source)
+   keeps its mark */
+.mcell:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  background-image: repeating-linear-gradient(
+    45deg,
+    transparent 0 3px,
+    color-mix(in srgb, var(--vscode-foreground) 22%, transparent) 3px 4px
+  );
+}
+.mcell.on:disabled { opacity: 0.8; background-color: var(--vscode-button-background); }
+.mcell:focus-visible,
+.matrix .mtab:focus-visible,
+.matrix .mclose:focus-visible {
+  outline: 2px solid var(--vscode-focusBorder);
+  outline-offset: 1px;
+}

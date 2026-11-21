@@ -124,6 +124,7 @@ npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (do
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
 npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
+npm run test:matrix      # the matrix editor's model (docs/08 R22): agents x scoreboards/coverage, block outputs x inputs, cell legality
 npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
 npm run test:preview     # the diff preview (docs/08 R19): the +/- line summary of a gesture, the files that change
 npm run test:trace       # diagram <-> generated code (docs/08 R20): file owner, identifier pattern, lit lines, lenses, report
@@ -1007,6 +1008,26 @@ coliziunea de nume.
   starts inside a frame). A tint is a fill wash, never on a ghost (`fill:
   none` is its meaning).
 
+- **Matrix editor (docs/08 R22)**: the table owns NO write path — a cell of
+  `analysisMatrix` / `connectionsMatrix` (`src/webview/matrix.ts`, pure)
+  carries the host action the canvas gesture for the same relationship sends
+  (`editScoreboard`, `addCoverage`, `deleteComponent`, `addConnection`,
+  `removeConnection`). Do not add a mutation behind a cell. A scoreboard's
+  `source` is a RADIO: the ON cell is disabled (A2: a scoreboard needs a
+  source), another row's cell moves it; a `monitor` cell toggles, and clearing
+  it cascades (`match`, `match_key`) exactly as the single editor's "— none —".
+  On an implicit-mode bench (`analysis` absent OR present with no value) every
+  cell is disabled: `addCoverage` there would write `analysis:` and drop the
+  inferred scoreboard — the trap `keepAnalysis` and R12's materialise exist
+  for. A width from a parameter / packed dims / a struct is UNKNOWN
+  (`subPortWidth` → null), never a reason to refuse. The overlay is rebuilt on
+  every `config/full` (the host does not answer a click any other way), keeps
+  the focus on the toggled cell — or on its close button when the toggle
+  disabled that cell, so the next key cannot fall through to the diagram — and
+  stops key propagation itself (the window `keydown` guard knows inputs and
+  the inspector's buttons, not this dialog). The palette rows run on
+  `pointerdown`: a scripted `click` in the harness does nothing.
+
 
 ## Faza curentă
 
@@ -1335,4 +1356,8 @@ in the inspector (`multiGroups` in `test:inspector`, the `editAgents` /
 node colours as VIEW annotations in the sidecar; `src/webview/annotations.ts`
 + `test:annotations`, `setAnnotations` / `cleanFrames` / `cleanNotes` in
 `test:sidecar`, the `view/annotations` message.
+**R22 (docs/08) is implemented** (Nov 2026): the matrix editor — agents x
+scoreboards / coverage and block outputs x block inputs as an overlay table
+whose cells send the existing host actions; `src/webview/matrix.ts` +
+`test:matrix`, the `removeConnection` action.
 Planul complet: `docs/06-plan-mvp.md`.
