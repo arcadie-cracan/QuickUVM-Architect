@@ -1131,7 +1131,7 @@ endpackage
   // THE DOMAIN-USE CASCADE IS LOAD-BEARING. An agent samples `sck`; QuickUVM refuses
   // an agent clock naming an undeclared domain, so removing `sck` is blocked. Mutation
   // proof: the config with `sck` deleted but the agent still on it is REFUSED.
-  assert.throws(() => ops.removeClockDomain(mc, "sck"), /folosit de/);
+  assert.throws(() => ops.removeClockDomain(mc, "sck"), /is used by/);
   // build the illegal config by hand (drop the domain, keep the agent binding)
   const orphan = ops.parseQuvm(mc);
   orphan.clock = orphan.clock.filter((d) => d.name !== "sck");
@@ -1201,7 +1201,7 @@ endpackage
   // collapse back: dut.reset becomes a PORT name again and agent `reset:` disappears.
   // The domain is in use, so it must be unbound first — the op refuses otherwise,
   // which is the guard doing its job.
-  assert.throws(() => ops.removeResetDomain(renamed, "wr_rst_n"), /folosit de/);
+  assert.throws(() => ops.removeResetDomain(renamed, "wr_rst_n"), /is used by/);
   let one = ops.setAgentField(renamed, "wr", "reset", "");
   one = ops.removeResetDomain(one, "wr_rst_n");
   one = ops.collapseResets(one);
@@ -1249,7 +1249,7 @@ endpackage
 
   // THE PULLUP PAIRING IS LOAD-BEARING. Mutation: the same config with the pullup
   // stripped is REFUSED — the op refuses it at the source for the same reason.
-  assert.throws(() => ops.setAgentPortField(od, "bus", "sda", "pullup", false), /pluteste/);
+  assert.throws(() => ops.setAgentPortField(od, "bus", "sda", "pullup", false), /floats to X/);
   const noPullup = od.replace(/, pullup: true/, "");
   assert.notEqual(noPullup, od, "mutatia (pullup scos) nu s-a aplicat");
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-od-"));

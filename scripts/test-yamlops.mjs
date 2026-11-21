@@ -285,7 +285,7 @@ test("createAgent: nume duplicat => eroare", () => {
     outputs: [],
   });
   assert.throws(() => ops.createAgent(text, { name: "drv", inputs: [], outputs: [] }),
-    /exista deja/);
+    /already exists/);
 });
 
 test("createAgent: portul inout merge in ports.inouts (schema §1.5)", () => {
@@ -347,7 +347,7 @@ test("setAgentPortWidth: actualizeaza si stie sa omita width=1", () => {
   text = ops.setAgentPortWidth(text, "drv", "din", 1);
   assert.equal(ops.parseQuvm(text).agents[0].ports.inputs[0].width, undefined);
   assert.throws(() => ops.setAgentPortWidth(text, "drv", "nu_exista", 4),
-    /nu exista/);
+    /does not exist/);
 });
 
 test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate refuzate", () => {
@@ -383,7 +383,7 @@ test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate 
     () => ops.createSubenvs(text, [
       { name: "u_add", config: "x.yaml", params: {} },
     ]),
-    /exista deja/
+    /already exists/
   );
 });
 
@@ -472,7 +472,7 @@ test("addScoreboard: two-stream OOO, flow map, nume duplicat refuzat", () => {
   });
   assert.throws(
     () => ops.addScoreboard(text, { name: "sbd", source: "x" }),
-    /exista deja/
+    /already exists/
   );
 });
 
@@ -516,7 +516,7 @@ test("addVirtualSequence: mode parallel, pasi flow, sequential omite mode", () =
   assert.equal(ops.parseQuvm(text).virtual_sequences[1].mode, undefined);
   assert.throws(
     () => ops.addVirtualSequence(text, { name: "smoke", mode: "sequential", steps: [] }),
-    /exista deja/
+    /already exists/
   );
 });
 
@@ -623,7 +623,7 @@ test("addVipAgent / setSubenvNamespace: consum prin referinta + prefixare H1", (
   // consumul prin referinta cere `layout: packaged` (VIP-ul E un pachet extern) —
   // op-ul il pune, ca `createSubenvs`, in loc sa esueze abia la generare
   assert.equal(ops.parseQuvm(text).layout, "packaged");
-  assert.throws(() => ops.addVipAgent(text, "io", "x.qvip"), /exista deja/);
+  assert.throws(() => ops.addVipAgent(text, "io", "x.qvip"), /already exists/);
   // convietuieste cu agentii declarati normal
   text = ops.createAgent(text, { name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [] });
   assert.deepEqual(ops.parseQuvm(text).agents.map((a) => a.name), ["io", "cmd"]);
@@ -643,7 +643,7 @@ test("addVipAgent / setSubenvNamespace: consum prin referinta + prefixare H1", (
   assert.equal(ops.parseQuvm(top).subenvs[0].namespace, false);
   top = ops.setSubenvNamespace(top, "u_a", undefined); // inapoi la auto
   assert.equal("namespace" in ops.parseQuvm(top).subenvs[0], false);
-  assert.throws(() => ops.setSubenvNamespace(top, "nope", true), /nu exista/);
+  assert.throws(() => ops.setSubenvNamespace(top, "nope", true), /does not exist/);
 });
 
 test("setAgentPortField: open_drain trage pullup-ul dupa el si nu-l lasa scos", () => {
@@ -658,18 +658,18 @@ test("setAgentPortField: open_drain trage pullup-ul dupa el si nu-l lasa scos", 
   assert.equal(p.open_drain, true);
   assert.equal(p.pullup, true, "pullup-ul trebuie sa vina cu open_drain");
   // scoaterea pullup-ului de pe un port open-drain e REFUZATA
-  assert.throws(() => ops.setAgentPortField(text, "i2c", "sda", "pullup", false), /pluteste/);
+  assert.throws(() => ops.setAgentPortField(text, "i2c", "sda", "pullup", false), /floats to X/);
   // open_drain doar pe 1 bit
   assert.throws(
     () => ops.setAgentPortField(text, "i2c", "bus", "open_drain", true),
-    /1 bit/
+    /1-bit only/
   );
   // stingerea lui open_drain ia si pullup-ul
   text = ops.setAgentPortField(text, "i2c", "sda", "open_drain", false);
   p = ops.parseQuvm(text).agents[0].ports.inouts[0];
   assert.equal("open_drain" in p, false);
   assert.equal("pullup" in p, false);
-  assert.throws(() => ops.setAgentPortField(text, "i2c", "nope", "pullup", true), /nu exista/);
+  assert.throws(() => ops.setAgentPortField(text, "i2c", "nope", "pullup", true), /does not exist/);
 });
 
 test("setAgentPortField: enum/type sunt EXCLUSIVE; randomize/constraint", () => {
@@ -714,7 +714,7 @@ test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () =
   assert.deepEqual(clk.map((d) => d.name), ["clk", "sck"]);
   assert.equal(clk[0].period, 10); // campurile maparii au fost pastrate
   assert.equal(clk[0].unit, "ns");
-  assert.throws(() => ops.addClockDomain(text, "sck"), /exista deja/);
+  assert.throws(() => ops.addClockDomain(text, "sck"), /already exists/);
 
   text = ops.setClockDomainField(text, "sck", "period", 20);
   text = ops.setClockDomainField(text, "sck", "source", "dut");
@@ -724,21 +724,21 @@ test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () =
   text = ops.setClockDomainField(text, "sck", "source", "tb"); // default -> sters
   assert.equal("source" in ops.parseQuvm(text).clock[1], false);
   // redenumire: unica, obligatorie
-  assert.throws(() => ops.setClockDomainField(text, "sck", "name", "clk"), /exista deja/);
-  assert.throws(() => ops.setClockDomainField(text, "sck", "name", ""), /obligatoriu/);
+  assert.throws(() => ops.setClockDomainField(text, "sck", "name", "clk"), /already exists/);
+  assert.throws(() => ops.setClockDomainField(text, "sck", "name", ""), /is required/);
 
   // un agent care foloseste domeniul blocheaza stergerea (QuickUVM refuza clock necunoscut)
   let used = text.replace(/(\n\s+)interface: cmd_if/, "$1clock: sck$1interface: cmd_if");
   // DUT nu are agent „cmd" aici; construim unul cu clock: sck prin editare directa
   used = ops.createAgent(text, { name: "spi", inputs: [{ name: "din", width: 8 }], outputs: [] });
   used = ops.setAgentField(used, "spi", "clock", "sck");
-  assert.throws(() => ops.removeClockDomain(used, "sck"), /folosit de/);
+  assert.throws(() => ops.removeClockDomain(used, "sck"), /is used by/);
 
   // remove ok cand nu-l foloseste nimeni
   text = ops.removeClockDomain(text, "sck");
   assert.deepEqual(ops.parseQuvm(text).clock.map((d) => d.name), ["clk"]);
   // ultimul domeniu: nu se sterge, se colapseaza
-  assert.throws(() => ops.removeClockDomain(text, "clk"), /singurul domeniu/);
+  assert.throws(() => ops.removeClockDomain(text, "clk"), /is the only (?:clock|reset) domain/);
   assert.equal(ops.removeClockDomain(text, "nope"), text); // no-op byte-identic
 
   // colapsare: lista de 1 -> mapare, numele redundant dispare
@@ -746,7 +746,7 @@ test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () =
   assert.equal(Array.isArray(ops.parseQuvm(text).clock), false);
   assert.equal("name" in ops.parseQuvm(text).clock, false);
   const twoAgain = ops.addClockDomain(text, "sck");
-  assert.throws(() => ops.collapseClocks(twoAgain), /exact un domeniu/);
+  assert.throws(() => ops.collapseClocks(twoAgain), /exactly one clock domain/);
 });
 
 test("reset domains: conversie, invariantul dut.reset, redenumire in cascada", () => {
@@ -759,7 +759,7 @@ test("reset domains: conversie, invariantul dut.reset, redenumire in cascada", (
   let cfg = ops.parseQuvm(text);
   assert.deepEqual(cfg.reset.map((d) => d.name), ["rst_n", "srst_n"]);
   assert.equal(cfg.dut.reset, "rst_n");
-  assert.throws(() => ops.addResetDomain(text, "srst_n"), /exista deja/);
+  assert.throws(() => ops.addResetDomain(text, "srst_n"), /already exists/);
 
   // REDENUMIRE in cascada: dut.reset si agentii legati de domeniu il urmeaza
   const bound = ops.setAgentField(text, "a", "reset", "srst_n");
@@ -787,10 +787,10 @@ test("reset domains: conversie, invariantul dut.reset, redenumire in cascada", (
 
   // stergere: blocata de dut.reset, de un agent, si pe ultimul domeniu
   assert.throws(() => ops.removeResetDomain(text, "rst_n"), /dut\.reset/);
-  assert.throws(() => ops.removeResetDomain(bound, "srst_n"), /folosit de/);
+  assert.throws(() => ops.removeResetDomain(bound, "srst_n"), /is used by/);
   text = ops.removeResetDomain(text, "srst_n");
   assert.deepEqual(ops.parseQuvm(text).reset.map((d) => d.name), ["rst_n"]);
-  assert.throws(() => ops.removeResetDomain(text, "rst_n"), /singurul domeniu/);
+  assert.throws(() => ops.removeResetDomain(text, "rst_n"), /is the only (?:clock|reset) domain/);
 
   // colapsare: numele redevine PORTUL dut.reset, iar `reset:` de pe agenti dispare
   const collapsed = ops.collapseResets(ops.setAgentField(text, "a", "reset", "rst_n"));
@@ -875,10 +875,10 @@ test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () =
   assert.deepEqual(ops.parseQuvm(text).analysis.coverage[0], {
     agent: "cmd", coverpoints: [{ field: "din", bins: [] }],
   });
-  assert.throws(() => ops.upgradeCoverage(text, "cmd", "wr"), /deja/);
+  assert.throws(() => ops.upgradeCoverage(text, "cmd", "wr"), /already/);
 
   text = ops.addCoverpoint(text, "cmd", "wr");
-  assert.throws(() => ops.addCoverpoint(text, "cmd", "wr"), /deja un coverpoint/);
+  assert.throws(() => ops.addCoverpoint(text, "cmd", "wr"), /already has a coverpoint/);
   // bin-uri: exact una din cele trei forme supravietuieste
   text = ops.setCoverageBin(text, "cmd", "din", "low", { range: [0, 7] });
   text = ops.setCoverageBin(text, "cmd", "din", "hi", { value: 255 });
@@ -903,8 +903,8 @@ test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () =
   assert.deepEqual(ops.parseQuvm(text).analysis.coverage[0].crosses, [["din", "wr"]]);
   text = ops.setCoverageGoal(text, "cmd", 90);
   assert.equal(ops.parseQuvm(text).analysis.coverage[0].goal, 90);
-  assert.throws(() => ops.setCoverageGoal(text, "cmd", 0), /procent/);
-  assert.throws(() => ops.setCoverageGoal(text, "cmd", 101), /procent/);
+  assert.throws(() => ops.setCoverageGoal(text, "cmd", 0), /percentage/);
+  assert.throws(() => ops.setCoverageGoal(text, "cmd", 101), /percentage/);
 
   // stergerea unui coverpoint ia cu ea crossurile care il refereau (QuickUVM refuza
   // un cross catre un camp nedeclarat)
@@ -912,12 +912,12 @@ test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () =
   assert.equal("crosses" in ops.parseQuvm(pruned).analysis.coverage[0], false,
     "cross-ul a supravietuit stergerii coverpoint-ului");
   // ultimul coverpoint nu se poate sterge: modelul bogat cere >= 1
-  assert.throws(() => ops.removeCoverpoint(pruned, "cmd", "din"), /singurul coverpoint/);
+  assert.throws(() => ops.removeCoverpoint(pruned, "cmd", "din"), /is the only coverpoint/);
 
   text = ops.downgradeCoverage(text, "cmd");
   assert.deepEqual(ops.parseQuvm(text).analysis.coverage, ["cmd"]);
   assert.equal(ops.downgradeCoverage(text, "cmd"), text, "downgrade repetat nu e byte-identic");
-  assert.throws(() => ops.addCoverpoint(text, "cmd", "din"), /nu are un model/);
+  assert.throws(() => ops.addCoverpoint(text, "cmd", "din"), /has no rich coverage model/);
 });
 
 test("coverage bogat: editarile NU rescriu cheile scrise de mana", () => {
@@ -953,7 +953,7 @@ test("tests[]: add/remove/edit; stergerea ULTIMULUI test scoate cheia `tests`", 
   const dflt = ops.parseQuvm(text).tests[0].name;
   text = ops.addTest(text, "smoke_test");
   assert.deepEqual(ops.parseQuvm(text).tests.map((t) => t.name), [dflt, "smoke_test"]);
-  assert.throws(() => ops.addTest(text, "smoke_test"), /deja/);
+  assert.throws(() => ops.addTest(text, "smoke_test"), /already/);
   text = ops.setTestField(text, "smoke_test", "num_items", 20);
   text = ops.setTestField(text, "smoke_test", "vseq", "smoke_vseq");
   let t = ops.parseQuvm(text).tests[1];
@@ -961,7 +961,7 @@ test("tests[]: add/remove/edit; stergerea ULTIMULUI test scoate cheia `tests`", 
   assert.equal(t.vseq, "smoke_vseq");
   text = ops.setTestField(text, "smoke_test", "num_items", 100); // default -> sters
   assert.equal("num_items" in ops.parseQuvm(text).tests[1], false);
-  assert.throws(() => ops.setTestField(text, "nope", "num_items", 5), /nu exista/);
+  assert.throws(() => ops.setTestField(text, "nope", "num_items", 5), /does not exist/);
 
   // `seeds` fara `regress:` e REFUZAT de QuickUVM -> refuzam la sursa
   assert.throws(() => ops.setTestField(text, "smoke_test", "seeds", 4), /regress/);
@@ -1006,7 +1006,7 @@ test("setBenchField / setProjectField: identitatea bench-ului, default => cheia 
   assert.equal(ops.parseQuvm(text).project.year, 2026);
   text = ops.setProjectField(text, "author", "");
   assert.equal("author" in ops.parseQuvm(text).project, false);
-  assert.throws(() => ops.setProjectField(text, "name", ""), /obligatoriu/);
+  assert.throws(() => ops.setProjectField(text, "name", ""), /is required/);
 });
 
 test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", () => {
@@ -1020,7 +1020,7 @@ test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", ()
   });
   assert.throws(
     () => ops.addRegisterModel(text, { package: "x", block: "y", bus_agent: "host" }),
-    /deja/
+    /already/
   );
   text = ops.setRegisterModelField(text, "csr_tests", ["hw_reset", "rw"]);
   text = ops.setRegisterModelField(text, "coverage", true);
@@ -1040,12 +1040,12 @@ test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", ()
   }
   // the three required fields: emptying is refused, not silently written
   for (const f of ["package", "block", "bus_agent"]) {
-    assert.throws(() => ops.setRegisterModelField(text, f, ""), /obligatoriu/, f);
+    assert.throws(() => ops.setRegisterModelField(text, f, ""), /is required/, f);
   }
   text = ops.removeRegisterModel(text);
   assert.equal(ops.parseQuvm(text).register_model, undefined);
   assert.equal(ops.removeRegisterModel(text), text, "remove pe absent nu e byte-identic");
-  assert.throws(() => ops.setRegisterModelField(text, "adapter", "a"), /nu are/);
+  assert.throws(() => ops.setRegisterModelField(text, "adapter", "a"), /has no/);
 });
 
 test("regress: add e idempotent, remove CASCADEAZA peste tests[].seeds", () => {
@@ -1098,7 +1098,7 @@ test("setAgentField: seteaza/reseteaza campuri, arunca la agent inexistent", () 
   a = ops.parseQuvm(text).agents[0];
   assert.equal("replicas" in a, false, "replicas: 1 ar fi trebuit stersa");
   assert.equal("reorder_policy" in a, false, "reorder_policy: priority ar fi trebuit stersa");
-  assert.throws(() => ops.setAgentField(text, "nope", "mode", "responder"), /nu exista/);
+  assert.throws(() => ops.setAgentField(text, "nope", "mode", "responder"), /does not exist/);
 });
 
 test("setAgentField: cascada mode -> initiator sterge cheile responder-only", () => {
@@ -1177,13 +1177,13 @@ test("setScoreboardField: seteaza/reseteaza campuri, arunca la scoreboard inexis
   assert.equal(ops.parseQuvm(text).analysis.scoreboards[0].max_latency, 16);
   assert.throws(
     () => ops.setScoreboardField(text, "nope", "match", "out_of_order"),
-    /nu exista/
+    /does not exist/
   );
   // source is mandatory: emptying it is refused (does not corrupt the scoreboard)
-  assert.throws(() => ops.setScoreboardField(text, "sbd", "source", ""), /obligatoriu/);
+  assert.throws(() => ops.setScoreboardField(text, "sbd", "source", ""), /is required/);
   assert.throws(
     () => ops.setScoreboardField(text, "sbd", "source", undefined),
-    /obligatoriu/
+    /is required/
   );
 });
 
@@ -1254,16 +1254,16 @@ test("setScoreboardField: window + reference_model (campuri imbricate, P3)", () 
   // ... si invers, un window nu se poate adauga pe un scoreboard cu doua fluxuri
   assert.throws(
     () => ops.setScoreboardField(twoStream, "sbd", "window.boundary", "done"),
-    /SINGUR flux/
+    /SINGLE-stream/
   );
   assert.throws(
     () => ops.setScoreboardField(text, "nope", "window.boundary", "done"),
-    /nu exista/
+    /does not exist/
   );
   // boundary gol => window-ul dispare cu totul
   text = ops.setScoreboardField(text, "sbd", "window.boundary", "");
   assert.equal("window" in ops.parseQuvm(text).analysis.scoreboards[0], false);
-  assert.throws(() => ops.setScoreboardField(text, "sbd", "window.length", 4), /nu are/);
+  assert.throws(() => ops.setScoreboardField(text, "sbd", "window.length", 4), /has no/);
 });
 
 test("setScoreboardField: cascada — monitor gol / match in_order curata match_key", () => {
@@ -1296,7 +1296,7 @@ test("addProbe: flow map, width=1 omisa, coverage doar cand e cerut, duplicat re
   });
   assert.throws(
     () => ops.addProbe(text, { name: "lvl", path: "x" }),
-    /exista deja/
+    /already exists/
   );
 });
 
@@ -1404,7 +1404,7 @@ test("setAgentActive: pasiv scrie active:false, activ sterge cheia, no-op idempo
   assert.equal(ops.parseQuvm(text).agents[0].active, undefined);
   assert.ok(!/active:/.test(text), `active nu s-a sters:\n${text}`);
   // nonexistent agent -> throws
-  assert.throws(() => ops.setAgentActive(text, "nope", false), /nu exista/);
+  assert.throws(() => ops.setAgentActive(text, "nope", false), /does not exist/);
 });
 
 // file for manual inspection, useful for debugging

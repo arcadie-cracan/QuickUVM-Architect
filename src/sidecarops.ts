@@ -54,7 +54,7 @@ export function parseSidecar(text: string): SidecarData {
   }
   if (data.schema_version !== SIDECAR_VERSION) {
     throw new Error(
-      `versiune de sidecar necunoscuta: ${String(data.schema_version)}`
+      `unknown sidecar version: ${String(data.schema_version)}`
     );
   }
   const views: Record<string, SidecarView> = {};
