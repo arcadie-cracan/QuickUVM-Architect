@@ -421,6 +421,121 @@ test("R21: invalidate — a view that disappears takes its frames and notes into
   assert.deepEqual(d.orphans.map((o) => o.kind), ["frame"], "no member of it exists yet");
 });
 
+test("R21: parseSidecar reads the notation through the write-side sanitiser — a malformed entry never throws later", () => {
+  const text = [
+    "schema_version: 1",
+    "views:",
+    `  ${V}:`,
+    "    nodes:",
+    "      u_add: {x: 8, y: 16, color: pink}",
+    "      u_inv: {color: green}",
+    "    frames:",
+    "      'frame:1': {title: no members}",
+    "      'frame:2':",
+    "      'frame:3': {title: ok, members: [u_add, 7, u_inv]}",
+    "    notes:",
+    "      'note:1': {x: 1, y: 2, text: 42}",
+    "      'note:2': {x: 1, y: 2, text: kept}",
+    "      'note:3':",
+    "  broken_view: 5",
+    "orphans: [null, {view: v, node: n, value: {}, lastSeen: x}]",
+    "",
+  ].join("\n");
+  const d = ops.parseSidecar(text);
+  assert.deepEqual(d.views[V].frames, { "frame:3": { title: "ok", members: ["u_add", "u_inv"] } });
+  assert.deepEqual(d.views[V].notes, { "note:2": { x: 1, y: 2, text: "kept" } });
+  assert.deepEqual(d.views[V].nodes, { u_add: { x: 8, y: 16 }, u_inv: { color: "green" } }, "an unknown colour name is dropped");
+  assert.equal(d.views.broken_view, undefined);
+  assert.equal(d.orphans.length, 1, "a null orphan is not an orphan");
+  // the two calls that used to throw on such a file
+  assert.doesNotThrow(() => ops.invalidate(d, model, "2026-11-21"));
+  assert.doesNotThrow(() => ops.getAnnotations(d, V));
+  // a view left with frames/notes that are ALL malformed has no such keys
+  const e = ops.parseSidecar(`schema_version: 1\nviews:\n  ${V}:\n    frames: {a: 1}\n    notes: x\norphans: []\n`);
+  assert.deepEqual(e.views[V], {});
+});
+
+test("R21: a double claim is resolved by frame NUMBER (frame:2 before frame:10), on write and on read", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({
+    frames: {
+      "frame:10": { title: "ten", members: ["u_add", "u_inv"] },
+      "frame:2": { title: "two", members: ["u_add"] },
+    },
+  }));
+  assert.deepEqual(d.views[V].frames, {
+    "frame:2": { title: "two", members: ["u_add"] },
+    "frame:10": { title: "ten", members: ["u_inv"] },
+  });
+  // the limits are the webview's: a title of 80, a note of 2000
+  ops.setAnnotations(d, V, annot({
+    frames: { "frame:1": { title: "t".repeat(300), members: ["u_add"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "n".repeat(5000) } },
+  }));
+  assert.equal(d.views[V].frames["frame:1"].title.length, 80);
+  assert.equal(d.views[V].notes["note:1"].text.length, 2000);
+  assert.doesNotThrow(() => ops.setAnnotations(d, V, null));
+});
+
+test("R21: invalidate — an orphaned frame whose id was reused comes back under a NEW id, not dropped", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, V, annot({ frames: { "frame:1": { title: "old", members: ["gone"] } } }));
+  ops.invalidate(d, model, "2026-11-21");
+  assert.equal(d.orphans[0].node, "frame:1");
+  // meanwhile the user frames something else: the counter gives frame:1 again
+  ops.setAnnotations(d, V, annot({ frames: { "frame:1": { title: "new", members: ["u_add"] } } }));
+  // the old frame's member returns
+  d.orphans[0].value.members = ["u_inv"];
+  ops.invalidate(d, model, "2026-11-22");
+  assert.deepEqual(d.views[V].frames, {
+    "frame:1": { title: "new", members: ["u_add"] },
+    "frame:2": { title: "old", members: ["u_inv"] },
+  });
+  assert.equal(d.orphans.length, 0);
+});
+
+test("R21: invalidate — a vanished view's frame around NOTES ONLY returns with its notes", () => {
+  const d = ops.emptySidecar();
+  ops.setAnnotations(d, "demo_top.not_there", annot({
+    frames: { "frame:1": { title: "remarks", members: ["note:1", "note:2"] } },
+    notes: { "note:1": { x: 0, y: 0, text: "a" }, "note:2": { x: 0, y: 40, text: "b" } },
+  }));
+  ops.invalidate(d, model, "2026-11-21");
+  assert.equal(d.orphans.length, 3);
+  for (const o of d.orphans) {
+    o.view = V; // "the view is back"
+  }
+  ops.invalidate(d, model, "2026-11-22");
+  assert.equal(d.orphans.length, 0, "the frame did not wait for a node key that would never come");
+  assert.deepEqual(d.views[V].frames["frame:1"].members, ["note:1", "note:2"]);
+  // a note restored under a new id (its own was reused) is followed by its frame
+  const e = ops.emptySidecar();
+  ops.setAnnotations(e, V, annot({ notes: { "note:1": { x: 9, y: 9, text: "newer" } } }));
+  e.orphans.push(
+    { view: V, node: "note:1", kind: "note", value: { x: 0, y: 0, text: "older" }, lastSeen: "x" },
+    { view: V, node: "frame:1", kind: "frame", value: { title: "f", members: ["note:1"] }, lastSeen: "x" }
+  );
+  ops.invalidate(e, model, "2026-11-22");
+  assert.deepEqual(e.views[V].notes, {
+    "note:1": { x: 9, y: 9, text: "newer" },
+    "note:2": { x: 0, y: 0, text: "older" },
+  });
+  assert.deepEqual(e.views[V].frames["frame:1"].members, ["note:2"], "the frame follows its note's new id");
+});
+
+test("R21: invalidate — a dead frame re-added by a stale whole set does not pile up duplicate orphans", () => {
+  const d = ops.emptySidecar();
+  const stale = annot({ frames: { "frame:1": { title: "dead", members: ["gone"] } } });
+  ops.setAnnotations(d, V, stale);
+  ops.invalidate(d, model, "2026-11-21");
+  ops.setAnnotations(d, V, stale); // another surface's mirror writes it back
+  ops.invalidate(d, model, "2026-11-22");
+  assert.equal(d.orphans.length, 1);
+  assert.equal(d.orphans[0].lastSeen, "2026-11-22");
+  // a restore that cannot happen yet does not leave an empty view behind
+  assert.equal(d.views[V], undefined);
+});
+
 test("R21: invalidate never touches a verification (tb:) view's annotations, nor a leaf instance's", () => {
   const d = ops.emptySidecar();
   const a = annot({

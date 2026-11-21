@@ -2,10 +2,13 @@
 // diagram, notes above it, tints on the boxes. Pure SVG construction over the
 // data of `annotations.ts`; the gestures (drag, edit, menu, undo) are main.ts's.
 //
-// Layering: the frames are the FIRST child of the viewport (behind every box
-// and wire — a frame is a background), the notes the LAST (a sticky note lies
-// on top). Both are rebuilt whole on every draw: they are few, and a frame's
-// box depends on where its members are right now.
+// Layering: a frame's BOX is the first child of the viewport (behind every
+// block and wire — a frame is a background), its title TAB is drawn above them
+// (it is the frame's only handle: behind the diagram, a block lying over the
+// title band left no pointer route to the frame — review finding), and the
+// notes are the last (a sticky note lies on top). All are rebuilt whole on
+// every draw: they are few, and a frame's box depends on where its members are
+// right now.
 
 import type { AnnotColor, ViewAnnotations } from "../protocol";
 import { ANNOT_COLORS } from "../protocol";
@@ -50,21 +53,25 @@ export function layoutNotes(
 
 /** removes what a previous draw left */
 function clear(viewport: SVGGElement): void {
-  viewport.querySelectorAll(":scope > .annot-frames, :scope > .annot-notes").forEach((g) => g.remove());
+  viewport
+    .querySelectorAll(":scope > .annot-frames, :scope > .annot-tabs, :scope > .annot-notes")
+    .forEach((g) => g.remove());
 }
 
 function drawFrames(
-  group: SVGGElement,
+  back: SVGGElement,
+  tabs: SVGGElement,
   a: ViewAnnotations,
   boxes: ReadonlyMap<string, ARect>,
   measure: (s: string) => number
 ): void {
-  group.replaceChildren();
+  back.replaceChildren();
+  tabs.replaceChildren();
   for (const [id, box] of boxes) {
     const f = a.frames[id];
-    const g = el("g", { class: `frame${tintClass(f.color)}` });
-    g.dataset.id = id;
-    g.append(
+    const bg = el("g", { class: `frame-back${tintClass(f.color)}` });
+    bg.dataset.id = id;
+    bg.append(
       el("rect", {
         class: "frame-box",
         x: String(box.x),
@@ -74,8 +81,11 @@ function drawFrames(
         rx: "6",
       })
     );
+    back.append(bg);
     // the title tab: the frame's ONLY hit target — the box itself takes no
     // pointer events, so a lasso can start on the empty area inside a frame
+    const g = el("g", { class: `frame${tintClass(f.color)}` });
+    g.dataset.id = id;
     const title = f.title || "frame";
     const tabW = Math.min(box.w, Math.max(48, measure(title) + 20));
     g.append(
@@ -97,7 +107,7 @@ function drawFrames(
         title
       )
     );
-    group.append(g);
+    tabs.append(g);
   }
 }
 
@@ -120,8 +130,10 @@ export function drawAnnotations(
     isNoteId(id) ? rects.get(id) ?? null : rectOf(id);
 
   const frames = el("g", { class: "annot-frames" });
-  drawFrames(frames, a, frameRects(a, anyRect), measure);
+  const tabs = el("g", { class: "annot-tabs" });
+  drawFrames(frames, tabs, a, frameRects(a, anyRect), measure);
   viewport.insertBefore(frames, viewport.firstChild);
+  viewport.append(tabs);
 
   const notes = el("g", { class: "annot-notes" });
   for (const [id, r] of rects) {
@@ -162,20 +174,22 @@ export function redrawFrames(
   noteRects: NoteRects,
   measure: (s: string) => number
 ): void {
-  const group = viewport.querySelector<SVGGElement>(":scope > .annot-frames");
-  if (!group) {
+  const back = viewport.querySelector<SVGGElement>(":scope > .annot-frames");
+  const tabs = viewport.querySelector<SVGGElement>(":scope > .annot-tabs");
+  if (!back || !tabs) {
     return;
   }
   const selected = new Set(
-    [...group.querySelectorAll<SVGElement>(".frame.selected")].map((g) => g.dataset.id ?? "")
+    [...tabs.querySelectorAll<SVGElement>(".frame.selected")].map((g) => g.dataset.id ?? "")
   );
   drawFrames(
-    group,
+    back,
+    tabs,
     a,
     frameRects(a, (id) => (isNoteId(id) ? noteRects.get(id) ?? null : rectOf(id))),
     measure
   );
-  group.querySelectorAll<SVGElement>(".frame").forEach((g) => {
+  viewport.querySelectorAll<SVGElement>(".frame, .frame-back").forEach((g) => {
     g.classList.toggle("selected", selected.has(g.dataset.id ?? ""));
   });
 }

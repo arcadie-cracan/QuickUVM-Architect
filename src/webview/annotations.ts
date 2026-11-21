@@ -18,11 +18,13 @@
 //
 // Tested in `npm run test:annotations`.
 
-import type {
-  AnnotColor,
-  SidecarFrame,
-  SidecarNote,
-  ViewAnnotations,
+import {
+  ANNOT_NOTE_MAX,
+  ANNOT_TITLE_MAX,
+  type AnnotColor,
+  type SidecarFrame,
+  type SidecarNote,
+  type ViewAnnotations,
 } from "../protocol";
 
 export interface ARect {
@@ -82,10 +84,18 @@ export function nextId(kind: "frame" | "note", existing: Iterable<string>): stri
   return `${kind}:${n}`;
 }
 
-/** the frame a member belongs to (a member is in ONE frame), or null */
+/** frame / note ids in the order of their numbers (`frame:2` before
+ *  `frame:10`) — the order the host's sanitiser resolves a double claim in */
+export function byNumber(ids: Iterable<string>): string[] {
+  const n = (id: string): number => Number(id.slice(id.indexOf(":") + 1));
+  return [...ids].sort((p, q) => n(p) - n(q));
+}
+
+/** the frame a member belongs to (a member is in ONE frame), or null; on a
+ *  double claim (a hand-edited file) the lower-numbered frame, as on the host */
 export function frameOf(a: ViewAnnotations, memberId: string): string | null {
-  for (const [id, f] of Object.entries(a.frames)) {
-    if (f.members.includes(memberId)) {
+  for (const id of byNumber(Object.keys(a.frames))) {
+    if (a.frames[id].members.includes(memberId)) {
       return id;
     }
   }
@@ -153,7 +163,7 @@ export function addFrame(
     out = leaveFrame(out, m);
   }
   const id = nextId("frame", Object.keys(out.frames));
-  out.frames[id] = { title, members: ids };
+  out.frames[id] = { title: title.trim().slice(0, ANNOT_TITLE_MAX), members: ids };
   return { annotations: out, id };
 }
 
@@ -203,11 +213,12 @@ export function setFrameTitle(
   frameId: string,
   title: string
 ): ViewAnnotations {
-  if (!a.frames[frameId] || a.frames[frameId].title === title) {
+  const t = title.trim().slice(0, ANNOT_TITLE_MAX);
+  if (!a.frames[frameId] || a.frames[frameId].title === t) {
     return a;
   }
   const out = cloneAnnotations(a);
-  out.frames[frameId].title = title;
+  out.frames[frameId].title = t;
   return out;
 }
 
@@ -223,7 +234,7 @@ export function addNote(
   }
   const out = cloneAnnotations(a);
   const id = nextId("note", Object.keys(out.notes));
-  out.notes[id] = { x, y, text };
+  out.notes[id] = { x, y, text: text.slice(0, ANNOT_NOTE_MAX) };
   return { annotations: out, id };
 }
 
@@ -235,11 +246,12 @@ export function setNoteText(a: ViewAnnotations, noteId: string, text: string): V
   if (!text.trim()) {
     return deleteNote(a, noteId);
   }
-  if (a.notes[noteId].text === text) {
+  const t = text.slice(0, ANNOT_NOTE_MAX);
+  if (a.notes[noteId].text === t) {
     return a;
   }
   const out = cloneAnnotations(a);
-  out.notes[noteId].text = text;
+  out.notes[noteId].text = t;
   return out;
 }
 
@@ -328,31 +340,40 @@ export function renameIds(
 }
 
 /**
- * The containment test at a drag's end: an item that was MOVED, belongs to no
- * frame, and whose centre now lies inside a frame's box joins that frame (the
- * smallest one, when boxes overlap). An item already in a frame never changes
- * house by being dragged — its frame simply grows to follow it; leaving is an
- * explicit action. Frames are not members of frames.
+ * The containment test at a drag's end: an item that was MOVED INTO a frame's
+ * box — its centre outside before the drag, inside after — and belongs to no
+ * frame joins that frame (the smallest one, when boxes overlap). An item
+ * already in a frame never changes house by being dragged — its frame simply
+ * grows to follow it; leaving is an explicit action. Frames are not members of
+ * frames.
+ *
+ * ENTERING, not merely ending inside: a block taken out of a frame with
+ * "Remove from frame" usually still lies between the frame's other members,
+ * and nudging it must not put it straight back (review finding).
  *
  * `boxes` are the frames' boxes AFTER the move; `moved` the dragged items'
- * rectangles after the move.
+ * rectangles after the move and, in `from`, before it (absent = treat the item
+ * as coming from outside).
  */
 export function dropIntoFrames(
   a: ViewAnnotations,
   boxes: ReadonlyMap<string, ARect>,
-  moved: readonly { id: string; rect: ARect }[]
+  moved: readonly { id: string; rect: ARect; from?: ARect }[]
 ): ViewAnnotations {
   let out = a;
+  const inside = (r: ARect, b: ARect): boolean => {
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
+    return cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h;
+  };
   for (const m of moved) {
     if (isFrameId(m.id) || frameOf(out, m.id)) {
       continue;
     }
-    const cx = m.rect.x + m.rect.w / 2;
-    const cy = m.rect.y + m.rect.h / 2;
     let best: string | null = null;
     let bestArea = Infinity;
     for (const [fid, b] of boxes) {
-      if (cx >= b.x && cx <= b.x + b.w && cy >= b.y && cy <= b.y + b.h) {
+      if (inside(m.rect, b) && !(m.from && inside(m.from, b))) {
         const area = b.w * b.h;
         if (area < bestArea || (area === bestArea && best !== null && fid < best)) {
           best = fid;

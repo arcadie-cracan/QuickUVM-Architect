@@ -109,9 +109,9 @@ Reguli:
   bounding box plus padding, recomputed on every draw, so it survives a
   re-arrangement, a collapse and a rename, and dragging its title tab drags its
   members (one ordinary multi-node move: one total snapshot, D21). A member
-  belongs to one frame; an item dropped inside a frame's box joins it (the
-  containment test at a drag's end), leaving is an explicit action, and a frame
-  left without members is deleted. A **note** is text at an absolute position
+  belongs to one frame; an item dragged INTO a frame's box joins it (the
+  containment test at a drag's end: its centre outside before, inside after),
+  leaving is an explicit action, and a frame left without members is deleted. A **note** is text at an absolute position
   (fixed width, the height follows the wrapped lines); creating one pins an
   un-arranged view first, like any gesture that fixes a place. A **colour** is
   one of six names from the theme's chart palette (`blue`, `green`, `yellow`,
@@ -119,8 +119,11 @@ Reguli:
   so a TB box's stroke keeps saying what kind of component it is. "Re-arrange
   all" keeps all three. The webview sends the view's whole set after each
   gesture (`view/annotations`, docs/05); the host SANITISES it
-  (`setAnnotations`: ids, palette names, one frame per member, no empty frame,
-  no empty note).
+  (`setAnnotations`: ids, palette names, one frame per member — on a double
+  claim the lower-NUMBERED frame keeps it —, no empty frame, no empty note, a
+  title of at most 80 characters and a note of 2000), and `parseSidecar` reads
+  a file through the same reduction: the file is hand-editable and merged by
+  git, and a frame without `members` must not be able to throw later.
 
 ## Invalidarea grațioasă
 
@@ -131,7 +134,10 @@ dead member ids are left in place, inert, and are drawn again when their nodes
 return — and migrates whole (`kind: frame`: title, colour, members) when none
 is, to be restored when a member reappears; a **note** has no target and stays
 while its view exists. When the view itself disappears, its frames and notes
-migrate (`kind: frame` / `kind: note`) and return with it. A verification
+migrate (`kind: frame` / `kind: note`) and return with it — the notes first,
+so a frame around notes only comes back too. A frame's or a note's id is a
+COUNTER, not a model key: an orphan whose id was reused meanwhile is restored
+under the next free id (and a frame follows its note's new id), never dropped. A verification
 (`tb:`) view is never invalidated against the RTL model, so its annotations
 are never touched; a leaf instance's boundary view keeps its notes and frames
 as it keeps `hidePins`.

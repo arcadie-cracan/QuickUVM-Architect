@@ -1772,7 +1772,7 @@ text.split-sign {
 .tint-red { --tint: var(--vscode-charts-red, #f14c4c); }
 .tint-purple { --tint: var(--vscode-charts-purple, #b180d7); }
 .inode[class*="tint-"] > .module-box,
-.tbnode[class*="tint-"] > .tb-box {
+.tbnode[class*="tint-"]:not(.ghost) > .tb-box {
   fill: color-mix(
     in srgb,
     var(--tint) 20%,
@@ -1803,7 +1803,7 @@ text.split-sign {
   pointer-events: none;
 }
 .frame-title.untitled { font-style: italic; opacity: 0.6; }
-.frame.selected .frame-box {
+.frame-back.selected .frame-box {
   stroke: var(--vscode-focusBorder);
   stroke-width: 2;
 }

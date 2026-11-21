@@ -212,6 +212,11 @@ export interface SidecarNote {
   color?: AnnotColor;
 }
 
+/** the longest frame title / note text kept (the SAME limits on both sides: a
+ *  host that cut what the webview kept showed the cut only after a reload) */
+export const ANNOT_TITLE_MAX = 80;
+export const ANNOT_NOTE_MAX = 2000;
+
 /** docs/08 R21 — the secondary notation of ONE view, as the webview edits it
  *  (`colors` live on the node entries in the file) */
 export interface ViewAnnotations {

@@ -503,12 +503,19 @@ mesajele tot aici, la implementare.
 - **Secondary notation** (docs/08 R21, Nov 2026; decision D25): frames, sticky
   notes and node colours — annotations of the VIEW, on the schematic views and
   on every level of the verification view, kept in the layout sidecar (docs/04)
-  and never in the YAML. **Frame**: `Ctrl+G` (or "Frame the selection" in the
-  context menu / the palette) puts a titled box around the selected blocks,
-  flags and notes and opens its title for typing; the box is derived from its
-  members, its title tab is its only hit target (a lasso can start on the empty
-  area inside a frame) and dragging the tab moves the members. A block or a
-  note dropped inside a frame joins it; "Remove from frame" takes it out;
+  and never in the YAML. **Frame**: `Shift+G` (or "Frame the selection" in the
+  context menu / the palette; plain `G` fits the selection) puts a titled box
+  around the selected blocks, flags and notes and opens its title for typing.
+  Not `Ctrl+G`: a webview forwards every keydown to the workbench whatever it
+  does with it, and `Ctrl+G` is "Go to Line" there with no `when` clause — the
+  quick input took the focus and committed an empty title (found at the review,
+  in the VS Code bundle; not run). The box is derived from its members; its
+  title tab is its only hit target (a lasso can start on the empty area inside
+  a frame) and is drawn ABOVE the blocks, so a block lying over the title band
+  cannot cover it; dragging the tab moves the members. A block or a note
+  dragged INTO a frame's box joins it (entering — one already inside, taken out
+  with "Remove from frame", does not rejoin on a nudge); "Remove from frame"
+  takes it out;
   double-click or `F2` renames, `Delete` removes the frame (its members stay).
   **Note**: `N` (at the centre of the view) or "Add note here" on the
   background's context menu opens a text field — the note exists once it has
@@ -520,8 +527,19 @@ mesajele tot aici, la implementare.
   palette (the name is the tooltip and the accessible label — never colour
   alone). All of it is ONE message, `view/annotations {viewId, frames, notes,
   colors}`, carrying the view's whole set after each gesture, and one entry of
-  the same history as the moves: `Ctrl+Z` brings back a deleted note or frame.
-  A rename (R14) carries the memberships and the colours to the new ids; the
+  the same history as the moves: `Ctrl+Z` brings back a deleted note or frame
+  (an annotation-only step restores no position, so undoing a colour does not
+  pin an un-arranged view). The text field of a note or a title is anchored in
+  the diagram and follows the camera; a re-render under it leaves it open, and
+  only a change of view closes it — committing to the view it was typed on.
+  Because the message is a whole replace sent from the sender's own copy of
+  the sidecar, the host re-posts `layout/full` to every OTHER surface showing
+  the file (the panel and a per-file editor share the `tb:` keys): without it,
+  the other surface's next gesture wrote its stale copy back and deleted the
+  note. Frames and notes are in the diagram's `Ctrl+F`; a frame none of whose
+  members is on screen has no tab and is offered for deletion in the palette.
+  A rename (R14) carries the memberships and the colours to the new ids (and
+  drops the view's undo history, whose entries hold the old ids); the
   SVG export includes frames and notes; at the overview level of detail (R6) a
   note keeps its box and loses its text. The data rules are pure
   (`src/webview/annotations.ts`, `test:annotations`; the sidecar side in

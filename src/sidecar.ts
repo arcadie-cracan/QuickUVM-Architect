@@ -36,6 +36,9 @@ export class LayoutStore implements vscode.Disposable {
   private readonly changeEmitter = new vscode.EventEmitter<SidecarData>();
   /** sidecar changed from outside the current gesture (external, invalidation, cleanup) */
   readonly onExternalChange = this.changeEmitter.event;
+  private readonly annotEmitter = new vscode.EventEmitter<{ origin: unknown }>();
+  /** docs/08 R21 — a view's secondary notation was replaced by `origin` */
+  readonly onAnnotations = this.annotEmitter.event;
 
   private watcher: vscode.FileSystemWatcher | undefined;
   private lastWrite = 0;
@@ -86,9 +89,16 @@ export class LayoutStore implements vscode.Disposable {
 
   /** docs/08 R21 — the secondary notation of a view (frames, notes, colours),
    *  replaced whole */
-  annotationsSet(viewId: string, a: ViewAnnotations): void {
+  annotationsSet(viewId: string, a: ViewAnnotations, origin?: unknown): void {
     setAnnotations(this.data, viewId, a);
     this.scheduleSave();
+    // The message is a WHOLE replace sent from the sender's own mirror of the
+    // sidecar. Every other surface showing this file (the panel and a per-file
+    // editor share the `tb:` keys) must get the new state, or its next gesture
+    // replaces the set from a stale mirror — and deletes a note the user typed
+    // on the other surface (review finding). `origin` is the sender, so it can
+    // skip its own echo.
+    this.annotEmitter.fire({ origin });
   }
 
   /** docs/08 R18 — an RTL view's nc / ignored pins hidden */
@@ -238,5 +248,6 @@ export class LayoutStore implements vscode.Disposable {
     }
     this.watcher?.dispose();
     this.changeEmitter.dispose();
+    this.annotEmitter.dispose();
   }
 }

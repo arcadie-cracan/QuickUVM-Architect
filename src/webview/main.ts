@@ -45,6 +45,7 @@ import { el, measurer, SVG_NS } from "./svg";
 import {
   addFrame,
   addNote,
+  byNumber,
   cloneAnnotations,
   deleteFrame,
   deleteNote,
@@ -1336,7 +1337,7 @@ function applyLodTitles(): void {
 
 function applyTransform(): void {
   cancelRename(); // docs/08 R14: a fixed-position editor would detach from its title
-  closeAnnotEditor(true); // docs/08 R21: the same — but a typed paragraph is kept
+  placeAnnotEditor(); // docs/08 R21: the note / title field follows the camera
   viewport?.setAttribute(
     "transform",
     `translate(${state.tx},${state.ty}) scale(${state.k})`
@@ -1403,9 +1404,9 @@ function fit(b: Bounds): void {
  *  the resulting camera is persisted as with any pan/zoom */
 function fitView(): void {
   if (state.mode === "schematic" && currentLayout) {
-    contentBounds = layoutBounds(currentLayout); // the drags moved the world
+    contentBounds = withAnnotBounds(layoutBounds(currentLayout)); // the drags moved the world
   } else if (state.mode === "tb" && currentTbLayout) {
-    contentBounds = tbBounds(currentTbLayout); // same: the positions from drag/seeds
+    contentBounds = withAnnotBounds(tbBounds(currentTbLayout)); // same: the positions from drag/seeds
   }
   fit(contentBounds);
   scheduleCameraSave();
@@ -2389,7 +2390,9 @@ type PosMap = Record<string, { x: number; y: number }>;
  *  R21) of the view at that moment — a frame deleted or a note's text changed
  *  comes back with the same Ctrl+Z as a move */
 interface LayoutSnap {
-  pos: PosMap;
+  /** null = an annotation-only step: undoing it restores no position (and so
+   *  does not PIN an un-arranged view, nor cost a layout pass) */
+  pos: PosMap | null;
   annot: ViewAnnotations;
 }
 const posHistory = new Map<string, { undo: LayoutSnap[]; redo: LayoutSnap[] }>();
@@ -2435,6 +2438,22 @@ function applyPositions(key: string, nodes: PosMap): void {
   void render(false);
 }
 
+/** pushes the secondary notation BEFORE an annotation-only gesture (a colour,
+ *  a frame, a note's text): one history step, no positions in it */
+function pushAnnotUndo(): void {
+  const key = layoutKey();
+  if (!key) {
+    return;
+  }
+  const h = posHistory.get(key) ?? { undo: [], redo: [] };
+  h.undo.push({ pos: null, annot: viewAnnots() });
+  if (h.undo.length > POS_HISTORY_MAX) {
+    h.undo.shift();
+  }
+  h.redo.length = 0;
+  posHistory.set(key, h);
+}
+
 function undoPositions(redo: boolean): void {
   const key = layoutKey();
   const h = key ? posHistory.get(key) : undefined;
@@ -2445,14 +2464,23 @@ function undoPositions(redo: boolean): void {
   if (!snap) {
     return;
   }
-  const now = capturePositions();
-  if (now) {
-    (redo ? h.undo : h.redo).push({ pos: now, annot: viewAnnots() });
-  }
-  if (!sameAnnotations(viewAnnots(), snap.annot)) {
+  // the step taken back is recorded the way it was taken: with positions only
+  // if it had any
+  (redo ? h.undo : h.redo).push({
+    pos: snap.pos ? capturePositions() : null,
+    annot: viewAnnots(),
+  });
+  const annotChanged = !sameAnnotations(viewAnnots(), snap.annot);
+  if (annotChanged) {
     storeAnnots(key, snap.annot); // before the render that draws them
   }
-  applyPositions(key, snap.pos);
+  if (snap.pos) {
+    applyPositions(key, snap.pos);
+  } else if (annotChanged) {
+    drawAnnotationsHere();
+    applySelectionClasses();
+    refreshMinimap();
+  }
 }
 
 // ------------------------------- "what will this generate" card (docs/08 R15)
@@ -3168,12 +3196,20 @@ function applyPendingRename(scene: TbScene): void {
   if (!sameAnnotations(viewAnnots(pr.key), carried)) {
     storeAnnots(pr.key, carried);
   }
+  // ...and the history of this view is dropped: its entries hold the OLD ids,
+  // and an undo is a whole replace — Ctrl+Z after a rename took the renamed
+  // box out of its frame and gave its colour back to a dead id (review finding)
+  posHistory.delete(pr.key);
   if (pr.level) {
-    // ...and the renamed agent's own level takes its frames and notes along
+    // ...and the renamed agent's own level takes its frames and notes along —
+    // MOVED, not copied: left under the old key, a later agent of the old name
+    // would open onto them
     const lv = viewAnnots(pr.level.from);
     if (!sameAnnotations(lv, emptyAnnotations())) {
       storeAnnots(pr.level.to, lv);
+      storeAnnots(pr.level.from, emptyAnnotations());
     }
+    posHistory.delete(pr.level.from);
     const oldLevel = sidecar.views[pr.level.from];
     if (oldLevel?.nodes) {
       const all: Record<string, { x: number; y: number }> = {};
@@ -3785,6 +3821,11 @@ canvas.addEventListener("pointerdown", (e) => {
       return;
     }
   }
+  // docs/08 R21 — an open note / title editor commits on this press, and it
+  // must do so NOW: its blur comes after this handler, and the commit redraws
+  // the notes — a drag built first would hold detached elements and stale
+  // rectangles (review finding)
+  closeAnnotEditor(true);
   // docs/08 R21 — a frame is dragged by its title tab (its members move), a
   // note by its body; a note that is part of a multi-selection moves with it
   if (e.button === 0 && annotatable()) {
@@ -4039,18 +4080,28 @@ canvas.addEventListener("pointerup", (e) => {
       });
       post({ v: 1, type: "layout/snapshot", viewId: key, nodes });
       suppressClick = true;
+      // ...but the click may never come: a frame's tab and a note are REDRAWN
+      // during their own drag, the browser dispatches no click for a press
+      // whose element is gone, and the flag then swallowed the user's NEXT
+      // click (review finding). The drag's own click, if any, is dispatched
+      // before this timer runs.
+      setTimeout(() => {
+        suppressClick = false;
+      }, 0);
       // docs/08 R21 — the notes' new places, and the containment test: a moved
       // item that has no frame and was dropped inside one joins it. The undo
       // entry is the drag's own (pushed above, before any of this).
       const notePos: Record<string, { x: number; y: number }> = {};
-      const movedRects: { id: string; rect: Rect }[] = [];
+      const movedRects: { id: string; rect: Rect; from: Rect }[] = [];
       for (const it of drag.items) {
         if (isNoteId(it.nodeId)) {
           notePos[it.nodeId] = { x: it.child.x ?? 0, y: it.child.y ?? 0 };
         }
         const r = annotRectOf(it.nodeId);
         if (r) {
-          movedRects.push({ id: it.nodeId, rect: r });
+          // `from`: where it was at the press — an item joins a frame by
+          // ENTERING its box, not by being nudged inside it
+          movedRects.push({ id: it.nodeId, rect: r, from: { ...r, x: it.origX, y: it.origY } });
         }
       }
       const placed = moveNotes(viewAnnots(), notePos);
@@ -4067,9 +4118,9 @@ canvas.addEventListener("pointerup", (e) => {
     // resize with autoCam would fit onto the PRE-drag bounds, divergent from
     // the minimap (the adversarial review of the minimap)
     if (state.mode === "schematic" && currentLayout) {
-      contentBounds = layoutBounds(currentLayout);
+      contentBounds = withAnnotBounds(layoutBounds(currentLayout));
     } else if (state.mode === "tb" && currentTbLayout) {
-      contentBounds = tbBounds(currentTbLayout);
+      contentBounds = withAnnotBounds(tbBounds(currentTbLayout));
     }
     return;
   }
@@ -4444,17 +4495,28 @@ function nudgeSelection(dx: number, dy: number): void {
   }
   const next: PosMap = { ...before };
   let moved = 0;
+  // docs/08 R21 — the selected notes travel with the selected blocks
+  const notePos: Record<string, { x: number; y: number }> = {};
   for (const id of state.selection) {
     const p = before[id];
     if (p) {
       next[id] = { x: p.x + dx, y: p.y + dy };
       moved++;
     }
+    const n = isNoteId(id) ? noteRects.get(id) : undefined;
+    if (n) {
+      notePos[id] = { x: n.x + dx, y: n.y + dy };
+    }
   }
+  const notes = moveNotes(viewAnnots(), notePos);
   if (!moved) {
+    commitAnnots(notes); // only notes: an annotation step, no layout pass
     return;
   }
-  pushPosUndo(before);
+  pushPosUndo(before); // captures the notation BEFORE the notes move
+  if (!sameAnnotations(viewAnnots(), notes)) {
+    storeAnnots(key, notes);
+  }
   applyPositions(key, next);
 }
 
@@ -4470,9 +4532,15 @@ function nudgeSelection(dx: number, dy: number): void {
 /** the notes' rectangles as drawn: their position holders during a drag */
 let noteRects: NoteRects = new Map();
 
-/** frames, notes and colours exist where positions do: the multi-node views */
+/** frames, notes and colours exist where positions do: a multi-node view that
+ *  is actually DRAWN. On the empty state or under a parse-error banner there is
+ *  no layout: `N` there wrote a note nobody could see, with no undo entry */
 function annotatable(): boolean {
-  return draggable();
+  return (
+    draggable() &&
+    empty.hidden &&
+    (state.mode === "tb" ? currentTbLayout !== null : currentLayout !== null)
+  );
 }
 
 let annotMeasureFn: ((s: string) => number) | null = null;
@@ -4555,7 +4623,7 @@ function commitAnnots(next: ViewAnnotations, undo = true): boolean {
     return false;
   }
   if (undo) {
-    pushPosUndo(capturePositions());
+    pushAnnotUndo();
   }
   storeAnnots(key, next);
   drawAnnotationsHere();
@@ -4622,6 +4690,7 @@ function frameSelection(): void {
     state.selection = new Set([id]);
     applySelectionClasses();
     postSelection();
+    renderInspectorHere(); // the "+" strip of the block that was selected goes
     // name it at once (Escape leaves it untitled); the title typed now is
     // part of the SAME history step as the frame — one Ctrl+Z takes both
     editAnnotation(id, false);
@@ -4641,36 +4710,87 @@ function deleteAnnotations(ids: readonly string[]): boolean {
   }
   applySelectionClasses();
   postSelection();
+  renderInspectorHere();
   return true;
 }
 
 // --- the text editor of a note / a frame's title: a DOM field over the SVG ---
+//
+// It is anchored in WORLD coordinates and repositioned with the camera, and it
+// remembers the view it was opened on. So a re-render under it (an async
+// `config/full`, a theme change, another surface's edit) leaves it open — the
+// first cut closed and COMMITTED it on every render, and the keys typed next
+// went to the diagram: Backspace deleted the half-written note, `u` left the
+// level (review finding). Only a change of view closes it, and then the text
+// goes to the view it was written on.
 
-let annotEditor: { finish: (commit: boolean) => void } | null = null;
+interface AnnotEditor {
+  key: string;
+  world: Rect;
+  multiline: boolean;
+  box: HTMLInputElement | HTMLTextAreaElement;
+  finish: (commit: boolean) => void;
+}
+let annotEditor: AnnotEditor | null = null;
 
-/** closes an open annotation editor; `commit` keeps what was typed (a pan, a
- *  zoom or a re-render must not lose a paragraph), false discards it */
+/** closes an open annotation editor; `commit` keeps what was typed */
 function closeAnnotEditor(commit: boolean): void {
   annotEditor?.finish(commit);
 }
 
+/** puts the field over its world rectangle at the current camera */
+function placeAnnotEditor(): void {
+  const ed = annotEditor;
+  if (!ed) {
+    return;
+  }
+  const cb = canvas.getBoundingClientRect();
+  ed.box.style.left = `${cb.left + state.tx + ed.world.x * state.k}px`;
+  ed.box.style.top = `${cb.top + state.ty + ed.world.y * state.k}px`;
+  ed.box.style.width = `${Math.max(ed.world.w * state.k, 140)}px`;
+  if (ed.multiline) {
+    ed.box.style.height = `${Math.max(ed.world.h * state.k, 64)}px`;
+  }
+  ed.box.style.fontSize = `${Math.max(10, Math.round(12 * state.k))}px`;
+}
+
+/**
+ * Applies `change` to the secondary notation of `key` — the view an editor was
+ * opened on. On the view still shown it is an ordinary gesture (history entry,
+ * redraw); on another one (the user navigated away with the field open) the
+ * text still lands where it was written, with no redraw of what is on screen.
+ */
+function commitAnnotsFor(
+  key: string,
+  change: (a: ViewAnnotations) => ViewAnnotations,
+  undo = true
+): boolean {
+  if (key === layoutKey()) {
+    return commitAnnots(change(viewAnnots()), undo);
+  }
+  const cur = viewAnnots(key);
+  const next = change(cur);
+  if (sameAnnotations(cur, next)) {
+    return false;
+  }
+  storeAnnots(key, next);
+  return true;
+}
+
 function openAnnotEditor(
-  at: { left: number; top: number; width: number; height: number },
+  world: Rect,
   value: string,
   multiline: boolean,
-  commit: (v: string) => void
+  commit: (v: string, key: string) => void
 ): void {
+  const key = layoutKey();
+  if (!key) {
+    return;
+  }
   closeAnnotEditor(true);
   const box = multiline ? h("textarea", "note-edit") : h("input", "rename");
   box.value = value;
   box.spellcheck = false;
-  box.style.left = `${at.left}px`;
-  box.style.top = `${at.top}px`;
-  box.style.width = `${Math.max(at.width, 140)}px`;
-  if (multiline) {
-    box.style.height = `${Math.max(at.height, 64)}px`;
-  }
-  box.style.fontSize = `${Math.max(10, Math.round(12 * state.k))}px`;
   let done = false;
   const finish = (ok: boolean): void => {
     if (done) {
@@ -4681,7 +4801,7 @@ function openAnnotEditor(
     const v = box.value;
     box.remove();
     if (ok) {
-      commit(v);
+      commit(v, key);
     }
   };
   box.addEventListener("keydown", (ev) => {
@@ -4697,7 +4817,8 @@ function openAnnotEditor(
   });
   box.addEventListener("blur", () => finish(true));
   document.body.append(box);
-  annotEditor = { finish };
+  annotEditor = { key, world, multiline, box, finish };
+  placeAnnotEditor();
   box.focus();
   box.select();
 }
@@ -4705,22 +4826,27 @@ function openAnnotEditor(
 /** edits a note's text or a frame's title in place (double-click, F2, the menu) */
 function editAnnotation(id: string, undo = true): void {
   const a = viewAnnots();
-  const g = canvas.querySelector<SVGGElement>(
-    `${isFrameId(id) ? ".frame" : ".note"}[data-id="${CSS.escape(id)}"]`
-  );
-  if (!g) {
-    return;
-  }
   if (isFrameId(id) && a.frames[id]) {
-    const tab = g.querySelector(".frame-tab") ?? g;
-    openAnnotEditor(tab.getBoundingClientRect(), a.frames[id].title, false, (v) =>
-      commitAnnots(setFrameTitle(viewAnnots(), id, v.trim().slice(0, 80)), undo)
+    const box = frameRects(a, annotRectOf).get(id);
+    if (!box) {
+      return; // nothing of it on screen: no tab to edit on
+    }
+    openAnnotEditor(
+      { x: box.x, y: box.y, w: Math.min(box.w, 200), h: 20 },
+      a.frames[id].title,
+      false,
+      (v, key) => void commitAnnotsFor(key, (cur) => setFrameTitle(cur, id, v), undo)
     );
   } else if (a.notes[id]) {
-    openAnnotEditor(g.getBoundingClientRect(), a.notes[id].text, true, (v) => {
-      const next = setNoteText(viewAnnots(), id, v);
-      if (commitAnnots(next) && !next.notes[id]) {
+    const r = noteRects.get(id);
+    if (!r) {
+      return;
+    }
+    openAnnotEditor({ ...r }, a.notes[id].text, true, (v, key) => {
+      const gone = !v.trim();
+      if (commitAnnotsFor(key, (cur) => setNoteText(cur, id, v)) && gone && key === layoutKey()) {
         state.selection.delete(id); // emptied: the note is gone
+        applySelectionClasses();
         postSelection();
       }
     });
@@ -4730,37 +4856,37 @@ function editAnnotation(id: string, undo = true): void {
 /** a new note at a point of the diagram (snapped to the grid): the editor
  *  opens first, the note exists once it has text */
 function newNoteAt(world: { x: number; y: number }): void {
-  const key = layoutKey();
-  if (!key || !annotatable() || !viewport) {
+  if (!layoutKey() || !annotatable()) {
     return;
   }
   const x = Math.round(world.x / GRID) * GRID;
   const y = Math.round(world.y / GRID) * GRID;
-  const cb = canvas.getBoundingClientRect();
-  openAnnotEditor(
-    {
-      left: cb.left + state.tx + x * state.k,
-      top: cb.top + state.ty + y * state.k,
-      width: NOTE_W * state.k,
-      height: 64 * state.k,
-    },
-    "",
-    true,
-    (v) => {
-      const r = addNote(viewAnnots(), x, y, v);
-      if (!r.id) {
-        return; // nothing typed: no note
-      }
+  openAnnotEditor({ x, y, w: NOTE_W, h: 64 }, "", true, (v, key) => {
+    let created: string | null = null;
+    const here = key === layoutKey();
+    if (here) {
       // a note has an absolute place: the view it sits in must be the user's
-      // arrangement, or the next full layout would move every block away from it
-      pinViewIfUnseeded(key);
-      if (commitAnnots(r.annotations)) {
-        state.selection = new Set([r.id]);
-        applySelectionClasses();
-        postSelection();
+      // arrangement, or the next full layout would move every block away from
+      // it. NOT on a leaf's boundary view: its flag positions are orphaned on
+      // every recompile (it has no schematic keys), and each pin would add a
+      // batch of orphans nothing restores
+      const leaf = state.mode === "schematic" && !hasSchematic(state.model, state.viewId ?? "");
+      if (v.trim() && !leaf) {
+        pinViewIfUnseeded(key);
       }
     }
-  );
+    const ok = commitAnnotsFor(key, (cur) => {
+      const r = addNote(cur, x, y, v);
+      created = r.id;
+      return r.annotations;
+    });
+    if (ok && here && created) {
+      state.selection = new Set([created]);
+      applySelectionClasses();
+      postSelection();
+      renderInspectorHere();
+    }
+  });
 }
 
 function newNoteAtCenter(): void {
@@ -4770,6 +4896,32 @@ function newNoteAtCenter(): void {
     x: (vw / 2 - state.tx) / state.k - NOTE_W / 2,
     y: (vh / 2 - state.ty) / state.k - 32,
   });
+}
+
+/** the frames of the view that have nothing on screen to be drawn around (a
+ *  member deleted, a fold expanded): they have no tab, so no pointer route —
+ *  the palette lists them, or they could never be removed */
+function undrawnFrames(): string[] {
+  const a = viewAnnots();
+  const drawn = frameRects(a, annotRectOf);
+  return byNumber(Object.keys(a.frames)).filter((id) => !drawn.has(id));
+}
+
+/** the rectangle of a note, a frame's box, or a node / a flag */
+function anyRectOf(id: string): Rect | null {
+  return isFrameId(id) ? frameRects(viewAnnots(), annotRectOf).get(id) ?? null : annotRectOf(id);
+}
+
+/** `b` grown to hold the notes and the frames: fit, and the camera's safety
+ *  net, must see a note dragged away from the blocks */
+function withAnnotBounds(b: Bounds): Bounds {
+  if (!annotatable()) {
+    return b;
+  }
+  return (
+    unionBounds([b, ...noteRects.values(), ...frameRects(viewAnnots(), annotRectOf).values()]) ??
+    b
+  );
 }
 
 /** the colour row of a menu: the ids it paints and the colour they share */
@@ -4831,7 +4983,7 @@ function annotMenu(
     items.push({ label: "Add note here (N)", action: () => newNoteAt(world) });
   }
   if (frameableSelection().length) {
-    items.push({ label: "Frame the selection (Ctrl+G)", action: frameSelection });
+    items.push({ label: "Frame the selection (Shift+G)", action: frameSelection });
   }
   if (id && frameOf(a, id)) {
     items.push({
@@ -5051,6 +5203,25 @@ function jumpQuickMark(slot: number): void {
 let findBox: HTMLElement | null = null;
 
 /** what the find box can land on in the current view */
+/** docs/08 R21 — the frames (by title) and the notes (by their first line) are
+ *  findable: a frame whose tab is off-screen has no other way to be reached */
+function annotFindItems(): FindItem[] {
+  if (!annotatable()) {
+    return [];
+  }
+  const a = viewAnnots();
+  const drawn = frameRects(a, annotRectOf);
+  return [
+    ...byNumber(Object.keys(a.frames))
+      .filter((id) => drawn.has(id))
+      .map((id) => ({ id, label: a.frames[id].title || "frame" })),
+    ...byNumber(Object.keys(a.notes)).map((id) => ({
+      id,
+      label: a.notes[id].text.split("\n")[0].slice(0, 60),
+    })),
+  ];
+}
+
 function findItems(): FindItem[] {
   if (state.mode === "tb") {
     const s = currentTbScene;
@@ -5060,6 +5231,7 @@ function findItems(): FindItem[] {
     return [
       ...s.nodes.map((n) => ({ id: n.id, label: n.label })),
       ...s.boundary.map((b) => ({ id: b.id, label: b.label })),
+      ...annotFindItems(),
     ];
   }
   const s = currentScene;
@@ -5067,6 +5239,7 @@ function findItems(): FindItem[] {
     return [
       ...s.nodes.map((n) => ({ id: n.id, label: n.name })),
       ...s.boundary.map((b) => ({ id: b.id, label: b.name })),
+      ...annotFindItems(),
     ];
   }
   return currentPins.map((p) => ({ id: p.id, label: p.name }));
@@ -5082,7 +5255,7 @@ function selectAndCenter(id: string): void {
   applySelectionClasses();
   postSelection();
   renderInspectorHere();
-  const r = rectOf(id);
+  const r = anyRectOf(id); // a note and a frame have rectangles too (R21)
   if (r) {
     centerOnRect(r);
   }
@@ -5269,6 +5442,15 @@ function paletteItems(): PaletteItem[] {
       add("Annotate", it.label, it.action, it.danger);
     }
     add("Annotate", "Add note (N)", newNoteAtCenter);
+    for (const id of undrawnFrames()) {
+      const title = viewAnnots().frames[id]?.title || "untitled";
+      add(
+        "Annotate",
+        `Delete frame "${title}" — none of its members is in this view`,
+        () => void commitAnnots(deleteFrame(viewAnnots(), id)),
+        true
+      );
+    }
     const paintable = colorableSelection();
     if (paintable.length) {
       for (const c of ANNOT_COLORS) {
@@ -5534,12 +5716,6 @@ window.addEventListener("keydown", (e) => {
       openPalette();
       return;
     }
-    if (key === "g" && annotatable()) {
-      // docs/08 R21 — Ctrl+G: a frame around the selection
-      e.preventDefault();
-      frameSelection();
-      return;
-    }
     if (key === "h" && state.mode !== "tb") {
       // docs/08 R18 — Ctrl+H: hide/show the nc / ignored pins (plain H is the flip)
       e.preventDefault();
@@ -5571,6 +5747,15 @@ window.addEventListener("keydown", (e) => {
   // view annotation: no YAML, no confirmation — Ctrl+Z brings it back)
   if (annotatable()) {
     const annotIds = [...state.selection].filter((id) => isFrameId(id) || isNoteId(id));
+    if (key === "g" && e.shiftKey) {
+      // Shift+G: a frame around the selection (plain G fits it). NOT Ctrl+G: a
+      // webview forwards its keydowns to the workbench whatever it does with
+      // them, and Ctrl+G is "Go to Line" there with no `when` — the quick
+      // input took the focus and committed an empty title (review finding)
+      e.preventDefault();
+      frameSelection();
+      return;
+    }
     if (key === "n") {
       e.preventDefault();
       newNoteAtCenter();
@@ -6191,7 +6376,11 @@ function hideBanner(): void {
 async function render(refit = false): Promise<void> {
   recordVisit(); // docs/08 R5: the view history behind Ctrl+[ / Ctrl+]
   cancelRename(); // docs/08 R14: the DOM is rebuilt — a floating editor would hang over stale boxes
-  closeAnnotEditor(true); // docs/08 R21: committed, not lost
+  // docs/08 R21: the note / title editor stays open across a render of the
+  // SAME view; on another view its text is committed to the view it was typed on
+  if (annotEditor && annotEditor.key !== layoutKey()) {
+    closeAnnotEditor(true);
+  }
   closeCard(); // docs/08 R15: the card is anchored to a box that is about to be redrawn
   closePalette(); // docs/08 R17: its rows close over the scene that is about to change
   closeSubPreview(); // docs/08 R18: drawn into the viewport that is about to be rebuilt
@@ -6546,7 +6735,7 @@ async function presentScene(
   applySelectionClasses();
   applyStatusBadges();
   applyGenBadges();
-  contentBounds = layoutBounds(layout);
+  contentBounds = withAnnotBounds(layoutBounds(layout));
   refreshMinimap();
   return true;
 }
@@ -6833,7 +7022,7 @@ async function renderTb(refit: boolean): Promise<void> {
   currentTbEdgesGroup = drawTb(scene, layout, vp);
   drawAnnotationsHere(); // docs/08 R21: frames behind, notes on top, tints
   applySelectionClasses();
-  contentBounds = tbBounds(layout);
+  contentBounds = withAnnotBounds(tbBounds(layout));
   applyStatusBadges();
   applyGenBadges();
   refreshMinimap();

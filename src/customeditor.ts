@@ -270,6 +270,24 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           void webview.postMessage({ v: 1, type: "theme/changed" });
         }
       }),
+      // The sidecar is SHARED with the panel (same `tb:` keys). This editor
+      // used to read it once, at `ready`: an external edit, an invalidation or
+      // another surface's annotations never reached its mirror, and its next
+      // whole-set message wrote that stale mirror back (review finding).
+      this.layout.onExternalChange((sidecar) => {
+        if (ready) {
+          void webview.postMessage({ v: 1, type: "layout/full", sidecar });
+        }
+      }),
+      this.layout.onAnnotations(({ origin }) => {
+        if (ready && origin !== webview) {
+          void webview.postMessage({
+            v: 1,
+            type: "layout/full",
+            sidecar: this.layout.sidecar,
+          });
+        }
+      }),
     ];
     // active exporter (the palette command): only when THIS editor is the
     // visible tab — otherwise the export would also run from Welcome/a source file
@@ -356,11 +374,11 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           break;
         case "view/annotations":
           // docs/08 R21 — the secondary notation goes into the SHARED sidecar
-          this.layout.annotationsSet(m.viewId, {
-            frames: m.frames,
-            notes: m.notes,
-            colors: m.colors,
-          });
+          this.layout.annotationsSet(
+            m.viewId,
+            { frames: m.frames, notes: m.notes, colors: m.colors },
+            webview
+          );
           break;
         case "node/flipped":
           this.layout.nodeFlipped(m.viewId, m.nodeId, m.flipH, m.flipV);

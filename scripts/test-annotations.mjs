@@ -156,6 +156,35 @@ test("drag end: a moved, unframed item whose centre lands in a frame joins it â€
   assert.equal(A.frameOf(A.dropIntoFrames(a, boxes, [at("note:1", 300, 300)]), "note:1"), "frame:1");
 });
 
+test("drag end: an item joins by ENTERING a box â€” one that was already inside does not rejoin", () => {
+  // u_c was taken out of frame:1 with "Remove from frame" and still lies between
+  // its members; nudging it inside the box must not put it straight back
+  const a = A.addFrame(empty(), ["u_a", "u_b"], "f").annotations;
+  const boxes = new Map([["frame:1", { x: 0, y: 0, w: 400, h: 400 }]]);
+  const inside = { x: 100, y: 100, w: 40, h: 40 };
+  const nudged = { x: 108, y: 100, w: 40, h: 40 };
+  assert.equal(A.dropIntoFrames(a, boxes, [{ id: "u_c", rect: nudged, from: inside }]), a);
+  // from outside, the same end position joins
+  const outside = { x: 600, y: 600, w: 40, h: 40 };
+  assert.equal(A.frameOf(A.dropIntoFrames(a, boxes, [{ id: "u_c", rect: nudged, from: outside }]), "u_c"), "frame:1");
+  // dragged out and back in ONE gesture: it never entered
+  assert.equal(A.dropIntoFrames(a, boxes, [{ id: "u_c", rect: inside, from: inside }]), a);
+});
+
+test("limits and order are the host's: a title of 80, a note of 2000, frames by NUMBER", () => {
+  const long = "x".repeat(5000);
+  assert.equal(A.addFrame(empty(), ["u_a"], `  ${long}  `).annotations.frames["frame:1"].title.length, 80);
+  const n = A.addNote(empty(), 0, 0, long).annotations;
+  assert.equal(n.notes["note:1"].text.length, 2000);
+  assert.equal(A.setNoteText(n, "note:1", long), n, "the same text after the cut: no edit");
+  const titled = A.addFrame(empty(), ["u_a"], "t").annotations;
+  assert.equal(A.setFrameTitle(titled, "frame:1", " t "), titled, "the same title after trimming: no edit");
+  assert.deepEqual(A.byNumber(["frame:10", "frame:2", "frame:1"]), ["frame:1", "frame:2", "frame:10"]);
+  // a double claim (a hand-edited file): the LOWER-numbered frame, as on the host
+  const dbl = { frames: { "frame:10": { title: "ten", members: ["u_a"] }, "frame:2": { title: "two", members: ["u_a"] } }, notes: {}, colors: {} };
+  assert.equal(A.frameOf(dbl, "u_a"), "frame:2");
+});
+
 test("drag end: a member never changes house by being dragged, and a frame is not a member", () => {
   const a = A.addFrame(A.addFrame(empty(), ["u_a"], "one").annotations, ["u_b"], "two").annotations;
   const boxes = new Map([

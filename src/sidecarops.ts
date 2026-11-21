@@ -16,6 +16,8 @@ import { parse, stringify } from "yaml";
 import type { ProjectModel } from "./model";
 import {
   ANNOT_COLORS,
+  ANNOT_NOTE_MAX,
+  ANNOT_TITLE_MAX,
   type AnnotColor,
   type SidecarData,
   type SidecarFrame,
@@ -51,14 +53,52 @@ export function parseSidecar(text: string): SidecarData {
       `versiune de sidecar necunoscuta: ${String(data.schema_version)}`
     );
   }
+  const views: Record<string, SidecarView> = {};
+  if (typeof data.views === "object" && data.views !== null) {
+    for (const [id, raw] of Object.entries(data.views as Record<string, unknown>)) {
+      if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+        continue;
+      }
+      const view = raw as SidecarView;
+      // docs/08 R21 — the secondary notation is read through the SAME sanitiser
+      // it is written through: the file is hand-editable and merged by git, and
+      // a frame without `members` (or a null entry) threw in `invalidate` on
+      // every model, which the host runs BEFORE it posts the model — the diagram
+      // then never saw another recompile, with no banner (review finding)
+      if (view.frames !== undefined) {
+        const frames = cleanFrames(view.frames);
+        if (Object.keys(frames).length) {
+          view.frames = frames;
+        } else {
+          delete view.frames;
+        }
+      }
+      if (view.notes !== undefined) {
+        const notes = cleanNotes(view.notes);
+        if (Object.keys(notes).length) {
+          view.notes = notes;
+        } else {
+          delete view.notes;
+        }
+      }
+      if (view.nodes !== undefined && (view.nodes === null || typeof view.nodes !== "object")) {
+        delete view.nodes;
+      }
+      for (const n of Object.values(view.nodes ?? {})) {
+        if (n && n.color !== undefined && !isColor(n.color)) {
+          delete n.color;
+        }
+      }
+      views[id] = view;
+    }
+  }
   return {
     schema_version: SIDECAR_VERSION,
-    views:
-      typeof data.views === "object" && data.views !== null
-        ? (data.views as Record<string, SidecarView>)
-        : {},
+    views,
     orphans: Array.isArray(data.orphans)
-      ? (data.orphans as SidecarOrphan[])
+      ? (data.orphans as SidecarOrphan[]).filter(
+          (o) => o !== null && typeof o === "object" && typeof o.view === "string"
+        )
       : [],
   };
 }
@@ -263,8 +303,92 @@ export function setHidePins(data: SidecarData, viewId: string, hidden: boolean):
 const isColor = (c: unknown): c is AnnotColor =>
   typeof c === "string" && (ANNOT_COLORS as readonly string[]).includes(c);
 
-const TITLE_MAX = 80;
-const NOTE_MAX = 2000;
+/** the numeric suffix of `frame:<n>` / `note:<n>` — ids are ordered by it, so
+ *  `frame:2` comes before `frame:10` on both sides of the protocol */
+const idNumber = (id: string): number => Number(id.slice(id.indexOf(":") + 1));
+
+/**
+ * Frames reduced to what a frame is: an id `frame:<n>`, a title, at least one
+ * member id (strings, each claimed by ONE frame — the lower-numbered frame
+ * keeps a member claimed twice), a palette colour. Everything else is dropped.
+ */
+export function cleanFrames(raw: unknown): Record<string, SidecarFrame> {
+  const out: Record<string, SidecarFrame> = {};
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return out;
+  }
+  const src = raw as Record<string, unknown>;
+  const claimed = new Set<string>();
+  const ids = Object.keys(src)
+    .filter((id) => /^frame:\d+$/.test(id))
+    .sort((a, b) => idNumber(a) - idNumber(b));
+  for (const id of ids) {
+    const f = src[id] as Partial<SidecarFrame> | null;
+    if (f === null || typeof f !== "object" || !Array.isArray(f.members)) {
+      continue;
+    }
+    const members: string[] = [];
+    for (const m of f.members as unknown[]) {
+      if (typeof m === "string" && m && !claimed.has(m)) {
+        claimed.add(m);
+        members.push(m);
+      }
+    }
+    if (!members.length) {
+      continue;
+    }
+    const frame: SidecarFrame = {
+      title: (typeof f.title === "string" ? f.title : "").trim().slice(0, ANNOT_TITLE_MAX),
+      members,
+    };
+    if (isColor(f.color)) {
+      frame.color = f.color;
+    }
+    out[id] = frame;
+  }
+  return out;
+}
+
+/** Notes reduced to what a note is: an id `note:<n>`, a finite position, some
+ *  text (a string, bounded), a palette colour */
+export function cleanNotes(raw: unknown): Record<string, SidecarNote> {
+  const out: Record<string, SidecarNote> = {};
+  if (raw === null || typeof raw !== "object" || Array.isArray(raw)) {
+    return out;
+  }
+  for (const [id, v] of Object.entries(raw as Record<string, unknown>)) {
+    const n = v as Partial<SidecarNote> | null;
+    if (
+      !/^note:\d+$/.test(id) ||
+      n === null ||
+      typeof n !== "object" ||
+      typeof n.x !== "number" ||
+      typeof n.y !== "number" ||
+      !Number.isFinite(n.x) ||
+      !Number.isFinite(n.y) ||
+      typeof n.text !== "string" ||
+      !n.text.trim()
+    ) {
+      continue;
+    }
+    const note: SidecarNote = { x: n.x, y: n.y, text: n.text.slice(0, ANNOT_NOTE_MAX) };
+    if (isColor(n.color)) {
+      note.color = n.color;
+    }
+    out[id] = note;
+  }
+  return out;
+}
+
+/** the smallest free `<kind>:<n>` among `used` */
+function freeId(kind: "frame" | "note", used: Iterable<string>): string {
+  const taken = new Set(used);
+  let n = 1;
+  while (taken.has(`${kind}:${n}`)) {
+    n++;
+  }
+  return `${kind}:${n}`;
+}
 
 /** the secondary notation of a view, as a detached copy (frames, notes, and
  *  the node colours gathered from the node entries) */
@@ -289,10 +413,11 @@ export function getAnnotations(data: SidecarData, viewId: string): ViewAnnotatio
  * Replaces the secondary notation of a view with `a` (the webview sends the
  * whole set after each gesture). What arrives is SANITISED, not trusted: the
  * file is hand-editable and the message crosses a process boundary — a frame
- * needs a title and at least one member (an empty frame is deleted: it has
- * nothing to draw around), a note a finite position and some text, a colour a
- * name from the palette. A node belongs to ONE frame: a later frame's claim on
- * an already-framed member is dropped. Positions, folds and flips are untouched.
+ * needs at least one member (an empty frame is deleted: it has nothing to draw
+ * around), a note a finite position and some text, a colour a name from the
+ * palette (`cleanFrames` / `cleanNotes` — the SAME reduction `parseSidecar`
+ * applies to a file). A node belongs to ONE frame: on a double claim the
+ * lower-numbered frame keeps it. Positions, folds and flips are untouched.
  */
 export function setAnnotations(
   data: SidecarData,
@@ -300,50 +425,8 @@ export function setAnnotations(
   a: ViewAnnotations
 ): SidecarData {
   const view = viewOf(data, viewId);
-  const frames: Record<string, SidecarFrame> = {};
-  const claimed = new Set<string>();
-  for (const id of Object.keys(a.frames ?? {}).sort()) {
-    const f = a.frames[id];
-    if (!/^frame:\d+$/.test(id) || !f || !Array.isArray(f.members)) {
-      continue;
-    }
-    const members: string[] = [];
-    for (const m of f.members) {
-      if (typeof m === "string" && m && !claimed.has(m)) {
-        claimed.add(m);
-        members.push(m);
-      }
-    }
-    if (!members.length) {
-      continue;
-    }
-    const frame: SidecarFrame = {
-      title: (typeof f.title === "string" ? f.title : "").trim().slice(0, TITLE_MAX),
-      members,
-    };
-    if (isColor(f.color)) {
-      frame.color = f.color;
-    }
-    frames[id] = frame;
-  }
-  const notes: Record<string, SidecarNote> = {};
-  for (const [id, n] of Object.entries(a.notes ?? {})) {
-    if (
-      !/^note:\d+$/.test(id) ||
-      !n ||
-      !Number.isFinite(n.x) ||
-      !Number.isFinite(n.y) ||
-      typeof n.text !== "string" ||
-      !n.text.trim()
-    ) {
-      continue;
-    }
-    const note: SidecarNote = { x: n.x, y: n.y, text: n.text.slice(0, NOTE_MAX) };
-    if (isColor(n.color)) {
-      note.color = n.color;
-    }
-    notes[id] = note;
-  }
+  const frames = cleanFrames(a?.frames);
+  const notes = cleanNotes(a?.notes);
   view.frames = frames;
   view.notes = notes;
   // the colours live on the node entries: clear the old ones, set the new
@@ -353,7 +436,7 @@ export function setAnnotations(
       prune(data, viewId, id);
     }
   }
-  for (const [id, c] of Object.entries(a.colors ?? {})) {
+  for (const [id, c] of Object.entries(a?.colors ?? {})) {
     if (id && isColor(c)) {
       nodeOf(data, viewId, id).color = c;
     }
@@ -481,6 +564,7 @@ export function invalidate(
 
   // 1. restoring the orphans whose keys have reappeared
   const still: SidecarOrphan[] = [];
+  const annotOrphans: SidecarOrphan[] = [];
   for (const o of data.orphans) {
     if (o.kind === "net") {
       const nets = model.views[o.view]?.nets ?? [];
@@ -496,27 +580,7 @@ export function invalidate(
       continue;
     }
     if (o.kind === "frame" || o.kind === "note") {
-      // docs/08 R21 — a note comes back with its view, a frame once one of its
-      // members is a key of the view again; an id taken meanwhile keeps the
-      // newer annotation (the orphan is dropped, as for a node)
-      const keys = keysFor(o.view);
-      const back =
-        keys !== null &&
-        (o.kind === "note" ||
-          (o.value as SidecarFrame).members.some((m) => keys.has(m)));
-      if (!back) {
-        still.push(o);
-        continue;
-      }
-      const view = viewOf(data, o.view);
-      if (o.kind === "note") {
-        if (!view.notes?.[o.node]) {
-          (view.notes ??= {})[o.node] = o.value as SidecarNote;
-        }
-      } else if (!view.frames?.[o.node]) {
-        (view.frames ??= {})[o.node] = o.value as SidecarFrame;
-      }
-      changed = true;
+      annotOrphans.push(o); // restored below, notes BEFORE frames
       continue;
     }
     const keys = keysFor(o.view);
@@ -531,7 +595,69 @@ export function invalidate(
       still.push(o);
     }
   }
+  // docs/08 R21 — the secondary notation comes back with its view: a note at
+  // once, a frame once one of its members exists again — a node key of the
+  // view, OR a note of it (which is why the notes are restored first: a frame
+  // around notes only would otherwise wait forever). Frame and note ids are
+  // COUNTERS, not model keys: an id reused meanwhile says nothing about the
+  // orphan, so it is restored under the next free id, never dropped (for a node
+  // "the newer override wins"; here that would discard a titled frame).
+  const renamed = new Map<string, string>(); // `<view>\0<old note id>` -> new id
+  for (const pass of ["note", "frame"] as const) {
+    for (const o of annotOrphans) {
+      if (o.kind !== pass) {
+        continue;
+      }
+      const keys = keysFor(o.view);
+      if (keys === null) {
+        still.push(o);
+        continue;
+      }
+      const view = viewOf(data, o.view);
+      if (pass === "note") {
+        const note = cleanNotes({ [o.node]: o.value })[o.node];
+        if (note) {
+          const id = view.notes?.[o.node] ? freeId("note", Object.keys(view.notes)) : o.node;
+          (view.notes ??= {})[id] = note;
+          if (id !== o.node) {
+            renamed.set(`${o.view}\0${o.node}`, id);
+          }
+        }
+        changed = true;
+        continue;
+      }
+      const frame = cleanFrames({ [o.node]: o.value })[o.node];
+      if (!frame) {
+        changed = true; // nothing a frame could be: dropped
+        continue;
+      }
+      frame.members = frame.members.map((m) => renamed.get(`${o.view}\0${m}`) ?? m);
+      if (!frame.members.some((m) => keys.has(m) || Boolean(view.notes?.[m]))) {
+        still.push(o);
+        if (!view.nodes && !view.nets && !view.hidePins && !view.frames && !view.notes) {
+          delete data.views[o.view]; // `viewOf` created it for nothing
+        }
+        continue;
+      }
+      const id = view.frames?.[o.node] ? freeId("frame", Object.keys(view.frames)) : o.node;
+      (view.frames ??= {})[id] = frame;
+      changed = true;
+    }
+  }
   data.orphans = still;
+  /** an annotation orphan, replacing one already recorded for the same id (a
+   *  stale whole set re-adding a dead frame must not pile up duplicates) */
+  const orphanAnnot = (
+    view: string,
+    node: string,
+    kind: "frame" | "note",
+    value: SidecarFrame | SidecarNote
+  ): void => {
+    data.orphans = data.orphans.filter(
+      (x) => !(x.view === view && x.node === node && x.kind === kind)
+    );
+    data.orphans.push({ view, node, kind, value, lastSeen: today });
+  };
 
   // 2. the current keys that no longer exist -> orphans
   for (const viewId of Object.keys(data.views)) {
@@ -597,7 +723,7 @@ export function invalidate(
       for (const [id, f] of Object.entries(view.frames ?? {})) {
         const live = f.members.some((m) => keys.has(m) || Boolean(view.notes?.[m]));
         if (!live) {
-          data.orphans.push({ view: viewId, node: id, kind: "frame", value: f, lastSeen: today });
+          orphanAnnot(viewId, id, "frame", f);
           delete view.frames![id];
           changed = true;
         }
@@ -610,10 +736,10 @@ export function invalidate(
       // the view itself disappeared: the positions migrated into orphans (the
       // protected asset, docs/04) — and so do its frames and notes (R21)
       for (const [id, f] of Object.entries(view.frames ?? {})) {
-        data.orphans.push({ view: viewId, node: id, kind: "frame", value: f, lastSeen: today });
+        orphanAnnot(viewId, id, "frame", f);
       }
       for (const [id, n] of Object.entries(view.notes ?? {})) {
-        data.orphans.push({ view: viewId, node: id, kind: "note", value: n, lastSeen: today });
+        orphanAnnot(viewId, id, "note", n);
       }
       delete data.views[viewId];
       changed = true;

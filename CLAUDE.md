@@ -123,6 +123,7 @@ npm run test:textedit    # the MINIMAL edit between two YAML texts + the span to
 npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (docs/08 R4)
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
+npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
 npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
 npm run test:preview     # the diff preview (docs/08 R19): the +/- line summary of a gesture, the files that change
 npm run test:trace       # diagram <-> generated code (docs/08 R20): file owner, identifier pattern, lit lines, lenses, report
@@ -951,6 +952,61 @@ coliziunea de nume.
   selection, so a per-file editor reaches the multi edit only through the
   palette rows.
 
+- **Secondary notation (docs/08 R21, decision D25)**: frames, sticky notes
+  and node colours are annotations of the VIEW — in the sidecar under the
+  layout key (`tb:<config>|<focus>` per TB level), never in the YAML, never
+  read back as meaning. A FRAME stores its MEMBERS, not a rectangle: the box is
+  derived at draw time (`frameRects`), which is why it survives "Re-arrange
+  all", a collapse and a rename — do not add stored geometry or resize handles.
+  The sidecar side repeats the R18 traps, all locked in `test:sidecar`:
+  `serializeSidecar` WHITELISTS (frames and notes must be copied), `viewEmpty`
+  is the ONE predicate behind `prune` and `invalidate` (a view holding only a
+  note is not empty), a colour lives on the node entry and `prune` must count
+  it, a leaf instance's view keeps its notes as it keeps `hidePins`.
+  `view/annotations` is a WHOLE replace sent from the sender's own mirror; from
+  the adversarial review: (1) the host therefore re-posts `layout/full` to every
+  OTHER surface (`LayoutStore.onAnnotations` with an `origin`; the per-file
+  editor never refreshed its mirror — not even on `onExternalChange` — and its
+  next gesture deleted a note typed in the panel); (2) `parseSidecar` reads
+  frames and notes through `cleanFrames` / `cleanNotes`, the SAME reduction
+  `setAnnotations` writes through — a hand-edited frame without `members`
+  threw in `invalidate`, which the host runs BEFORE posting the model, so the
+  diagram never saw another recompile; (3) frame and note ids are COUNTERS:
+  an orphan whose id was reused is restored under the next free id, never
+  dropped like a node orphan ("the newer override wins" is wrong for a
+  counter), notes are restored before frames (a frame around notes only waited
+  forever for a node key), and an orphan is replaced, not duplicated; (4) a
+  double claim is resolved by frame NUMBER on both sides (`byNumber`,
+  `idNumber` — a lexicographic sort puts `frame:10` before `frame:2`), and the
+  limits (`ANNOT_TITLE_MAX`, `ANNOT_NOTE_MAX`) are shared constants. In the
+  webview: the frame key is `Shift+G`, NOT `Ctrl+G` — a webview forwards every
+  keydown to the workbench whatever it does with it, and `Ctrl+G` is "Go to
+  Line" there with no `when` (read in the VS Code bundle, not run; the Alt
+  pitfall's sibling — check a new Ctrl chord against the workbench's global
+  bindings). A frame's tab and a note are REDRAWN during their own drag, the
+  browser dispatches no click for a press whose element is gone, and
+  `suppressClick` then swallowed the user's next click — the drag end clears
+  it on a zero timeout. An open note / title editor commits at the TOP of the
+  canvas `pointerdown` (its blur comes after the handler, and the commit
+  redraws the notes — a drag built first held detached elements). The editor
+  is anchored in WORLD coordinates (`placeAnnotEditor` from `applyTransform`)
+  and survives a render of the same view; the first cut closed and committed
+  it on every render, and the keys typed next became diagram shortcuts
+  (Backspace deleted the half-written note). It remembers its view
+  (`commitAnnotsFor`): text typed on a view the user left lands on THAT view.
+  The history is shared with the moves (`LayoutSnap`), but an annotation-only
+  step has `pos: null` — undoing a colour restored all positions and so PINNED
+  an un-arranged view; a rename DROPS the view's history (its entries hold the
+  old ids, and an undo is a whole replace). `dropIntoFrames` joins on ENTERING
+  a box (`from` outside, `rect` inside): a block taken out with "Remove from
+  frame" still lies between the members and rejoined on its next nudge.
+  `annotatable()` needs a drawn layout and a hidden empty state, or `N` on the
+  empty state wrote a note nobody saw. The tab is drawn ABOVE the blocks
+  (`annot-tabs`), the box behind them (`annot-frames`, `.frame-back`) — both
+  carry the frame's `data-id`; the frame box takes no pointer events (a lasso
+  starts inside a frame). A tint is a fill wash, never on a ghost (`fill:
+  none` is its meaning).
+
 
 ## Faza curentă
 
@@ -1273,5 +1329,10 @@ with "Open as text" and the empty states that name the next action
 (`quvmParseError` in `test:yamlops`, `config/full.parseError`,
 `quickuvm.openConfigAsText` / `openConfigAsDiagram`), multi-selection editing
 in the inspector (`multiGroups` in `test:inspector`, the `editAgents` /
-`editScoreboards` actions). R1–R20 of docs/08 are shipped; R21–R25 are open.
+`editScoreboards` actions).
+**R21 (docs/08) is implemented** (Nov 2026; decision D25): secondary notation
+— frames (member lists with derived boxes, `Shift+G`), sticky notes (`N`) and
+node colours as VIEW annotations in the sidecar; `src/webview/annotations.ts`
++ `test:annotations`, `setAnnotations` / `cleanFrames` / `cleanNotes` in
+`test:sidecar`, the `view/annotations` message.
 Planul complet: `docs/06-plan-mvp.md`.
