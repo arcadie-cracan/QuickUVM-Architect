@@ -194,6 +194,18 @@
         "category": "QuickUVM Architect"
       },
       {
+        "command": "quickuvm.openConfigAsText",
+        "title": "%cmd.openConfigAsText%",
+        "category": "QuickUVM Architect",
+        "icon": "$(go-to-file)"
+      },
+      {
+        "command": "quickuvm.openConfigAsDiagram",
+        "title": "%cmd.openConfigAsDiagram%",
+        "category": "QuickUVM Architect",
+        "icon": "$(type-hierarchy)"
+      },
+      {
         "command": "quickuvm.openVerificationView",
         "title": "%cmd.openVerificationView%",
         "category": "QuickUVM Architect"
@@ -230,6 +242,18 @@
       }
     ],
     "menus": {
+      "editor/title": [
+        {
+          "command": "quickuvm.openConfigAsText",
+          "when": "activeCustomEditorId == 'quickuvm.configEditor'",
+          "group": "navigation@1"
+        },
+        {
+          "command": "quickuvm.openConfigAsDiagram",
+          "when": "resourceFilename =~ /\\.quickuvm\\.yaml$/ && activeCustomEditorId != 'quickuvm.configEditor' && !isInDiffEditor",
+          "group": "navigation@1"
+        }
+      ],
       "editor/context": [
         {
           "command": "quickuvm.revealInDiagram",
@@ -380,13 +404,15 @@
           "type": "string",
           "enum": [
             "contain",
-            "intersect"
+            "intersect",
+            "direction"
           ],
           "default": "contain",
           "description": "%config.lassoMode%",
           "enumDescriptions": [
             "%config.lassoMode.contain%",
-            "%config.lassoMode.intersect%"
+            "%config.lassoMode.intersect%",
+            "%config.lassoMode.direction%"
           ]
         },
         "quickuvm.quickUvm": {
@@ -449,6 +475,13 @@
           "type": "boolean",
           "default": false,
           "description": "%config.codeFollowsSelection%"
+        },
+        "quickuvm.lodZoomThreshold": {
+          "type": "number",
+          "default": 0.5,
+          "minimum": 0,
+          "maximum": 2,
+          "description": "%config.lodZoomThreshold%"
         }
       }
     }
@@ -484,6 +517,7 @@
     "test:textedit": "node scripts/test-textedit.mjs",
     "test:yamlmap": "node scripts/test-yamlmap.mjs",
     "test:wiring": "node scripts/test-wiring.mjs",
+    "test:arrange": "node scripts/test-arrange.mjs",
     "test:proposals": "node scripts/test-proposals.mjs",
     "test:preview": "node scripts/test-preview.mjs",
     "test:trace": "node scripts/test-trace.mjs"

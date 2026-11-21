@@ -281,4 +281,128 @@ test("a ghost is not deletable on ANY path (button, Delete key, context menu)", 
   }
 });
 
+// ---------------------------------------------------------------- docs/08 R9
+const { multiGroups, MULTI_FIELDS } = await import(pathToFileURL(outFile));
+const node = (id, kind, label, extra = {}) => ({ id, kind, label, ...extra });
+const MCFG = {
+  agents: [
+    { name: "cmd" },
+    { name: "rsp", active: false },
+    { name: "aux", active: true, seq_item_style: "field_macros" },
+    { name: "vip", from_vip: "lib.qvip" },
+  ],
+  analysis: {
+    scoreboards: [
+      { name: "sb_a", source: "cmd", monitor: "rsp", max_latency: 4 },
+      { name: "sb_b", source: "cmd", monitor: "rsp", max_latency: 4 },
+      { name: "sb_c", source: "cmd" },
+      { name: "dup", source: "cmd" },
+      { name: "dup", source: "rsp" },
+    ],
+  },
+};
+const fieldsOf = (g) => Object.fromEntries(g.fields.map((f) => [f.id, f.value]));
+
+test("R9: two agents with the same role share it; a differing one reads as mixed (null)", () => {
+  const same = multiGroups(MCFG, [node("agent:cmd", "tbagent", "cmd"), node("agent:aux", "tbagent", "aux")]);
+  assert.equal(same.length, 1);
+  assert.equal(same[0].kind, "agent");
+  assert.deepEqual(same[0].names, ["cmd", "aux"], "the selection's order");
+  // `cmd` does not declare `active`, `aux` declares the default: the EFFECTIVE
+  // value is the same, so this is not "mixed"
+  assert.deepEqual(fieldsOf(same[0]), { active: "true", seq_item_style: null },
+    "active agrees (undeclared == declared default); the style differs");
+  const mixed = multiGroups(MCFG, [node("agent:cmd", "tbagent", "cmd"), node("agent:rsp", "tbagent", "rsp")]);
+  assert.deepEqual(fieldsOf(mixed[0]), { active: null, seq_item_style: "manual" });
+});
+
+test("R9: one editable component is not a group; ghosts and VIP references are left out", () => {
+  assert.deepEqual(multiGroups(MCFG, [node("agent:cmd", "tbagent", "cmd")]), []);
+  assert.deepEqual(
+    multiGroups(MCFG, [node("agent:cmd", "tbagent", "cmd"), node("agent:vip", "tbagent", "vip")]),
+    [],
+    "a VIP reference takes {name, from_vip} only: one editable agent left"
+  );
+  const g = multiGroups(MCFG, [
+    node("agent:cmd", "tbagent", "cmd"),
+    node("agent:rsp", "tbagent", "rsp"),
+    node("agent:vip", "tbagent", "vip"),
+    node("agent:ghost", "tbagent", "cmd", { inferred: true }),
+    node("agent:gone", "tbagent", "gone"), // not in the config any more
+  ]);
+  assert.deepEqual(g[0].names, ["cmd", "rsp"], "only what the edit can reach");
+  assert.deepEqual(multiGroups(null, [node("agent:cmd", "tbagent", "cmd")]), []);
+  assert.deepEqual(multiGroups(MCFG, []), []);
+});
+
+test("R9: scoreboards share max_latency; an unset one makes it mixed, a duplicate name is left out", () => {
+  const ab = multiGroups(MCFG, [node("sb:sb_a", "tbsb", "sb_a"), node("sb:sb_b", "tbsb", "sb_b")]);
+  assert.equal(ab[0].kind, "scoreboard");
+  assert.deepEqual(fieldsOf(ab[0]), { max_latency: "4" });
+  const ac = multiGroups(MCFG, [node("sb:sb_a", "tbsb", "sb_a"), node("sb:sb_c", "tbsb", "sb_c")]);
+  assert.deepEqual(fieldsOf(ac[0]), { max_latency: null }, "4 vs. unset");
+  const cc = multiGroups({ analysis: { scoreboards: [{ name: "x", source: "a" }, { name: "y", source: "a" }] } },
+    [node("sb:x", "tbsb", "x"), node("sb:y", "tbsb", "y")]);
+  assert.deepEqual(fieldsOf(cc[0]), { max_latency: "" }, "both unset: shared, and empty (no default)");
+  // `dup` exists twice: the by-name mutation would edit the first one twice
+  assert.deepEqual(
+    multiGroups(MCFG, [node("sb:dup", "tbsb", "dup"), node("sb:dup#2", "tbsb", "dup"), node("sb:sb_a", "tbsb", "sb_a")]),
+    [],
+    "neither duplicate counts: one editable scoreboard left"
+  );
+  // a cross-block scoreboard (xsb:) has no by-name editor here either
+  assert.deepEqual(
+    multiGroups(MCFG, [node("xsb:sb_a", "tbsb", "sb_a"), node("sb:sb_b", "tbsb", "sb_b")]),
+    []
+  );
+});
+
+test("R9: a config with a null list entry or a non-list section does not throw", () => {
+  const holes = {
+    agents: [{ name: "cmd" }, null, { name: "rsp" }],
+    analysis: { scoreboards: [null, { name: "x", source: "cmd" }, { name: "y", source: "cmd" }] },
+  };
+  const g = multiGroups(holes, [
+    node("agent:cmd", "tbagent", "cmd"), node("agent:rsp", "tbagent", "rsp"),
+    node("sb:x", "tbsb", "x"), node("sb:y", "tbsb", "y"),
+  ]);
+  assert.deepEqual(g.map((x) => x.names), [["cmd", "rsp"], ["x", "y"]]);
+  assert.deepEqual(multiGroups({ agents: "foo", analysis: { scoreboards: 5 } }, [
+    node("agent:cmd", "tbagent", "cmd"), node("agent:rsp", "tbagent", "rsp"),
+  ]), []);
+});
+
+test("R9: a mixed-kind selection gives one group per kind that has two", () => {
+  const g = multiGroups(MCFG, [
+    node("agent:cmd", "tbagent", "cmd"),
+    node("sb:sb_a", "tbsb", "sb_a"),
+    node("agent:rsp", "tbagent", "rsp"),
+    node("sb:sb_b", "tbsb", "sb_b"),
+    node("cov:cmd", "tbcov", "cmd_cov"),
+  ]);
+  assert.deepEqual(g.map((x) => [x.kind, x.names]), [
+    ["agent", ["cmd", "rsp"]],
+    ["scoreboard", ["sb_a", "sb_b"]],
+  ]);
+  // two agents and ONE scoreboard: only the agents
+  const h2 = multiGroups(MCFG, [
+    node("agent:cmd", "tbagent", "cmd"), node("agent:rsp", "tbagent", "rsp"), node("sb:sb_a", "tbsb", "sb_a"),
+  ]);
+  assert.deepEqual(h2.map((x) => x.kind), ["agent"]);
+});
+
+test("R9: the bulk fields stay the ones that need nothing per component", () => {
+  // `mode` (needs request_valid) and `match` (needs match_key) must never be
+  // bulk-editable: set on several components they leave configs the generator
+  // refuses and no validation finding reports
+  assert.deepEqual([...MULTI_FIELDS.agent], ["active", "seq_item_style"]);
+  assert.deepEqual([...MULTI_FIELDS.scoreboard], ["max_latency"]);
+  for (const f of MULTI_FIELDS.agent) {
+    assert.ok(AGENT_SPEC.rows.includes(f), `${f} is a row the agent editor knows`);
+  }
+  for (const f of MULTI_FIELDS.scoreboard) {
+    assert.ok(SCOREBOARD_SPEC.rows.includes(f));
+  }
+});
+
 console.log(`\ntest-inspector: ${passed} tests passed.`);

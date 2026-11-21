@@ -15,7 +15,7 @@ import { postToConfigEditors } from "./customeditor";
 import { YamlLink } from "./yamllink";
 import { elementAtOffset, elementRange, entryText } from "./yamlmap";
 import { DirtyConfigStatus } from "./dirtystatus";
-import { QuvmConfigEditor } from "./customeditor";
+import { QuvmConfigEditor, reopenConfigAs } from "./customeditor";
 import { codeFollowSetting, TraceService } from "./trace-service";
 import { Generator } from "./generate";
 import { resolveLocPath } from "./filelistops";
@@ -333,6 +333,20 @@ export function activate(context: vscode.ExtensionContext): void {
             typeof args.value === "string" ? args.value : ""
           );
           break;
+        case "editAgents":
+        case "editScoreboards": {
+          // docs/08 R9 — the inspector's multi-selection editor: one field on
+          // several components, one WorkspaceEdit
+          const names = Array.isArray(args.names)
+            ? args.names.filter((n): n is string => typeof n === "string")
+            : [];
+          const field = typeof args.field === "string" ? args.field : "";
+          const value = typeof args.value === "string" ? args.value : "";
+          void (action === "editAgents"
+            ? actions.editAgents(names, field, value)
+            : actions.editScoreboards(names, field, value));
+          break;
+        }
         case "addRegisterModel":
           void actions.addRegisterModel();
           break;
@@ -440,6 +454,37 @@ export function activate(context: vscode.ExtensionContext): void {
             "quickuvm.openConfigBeside",
             typeof args.id === "string" ? args.id : undefined
           );
+          break;
+        case "openConfigAsText":
+          // docs/08 R8 — the banner's "Open as text": from the panel, the active
+          // configuration as text beside the diagram — FOCUSED, with the caret
+          // on the line the banner named (the user is going there to fix it;
+          // `openConfigBeside` keeps the focus on the diagram and, with the
+          // file already open beside, did nothing one could see)
+          void (async () => {
+            const uri = config.configUri;
+            if (!uri) {
+              await vscode.commands.executeCommand("quickuvm.openConfig");
+              return;
+            }
+            const editor = await yamlLink.openBeside(uri);
+            if (!editor) {
+              return;
+            }
+            const line = config.parseError?.line;
+            const at = new vscode.Position(
+              Math.min(line ?? 1, editor.document.lineCount) - 1,
+              0
+            );
+            await vscode.window.showTextDocument(editor.document, {
+              viewColumn: editor.viewColumn,
+              selection: line ? new vscode.Range(at, at) : undefined,
+            });
+          })();
+          break;
+        case "setTop":
+          // docs/08 R8 — the empty state's next action without a design model
+          void vscode.commands.executeCommand("quickuvm.setTop");
           break;
         case "openGeneratedCode":
           // docs/08 R15 — the element's generated code beside the diagram
@@ -599,6 +644,7 @@ export function activate(context: vscode.ExtensionContext): void {
       childAgents: config.childAgents,
       children: config.childConfigs, // docs/08 R18: the hover preview of a subenv
       resolved: resolve.current,
+      parseError: config.parseError, // docs/08 R8: the invalid-config banner
     }),
     // the quick-uvm status decorations (docs/05): validations + the last generate
     getStatus: () => statusSnapshot(),
@@ -1143,6 +1189,48 @@ export function activate(context: vscode.ExtensionContext): void {
         await vscode.commands.executeCommand("quickuvm.openConfig");
       }
     }),
+    // docs/08 R8 — the way OUT of the diagram editor and back. `*.quickuvm.yaml`
+    // opens as a diagram by default, so a file the diagram cannot draw (a syntax
+    // error, a key the view does not know yet) needs a one-step route to its
+    // text: the same tab reopened with the built-in text editor (KIE's
+    // `setContentError` fallback). From the editor title the resource comes as
+    // the argument; from the palette it is the active diagram tab's document;
+    // otherwise the active configuration opens as text beside.
+    vscode.commands.registerCommand(
+      "quickuvm.openConfigAsText",
+      async (arg?: unknown) => {
+        const tab = vscode.window.tabGroups.activeTabGroup.activeTab;
+        const custom =
+          tab?.input instanceof vscode.TabInputCustom &&
+          tab.input.viewType === QuvmConfigEditor.viewType
+            ? tab.input.uri
+            : undefined;
+        const uri = arg instanceof vscode.Uri ? arg : custom;
+        if (uri) {
+          await reopenConfigAs(uri, "text"); // replaces the diagram tab
+          return;
+        }
+        await vscode.commands.executeCommand("quickuvm.openConfigBeside");
+      }
+    ),
+    vscode.commands.registerCommand(
+      "quickuvm.openConfigAsDiagram",
+      async (arg?: unknown) => {
+        const uri =
+          arg instanceof vscode.Uri
+            ? arg
+            : vscode.window.activeTextEditor?.document.uri;
+        if (uri && /\.quickuvm\.yaml$/i.test(uri.path)) {
+          await reopenConfigAs(uri, "diagram"); // replaces the text tab
+        } else {
+          void vscode.window.showInformationMessage(
+            vscode.l10n.t(
+              "QuickUVM Architect: open a *.quickuvm.yaml file first."
+            )
+          );
+        }
+      }
+    ),
     vscode.commands.registerCommand("quickuvm.openConfig", async () => {
       const uri = config.configUri;
       if (uri) {
@@ -1320,7 +1408,8 @@ export function activate(context: vscode.ExtensionContext): void {
       if (
         e.affectsConfiguration("quickuvm.lassoMode") ||
         e.affectsConfiguration("quickuvm.schematicDecorations") ||
-        e.affectsConfiguration("quickuvm.codeFollowsSelection")
+        e.affectsConfiguration("quickuvm.codeFollowsSelection") ||
+        e.affectsConfiguration("quickuvm.lodZoomThreshold")
       ) {
         // purely UI settings: they are resent to the webview, without re-elaboration
         DiagramPanel.current?.postUiConfig();

@@ -148,14 +148,43 @@ propriu (D20) — deci nu are încă ce parametru să expună.
 SVG generat manual în webview (nu canvas, nu framework de diagramming):
 hit-testing nativ pe elemente, stilizare CSS pentru overlay-ul de agenți
 (schimbare de clasă, nu re-randare), export vectorial trivial (SVG → PDF pentru
-documentație și materiale didactice). Maparea gesturilor: zoom pe rotiță,
-**pan pe butonul din mijloc**, click-stânga pe fundal = **lasso de selecție**
-(pe simbol selectează pini — gestul pentru „Agent from selection"; pe schemă
-selectează blocuri și steaguri; Ctrl = adăugare la selecția existentă;
-implicit se selectează doar obiectele complet cuprinse — setarea
-`quickuvm.lassoMode: intersect` comută pe „crossing selection"), click
-pe element = selecție simplă (+Ctrl comutare), drag de noduri cu snap pe
-grilă (drag pe un membru al selecției mută toată selecția), hover cu tooltip.
+documentație și materiale didactice). The gesture map: zoom on the wheel,
+**pan on the middle button**, left-click on the background = the **selection
+lasso** (on the symbol it selects pins — the gesture behind "Agent from
+selection"; on a schematic it selects blocks and flags). The modifiers held
+when the lasso starts choose what it does to the existing selection (docs/08
+R7): none replaces it, **Shift** adds, **Ctrl** toggles — the same thing
+Ctrl+click does to one element — and **Ctrl+Shift** subtracts (not Alt: Alt
+held alone around a mouse gesture hands the focus to the workbench's menu bar
+on Windows and Linux). By default only the objects
+fully enclosed are picked; `quickuvm.lassoMode: intersect` switches to a
+crossing selection (also what the rectangle touches), and `direction` lets
+the drag choose — left-to-right a window, right-to-left a crossing, drawn
+long-dashed. A click on an element selects it (+Ctrl toggles), a drag moves
+nodes with grid snap (dragging a member of the selection moves the whole
+selection), hover shows a tooltip.
+
+**Arranging a multi-selection** (docs/08 R7, Nov 2026): align on an edge or a
+centre line of the common bounding box, distribute with equal gaps, and
+straighten the wires between the selected blocks — from the icon row of the
+context menu or the action palette's "Arrange" group. All three are positions
+on the grid and nothing else: only the axis an operation works on is snapped
+(a centre line is pinned to the largest block sitting on the grid, so aligning
+twice moves nothing the second time; blocks that overlap are not distributed),
+the result is persisted as ONE total `layout/snapshot` (D21) with one
+position-undo entry, like a drag end, and an un-arranged view becomes the
+user's in that one step. Straighten moves a block only vertically, until the
+pin centres of a wire are level (pins sit on the grid by construction, so the
+wire becomes one straight segment), and refuses a move that would land on
+another box — the block stays where it is. The geometry is pure:
+`src/webview/arrange.ts`, `test:arrange`.
+
+**Level of detail** (docs/08 R6, Nov 2026): below `quickuvm.lodZoomThreshold`
+the multi-node views draw only boxes, enlarged titles, wires, flags and
+badges. It is a CSS switch on one attribute of the root `<svg>`
+(`data-lod="low"`), never a re-layout: positions, sizes and routes are the
+same at both levels, so the camera can cross the threshold freely (with
+hysteresis, docs/05).
 **Minimap** (navigatorul de ansamblu; cererea utilizatorului, iul. 2026):
 miniatura întregii scene într-un colț (dreapta-jos, 180×120) + dreptunghiul
 zonei vizibile; click sau drag pe minimap **centrează camera** pe punctul

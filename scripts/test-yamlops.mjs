@@ -1570,6 +1570,96 @@ test("renameScoreboard / renameSubenv: the key, and for a subenv the endpoints t
   assert.equal(ops.renameSubenv(y, "u_zz", "q"), y);
   assert.throws(() => ops.renameSubenv(y, "u_a", "u_b"), /already exists/);
 });
+test("docs/08 R8: quvmParseError — null on a valid config, the FIRST syntax error with its line otherwise", () => {
+  assert.equal(ops.quvmParseError("dut:\n  name: adder\nagents:\n  - name: cmd\n"), null);
+  assert.equal(ops.quvmParseError(""), null, "an empty file is empty, not invalid");
+  assert.equal(ops.quvmParseError("# only a comment\n"), null);
+  // a tab used for indentation, on line 2
+  const tab = ops.quvmParseError("dut:\n\tname: adder\n");
+  assert.ok(tab, "a tab indent is a YAML error");
+  assert.equal(tab.line, 2);
+  assert.ok(!/at line \d+, column/.test(tab.message), "the parser's own position tail is cut: " + tab.message);
+  assert.ok(!tab.message.includes("\n"), "one line");
+  assert.ok(tab.message.length > 0);
+  // an unclosed flow sequence further down
+  const flow = ops.quvmParseError("dut:\n  name: adder\nagents:\n  - {name: cmd\ntests: []\n");
+  assert.ok(flow && flow.line >= 4, "reported at or after the line that opens it: " + JSON.stringify(flow));
+  // two errors: only the first is reported (the later ones are usually its echoes)
+  const two = ops.quvmParseError("a: [1\nb: }\n");
+  assert.ok(two && two.line === 1 || two.line === 2);
+});
+
+test("docs/08 R8: quvmParseError — a top level that is not a mapping is not a configuration", () => {
+  assert.deepEqual(ops.quvmParseError("- a\n- b\n"), {
+    message: "the top level must be a mapping (key: value)",
+    line: 1,
+  });
+  assert.ok(ops.quvmParseError("just a sentence\n"));
+  assert.ok(ops.quvmParseError("42\n"));
+  // parseQuvm still answers with what it could read — the view draws that,
+  // the error says it is partial
+  const broken = "dut:\n  name: adder\nagents:\n  - {name: cmd\n";
+  assert.equal(ops.parseQuvm(broken).dut?.name, "adder", "the readable part survives");
+  assert.ok(ops.quvmParseError(broken));
+});
+
+test("docs/08 R8: quvmParseError — valid YAML whose shape no reader can walk (a bare dash, a non-list)", () => {
+  // a bare "-" typed as the start of a new entry parses — to null
+  const bare = "dut:\n  name: adder\nagents:\n  - name: cmd\n  -\n";
+  assert.deepEqual(ops.quvmParseError(bare), { message: "agents: entry 2 is empty", line: 5 });
+  assert.deepEqual(ops.quvmParseError("agents: foo\n"), { message: "agents must be a list", line: 1 });
+  assert.deepEqual(ops.quvmParseError("agents:\n  name: a\n"), { message: "agents must be a list", line: 2 });
+  assert.deepEqual(
+    ops.quvmParseError("agents:\n  - name: a\nanalysis:\n  scoreboards:\n    - name: s\n      source: a\n    - just text\n"),
+    { message: "analysis.scoreboards: entry 2 is not a mapping (key: value)", line: 7 }
+  );
+  for (const key of ["subenvs", "connections", "probes", "virtual_sequences", "tests"]) {
+    assert.ok(ops.quvmParseError(key + ":\n  -\n"), key + ": a null entry is reported");
+    assert.equal(ops.quvmParseError(key + ": []\n"), null, key + ": an empty list is fine");
+    assert.equal(ops.quvmParseError(key + ":\n"), null, key + ": a key with no value is fine");
+  }
+  // what the generator accepts is NOT reported: a list of names, a mapping section
+  assert.equal(ops.quvmParseError("analysis:\n  coverage: [cmd, rsp]\n"), null);
+  assert.equal(ops.quvmParseError("analysis: {}\n"), null);
+  assert.equal(ops.quvmParseError("analysis:\n"), null);
+  // parseQuvm no longer answers {} for a non-list "connections" (its own catch
+  // swallowed the iteration error and the DUT and agents went with it)
+  const c = ops.parseQuvm("dut:\n  name: adder\nagents:\n  - name: cmd\nconnections: 5\n");
+  assert.equal(c.dut?.name, "adder");
+  assert.equal(c.agents?.length, 1);
+});
+
+test("docs/08 R9: one field folded over several agents is ONE text change, comments kept, no-op byte-identical", () => {
+  const y = [
+    "# bench",
+    "agents:",
+    "  - name: cmd   # drives",
+    "    interface: cmd_if",
+    "  - name: rsp",
+    "    active: false",
+    "  - name: aux",
+    "    active: true   # hand-written default",
+    "",
+  ].join("\n");
+  // the host's fold: targets.reduce((acc, n) => op(acc, n), text)
+  const fold = (text, names, op) => names.reduce((acc, n) => op(acc, n), text);
+  const passive = fold(y, ["cmd", "rsp", "aux"], (t, n) => ops.setAgentActive(t, n, false));
+  assert.deepEqual(ops.parseQuvm(passive).agents.map((a) => a.active), [false, false, false]);
+  assert.ok(passive.includes("# drives") && passive.includes("# bench"), "comments survive the fold");
+  // back to active: every `active` key goes (true is the default, written nowhere)
+  const active = fold(passive, ["cmd", "rsp", "aux"], (t, n) => ops.setAgentActive(t, n, true));
+  assert.deepEqual(ops.parseQuvm(active).agents.map((a) => "active" in a), [false, false, false]);
+  // already what was asked: the fold returns the SAME text (no WorkspaceEdit at all)
+  assert.equal(fold(passive, ["cmd", "rsp", "aux"], (t, n) => ops.setAgentActive(t, n, false)), passive);
+  // another bulk field, and its reset
+  const macros = fold(y, ["cmd", "rsp"], (t, n) => ops.setAgentField(t, n, "seq_item_style", "field_macros"));
+  assert.deepEqual(ops.parseQuvm(macros).agents.map((a) => a.seq_item_style), ["field_macros", "field_macros", undefined]);
+  assert.equal(
+    ops.parseQuvm(fold(macros, ["cmd", "rsp"], (t, n) => ops.setAgentField(t, n, "seq_item_style", undefined))).agents[0].seq_item_style,
+    undefined
+  );
+});
+
 if (failures) {
   console.error(`\n${failures} teste esuate`);
   process.exit(1);

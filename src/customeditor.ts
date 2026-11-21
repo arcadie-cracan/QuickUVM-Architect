@@ -17,14 +17,16 @@ import type { YamlLink } from "./yamllink";
 import {
   clearActiveExporter,
   diagramHtml,
+  lassoSetting,
+  lodThresholdSetting,
   saveExportedSvg,
   setActiveExporter,
 } from "./panel";
-import type { ActionKind, HostMessage, LassoMode, ProposalApply, WebviewMessage } from "./protocol";
+import type { ActionKind, HostMessage, ProposalApply, WebviewMessage } from "./protocol";
 import { ghostProposals } from "./proposals";
 import type { QuvmConfig } from "./quickuvm";
 import { elementRange, entryText } from "./yamlmap";
-import { parseQuvm } from "./yamlops";
+import { parseQuvm, quvmParseError } from "./yamlops";
 import type { LayoutStore } from "./sidecar";
 
 /** `TbEditTarget` bound to a TextDocument: the config is its current text,
@@ -63,6 +65,54 @@ class DocumentEditTarget implements TbEditTarget {
     // helper (autosave included), so the two editing surfaces cannot disagree
     // about what a gesture writes or whether it leaves the file dirty
     return applyTextChange(this.doc, oldText, newText);
+  }
+}
+
+/**
+ * docs/08 R8 — a `*.quickuvm.yaml` tab REOPENED as text, or as the diagram.
+ *
+ * `vscode.openWith` alone does not replace anything: the text editor and the
+ * custom editor are different inputs for the same resource, so it ADDS a tab
+ * and leaves the other one behind it — the two then toggle, and "Open as
+ * text" reads as "nothing happened" when the text tab already existed (found
+ * at the review, in the VS Code sources). So: open the wanted editor in the
+ * group that shows the other kind, then close that other tab. The document is
+ * shared by both editors, so closing one of them loses nothing and asks
+ * nothing. `line` (1-based) puts the caret there in the text editor.
+ */
+export async function reopenConfigAs(
+  uri: vscode.Uri,
+  as: "text" | "diagram",
+  line?: number | null
+): Promise<void> {
+  const key = uri.toString();
+  const isOther = (t: vscode.Tab): boolean =>
+    as === "text"
+      ? t.input instanceof vscode.TabInputCustom &&
+        t.input.viewType === QuvmConfigEditor.viewType &&
+        t.input.uri.toString() === key
+      : t.input instanceof vscode.TabInputText && t.input.uri.toString() === key;
+  const groups = vscode.window.tabGroups;
+  const group =
+    [groups.activeTabGroup, ...groups.all].find((g) => g.tabs.some(isOther)) ??
+    groups.activeTabGroup;
+  const stale = group.tabs.filter(isOther);
+  await vscode.commands.executeCommand(
+    "vscode.openWith",
+    uri,
+    as === "text" ? "default" : QuvmConfigEditor.viewType,
+    group.viewColumn
+  );
+  if (stale.length) {
+    await groups.close(stale, true);
+  }
+  if (as === "text" && line) {
+    const doc = await vscode.workspace.openTextDocument(uri);
+    const at = new vscode.Position(Math.min(line, doc.lineCount) - 1, 0);
+    await vscode.window.showTextDocument(doc, {
+      viewColumn: group.viewColumn,
+      selection: new vscode.Range(at, at),
+    });
   }
 }
 
@@ -134,9 +184,20 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
 
     const postConfig = (): void => {
       if (ready) {
-        const config = parseQuvm(document.getText());
+        const text = document.getText();
+        const config = parseQuvm(text);
         const resolved = this.resolve?.resolvedFor(document.uri) ?? null;
-        void webview.postMessage({ v: 1, type: "config/full", configPath, config, resolved });
+        void webview.postMessage({
+          v: 1,
+          type: "config/full",
+          configPath,
+          config,
+          resolved,
+          // docs/08 R8 — this editor is the DEFAULT one for the file: a document
+          // that does not parse must say so and offer its text, not sit there
+          // as an unexplained empty diagram
+          parseError: quvmParseError(text),
+        });
         // docs/08 R12 — the per-file editor has no model: only the inferred
         // components can be proposed here (materialise them into THIS document)
         void webview.postMessage({
@@ -155,11 +216,18 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
     // only at ready, the row's second click switched the mode back off)
     const postUi = (): void => {
       const quvm = vscode.workspace.getConfiguration("quickuvm");
-      const lasso: LassoMode =
-        quvm.get<string>("lassoMode", "contain") === "intersect" ? "intersect" : "contain";
+      const lasso = lassoSetting(quvm);
       const decorations = quvm.get<boolean>("schematicDecorations", true);
       const codeFollow = quvm.get<boolean>("codeFollowsSelection", false);
-      void webview.postMessage({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
+      const lodThreshold = lodThresholdSetting(quvm);
+      void webview.postMessage({
+        v: 1,
+        type: "ui/config",
+        lasso,
+        decorations,
+        codeFollow,
+        lodThreshold,
+      });
     };
 
     // Any change to the document (text editing, undo/redo, or a gesture's own
@@ -220,7 +288,8 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
         if (
           e.affectsConfiguration("quickuvm.lassoMode") ||
           e.affectsConfiguration("quickuvm.schematicDecorations") ||
-          e.affectsConfiguration("quickuvm.codeFollowsSelection")
+          e.affectsConfiguration("quickuvm.codeFollowsSelection") ||
+          e.affectsConfiguration("quickuvm.lodZoomThreshold")
         ) {
           postUi();
         }
@@ -294,6 +363,23 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
           }
           break;
         case "action/request":
+          if (m.action === "openConfigAsText") {
+            // docs/08 R8 — THIS tab reopened with the built-in text editor
+            // (the diagram is the default editor), the caret on the line the
+            // banner named
+            void reopenConfigAs(
+              document.uri,
+              "text",
+              quvmParseError(document.getText())?.line
+            );
+            break;
+          }
+          if (m.action === "setTop") {
+            // docs/08 R8 — the no-model empty state's button is a host command
+            // wherever the webview runs
+            void vscode.commands.executeCommand("quickuvm.setTop");
+            break;
+          }
           this.onAction(m.action, m.args, target);
           break;
         case "select/changed":
@@ -367,6 +453,17 @@ export class QuvmConfigEditor implements vscode.CustomTextEditorProvider {
       case "editAgent":
         void this.actions.editAgent(s("name"), s("field"), s("value"), target);
         break;
+      case "editAgents":
+      case "editScoreboards": {
+        // docs/08 R9 — the multi-selection editor, on THIS document
+        const names = Array.isArray(args.names)
+          ? args.names.filter((n): n is string => typeof n === "string")
+          : [];
+        void (action === "editAgents"
+          ? this.actions.editAgents(names, s("field"), s("value"), target)
+          : this.actions.editScoreboards(names, s("field"), s("value"), target));
+        break;
+      }
       case "addRegisterModel":
         void this.actions.addRegisterModel(target);
         break;

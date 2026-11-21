@@ -25,6 +25,7 @@ import {
   tbDeleteTarget,
   tbRenameTarget,
 } from "./inspector-view";
+import { multiGroups } from "../inspector";
 import { SV_KEYWORDS } from "../heuristics";
 import type { State } from "./state";
 import type { TbNode, TbScene } from "./tbscene";
@@ -42,15 +43,32 @@ import {
 } from "./wiring";
 import { el, measurer, SVG_NS } from "./svg";
 import {
+  alignItems,
+  distributeItems,
+  hasLinks,
+  lassoHits,
+  lassoRule,
+  marqueeOp,
+  marqueeSelection,
+  straightenItems,
+  type AlignOp,
+  type ArrangeItem,
+  type MarqueeOp,
+  type PinLink,
+} from "./arrange";
+import {
   findMatches,
+  lodFor,
   NavHistory,
   pushRecent,
   QuickMarks,
   rankPalette,
   rtlParentPath,
   tbParentFocus,
+  titleUpscale,
   unionBounds,
   type FindItem,
+  type Lod,
   type Rect,
 } from "./navfind";
 
@@ -223,8 +241,17 @@ function leaveTbView(): void {
   void render(true);
 }
 
+/** docs/08 R8 — why the configuration's YAML does not parse (`config/full`);
+ *  the TB view then draws what could be read and says so in its banner */
+let configError: { message: string; line: number | null } | null = null;
+
 /** the UI preferences from the extension settings (the ui/config message, docs/05) */
-let uiConfig: UiConfig = { lasso: "contain", decorations: true, codeFollow: false };
+let uiConfig: UiConfig = {
+  lasso: "contain",
+  decorations: true,
+  codeFollow: false,
+  lodThreshold: 0.5,
+};
 
 /** the cameras per view — SESSION state, not project state (docs/04): the first
  *  opening of a view always fits into the window; the frame is
@@ -262,7 +289,13 @@ function renderInspectorHere(): void {
   if (!inspector) {
     return;
   }
-  renderInspectorInto(inspectorCtx(inspector));
+  try {
+    renderInspectorInto(inspectorCtx(inspector));
+  } catch {
+    // a config whose shape cannot be read (docs/08 R8): the banner says why;
+    // a half-built aside must not take the render down with it
+    inspector.replaceChildren();
+  }
   // With the config editors on the sidebar, the aside is often empty (a TB view with
   // nothing selected). An empty 250px column is exactly the space the diagram wanted
   // back, so it collapses rather than sitting there blank.
@@ -443,6 +476,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       cardCache.clear(); // docs/08 R15 — the YAML changed: the cards are stale
       cardRequested.clear();
       state.config = m.config;
+      configError = m.parseError ?? null; // docs/08 R8
       state.configPath = m.configPath;
       state.childAgents = m.childAgents ?? {};
       childConfigs = m.children ?? {}; // docs/08 R18: the hover preview of a subenv
@@ -461,6 +495,11 @@ window.addEventListener("message", (e: MessageEvent) => {
           persistState();
         }
         void render();
+      } else if (!state.model) {
+        // the no-model empty state offers the verification view only when a
+        // configuration has something to draw: it must follow THIS message
+        // (overlay/config, which renders, is posted before it)
+        void render();
       }
       break;
     case "export/request":
@@ -475,6 +514,7 @@ window.addEventListener("message", (e: MessageEvent) => {
       // the drawing vocabulary is hidden through a class on the canvas (CSS), without
       // re-rendering — slash+width, junction dots (docs/04)
       canvas.classList.toggle("decor-off", uiConfig.decorations === false);
+      updateLod(); // docs/08 R6: the threshold is a setting
       break;
     }
     case "layout/full":
@@ -1067,6 +1107,7 @@ function drawPin(
  */
 function resetCanvas(): SVGGElement {
   canvas.replaceChildren();
+  lodTitlesDirty = true; // docs/08 R6: new titles, none fitted to its box yet
   const defs = el("defs", {});
   const hatch = el("pattern", {
     id: "hatch",
@@ -1198,12 +1239,85 @@ function draw(inst: Instance, pins: PinSpec[], layout: ElkNode): void {
 
 // ------------------------------------------------------------ interaction
 
+// docs/08 R6 — level of detail on zoom. Below `quickuvm.lodZoomThreshold` a
+// multi-node view (the RTL schematic, the TB view) draws the overview: boxes,
+// titles, wires, flags and badges; the pin labels, the compartment text and
+// the inline widgets go (unreadable at that size, and most of the drawing
+// cost). It is ONE attribute on the root `<svg>` and CSS rules behind it
+// (media/webview.css): no re-layout, no re-render, so the boxes do not move
+// when the level changes. The symbol view is exempt: it is nothing BUT its pin
+// labels, and it always fits the window.
+let lod: Lod = "full";
+/** the layout key `lod` was decided for: the hysteresis is PER VIEW */
+let lodKey: string | undefined;
+/** the titles of the current DOM have not been fitted to their boxes yet */
+let lodTitlesDirty = true;
+
+function updateLod(): void {
+  // the hysteresis band remembers which side the zoom came from — in THIS
+  // view. Carried over from another view, a zoom inside the band drew the
+  // overview or full detail depending on where the user had been before
+  const key = layoutKey();
+  const prev: Lod = key === lodKey ? lod : "full";
+  lodKey = key;
+  const next: Lod =
+    state.mode === "symbol" ? "full" : lodFor(state.k, prev, uiConfig.lodThreshold);
+  const flipped = canvas.getAttribute("data-lod") !== next;
+  if (next !== lod || flipped) {
+    lod = next;
+    canvas.setAttribute("data-lod", next);
+    lodTitlesDirty = true;
+  }
+  if (flipped && viewport?.hasChildNodes()) {
+    // what is MEASURED from the DOM depends on the level (a hidden label is
+    // not in a box's bounds, a hidden glyph measures zero): redo it on a
+    // change, or the badges sit beside their boxes and the chip signs stay
+    // off-centre until the next render
+    applyStatusBadges();
+    applyGenBadges();
+    if (state.mode === "schematic") {
+      centerChipSigns(canvas);
+    }
+  }
+  if (lod === "low" && lodTitlesDirty) {
+    applyLodTitles();
+  }
+}
+
+/** At the overview level a box's title is enlarged until it fills the box and
+ *  moved to its centre (the compartments are hidden, so the room is free) —
+ *  Houdini's "Large" badge. Measured once per DOM (a render) and per switch to
+ *  the overview, never per pan/zoom frame; the transform itself is applied by
+ *  CSS, only under `data-lod="low"`, through a variable on the title. */
+function applyLodTitles(): void {
+  lodTitlesDirty = false;
+  canvas
+    .querySelectorAll<SVGTextElement>(".tbnode > .tb-name, .inode > .inode-name")
+    .forEach((t) => {
+      const id = (t.parentElement as unknown as SVGElement | null)?.dataset.id;
+      const box = id ? rectOf(id) : null; // a hover preview's boxes have no id: left alone
+      if (!box) {
+        return;
+      }
+      const bb = t.getBBox(); // the text's own box: its CSS transform is not in it
+      const { scale, dy } = titleUpscale(
+        { y: bb.y, w: bb.width, h: bb.height },
+        { w: box.w, h: box.h }
+      );
+      t.style.setProperty(
+        "--lod-title",
+        scale === 1 ? "none" : `translate(0px, ${dy}px) scale(${scale})`
+      );
+    });
+}
+
 function applyTransform(): void {
   cancelRename(); // docs/08 R14: a fixed-position editor would detach from its title
   viewport?.setAttribute(
     "transform",
     `translate(${state.tx},${state.ty}) scale(${state.k})`
   );
+  updateLod(); // docs/08 R6: the level of detail follows the zoom
   updateMinimap();
   positionNodeTools(); // docs/08 R1: the "+" strip rides along with its node
   repositionCard(); // docs/08 R15: a pinned card follows its box — AFTER the new transform
@@ -1500,8 +1614,17 @@ function exportSvg(): void {
   const MARGIN = 16;
   // the content's bbox in world space (getBBox ignores the viewport's
   // own transform = exactly the camera we are discarding)
+  // docs/08 R6 — the export always carries full detail: the bounds are taken
+  // with the overview level lifted (its hidden labels count), and the clone
+  // loses the canvas id, so no `#canvas[data-lod]` rule reaches it
+  const lodAttr = canvas.getAttribute("data-lod");
+  canvas.removeAttribute("data-lod");
   const bb = viewport.getBBox();
+  if (lodAttr) {
+    canvas.setAttribute("data-lod", lodAttr);
+  }
   const clone = canvas.cloneNode(true) as SVGSVGElement;
+  clone.removeAttribute("data-lod");
   clone.querySelectorAll(".selected").forEach((n) =>
     n.classList.remove("selected")
   );
@@ -1932,7 +2055,9 @@ canvas.addEventListener("dblclick", (e) => {
     const titled = titleBox?.dataset.id
       ? currentTbScene?.nodes.find((n) => n.id === titleBox.dataset.id)
       : undefined;
-    if (titled && tbRenameTarget(titled)) {
+    // not at the overview level: the enlarged title covers most of its box
+    // there, and the box's double-click is the drill (F2 still renames)
+    if (lod !== "low" && titled && tbRenameTarget(titled)) {
       startRename(titled.id);
       return;
     }
@@ -2055,11 +2180,16 @@ let suppressClick = false;
 
 // lasso: a selection rectangle started with a left-click on the background (docs/04);
 // on the symbol it selects pins (the gesture for "Agent from selection"), on the
-// schematic it selects blocks and flags; Ctrl = add to the selection
+// schematic it selects blocks and flags. The modifiers held at the press choose
+// what it does to the selection it started from (docs/08 R7): plain = replace,
+// Shift = add, Ctrl = toggle, Ctrl+Shift = subtract (never Alt — see marqueeOp)
 interface Marquee {
   x0: number; // pointer, screen px
   y0: number;
-  /** the base of the selection: the existing one with Ctrl, empty otherwise */
+  /** what the lasso does to `base` (frozen at the press, like the base) */
+  op: MarqueeOp;
+  /** the selection at the press — what the lasso's result is computed against;
+   *  empty for a plain (replace) lasso */
   base: Set<string>;
   /** the SVG rectangle, created only after the DRAG_MIN threshold */
   rect: SVGRectElement | null;
@@ -3459,8 +3589,9 @@ function wireEnd(): void {
 }
 
 /** a transient message at the pointer (an illegal drop's reason) */
-function wireToast(text: string, cx: number, cy: number): void {
-  const d = h("div", "wirehint toast", text);
+function wireToast(text: string, cx: number, cy: number, note = false): void {
+  // `note`: information, not a refusal (docs/08 R7 — "already aligned")
+  const d = h("div", `wirehint toast${note ? " note" : ""}`, text);
   d.style.left = `${cx + 14}px`;
   d.style.top = `${cy + 14}px`;
   document.body.append(d);
@@ -3656,10 +3787,12 @@ canvas.addEventListener("pointerdown", (e) => {
   // the middle button
   const onElement = (e.target as Element).closest("[data-id]");
   if (e.button === 0 && !onElement) {
+    const op = marqueeOp({ shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey });
     marquee = {
       x0: e.clientX,
       y0: e.clientY,
-      base: e.ctrlKey || e.metaKey ? new Set(state.selection) : new Set(),
+      op,
+      base: op === "replace" ? new Set() : new Set(state.selection),
       rect: null,
       candidates: null,
     };
@@ -3757,34 +3890,37 @@ canvas.addEventListener("pointermove", (e) => {
     marquee.rect.setAttribute("y", String(y1 - cb.top));
     marquee.rect.setAttribute("width", String(x2 - x1));
     marquee.rect.setAttribute("height", String(y2 - y1));
-    // the live selection: the base (Ctrl) combined with the rectangle's targets — by
-    // default only those completely enclosed ("window selection"); with
-    // quickuvm.lassoMode=intersect, also those merely touched ("crossing").
+    // the live selection (src/webview/arrange.ts, pure — test:arrange): the
+    // rectangle's targets, combined with the selection at the press by the
+    // lasso's operation. By default only the targets completely enclosed
+    // ("window"); with quickuvm.lassoMode=intersect also those merely touched
+    // ("crossing"); with =direction the drag chooses — left-to-right a window,
+    // right-to-left a crossing (the CAD convention), drawn solid vs. dashed.
     //
     // Ctrl TOGGLES, it does not merely add: an enclosed element already in the base
     // is removed. That is what Ctrl+click already does (`selection.delete(id)` or
-    // add), and one modifier must not mean two things — the add-only lasso taught the
-    // opposite of the click and left no gesture for deselecting a region at all.
-    // Toggle subsumes add: over an unselected region the result is identical.
+    // add), and one modifier must not mean two things. Shift only adds,
+    // Ctrl+Shift only subtracts (docs/08 R7).
     //
     // `base` is frozen for the whole drag, so this is stable while the pointer moves:
     // sweeping OVER an already-selected element removes it, sweeping back OFF restores
     // it. Computing against the live selection instead would flip it on every frame.
-    const hit = new Set(marquee.base);
-    for (const c of marquee.candidates ?? []) {
-      const inside =
-        uiConfig.lasso === "intersect"
-          ? c.r.left < x2 && c.r.right > x1 && c.r.top < y2 && c.r.bottom > y1
-          : c.r.left >= x1 && c.r.right <= x2 && c.r.top >= y1 && c.r.bottom <= y2;
-      if (inside) {
-        if (marquee.base.has(c.id)) {
-          hit.delete(c.id);
-        } else {
-          hit.add(c.id);
-        }
-      }
-    }
-    state.selection = hit;
+    const rule = lassoRule(uiConfig.lasso, dx);
+    marquee.rect.setAttribute(
+      "class",
+      `marquee${rule === "intersect" ? " crossing" : ""}${
+        marquee.op === "subtract" ? " subtract" : ""
+      }`
+    );
+    state.selection = marqueeSelection(
+      marquee.base,
+      lassoHits(
+        { left: x1, top: y1, right: x2, bottom: y2 },
+        marquee.candidates ?? [],
+        rule
+      ),
+      marquee.op
+    );
     applySelectionClasses();
     return;
   }
@@ -4237,6 +4373,189 @@ function nudgeSelection(dx: number, dy: number): void {
   applyPositions(key, next);
 }
 
+// --- align / distribute / straighten (docs/08 R7) ---------------------------
+//
+// Pure geometry on the grid (src/webview/arrange.ts, test:arrange) over the
+// selected blocks and flags, applied the way a drag end is: one undo entry and
+// one TOTAL snapshot (D21), so an un-arranged view becomes the user's in one
+// step and Ctrl+Z takes the whole gesture back.
+
+/** the selected blocks/flags with their rectangles (pins and nets have none) */
+function arrangeSelection(): ArrangeItem[] {
+  const out: ArrangeItem[] = [];
+  for (const id of state.selection) {
+    const r = rectOf(id);
+    if (r) {
+      out.push({ id, ...r });
+    }
+  }
+  return out;
+}
+
+/** the y of a pin's centre relative to its node's origin — where a wire meets
+ *  the block; null for an end the ROUTER draws no wire to. It must agree with
+ *  the routers' own anchors, or "straighten" is offered (and moves a block)
+ *  for a link that is not on screen: the TB view asks `anchor` itself; in RTL
+ *  an end without a port is a wire only on a boundary flag (`routeEdges`). */
+function pinCenterY(nodeId: string, portId: string | null): number | null {
+  if (state.mode === "tb") {
+    if (!currentTbLayout) {
+      return null;
+    }
+    const a = anchor(currentTbLayout, nodeId, portId);
+    const origin =
+      currentTbLayout.nodes.get(nodeId) ?? currentTbLayout.boundary.get(nodeId);
+    return a && origin ? a.y - origin.y : null;
+  }
+  const c = currentLayout?.children?.find((k) => k.id === nodeId);
+  if (!c) {
+    return null;
+  }
+  if (!portId) {
+    return currentScene?.boundary.some((b) => b.id === nodeId)
+      ? (c.height ?? 0) / 2
+      : null;
+  }
+  const port = (c.ports ?? []).find((p) => p.id === portId);
+  return port ? (port.y ?? 0) + (port.height ?? 0) / 2 : null;
+}
+
+/** the wires of the current view as pin-centre pairs, in the scene's edge order */
+function pinLinks(): PinLink[] {
+  const edges = state.mode === "tb" ? currentTbScene?.edges : currentScene?.edges;
+  const out: PinLink[] = [];
+  for (const e of edges ?? []) {
+    const ay = pinCenterY(e.source, e.sourcePort);
+    const by = pinCenterY(e.target, e.targetPort);
+    if (ay !== null && by !== null) {
+      out.push({ a: e.source, ay, b: e.target, by });
+    }
+  }
+  return out;
+}
+
+function applyArrange(
+  changes: Record<string, { x: number; y: number }>,
+  none: string
+): void {
+  const key = layoutKey();
+  const before = capturePositions();
+  if (!key || !before) {
+    return;
+  }
+  if (!Object.keys(changes).length) {
+    // nothing to move: no snapshot, no undo entry — but SAY so, a gesture that
+    // does nothing without a word reads as a broken button
+    const r = canvas.getBoundingClientRect();
+    wireToast(none, r.left + r.width / 2 - 90, r.top + 6, true);
+    return;
+  }
+  pushPosUndo(before);
+  applyPositions(key, { ...before, ...changes });
+}
+
+/** an arrangement gesture offered for the current multi-selection */
+interface ArrangeAction {
+  label: string;
+  /** the 16x16 icon of the context menu's compact row: lines and bars */
+  icon: { lines: number[][]; rects: number[][] };
+  run: () => void;
+}
+
+/**
+ * The arrangement gestures legal for the selection — the ONE list behind the
+ * context menu's icon row and the action palette's "Arrange" group. Align needs
+ * two blocks/flags, distribute three, straighten a wire between two of them.
+ * `anchor` is the block the menu was opened on: it stays when the wires are
+ * straightened (from the palette, the leftmost of each wired group stays).
+ */
+function arrangeActions(anchor: string | null = null): ArrangeAction[] {
+  if (!draggable()) {
+    return [];
+  }
+  const items = arrangeSelection();
+  if (items.length < 2) {
+    return [];
+  }
+  const align = (op: AlignOp) => (): void =>
+    applyArrange(alignItems(arrangeSelection(), op, GRID), "Already aligned");
+  const out: ArrangeAction[] = [
+    {
+      label: "Align left",
+      icon: { lines: [[2, 1, 2, 15]], rects: [[4, 3, 9, 4], [4, 9, 5, 4]] },
+      run: align("left"),
+    },
+    {
+      label: "Align right",
+      icon: { lines: [[14, 1, 14, 15]], rects: [[3, 3, 9, 4], [7, 9, 5, 4]] },
+      run: align("right"),
+    },
+    {
+      label: "Align top",
+      icon: { lines: [[1, 2, 15, 2]], rects: [[3, 4, 4, 9], [9, 4, 4, 5]] },
+      run: align("top"),
+    },
+    {
+      label: "Align bottom",
+      icon: { lines: [[1, 14, 15, 14]], rects: [[3, 3, 4, 9], [9, 7, 4, 5]] },
+      run: align("bottom"),
+    },
+    {
+      label: "Align centers on a vertical line",
+      icon: { lines: [[8, 1, 8, 15]], rects: [[3, 3, 10, 4], [5, 9, 6, 4]] },
+      run: align("hcenter"),
+    },
+    {
+      label: "Align centers on a horizontal line",
+      icon: { lines: [[1, 8, 15, 8]], rects: [[3, 3, 4, 10], [9, 5, 4, 6]] },
+      run: align("vcenter"),
+    },
+  ];
+  if (items.length >= 3) {
+    out.push(
+      {
+        label: "Distribute horizontally",
+        icon: { lines: [[2, 1, 2, 15], [14, 1, 14, 15]], rects: [[6, 4, 4, 8]] },
+        run: () =>
+          applyArrange(
+            distributeItems(arrangeSelection(), "h", GRID),
+            "Nothing moved: already evenly spaced, or the blocks overlap"
+          ),
+      },
+      {
+        label: "Distribute vertically",
+        icon: { lines: [[1, 2, 15, 2], [1, 14, 15, 14]], rects: [[4, 6, 8, 4]] },
+        run: () =>
+          applyArrange(
+            distributeItems(arrangeSelection(), "v", GRID),
+            "Nothing moved: already evenly spaced, or the blocks overlap"
+          ),
+      }
+    );
+  }
+  if (hasLinks(items, pinLinks())) {
+    out.push({
+      label: "Straighten the wires",
+      icon: { lines: [[5, 8, 11, 8]], rects: [[1, 6, 4, 4], [11, 6, 4, 4]] },
+      run: () => {
+        // every block and flag of the view: a straightened block never lands on one
+        const all: ArrangeItem[] = [];
+        dragEachPos((id) => {
+          const r = rectOf(id);
+          if (r) {
+            all.push({ id, ...r });
+          }
+        });
+        applyArrange(
+          straightenItems(arrangeSelection(), pinLinks(), anchor, GRID, all),
+          "Nothing moved: the wires are straight, or another block is in the way"
+        );
+      },
+    });
+  }
+  return out;
+}
+
 function setQuickMark(slot: number): void {
   const key = layoutKey();
   if (key) {
@@ -4465,6 +4784,31 @@ function paletteItems(): PaletteItem[] {
       }
       if (node && !node.inferred) {
         add("Selection", "What will this generate (I)", () => openCard(selId, true));
+      }
+    }
+  }
+  // docs/08 R7 — a multi-selection of blocks: align / distribute / straighten
+  // (the same list as the context menu's icon row)
+  for (const a of arrangeActions()) {
+    add("Arrange", a.label, a.run);
+  }
+  // docs/08 R9 — several agents selected: their role in one step (the panel's
+  // multi-selection editor, as a one-shot action)
+  if (state.mode === "tb") {
+    const selNodes = (currentTbScene?.nodes ?? []).filter((n) =>
+      state.selection.has(n.id)
+    );
+    for (const g of selNodes.length >= 2 ? multiGroups(state.config, selNodes) : []) {
+      const role = g.kind === "agent" ? g.fields.find((f) => f.id === "active") : undefined;
+      if (!role) {
+        continue;
+      }
+      for (const [value, word] of [["false", "passive"], ["true", "active"]] as const) {
+        if (role.value !== value) {
+          add("Selection", `Set ${g.names.length} agents ${word}`, () =>
+            postAction("editAgents", { names: g.names, field: "active", value })
+          );
+        }
       }
     }
   }
@@ -4902,12 +5246,46 @@ function problemItems(id: string): CtxItem[] {
   return items;
 }
 
-function openCtxMenu(x: number, y: number, items: CtxItem[]): void {
+function openCtxMenu(
+  x: number,
+  y: number,
+  items: CtxItem[],
+  arrange: ArrangeAction[] = []
+): void {
   closeCtxMenu();
-  if (!items.length) {
+  if (!items.length && !arrange.length) {
     return;
   }
   const m = h("div", "ctxmenu");
+  if (arrange.length) {
+    // docs/08 R7 — the arrangement gestures of a multi-selection as ONE compact
+    // row of icons (nine more text rows would bury the element's own actions);
+    // the full names are the tooltips, and the palette lists them as text
+    const row = h("div", "ctxrow");
+    for (const a of arrange) {
+      const b = h("button", "ctxicon");
+      b.title = a.label;
+      b.setAttribute("aria-label", a.label);
+      const svg = el("svg", { viewBox: "0 0 16 16", width: "16", height: "16" });
+      for (const [x1, y1, x2, y2] of a.icon.lines) {
+        svg.append(
+          el("line", { x1: String(x1), y1: String(y1), x2: String(x2), y2: String(y2) })
+        );
+      }
+      for (const [rx, ry, rw, rh] of a.icon.rects) {
+        svg.append(
+          el("rect", { x: String(rx), y: String(ry), width: String(rw), height: String(rh) })
+        );
+      }
+      b.append(svg);
+      b.addEventListener("click", () => {
+        closeCtxMenu();
+        a.run();
+      });
+      row.append(b);
+    }
+    m.append(row);
+  }
   for (const it of items) {
     if (it.info) {
       m.append(h("div", "ctxitem info", it.label)); // a message, not an action
@@ -4946,7 +5324,8 @@ function rtlContextMenu(e: MouseEvent): void {
     postSelection();
     renderInspectorHere();
   }
-  openCtxMenu(e.clientX, e.clientY, items);
+  // docs/08 R7: on a member of a multi-selection, the arrangement row too
+  openCtxMenu(e.clientX, e.clientY, items, arrangeActions(selectId));
 }
 
 /** the actions of an RTL element under `t` (a pin, a block, a fold, the symbol):
@@ -5051,7 +5430,9 @@ canvas.addEventListener("contextmenu", (e) => {
     postSelection();
     renderInspectorHere();
   }
-  openCtxMenu(e.clientX, e.clientY, tbMenuItems(id));
+  // docs/08 R7: on a member of a multi-selection, the arrangement row too
+  // (the clicked block is the one that stays when the wires are straightened)
+  openCtxMenu(e.clientX, e.clientY, tbMenuItems(id), arrangeActions(id));
 });
 
 /** the actions of a TB element — the context menu's items, also the action
@@ -5163,13 +5544,77 @@ function postAction(action: ActionKind, args: Record<string, unknown>): void {
 
 // ---------------------------------------------------------------- render
 
-function showBanner(text: string): void {
-  banner.textContent = text;
+/** an action offered next to a message: a banner's or an empty state's button */
+interface NextAction {
+  label: string;
+  title?: string;
+  run: () => void;
+}
+
+function actionRow(actions: NextAction[], cls: string): HTMLElement {
+  const row = h("span", cls);
+  for (const a of actions) {
+    const b = h("button", "nextbtn", a.label);
+    if (a.title) {
+      b.title = a.title;
+    }
+    b.addEventListener("click", a.run);
+    row.append(b);
+  }
+  return row;
+}
+
+/** the banner on screen speaks about the verification (TB) view: a design
+ *  view must not inherit it (a YAML error is not a statement about the RTL) */
+let bannerIsTb = false;
+
+function showBanner(text: string, actions: NextAction[] = [], tb = false): void {
+  banner.replaceChildren(h("span", "banner-text", text));
+  if (actions.length) {
+    banner.append(actionRow(actions, "banner-actions"));
+  }
   banner.hidden = false;
+  bannerIsTb = tb;
+}
+
+/** the no-model empty state waits this long after the webview starts: the
+ *  model and the first view arrive within it on a normal open */
+const EMPTY_GRACE_MS = 1500;
+const bootAt = performance.now();
+let emptyTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** docs/08 R8 — the empty state names the NEXT ACTION (and offers it as a
+ *  button) instead of only saying that there is nothing here */
+function showEmpty(title: string, hint: string, actions: NextAction[] = []): void {
+  empty.replaceChildren(h("div", "empty-title", title), h("div", "empty-hint", hint));
+  if (actions.length) {
+    empty.append(actionRow(actions, "empty-actions"));
+  }
+  empty.hidden = false;
+}
+
+/** docs/08 R8 — the configuration as text: the per-file editor reopens its own
+ *  tab with the text editor, the panel opens the active configuration beside */
+const OPEN_AS_TEXT: NextAction = {
+  label: "Open as text",
+  title: "Open the configuration file in the text editor",
+  run: () => postAction("openConfigAsText", {}),
+};
+
+/** the banner's sentence for a configuration whose YAML does not parse */
+function configErrorText(tail: string): string {
+  const e = configError;
+  if (!e) {
+    return "";
+  }
+  return `The configuration cannot be read${
+    e.line ? ` (line ${e.line})` : ""
+  }: ${e.message} — ${tail}`;
 }
 
 function hideBanner(): void {
   banner.hidden = true;
+  bannerIsTb = false;
 }
 
 async function render(refit = false): Promise<void> {
@@ -5182,8 +5627,42 @@ async function render(refit = false): Promise<void> {
   if (state.mode === "tb") {
     return renderTb(refit);
   }
+  if (bannerIsTb) {
+    hideBanner(); // back in a design view: the TB view's banner does not follow
+  }
   if (!state.model || !state.viewId) {
-    empty.hidden = false;
+    // docs/08 R8 — no design model: the next action is the top module (or, with
+    // a configuration already there, the verification view, which needs no RTL).
+    // Not in the first moments: every open passes through here before its
+    // model / view arrives, and a "set the top module" flashed on each of them
+    // (the host's placeholder stays up until the grace period is over)
+    const wait = EMPTY_GRACE_MS - (performance.now() - bootAt);
+    if (wait > 0) {
+      empty.hidden = false;
+      clearTimeout(emptyTimer);
+      emptyTimer = setTimeout(() => {
+        if (state.mode !== "tb" && (!state.model || !state.viewId)) {
+          void render();
+        }
+      }, wait + 20);
+      renderInspectorHere();
+      return;
+    }
+    showEmpty(
+      "No design to show yet",
+      "The design appears here once it is elaborated. Set the top module if " +
+        'it is not set; if it is, the "QuickUVM Architect" output channel says ' +
+        "why the elaboration failed.",
+      [
+        {
+          label: "Set top module…",
+          run: () => postAction("setTop", {}),
+        },
+        ...(tbAvailable()
+          ? [{ label: "Open verification view", run: openTbView }]
+          : []),
+      ]
+    );
     renderInspectorHere();
     return;
   }
@@ -5558,7 +6037,12 @@ async function renderTb(refit: boolean): Promise<void> {
     return render(true);
   }
   if (!state.viewId || !state.config) {
-    empty.hidden = false;
+    showEmpty(
+      "No QuickUVM configuration yet",
+      'Select the module to verify in the design view and use "Set as DUT" ' +
+        "— it creates the configuration.",
+      state.model ? [{ label: "Open the design views", run: leaveTbView }] : []
+    );
     renderInspectorHere();
     return;
   }
@@ -5567,13 +6051,26 @@ async function renderTb(refit: boolean): Promise<void> {
   currentPins = [];
   // the current level (D24): "" testbench, "env", "agent:X". On a nonexistent
   // focus (config changed), it falls onto the root.
-  let scene = buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved, childConfigs);
-  if (!scene && state.tbFocus !== "") {
-    // the focus level disappeared (config changed): it falls onto the root and
-    // notifies the host, so that the reveal from the tree does not stay on the old level
-    state.tbFocus = "";
-    post({ v: 1, type: "tb/focus", focus: "", select: null });
-    scene = buildTbScene(state.config, "", state.configPath, state.resolved, childConfigs);
+  // docs/08 R8 — the scene builder trusts the config's SHAPE (lists of
+  // mappings). Valid YAML can break that — a bare `-` is a null entry, `agents:
+  // foo` a string — and a throw here used to leave the previous diagram on
+  // screen with no banner, gestures acting on boxes the file no longer has.
+  // The host names the entry in `parseError` when it can; this is the wall for
+  // any shape it does not check.
+  let scene: ReturnType<typeof buildTbScene> = null;
+  let unreadable = false;
+  try {
+    scene = buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved, childConfigs);
+    if (!scene && state.tbFocus !== "") {
+      // the focus level disappeared (config changed): it falls onto the root and
+      // notifies the host, so that the reveal from the tree does not stay on the old level
+      state.tbFocus = "";
+      post({ v: 1, type: "tb/focus", focus: "", select: null });
+      scene = buildTbScene(state.config, "", state.configPath, state.resolved, childConfigs);
+    }
+  } catch {
+    scene = null;
+    unreadable = true;
   }
   if (!scene) {
     currentScene = null;
@@ -5583,14 +6080,50 @@ async function renderTb(refit: boolean): Promise<void> {
     currentTbLayout = null;
     renderTbHeader(null);
     resetCanvas();
-    showBanner(
-      'The QuickUVM configuration has nothing to draw yet — use "Set as DUT" first.'
-    );
+    if (configError || unreadable) {
+      // docs/08 R8 — a file that does not parse is not "empty": say what is
+      // wrong and where, and offer the editor that can fix it
+      showBanner(
+        configError
+          ? configErrorText("nothing could be drawn.")
+          : "The configuration has an entry the diagram cannot read (an empty " +
+              "list item?) — nothing could be drawn.",
+        [OPEN_AS_TEXT],
+        true
+      );
+      empty.hidden = true;
+    } else {
+      hideBanner();
+      showEmpty(
+        "Nothing to draw yet",
+        "This configuration declares no DUT, agent or composed block. " +
+          (state.model
+            ? 'Select the module to verify in the design view and use "Set as DUT"'
+            : 'Use "Set as DUT" on a module in the design view') +
+          ", or write the dut: section by hand.",
+        [
+          ...(state.model
+            ? [{ label: "Open the design views", run: leaveTbView }]
+            : []),
+          OPEN_AS_TEXT,
+        ]
+      );
+    }
     renderInspectorHere();
     return;
   }
   renderTbHeader(scene);
-  hideBanner();
+  if (configError) {
+    // docs/08 R8 — the YAML is broken but part of it reads: the diagram shows
+    // that part, and says it is not the whole file
+    showBanner(
+      configErrorText("the diagram shows only what could be read."),
+      [OPEN_AS_TEXT],
+      true
+    );
+  } else {
+    hideBanner();
+  }
   applyPendingRename(scene); // docs/08 R14: the carried seeds must exist before they are read
   // the user-owned positions (per level) become seeds for interactive
   // ELK (docs/04, the same D21 mechanics as the RTL schematic view)
@@ -5632,7 +6165,11 @@ async function renderTb(refit: boolean): Promise<void> {
     if (gen !== renderGen) {
       return;
     }
-    showBanner("Could not lay out the verification view for this configuration.");
+    showBanner(
+      "Could not lay out the verification view for this configuration.",
+      [OPEN_AS_TEXT],
+      true
+    );
     return;
   }
   if (gen !== renderGen) {

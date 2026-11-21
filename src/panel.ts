@@ -54,6 +54,8 @@ export interface PanelDeps {
     /** docs/07 — the effective topology from `quick-uvm resolve`, which is what
      *  lets the view draw the components the generator infers (src/resolved.ts) */
     resolved?: ResolvedConfig | null;
+    /** docs/08 R8 — the YAML does not parse: `config` is what could be read */
+    parseError?: { message: string; line: number | null } | null;
   };
   /** the quick-uvm status decorations (docs/05): validations + the last generate;
    *  plus the generation-state element ids (docs/07 line 1) */
@@ -278,13 +280,11 @@ export class DiagramPanel {
   postUiConfig(): void {
     if (this.ready) {
       const cfg = vscode.workspace.getConfiguration("quickuvm");
-      const lasso: LassoMode =
-        cfg.get<string>("lassoMode", "contain") === "intersect"
-          ? "intersect"
-          : "contain";
+      const lasso = lassoSetting(cfg);
       const decorations = cfg.get<boolean>("schematicDecorations", true);
       const codeFollow = cfg.get<boolean>("codeFollowsSelection", false);
-      this.post({ v: 1, type: "ui/config", lasso, decorations, codeFollow });
+      const lodThreshold = lodThresholdSetting(cfg);
+      this.post({ v: 1, type: "ui/config", lasso, decorations, codeFollow, lodThreshold });
     }
   }
 
@@ -502,6 +502,23 @@ export class DiagramPanel {
   private html(): string {
     return diagramHtml(this.panel.webview, this.context.extensionUri);
   }
+}
+
+/** `quickuvm.lassoMode` as the webview's `LassoMode`; anything unknown is the
+ *  default. Shared by the panel and the per-file editor (one rule, two hosts). */
+export function lassoSetting(cfg: vscode.WorkspaceConfiguration): LassoMode {
+  const v = cfg.get<string>("lassoMode", "contain");
+  return v === "intersect" || v === "direction" ? v : "contain";
+}
+
+/** docs/08 R6 — `quickuvm.lodZoomThreshold`, clamped to 2 (0 switches the
+ *  overview level off). The level is left only above threshold x 1.15 and the
+ *  zoom stops at 5, so a threshold near that cap could be entered and never
+ *  left; nothing above 100 % is a sensible "too small to read" anyway. Shared
+ *  by the panel and the per-file editor, so the two read one rule. */
+export function lodThresholdSetting(cfg: vscode.WorkspaceConfiguration): number {
+  const v = cfg.get<number>("lodZoomThreshold", 0.5);
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? Math.min(v, 2) : 0;
 }
 
 /** The HTML of the diagram webview, shared by the panel and the CustomTextEditor. */

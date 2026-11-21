@@ -1422,6 +1422,8 @@ text.split-sign {
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 .wirehint.toast { animation: wirehint-fade 1.8s forwards; }
+/* a notice, not a refusal (docs/08 R7: "already aligned") */
+.wirehint.note { color: var(--vscode-foreground); }
 @keyframes wirehint-fade {
   0%, 70% { opacity: 1; }
   100% { opacity: 0; }
@@ -1631,3 +1633,130 @@ text.split-sign {
   fill: var(--vscode-descriptionForeground, #999);
   stroke: none;
 }
+
+/* --------------------------------- level of detail on zoom (docs/08 R6) */
+/* Below the zoom threshold main.ts sets `data-lod="low"` on the canvas (with
+   hysteresis) and a multi-node view draws the overview: boxes, titles, wires,
+   boundary flags, junctions and the status / generation badges — a problem is
+   never hidden. What goes is the text nobody can read at that size.
+   `#canvas` is in every selector on purpose: the SVG export clones the canvas
+   WITHOUT its id, so a file exported at the overview level still carries the
+   full detail. `display: none`, not opacity: nothing is re-laid out either way
+   (SVG text is positioned absolutely), and hidden text must take no pointer
+   events. A selected or cross-probed pin, and a selected net label, keep their
+   text: the selection says which one you asked about. */
+#canvas[data-lod="low"] .pin:not(.selected):not(.xprobe) text.pin-label,
+#canvas[data-lod="low"] text.netlabel:not(.selected),
+#canvas[data-lod="low"] text.conn-note,
+#canvas[data-lod="low"] .const-box,
+#canvas[data-lod="low"] .const-val,
+#canvas[data-lod="low"] .split-join,
+#canvas[data-lod="low"] .split-sign,
+#canvas[data-lod="low"] .bus-slash,
+#canvas[data-lod="low"] .mult,
+#canvas[data-lod="low"] .nc,
+#canvas[data-lod="low"] .inode-sub,
+#canvas[data-lod="low"] .tb-comp,
+#canvas[data-lod="low"] .tb-comp-title,
+#canvas[data-lod="low"] .tb-sep,
+#canvas[data-lod="low"] .tb-stereotype,
+#canvas[data-lod="low"] .tb-pin,
+#canvas[data-lod="low"] .tb-widget {
+  display: none;
+}
+/* the title, enlarged to fill its box and centred in it: the transform comes
+   per title from main.ts (`--lod-title`, fitted to the box), and applies only
+   at the overview level */
+#canvas[data-lod="low"] .tbnode > .tb-name,
+#canvas[data-lod="low"] .inode > .inode-name {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: var(--lod-title, none);
+}
+/* the enlarged title covers most of its box: it must not take the press there.
+   At full detail a double-click on the title renames (R14); at the overview
+   level the box's double-click is the DRILL, and the I-beam would lie */
+#canvas[data-lod="low"] .tbnode > .tb-name {
+  pointer-events: none;
+  cursor: inherit;
+}
+
+/* ------------------------- marquee modifiers + arrange row (docs/08 R7) */
+/* a crossing lasso (also what it merely touches) is drawn long-dashed, a
+   window (only what it encloses) keeps the base stroke; a subtracting lasso
+   (Ctrl+Shift) takes the error colour, so the rectangle says what the release does */
+.marquee.crossing { stroke-dasharray: 8 4; fill-opacity: 0.14; }
+.marquee.subtract {
+  fill: var(--vscode-errorForeground, #f14c4c);
+  stroke: var(--vscode-errorForeground, #f14c4c);
+}
+/* the arrangement gestures of a multi-selection: one row of icon buttons at
+   the top of the context menu (the full names are the tooltips) */
+.ctxrow {
+  display: flex;
+  gap: 2px;
+  padding: 2px 4px 4px;
+  margin-bottom: 4px;
+  border-bottom: 1px solid var(--vscode-editorWidget-border, var(--vscode-panel-border));
+}
+.ctxicon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--vscode-foreground);
+  cursor: pointer;
+}
+.ctxicon:hover { background: var(--vscode-list-hoverBackground); }
+.ctxicon svg line { stroke: currentColor; stroke-width: 1.2; }
+.ctxicon svg rect { fill: currentColor; opacity: 0.75; }
+
+/* --------------------- banner actions + empty state (docs/08 R8) */
+/* a banner can offer its way out ("Open as text" on a configuration that does
+   not parse); an empty state names the next action and offers it as a button */
+#banner {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+#banner[hidden] { display: none; }
+#banner .banner-text { flex: 1 1 240px; min-width: 0; }
+#banner .banner-actions,
+#empty .empty-actions {
+  display: inline-flex;
+  gap: 6px;
+  flex: none;
+}
+.nextbtn {
+  padding: 2px 10px;
+  border: 1px solid var(--vscode-button-border, transparent);
+  border-radius: 2px;
+  background: var(--vscode-button-secondaryBackground, var(--vscode-button-background));
+  color: var(--vscode-button-secondaryForeground, var(--vscode-button-foreground));
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.nextbtn:hover {
+  background: var(--vscode-button-secondaryHoverBackground, var(--vscode-button-hoverBackground));
+}
+#empty { opacity: 1; padding: 0 24px; box-sizing: border-box; }
+#empty .empty-title { font-size: 14px; font-weight: 600; opacity: 0.85; }
+#empty .empty-hint {
+  max-width: 520px;
+  margin: 6px auto 12px;
+  line-height: 1.5;
+  opacity: 0.7;
+}
+#empty .empty-actions { justify-content: center; }
+
+/* ------------------------- multi-selection editing (docs/08 R9) */
+/* a field whose value differs across the selected components: dimmed italic,
+   so "mixed" never reads as a value */
+#inspector .prop-mixed { font-style: italic; opacity: 0.8; }

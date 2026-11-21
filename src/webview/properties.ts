@@ -90,9 +90,17 @@ function render(): void {
   }
   // Both scenes come from the same pure builders the diagram uses, so the two
   // surfaces cannot disagree about what exists.
-  const tbScene = state.config
-    ? (buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved) ?? undefined)
-    : undefined;
+  // a config whose shape the scene builder cannot read (a bare `-` is a null
+  // list entry) must not take the whole panel down with it: no TB scene, the
+  // diagram's banner says why (docs/08 R8)
+  let tbScene: ReturnType<typeof buildTbScene> | undefined;
+  try {
+    tbScene = state.config
+      ? (buildTbScene(state.config, state.tbFocus, state.configPath, state.resolved) ?? undefined)
+      : undefined;
+  } catch {
+    tbScene = undefined;
+  }
   const viewId = state.viewId;
   // A LEAF module has no `views` entry, so "Open Schematic View" on one leaves the host
   // reporting mode "schematic" while the DIAGRAM has fallen back to drawing the symbol
@@ -125,7 +133,11 @@ function render(): void {
         ]
       : undefined;
 
-  renderInspector({
+  // docs/08 R8 — the inspector's editors dereference the config's entries
+  // too; on a file whose shape cannot be read the panel says so instead of
+  // dying half-built (the diagram's banner names the entry and offers the text)
+  try {
+    renderInspector({
     root,
     state,
     tbScene,
@@ -157,7 +169,15 @@ function render(): void {
     hasSchematic: (_model, v) => Boolean(state.model && hasSchematic(state.model, v)),
     navigateTo: (v, mode) =>
       post({ v: 1, type: "nav/drill", instancePath: v, mode }),
-  });
+    });
+  } catch {
+    const note = document.createElement("div");
+    note.className = "note";
+    note.textContent =
+      "The configuration cannot be read as it is. Open it as text to fix it " +
+      "— the diagram's banner says where.";
+    root.replaceChildren(note);
+  }
 }
 
 window.addEventListener("message", (event: MessageEvent<HostMessage>) => {

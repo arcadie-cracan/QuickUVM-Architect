@@ -139,7 +139,10 @@ export function parseQuvm(text: string): QuvmConfig {
     // still accepted): mirrored here, so the scene, the wire's "one driver per
     // input" rule and the composition planner read ONE shape (review finding —
     // a hand-written `src/dst` entry was invisible to all three)
-    for (const c of cfg.connections ?? []) {
+    // only a LIST is walked: `connections: 5` is valid YAML, and iterating it
+    // threw into the catch below, which answered `{}` — a file that declares a
+    // DUT and agents then read as an empty bench (review finding)
+    for (const c of Array.isArray(cfg.connections) ? cfg.connections : []) {
       if (c && typeof c === "object") {
         if (c.from === undefined && typeof c.src === "string") {
           c.from = c.src;
@@ -153,6 +156,130 @@ export function parseQuvm(text: string): QuvmConfig {
   } catch {
     return {};
   }
+}
+
+/** docs/08 R8 — why a configuration text cannot be read as a QuickUVM config */
+export interface QuvmParseError {
+  /** one line, without the parser's own "at line N, column M" tail */
+  message: string;
+  /** 1-based line of the problem, when the parser knows it */
+  line: number | null;
+}
+
+/**
+ * The first reason `text` is not a readable QuickUVM configuration, or null:
+ * a YAML syntax error (the parser's first one — the later ones are usually its
+ * echoes), or a top level that is not a mapping. `parseQuvm` still returns
+ * whatever could be read; this is what tells the diagram to SAY that what it
+ * draws is partial, and to offer the text editor (docs/08 R8).
+ */
+export function quvmParseError(text: string): QuvmParseError | null {
+  let doc: ReturnType<typeof parseDocument>;
+  try {
+    doc = parseDocument(text);
+  } catch (e) {
+    return { message: e instanceof Error ? e.message : String(e), line: null };
+  }
+  return docParseError(doc, text);
+}
+
+/** `quvmParseError` on an already parsed document (ConfigService parses once);
+ *  `text` is the source it was parsed from, for the line of a shape error */
+export function docParseError(
+  doc: ReturnType<typeof parseDocument>,
+  text = ""
+): QuvmParseError | null {
+  const err = doc.errors[0];
+  if (err) {
+    return {
+      message: err.message
+        .split("\n")[0]
+        .replace(/\s+at line \d+, column \d+:?\s*$/, "")
+        .trim(),
+      line: err.linePos?.[0]?.line ?? null,
+    };
+  }
+  let js: unknown;
+  try {
+    js = doc.toJS();
+  } catch (e) {
+    return { message: e instanceof Error ? e.message : String(e), line: null };
+  }
+  if (js !== null && js !== undefined && (typeof js !== "object" || Array.isArray(js))) {
+    return { message: "the top level must be a mapping (key: value)", line: 1 };
+  }
+  return shapeError(doc, js as Record<string, unknown> | null | undefined, text);
+}
+
+/** the sections every reader of a config walks as LISTS OF MAPPINGS */
+const MAPPING_LISTS: readonly (readonly string[])[] = [
+  ["agents"],
+  ["subenvs"],
+  ["connections"],
+  ["probes"],
+  ["virtual_sequences"],
+  ["tests"],
+  ["analysis", "scoreboards"],
+];
+
+/**
+ * Valid YAML whose SHAPE no reader of a config can walk: a section that is not
+ * a list, or a list entry that is not a mapping. The common one is a bare `-`
+ * typed as the start of a new entry — it parses, to `null`. The diagram's scene
+ * builder, the inspector and the validations all dereference these entries, so
+ * the file is reported as unreadable (with the section and the entry) rather
+ * than left to throw somewhere downstream.
+ */
+function shapeError(
+  doc: ReturnType<typeof parseDocument>,
+  js: Record<string, unknown> | null | undefined,
+  text: string
+): QuvmParseError | null {
+  if (!js) {
+    return null;
+  }
+  for (const path of MAPPING_LISTS) {
+    let v: unknown = js;
+    for (const key of path) {
+      v = v !== null && typeof v === "object" ? (v as Record<string, unknown>)[key] : undefined;
+    }
+    if (v === undefined || v === null) {
+      continue;
+    }
+    const name = path.join(".");
+    const lineOf = (p: readonly (string | number)[]): number | null => {
+      const node = doc.getIn(p, true) as { range?: [number, number, number] } | undefined;
+      const start = node?.range?.[0];
+      return typeof start === "number" ? lineAt(text, start) : null;
+    };
+    if (!Array.isArray(v)) {
+      return { message: `${name} must be a list`, line: lineOf(path) };
+    }
+    const bad = v.findIndex((e) => e === null || typeof e !== "object" || Array.isArray(e));
+    if (bad >= 0) {
+      return {
+        message: `${name}: entry ${bad + 1} is ${
+          v[bad] === null ? "empty" : "not a mapping (key: value)"
+        }`,
+        line: lineOf([...path, bad]) ?? lineOf(path),
+      };
+    }
+  }
+  return null;
+}
+
+/** the 1-based line of a character offset in `text` */
+function lineAt(text: string, offset: number): number | null {
+  if (!text) {
+    return null;
+  }
+  let line = 1;
+  for (let i = 0; i < offset && i < text.length; i++) {
+    if (text.charCodeAt(i) === 10) {
+      line++;
+    }
+  }
+  return line;
 }
 
 /** The skeleton of a new configuration; dut/agents come from the dedicated operations. */
