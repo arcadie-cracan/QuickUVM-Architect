@@ -1207,5 +1207,10 @@ elements flagged), `quickuvm.traceabilityReport`; `src/trace.ts` +
 cleanly and did not elaborate. `setDut` now writes `reset: {external: true}`
 (derived), old configs get the `reset-undriven` error with its repair, and
 `test:e2e` lints every generated top; see the pitfall above. "MVP validated"
-means validated against the generator — a simulator compile is the user's.
+means validated against the generator — a simulator compile is the user's. The
+tutorial bench WAS then compiled and simulated (Xcelium 25.09-s002, 21 Nov
+2026): it elaborates and, with the stub-predictor scoreboard removed, runs to
+`$finish` with 0 errors; the old shape reproduces `*E,CUVUNF`. The table, and
+the generator-side fix prototyped on QuickUVM's local branch
+`fix/undriven-reset`, are in `docs/upstream-quickuvm-reset-undriven.md`.
 Planul complet: `docs/06-plan-mvp.md`.

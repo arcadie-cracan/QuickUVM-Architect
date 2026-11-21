@@ -201,8 +201,31 @@ uses is declared; it runs over every example, next to the type-shadowing gate),
 
 Not covered by it: the `.qvip` manifest does not record whether the VIP's
 interfaces take the reset, so a stale VIP and a regenerated consumer can still
-disagree; and nothing was compiled by a simulator — `scripts/xrun_gate.sh` on
-the Linux host is the check that counts.
+disagree. `scripts/xrun_gate.sh` (every example, `xrun -compile`) was not run:
+the examples regenerate byte-identically, so it would compile the same text as
+on `main`.
+
+## On the simulator
+
+Xcelium 25.09-s002, 2026-11-21, `xrun -uvm -access +rwc -top tb_top -f run.f
++UVM_TESTNAME=<test>` — compile, elaborate and simulate. The tutorial benches
+use the real `examples-yapp/yapp_buffer.sv` in place of the generated stub.
+
+| bench | generator | result |
+|---|---|---|
+| tutorial, as Architect writes it now (`external: true`) | 1.1.0 | elaborates, runs; stops at 65 ns on the generator's own `UNFILLED_PREDICTOR` guard (the reference-model seam is a stub) — the first transaction after the 5-clock reset reached the scoreboard |
+| the same, scoreboard removed (coverage only) | 1.1.0 | **runs to completion**: `$finish` at 1065 ns, 0 UVM errors, 0 fatals |
+| tutorial, OLD shape (no `reset:` block) | 1.1.0 | `xmelab: *E,CUVUNF (./tb_top.sv,35|27): Hierarchical name component lookup failed for 'rst_n' at 'tb_top'.` — the original failure, reproduced |
+| tutorial, OLD shape | prototype | elaborates and runs exactly like the first row (65 ns, the predictor guard) |
+| OLD shape, scoreboard removed | prototype | **runs to completion**: `$finish` at 1065 ns, 0 errors, 0 fatals |
+| composition, two clocked leaves, reset unset | 1.1.0 | elaborates with `*W,CUVWSI … 1 input port was not connected: rst_n` on each leaf; the first transaction is at **15 ns** — the leaves are never reset |
+| the same composition | prototype | no warning; the first transaction is at **65 ns**, after the generated per-leaf reset |
+| `kind: selftest` + `external: true` | 1.1.0 | `*W,CUVWSI … 1 input port was not connected` (`rst_n`), then **hangs** after `Running test test1...` — killed after 90 s |
+| the same selftest | prototype | runs past the reset to the predictor guard at 65 ns |
+
+The explicit-`external` tutorial bench is byte-identical between 1.1.0 and the
+prototype, so it was simulated once. What this does NOT show: a scoreboard
+passing — that needs the user's reference model in the `prediction_logic` seam.
 
 ## What Architect does, with either generator
 
