@@ -48,24 +48,33 @@ export function parentComposition(
   if (!parent) {
     return null; // top module: no parent
   }
-  const p = parent;
-  const childRels: string[] = [];
+  return { parentPath: parent.path, childRels: directBlockChildren(model, parent.path) };
+}
+
+/**
+ * The rels of an instance's DIRECT block children (no other instance between
+ * them and it — a generate member `g_ch[0].u_ch` is direct, its own children
+ * are not). Interfaces are not blocks. Shared by "Compose into parent bench"
+ * and the composition template (docs/08 R24).
+ */
+export function directBlockChildren(model: ProjectModel, parentPath: string): string[] {
+  const rels: string[] = [];
   for (const i of model.instances) {
-    if (i.iface || !i.path.startsWith(`${p.path}.`)) {
+    if (i.iface || !i.path.startsWith(`${parentPath}.`)) {
       continue;
     }
     const between = model.instances.some(
       (j) =>
-        j.path !== p.path &&
+        j.path !== parentPath &&
         j.path !== i.path &&
-        j.path.startsWith(`${p.path}.`) &&
+        j.path.startsWith(`${parentPath}.`) &&
         i.path.startsWith(`${j.path}.`)
     );
     if (!between) {
-      childRels.push(i.path.slice(p.path.length + 1));
+      rels.push(i.path.slice(parentPath.length + 1));
     }
   }
-  return { parentPath: p.path, childRels };
+  return rels;
 }
 
 /** `g_ch[1].u_ch` -> `g_ch_1_u_ch` (SV identifier for subenvs[].name) */

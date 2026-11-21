@@ -66,5 +66,11 @@
   "view.verification.name": "Verification Hierarchy",
   "welcome.hierarchy": "No project model yet.\n[Set Top Module](command:quickuvm.setTop)\n[Load Model](command:quickuvm.reloadModel)\nSources are discovered via Bender.yml, a .f file list (the quickuvm.fileList setting) or a glob (quickuvm.sourceGlob).",
   "welcome.verification": "No QuickUVM testbench configured yet.\nSelect the DUT in Design Hierarchy, then press \"Set as DUT\" in the Properties panel — the verification environment appears here.",
-  "welcome.verificationEmpty": "The configuration has no components yet.\nSelect ports in the design view and press \"Agent from selection\" in the Properties panel.\n[Open Verification View](command:quickuvm.openVerificationView)"
+  "welcome.verificationEmpty": "The configuration has no components yet.\nSelect ports in the design view and press \"Agent from selection\" in the Properties panel.\n[Open Verification View](command:quickuvm.openVerificationView)",
+  "cmd.newTestbench": "New Testbench…",
+  "cmd.addClockDomain": "Add Clock Domain",
+  "cmd.addResetDomain": "Add Reset Domain",
+  "view.signals.name": "Signals",
+  "view.signals.contextualTitle": "QuickUVM Architect — clocks and resets",
+  "welcome.signals": "The clock and reset domains of the active testbench appear here, with the agents on each.\nDrag an agent onto a domain to assign it.\n[New Testbench…](command:quickuvm.newTestbench)"
 }

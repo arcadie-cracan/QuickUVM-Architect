@@ -1165,4 +1165,100 @@ endpackage
   console.log("  ok    VIP: referinta poarta DOAR name + from_vip (restul: REFUZ)");
 }
 
+// --- scenario 15 (docs/08 R24): the "New testbench" TEMPLATES. Each plan is a fold
+// of the mutations above over a new skeleton; here each one is generated for real —
+// a template that writes a config quick-uvm refuses is worse than no template.
+{
+  await esbuild.build({
+    entryPoints: ["src/templates.ts"],
+    outfile: join(outDir, "templates.mjs"),
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    logLevel: "silent",
+    banner: {
+      js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);",
+    },
+  });
+  const T = await import(pathToFileURL(join(outDir, "templates.mjs")));
+  const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
+  const port = (name, dir, width = 1) => ({
+    name, dir, type: "logic", width, unpacked_dims: null, elem_width: null, loc: null,
+  });
+  const tbTop = (dir) =>
+    readFileSync(listFiles(join(dir, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8");
+
+  // one agent per interface, on the regression design
+  const iface = T.planTemplate(model, "demo_top.u_soc", "per-interface");
+  generate("tpl_per_interface", iface.text, ["bus_if.sv", "tb_top.sv"]);
+
+  // one agent per clock domain: two clocks, two resets, each agent on its own
+  const cdc = {
+    schema_version: 1,
+    tops: ["cdc_fifo"],
+    modules: {
+      cdc_fifo: {
+        ports: [
+          port("src_clk_i", "in"), port("src_rst_ni", "in"),
+          port("src_data_i", "in", 8), port("src_valid_i", "in"), port("src_ready_o", "out"),
+          port("dst_clk_i", "in"), port("dst_rst_ni", "in"),
+          port("dst_data_o", "out", 8), port("dst_valid_o", "out"), port("dst_ready_i", "in"),
+        ],
+        iface_ports: [],
+        loc: null,
+      },
+    },
+    instances: [{ path: "cdc_fifo", module: "cdc_fifo", params: {}, loc: null }],
+    views: {},
+  };
+  const clk = T.planTemplate(cdc, "cdc_fifo", "per-clock");
+  const clkTop = tbTop(generate("tpl_per_clock", clk.text, ["clkgen.sv", "src_if.sv", "dst_if.sv"]));
+  assert.match(clkTop, /src_if src_if_inst \(\.clk\(src_clk_i\), \.src_rst_ni\(src_rst_ni\)\)/);
+  assert.match(clkTop, /dst_if dst_if_inst \(\.clk\(dst_clk_i\), \.dst_rst_ni\(dst_rst_ni\)\)/,
+    "each agent's interface is on ITS clock and reset");
+  assert.match(clkTop, /\.dst_rst_ni\(dst_rst_ni\)\s*\)/, "both resets reach the DUT");
+
+  // the fact the Signals view's "Unconnected" folder states: an agent with no
+  // `clock:` of its own lands on the FIRST domain of the list
+  const loose = ops.setAgentField(ops.setAgentField(clk.text, "dst", "clock", ""), "dst", "reset", "");
+  assert.match(tbTop(generate("tpl_unassigned", loose, ["tb_top.sv"])),
+    /dst_if dst_if_inst \(\.clk\(src_clk_i\), \.src_rst_ni\(src_rst_ni\)\)/,
+    "quick-uvm no longer puts an unassigned agent on the first domain — the Signals view's folder lies");
+
+  // composition from the sub-blocks, on the regression design: 5 subenvs, 3 block
+  // configs with a boundary agent each
+  const comp = T.planTemplate(model, "demo_top.u_soc", "composition");
+  generate("soc_top", comp.text, ["tb_top.sv"],
+    Object.fromEntries(comp.children.map((c) => [c.file, c.text])));
+
+  // ... and with a connection the design draws: the physical assign, the
+  // destination's agent passive (an active one is refused — scenario 6)
+  const sys = {
+    schema_version: 1,
+    tops: ["sys"],
+    modules: {
+      sys: { ports: [port("din", "in", 8), port("dout", "out", 8)], iface_ports: [], loc: null },
+      prod: { ports: [port("d_i", "in", 8), port("q_o", "out", 8)], iface_ports: [], loc: null },
+      cons: { ports: [port("d_i", "in", 8), port("q_o", "out", 8)], iface_ports: [], loc: null },
+    },
+    instances: [
+      { path: "sys", module: "sys", params: {}, loc: null },
+      { path: "sys.u_p", module: "prod", params: {}, loc: null },
+      { path: "sys.u_c", module: "cons", params: {}, loc: null },
+    ],
+    views: {
+      sys: {
+        module: "sys",
+        pins: [],
+        nets: [{ name: "mid", endpoints: ["u_p.q_o", "u_c.d_i"], fanout: 1, render: "wire" }],
+      },
+    },
+  };
+  const wired = T.planTemplate(sys, "sys", "composition");
+  const wiredTop = tbTop(generate("sys", wired.text, ["tb_top.sv"],
+    Object.fromEntries(wired.children.map((c) => [c.file, c.text]))));
+  assert.match(wiredTop, /assign\s+\S*d_i\s*=\s*\S*q_o/, "the connection is a physical assign in tb_top");
+  console.log("  ok    templates: per-interface, per-clock (+ the unassigned default), composition (+ wired)");
+}
+
 console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");

@@ -205,5 +205,17 @@
   "QuickUVM Architect: the code view follows the selection": "QuickUVM Architect: vederea de cod urmărește selecția",
   "QuickUVM Architect: the code view no longer follows the selection": "QuickUVM Architect: vederea de cod nu mai urmărește selecția",
   "Connect {0} → {1}": "Conectează {0} → {1}",
-  "QuickUVM Architect: connections are wired from the diagram panel of the active configuration.": "QuickUVM Architect: conexiunile se cablează din panelul-diagramă al configurației active."
+  "QuickUVM Architect: connections are wired from the diagram panel of the active configuration.": "QuickUVM Architect: conexiunile se cablează din panelul-diagramă al configurației active.",
+  "Open it": "Deschide-l",
+  "QuickUVM Architect: {0} already exists — a template never overwrites a configuration.": "QuickUVM Architect: {0} există deja — un șablon nu suprascrie niciodată o configurație.",
+  "not for this module": "nu pentru acest modul",
+  "New testbench for {0}": "Testbench nou pentru {0}",
+  "Choose a starting point — nothing is written before you confirm": "Alege un punct de plecare — nu se scrie nimic înainte să confirmi",
+  "QuickUVM Architect: this template does not apply to {0} — {1}.": "QuickUVM Architect: șablonul nu se aplică la {0} — {1}.",
+  "Create {0} ({1} file(s)) from the template?": "Creezi {0} ({1} fișier(e)) din șablon?",
+  "Left out:": "Lăsate deoparte:",
+  "New testbench: {0}": "Testbench nou: {0}",
+  "QuickUVM Architect: could not create the testbench files.": "QuickUVM Architect: fișierele testbench-ului nu au putut fi create.",
+  "QuickUVM Architect: {0} created and made the active configuration{1}.": "QuickUVM Architect: {0} a fost creat și e acum configurația activă{1}.",
+  " — {0} note(s) in the Output panel": " — {0} observație(i) în panoul Output"
 }

@@ -47,6 +47,8 @@ export interface UiConfig {
 /** Actions requested by the webview that touch the YAML or the sources (doc. 05). */
 export type ActionKind =
   | "setDut"
+  // docs/08 R24 — a bench for the view's module from a template (the host asks which)
+  | "newTestbench"
   | "createAgentFromPins"
   | "createAgentFromIface"
   | "createSubenv"

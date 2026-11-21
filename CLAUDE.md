@@ -124,6 +124,8 @@ npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (do
 npm run test:wiring      # the temporary-wire rules (docs/08 R10/R11): origins, legality, drop outcomes
 npm run test:arrange     # selection / arrangement geometry (docs/08 R7): marquee modifiers, lasso rules, align, distribute, straighten
 npm run test:annotations # secondary notation (docs/08 R21): frames as member lists, notes, colours, the drop-into-frame test, note wrapping
+npm run test:templates   # "New testbench" templates (docs/08 R24): per interface, per clock domain, composition — what each plan writes and what it leaves out
+npm run test:signals     # the Signals view's model (docs/08 R24): clock / reset domains with their agents, the Unconnected folder, what a drop writes
 npm run test:matrix      # the matrix editor's model (docs/08 R22): agents x scoreboards/coverage, block outputs x inputs, cell legality
 npm run test:filters     # per-view filter rules (docs/08 R23): matching, first-rule-wins, wires with their ends, sanitising, unsafe patterns, the indicator
 npm run test:proposals   # designer assistance (docs/08 R12): interfaces/pin groups without an agent, unwired subsystems, inferred ghosts
@@ -1110,6 +1112,43 @@ coliziunea de nume.
   path of `renderTb` calls `applyFiltersHere` (the header was rebuilt, the
   old drawing with its hidden elements is still on screen).
 
+- **"New testbench" templates and the Signals view (docs/08 R24)**: a
+  template is a FOLD of the existing mutations over `newConfigText`
+  (`src/templates.ts`, pure) — `setDut`, `createAgent`, `addClockDomain`,
+  `addResetDomain`, `createSubenvs`, `planWireEdits`. Never write template YAML
+  by hand: the row's risk ("keys the user did not ask for") is answered by
+  there being no second way to produce the text, and `test:templates` locks
+  the top-level key set of each plan. Probed on quick-uvm 1.1.0 before the
+  design: `interface` and `sequence_item` are REQUIRED on an agent
+  (`createAgent` writes them); two clock domains + two reset domains (each
+  entry with its `clock:`) + agents with `clock:` / `reset:` generate clean,
+  and tb_top wires BOTH resets to the DUT; the clock domain names must be the
+  DUT's clock PORT names (tb_top connects `.name(name)`); an agent with no
+  `clock:` under a list lands on the FIRST entry of the list, whatever
+  `dut.clock` says — the Signals view's "Unconnected" folder states exactly
+  that, and `test:e2e` (scenario 15) fails if the generator changes it.
+  `dutGuess` is the ONE DUT heuristic ("Set as DUT", the subenv skeletons, the
+  templates); a reset is a 1-bit input that matches the reset regex and NOT
+  the clock one. The per-clock template assigns pins by the clock's name TAG
+  (`domainTag`: `src_clk_i` → `src`, a fused `wclk` → `w` as a bare prefix);
+  what no tag claims goes to an untagged clock's domain if there is one, else
+  it is NAMED in the notes — a template never guesses silently, and every
+  plan carries `notes` shown before a file exists (`confirmGesture` kind
+  `create`: asked in every `previewEdits` mode, even for one file). The
+  composition's block configs get ONE boundary agent `<module>_a` (the module
+  name is in it: composed blocks share a namespace) — the R12 prefix groups
+  would leave unprefixed pins without an agent, and a connection wires agent
+  ports; no `params:` are passed (a block agent would have to declare
+  `parameters:`), the elaborated widths are used and the note says so. An
+  existing block config is never recreated: it is in the plan only if the
+  wiring edited it (an agent set passive). The host never overwrites
+  `<module>.quickuvm.yaml` and creates files WITHOUT `ignoreIfExists` (a file
+  that appeared meanwhile fails the edit). `SignalsProvider` is created before
+  `actions` in `activate` — its `assign` callback binds late. A drop's value
+  crosses a serialisation boundary (a JSON string when it leaves the extension
+  host's memory): `handleDrop` accepts both. The files written with the Write
+  tool are LF; git normalises them (autocrlf).
+
 
 ## Faza curentă
 
@@ -1446,4 +1485,12 @@ whose cells send the existing host actions; `src/webview/matrix.ts` +
 dim / show / colour x kind x name pattern) as presentation over the same
 scene, with a header chip while any rule exists; `src/webview/filters.ts` +
 `test:filters`, `setFilters` in `test:sidecar`, the `view/filters` message.
+**R24 (docs/08) is implemented** (Nov 2026): "New Testbench…" with three
+templates (agent per interface / per clock domain / composition from the
+sub-blocks) as folds of the existing mutations, and the Signals tree view with
+drag-and-drop of agents onto clock / reset domains; `src/templates.ts` +
+`test:templates`, `src/signals.ts` + `test:signals`, scenario 15 of
+`test:e2e`, the `newTestbench` action and the `assignDomain` host flow. The
+QuickPick flow and the tree's drag-and-drop still need a manual pass in the
+Extension Development Host.
 Planul complet: `docs/06-plan-mvp.md`.

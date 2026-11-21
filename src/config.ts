@@ -304,6 +304,19 @@ export class ConfigService implements vscode.Disposable {
     return uri;
   }
 
+  /**
+   * Makes an EXISTING configuration the active one for the session (docs/08
+   * R24: the bench a template just created). Like `createConfigFor`, stable
+   * discovery keeps it while the file exists; pin it with quickuvm.configFile.
+   */
+  async activate(uri: vscode.Uri): Promise<void> {
+    this.uri = uri;
+    await this.refresh();
+    this.log.appendLine(
+      `[config] active config: ${uri.fsPath} (session; pin via quickuvm.configFile)`
+    );
+  }
+
   /** All the *.quickuvm.yaml files in the workspace (for chooseConfig). */
   async listConfigs(): Promise<vscode.Uri[]> {
     const root = vscode.workspace.workspaceFolders?.[0];
