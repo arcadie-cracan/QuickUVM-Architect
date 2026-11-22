@@ -23,7 +23,7 @@ await esbuild.build({
   logLevel: "silent",
 });
 const {
-  agentRows, scoreboardRows, portRows, isBenchScope,
+  agentRows, scoreboardRows, portRows, isBenchScope, rtlActionTarget,
   fieldGroups, summarizeValue, AGENT_SPEC, SCOREBOARD_SPEC, PORT_SPEC,
 } = await import(pathToFileURL(outFile));
 
@@ -403,6 +403,33 @@ test("R9: the bulk fields stay the ones that need nothing per component", () => 
   for (const f of MULTI_FIELDS.scoreboard) {
     assert.ok(SCOREBOARD_SPEC.rows.includes(f));
   }
+});
+
+test("rtlActionTarget: the ONE selected instance block, else the view's own instance", () => {
+  // the schematic of demo_top, as the scene hands its nodes over
+  const nodes = [
+    { id: "bus_i", kind: "iface", instPath: "demo_top.bus_i" },
+    { id: "u_soc", kind: "instance", instPath: "demo_top.u_soc" },
+    { id: "g_ch[0..2].u_ch", kind: "fold", instPath: null },
+    { id: "u_add", kind: "instance", instPath: "demo_top.u_add" },
+  ];
+  const at = (sel, mode = "schematic", view = "demo_top") =>
+    rtlActionTarget(view, mode, nodes, new Set(sel));
+  // the case of the manual validation: u_soc clicked in demo_top's schematic —
+  // "Set as DUT" is about u_soc, not about the view it happens to be drawn in
+  assert.equal(at(["u_soc"]), "demo_top.u_soc");
+  assert.equal(at([]), "demo_top", "nothing selected: the view's module");
+  // what does not name ONE module to verify falls back to the view
+  assert.equal(at(["bus_i"]), "demo_top", "an interface instance is not a DUT");
+  assert.equal(at(["g_ch[0..2].u_ch"]), "demo_top", "a fold has no single instance");
+  assert.equal(at(["u_soc", "u_add"]), "demo_top", "two blocks do not name one");
+  assert.equal(at(["u_soc.clk"]), "demo_top", "a pin is not a block");
+  assert.equal(at(["u_soc", "u_soc.clk"]), "demo_top", "a block and a pin: not exactly one block");
+  // a symbol view has no blocks: an id that happens to match a node of another
+  // view's scene must not redirect the action
+  assert.equal(at(["u_soc"], "symbol"), "demo_top");
+  assert.equal(rtlActionTarget("demo_top", "schematic", undefined, new Set(["u_soc"])), "demo_top", "no scene yet");
+  assert.equal(rtlActionTarget(undefined, "schematic", nodes, new Set()), undefined, "no view: no target");
 });
 
 console.log(`\ntest-inspector: ${passed} tests passed.`);
