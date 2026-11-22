@@ -680,9 +680,16 @@ export function activate(context: vscode.ExtensionContext): void {
       return out;
     },
     (m: WebviewMessage) => {
-      // an editing gesture from the sidebar: the same protocol the panel speaks
+      // an editing gesture from the sidebar: the same protocol the panel speaks.
+      // The sidebar has no view of its own — it mirrors the diagram panel's — so
+      // the view the gesture is about is the PANEL's, exactly what the panel
+      // passes for its own gestures. Without it every action that needs the
+      // view ("Set as DUT", "New testbench…", "Create subenv", "Wire
+      // connections", "Compose into parent", "Create probe") answered "open
+      // the symbol view of an instance first" from the day these buttons moved
+      // to the sidebar (found at the manual validation, Nov 2026)
       if (m.type === "action/request") {
-        onWebviewAction(m.action, m.args);
+        onWebviewAction(m.action, m.args, DiagramPanel.current?.currentView);
         return;
       }
       // a DRAWING gesture from the sidebar inspector: it has no canvas, so the

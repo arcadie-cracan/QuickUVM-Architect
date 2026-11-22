@@ -1495,6 +1495,26 @@ designs — do not reintroduce the name collision.
   the extraction caught `agentPorts` ignoring `inouts` (an agent's inout pin
   was drawn unmapped and counted against the coverage).
 
+- **A sidebar action has no view unless the host gives it one** (found at the
+  manual validation, Nov 2026). The Properties side bar mirrors the diagram
+  panel; its `action/request` reached `onWebviewAction` WITHOUT the third
+  argument the panel passes (`this.currentView`), so from the day the
+  configuration buttons moved there (24 Jul 2026) every action that needs the
+  view — "Set as DUT", "New testbench…", "Create subenv", "Wire connections",
+  "Compose into parent", "Create probe" — answered "open the symbol view of an
+  instance first". Four months, unnoticed: the tree's context menu and the
+  command palette pass the instance themselves, the harness IS the panel, and
+  no suite reaches the host's message routing. The sidebar's handler now
+  passes `DiagramPanel.current?.currentView`. Do not add a third surface
+  without asking what its gestures are ABOUT. With it: "Set as DUT" and "New
+  testbench…" act on the ONE instance block selected in a schematic, else on
+  the view's module (`rtlActionTarget` in `src/inspector.ts`,
+  `test:inspector`), and send it in `args.viewId` like the agent gestures on a
+  child block — with `u_soc` clicked in `demo_top`'s schematic the tree
+  highlights `u_soc` and the panel is headed by it, and acting on the VIEW
+  would have made the parent the DUT. An interface instance, a fold, a pin or
+  several blocks fall back to the view.
+
 
 ## Current phase
 

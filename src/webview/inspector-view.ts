@@ -27,6 +27,7 @@ import {
   isBenchScope,
   multiGroups,
   portRows,
+  rtlActionTarget,
   scoreboardRows,
   type FieldInfo,
   type OtherField,
@@ -2528,11 +2529,22 @@ export function renderInspector(c: InspectorCtx): void {
   const pinIds = agentPins.map((p) => `<port>.${p.port}`);
   const allIgnored =
     selPins.length > 0 && selPins.every((p) => roles[p.name] === "ignored");
+  // the module these two are about: the ONE block selected in the schematic,
+  // else the view's own (`rtlActionTarget`). It travels in `args.viewId`, like
+  // the agent gestures on a child block — the host must not guess it
+  const dutTarget = rtlActionTarget(
+    ctx.state.viewId, ctx.state.mode, ctx.scene?.nodes, ctx.state.selection
+  );
+  const dutInst = dutTarget ? ctx.findInstance(dutTarget) : undefined;
   ctx.root.append(
-    button("Set as DUT", Boolean(inst), () => ctx.postAction("setDut", {})),
+    button("Set as DUT", Boolean(dutInst), () =>
+      ctx.postAction("setDut", { viewId: dutTarget })
+    ),
     // docs/08 R24 — a whole bench for this module from a template; the host
     // shows what each template would create (and refuses to overwrite a config)
-    button("New testbench…", Boolean(inst), () => ctx.postAction("newTestbench", {})),
+    button("New testbench…", Boolean(dutInst), () =>
+      ctx.postAction("newTestbench", { viewId: dutTarget })
+    ),
     button(
       `Agent from selection${selectable.length ? ` (${selectable.length})` : ""}`,
       selectable.length > 0,

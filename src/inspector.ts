@@ -485,3 +485,32 @@ export function multiGroups(
 export function isBenchScope(selectedNodeKind: string | undefined): boolean {
   return selectedNodeKind === undefined;
 }
+
+/**
+ * The instance a design-view action about ONE module acts on ("Set as DUT",
+ * "New testbench…"): the single instance block selected in a schematic view,
+ * else the view's own instance.
+ *
+ * The selected block wins because that is what the user is looking at — its
+ * name is highlighted in the hierarchy tree and heads the Properties panel.
+ * Acting on the VIEW there made the parent the DUT while the child was lit
+ * (found at the manual validation, Nov 2026). Anything that is not exactly one
+ * instance falls back to the view: a fold has no single instance, an interface
+ * instance is not a module to verify, and a selection of pins or of several
+ * blocks does not name one.
+ */
+export function rtlActionTarget(
+  viewId: string | undefined,
+  mode: string | undefined,
+  nodes: readonly { id: string; kind: string; instPath: string | null }[] | undefined,
+  selection: ReadonlySet<string>
+): string | undefined {
+  if (mode === "schematic" && nodes && selection.size === 1) {
+    const [id] = selection;
+    const n = nodes.find((x) => x.id === id);
+    if (n && n.kind === "instance" && n.instPath) {
+      return n.instPath;
+    }
+  }
+  return viewId;
+}
