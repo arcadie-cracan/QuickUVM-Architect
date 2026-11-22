@@ -694,7 +694,9 @@ function levelEnv(
   // quick-uvm cannot produce. The guard only ever HIDES ghosts, never invents them.
   const drawn = new Set(nodes.map((n) => n.id));
   const liveMode = config.analysis === undefined || config.analysis === null;
-  for (const inf of liveMode ? inferredComponents(resolved) : []) {
+  // ... and the SHAPE decides whether what `resolve` reports is generated at
+  // all (`inferenceIsReal`: a composition, a VIP, a replicated agent are not)
+  for (const inf of liveMode ? inferredComponents(resolved, config) : []) {
     if (drawn.has(inf.id)) {
       // declared wins, never doubled. Defensive: with `liveMode` true the config
       // has no `analysis:` key, hence no declared sb/cov node, so this cannot fire

@@ -1515,6 +1515,76 @@ designs — do not reintroduce the name collision.
   would have made the parent the DUT. An interface instance, a fold, a pin or
   several blocks fall back to the view.
 
+- **The first `analysis:` entry keeps what quick-uvm inferred** (docs/07
+  "Interim", Nov 2026 — planned in August, found unimplemented by an audit of
+  the plan, and measured with `resolve`: a first scoreboard took the inferred
+  coverage away, a first coverage on another agent took the inferred
+  scoreboard AND the collector, silently). "Add scoreboard" / "Add coverage"
+  on an implicit bench (`analysis` absent, or present with no value) ask the
+  generator what the LIVE text resolves to and write the inferred components
+  with their own entry, in ONE edit. Rules, each locked by a test: (1) the rule
+  is the user's — inferred coverage is always kept; an inferred scoreboard is
+  kept unless the new one has the SAME source agent, then it is REPLACED
+  (`keepOnFirstAnalysis`, `test:resolved`); the set is `resolve`'s, never
+  re-derived. (2) The resolved view must be of the LIVE text:
+  `quickuvm.autoSaveConfig` is off by default, so at the first analysis
+  gesture the disk — which the cache describes — usually lacks the agents just
+  created; `ResolveService.resolveText` resolves a copy from a temporary
+  folder (never the workspace: a scratch `*.quickuvm.yaml` there would be
+  discovered as a configuration), with a timeout and a status-bar progress
+  (about a second of Python), and the plan refuses an answer whose agent list
+  is not the live one's, in order (the primary agent is the first). (3) The
+  text is a FOLD of `addScoreboard` / `addCoverage` (`addScoreboardKeeping` /
+  `addCoverageKeeping`, `test:yamlops`) — byte for byte what the gestures made
+  one by one write, so the tutorial's listing does not depend on the path
+  taken; `test:e2e` scenario 17 asks the generator before and after, and keeps
+  the bare mutations' loss as a mutation proof. (4) The names of the kept
+  inferred scoreboards are TAKEN in the name prompt; a replaced `sbd` leaves
+  its name free, which is the prompt's default. (5) An unknown inferred set is
+  ASKED about in a modal before writing, never assumed, and the modal says
+  WHY (`LiveResolve.why`: no `resolve` command, the configuration refused with
+  its first error line, the text changed meanwhile, the process failed) — one
+  text for all sent a user with an old quick-uvm to "save and try again"; what
+  was kept or replaced is said afterwards. (6) `analysis:` with no value is a
+  null scalar and `setIn` cannot descend into it: the two add mutations THREW
+  on a file the scene draws as an implicit bench; `openAnalysis` gives it an
+  empty mapping in place (position and comment kept). From the adversarial
+  review, each reproduced against the generator: (7) **`resolve` over-reports**
+  — 1.2.0 reports `sbd` + a collector on `agents[0]` for ANY bench without
+  `analysis:`, but on a composition (`subenvs`, pure or hybrid), on `kind:
+  vip` and on an agent with `replicas` > 1 / `instances` the generator
+  generates neither and REFUSES both once declared; the first cut "kept" them
+  and turned benches that generated into benches that do not.
+  `inferenceIsReal` (`src/resolved.ts`) fences those shapes: the plain gesture
+  there, and — the same lie, older — no ghost in the scene, no materialise
+  row in the proposal strip (`inferredComponents(resolved, config)`: pass the
+  live config wherever there is one). It is the ONE place the extension knows
+  where inference happens; each shape has a four-leg lock in scenario 17
+  (resolve still reports it, the implicit bench generates WITHOUT the
+  components, the plain gesture generates, the reported set declared is
+  refused with that shape's wall), so a quick-uvm that wires a shape, or stops
+  over-reporting it, fails a leg that says which. A selftest is NOT fenced: it
+  really generates `sbd`. (8) The NEW entry is written FIRST: a wire drop
+  gives its drop point to the first node of the kind that was not in the
+  pre-gesture scene (`renderTb`), and with the kept entry first that was the
+  former ghost, which jumped and lost its seat. (9) The plan is for an
+  implicit text: applied to a text that declares `analysis:` by then (a
+  second click, a hand edit while the name box waited) the folds run the plain
+  mutation — the second click threw "scoreboard sbd already exists", and a
+  hand-declared `scoreboards: []` got an `sbd` nobody asked for. (10)
+  `addCoverage` on an agent already covered returns the ORIGINAL text (it
+  re-serialised: a phantom edit on a hand-formatted file). Consequence for the
+  tutorial: step 5's scoreboard gesture already writes `coverage: [ cmd ]`;
+  "Coverage collector" pressed afterwards has ONE candidate left (`rsp`) and
+  adds it without asking. With a kept scoreboard beside the new one the
+  message also says that quick-uvm renames the generated files after each
+  scoreboard (`<dut>_scoreboard.svh` -> `<dut>_<name>_scoreboard.svh`): a
+  prediction written in the single scoreboard's file stays in the old one.
+  Still open: an inferred component cannot be deleted from the diagram (a
+  ghost is read-only); the matrix editor still disables its cells on an
+  implicit bench; `analysis: ""` / `analysis: []` / an anchored null still
+  throw in the add mutations; the host glue (`resolveText`, the modal, the
+  message) runs only in VS Code and has no test.
 
 ## Current phase
 

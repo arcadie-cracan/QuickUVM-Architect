@@ -38,7 +38,18 @@ import {
   TemplateError,
   type TemplateOptions,
 } from "./templates";
-import { inferredComponents, type ResolvedConfig } from "./resolved";
+import {
+  inferenceIsReal,
+  inferredComponents,
+  keepOnFirstAnalysis,
+  type FirstAnalysisGesture,
+  type KeepPlan,
+  type LiveResolve,
+  type ResolvedConfig,
+} from "./resolved";
+
+/** the plan of a first `analysis:` entry, with the reason it is not known */
+type FirstKeep = KeepPlan & { why?: LiveResolve["why"] | "changed"; detail?: string };
 import * as ops from "./yamlops";
 
 export class Actions {
@@ -46,7 +57,10 @@ export class Actions {
     private readonly getModel: () => ProjectModel | undefined,
     private readonly config: ConfigService,
     private readonly log: vscode.OutputChannel,
-    private readonly preview: PreviewProvider
+    private readonly preview: PreviewProvider,
+    /** what quick-uvm resolves a configuration TEXT to (the live document, saved
+     *  or not) — `ResolveService.resolveText`; absent = never known */
+    private readonly resolveLive?: (text: string, uri: vscode.Uri) => Promise<LiveResolve>
   ) {}
 
   private resolve(
@@ -1177,6 +1191,157 @@ export class Actions {
 
   /** Coverage collector for an agent (`analysis.coverage`, docs/03).
    *  `cfg` = the active config (panel) OR the open document (CustomTextEditor). */
+  /**
+   * docs/07 "Interim" — what the FIRST `analysis:` entry must carry over from
+   * inference, or `null` when the bench already declares `analysis:` (nothing
+   * is inferred there, so there is nothing to keep). `analysis:` with no value
+   * is implicit, as it is for the scene and for `materializeAnalysis`.
+   */
+  private async firstAnalysisKeep(
+    cfg: TbEditTarget,
+    gesture: FirstAnalysisGesture
+  ): Promise<FirstKeep | null> {
+    const a: unknown = cfg.current.analysis;
+    if ((a !== undefined && a !== null) || !cfg.configUri) {
+      return null;
+    }
+    // a composition, a VIP, a replicated agent: `resolve` reports an inferred
+    // set there that the generator does not generate and refuses once declared
+    // (`inferenceIsReal`) — nothing to keep, nothing to ask: the plain gesture
+    if (!inferenceIsReal(cfg.current)) {
+      return null;
+    }
+    const uri = cfg.configUri;
+    const text = await cfg.readText();
+    // asked of the generator about the text AS IT STANDS — the cached resolve
+    // describes the file on disk, which lags while the document is unsaved.
+    // About a second of Python: said in the status bar, not left to look hung
+    const resolveLive = this.resolveLive;
+    const live: LiveResolve = resolveLive
+      ? await vscode.window.withProgress(
+          {
+            location: vscode.ProgressLocation.Window,
+            title: vscode.l10n.t("QuickUVM Architect: asking quick-uvm what this bench infers…"),
+          },
+          () => resolveLive(text, uri)
+        )
+      : { resolved: null, why: "failed" };
+    const plan = keepOnFirstAnalysis(live.resolved, this.agentNames(cfg), gesture);
+    if (plan.known) {
+      return plan;
+    }
+    // an answer that is not about this bench: the document changed meanwhile
+    return live.resolved
+      ? { ...plan, why: "changed" }
+      : { ...plan, why: live.why, detail: live.detail };
+  }
+
+  /**
+   * A first `analysis:` entry whose inferred set is NOT known (a quick-uvm
+   * without `resolve`, a configuration it refuses, a composition edited but
+   * not saved): writing it may take components away, and nothing can say
+   * which. Asked, never assumed — `true` = go on.
+   */
+  private async confirmUnknownInference(keep: FirstKeep | null): Promise<boolean> {
+    if (!keep || keep.known) {
+      return true;
+    }
+    const GO = vscode.l10n.t("Add anyway");
+    // the remedy depends on WHY it is not known — one text for all three sent a
+    // user with an old quick-uvm to "save and try again", which never helps
+    const why =
+      keep.why === "no-command"
+        ? vscode.l10n.t(
+            "This quick-uvm has no `resolve` command (1.1.0 or newer has it), so the extension cannot tell what would be lost."
+          )
+        : keep.why === "refused"
+          ? vscode.l10n.t(
+              "quick-uvm refuses the configuration as it stands ({0}). Fix that and try again to have the inferred components kept.",
+              keep.detail ?? "?"
+            )
+          : keep.why === "changed"
+            ? vscode.l10n.t(
+                "The configuration changed while quick-uvm was reading it. Try again to have the inferred components kept."
+              )
+            : vscode.l10n.t(
+                "quick-uvm could not be asked ({0}). Try again to have the inferred components kept.",
+                keep.detail ?? "?"
+              );
+    const pick = await vscode.window.showWarningMessage(
+      vscode.l10n.t(
+        "QuickUVM Architect: this bench has no `analysis:` block, so quick-uvm infers components for it — and what it infers could not be read."
+      ),
+      {
+        modal: true,
+        detail:
+          why +
+          " " +
+          vscode.l10n.t(
+            "By default it is a scoreboard and a coverage collector on the first agent. Adding this entry declares `analysis:`, and whatever was inferred is no longer generated."
+          ),
+      },
+      GO
+    );
+    return pick === GO;
+  }
+
+  /** says what the first `analysis:` entry kept, replaced or could not keep —
+   *  a mode switch is never silent */
+  private reportKept(keep: KeepPlan | null, added: string, addedScoreboard: boolean): void {
+    if (!keep || !keep.known) {
+      return; // declared already, or asked beforehand (`confirmUnknownInference`)
+    }
+    const names = (ids: string[]): string =>
+      ids
+        .map((id) =>
+          id.startsWith("cov:")
+            ? vscode.l10n.t("coverage on {0}", id.slice(4))
+            : vscode.l10n.t("scoreboard {0}", id.slice(3))
+        )
+        .join(", ");
+    const kept = [
+      ...keep.scoreboards.map((s) => `sb:${s.name}`),
+      ...keep.coverage.map((c) => `cov:${c}`),
+    ];
+    const parts: string[] = [];
+    if (kept.length) {
+      parts.push(vscode.l10n.t("kept from what quick-uvm inferred: {0}", names(kept)));
+    }
+    if (keep.replaced.length) {
+      parts.push(
+        vscode.l10n.t(
+          "the inferred {0} is replaced by {1} (the same source agent)",
+          names(keep.replaced.map((n) => `sb:${n}`)),
+          added
+        )
+      );
+    }
+    if (keep.dangling.length) {
+      parts.push(
+        vscode.l10n.t(
+          "not kept, their agent is no longer in the configuration: {0}",
+          names(keep.dangling)
+        )
+      );
+    }
+    if (keep.scoreboards.length && addedScoreboard) {
+      // the generator's own rule, easy to lose code to: with ONE scoreboard the
+      // files are `<dut>_scoreboard.svh` / `<dut>_reference_model.svh`, with
+      // two each gets its name in them — the kept scoreboard is regenerated
+      // under new file names, and a prediction written in the old file stays there
+      parts.push(
+        vscode.l10n.t(
+          "with two scoreboards quick-uvm names the generated files after each — code you wrote in the single scoreboard's files stays in the old files"
+        )
+      );
+    }
+    if (parts.length) {
+      void vscode.window.showInformationMessage(
+        vscode.l10n.t("QuickUVM Architect: `analysis:` is now declared — {0}.", parts.join("; "))
+      );
+    }
+  }
+
   async addCoverage(preselect?: string, cfg: TbEditTarget = this.config): Promise<void> {
     if (!cfg.configUri) {
       return this.warnNoConfig();
@@ -1223,8 +1388,19 @@ export class Actions {
       }
     }
     const a = agent;
-    if (await cfg.apply((t) => ops.addCoverage(t, a))) {
+    // the first `analysis:` entry leaves implicit mode: what quick-uvm inferred
+    // is declared with it, in ONE edit (one undo step)
+    const keep = await this.firstAnalysisKeep(cfg, { kind: "coverage", agent: a });
+    if (!(await this.confirmUnknownInference(keep))) {
+      return;
+    }
+    if (
+      await cfg.apply((t) =>
+        keep?.known ? ops.addCoverageKeeping(t, a, keep) : ops.addCoverage(t, a)
+      )
+    ) {
       this.log.appendLine(`[actions] addCoverage ${a}`);
+      this.reportKept(keep, vscode.l10n.t("coverage on {0}", a), false);
     }
   }
 
@@ -1338,8 +1514,16 @@ export class Actions {
       }
     }
 
+    // the first `analysis:` entry leaves implicit mode: the inferred scoreboard
+    // on ANOTHER source and the inferred coverage are declared with this one
+    // (docs/07 "Interim"), so their names are taken; an inferred scoreboard on
+    // THIS source is replaced, and its name — `sbd`, the default below — is free
+    const keep = await this.firstAnalysisKeep(cfg, { kind: "scoreboard", source: src });
+    if (!(await this.confirmUnknownInference(keep))) {
+      return;
+    }
     const taken = new Set(
-      (cfg.current.analysis?.scoreboards ?? [])
+      [...(cfg.current.analysis?.scoreboards ?? []), ...(keep?.scoreboards ?? [])]
         .map((s) => s.name)
         .filter((n): n is string => Boolean(n))
     );
@@ -1359,14 +1543,16 @@ export class Actions {
     if (!name) {
       return;
     }
+    const spec = { name, source: src, monitor, match, matchKey };
     if (
       await cfg.apply((t) =>
-        ops.addScoreboard(t, { name, source: src, monitor, match, matchKey })
+        keep?.known ? ops.addScoreboardKeeping(t, spec, keep) : ops.addScoreboard(t, spec)
       )
     ) {
       this.log.appendLine(
         `[actions] addScoreboard ${name} (${src}${monitor ? ` vs ${monitor}` : ""})`
       );
+      this.reportKept(keep, vscode.l10n.t("scoreboard {0}", name), true);
     }
   }
 
@@ -3217,7 +3403,7 @@ export class Actions {
     if (!cfg.configUri) {
       return this.warnNoConfig();
     }
-    if (!inferredComponents(resolved).length) {
+    if (!inferredComponents(resolved, cfg.current).length) {
       void vscode.window.showInformationMessage(
         vscode.l10n.t("QuickUVM Architect: nothing is inferred on this bench — there is nothing to write.")
       );

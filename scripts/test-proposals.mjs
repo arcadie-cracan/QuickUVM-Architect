@@ -215,6 +215,11 @@ test("an implicit-mode bench proposes its inferred components; a declared one pr
   assert.deepEqual(ghostProposals({ ...cfg, analysis: {} }, RESOLVED), [], "declared mode: nothing inferred");
   assert.equal(ghostProposals({ ...cfg, analysis: null }, RESOLVED).length, 2, "`analysis:` with no value is implicit, as the scene draws it");
   assert.deepEqual(ghostProposals(cfg, null), [], "nothing resolved: nothing to propose");
+  // not where the reported set is not generated: materialising it there writes
+  // a configuration quick-uvm refuses (the same fence as the ghosts)
+  assert.deepEqual(ghostProposals({ ...cfg, kind: "vip" }, RESOLVED), []);
+  assert.deepEqual(ghostProposals({ ...cfg, subenvs: [{ name: "p1" }] }, RESOLVED), []);
+  assert.deepEqual(ghostProposals({ dut: { name: "d" }, agents: [{ name: "pkt", replicas: 2 }] }, RESOLVED), []);
 });
 
 test("proposalsFor picks the source by view: ghosts in the TB view, agents in the RTL views, nothing without a config", () => {

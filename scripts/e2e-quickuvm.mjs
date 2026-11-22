@@ -1725,4 +1725,271 @@ endpackage
   console.log("  ok    templates: per-interface, per-clock (+ the unassigned default), composition (+ wired)");
 }
 
+// --- scenario 17 (docs/07 "Interim", Nov 2026): THE FIRST `analysis:` ENTRY.
+// Without the key quick-uvm infers a scoreboard and a coverage collector on the
+// primary agent; writing ANY entry switches it to declared mode and both are
+// gone. A gesture that adds one scoreboard therefore took the coverage away,
+// and one that adds coverage took both — silently. The generator is asked
+// (`resolve`) before and after: what was inferred must still be there.
+{
+  await esbuild.build({
+    entryPoints: ["src/resolved.ts"],
+    outfile: join(outDir, "resolved.mjs"),
+    bundle: true,
+    format: "esm",
+    platform: "node",
+    logLevel: "silent",
+  });
+  const R = await import(pathToFileURL(join(outDir, "resolved.mjs")));
+  const resolveOf = (text, extra = {}) => {
+    const d = mkdtempSync(join(tmpdir(), "quickuvm-e2e-resolve-"));
+    const f = join(d, "b.quickuvm.yaml");
+    writeFileSync(f, text);
+    for (const [name, body] of Object.entries(extra)) {
+      writeFileSync(join(d, name), body);
+    }
+    const r = quickUvm(["resolve", "-c", f], d);
+    assert.equal(r.status, 0, `quick-uvm resolve failed:\n${r.stdout}${r.stderr}`);
+    const parsed = R.parseResolved(r.stdout);
+    assert.ok(parsed, `resolve printed something that is not a resolved config:\n${r.stdout.slice(0, 300)}`);
+    return parsed;
+  };
+  const shape = (res) => ({
+    mode: res.analysis.mode,
+    scoreboards: res.analysis.scoreboards.map((s) => `${s.name}@${s.source}`).sort(),
+    coverage: res.analysis.coverage.map((c) => c.agent).sort(),
+    inferred: R.inferredComponents(res).map((c) => c.id).sort(),
+  });
+
+  // the tutorial bench before its first analysis gesture
+  let base = ops.setDut(ops.newConfigText("yapp_buffer"), {
+    module: "yapp_buffer", clock: "clk", reset: "rst_n",
+    resetActiveLow: true, combinational: false,
+  });
+  base = ops.createAgent(base, {
+    name: "cmd",
+    inputs: [{ name: "in_data", width: 8 }, { name: "in_addr", width: 2 }, { name: "in_valid", width: 1 }],
+    outputs: [{ name: "in_ready", width: 1 }],
+  });
+  base = ops.createAgent(base, {
+    name: "rsp",
+    inputs: [{ name: "out_ready", width: 1 }],
+    outputs: [{ name: "out_data", width: 8 }, { name: "out_addr", width: 2 }, { name: "out_valid", width: 1 }],
+  });
+  const live = ["cmd", "rsp"];
+  const implicit = resolveOf(base);
+  // what the rule is built on — if a quick-uvm release infers something else,
+  // this is the line that says so
+  assert.deepEqual(shape(implicit), {
+    mode: "implicit", scoreboards: ["sbd@cmd"], coverage: ["cmd"], inferred: ["cov:cmd", "sb:sbd"],
+  });
+
+  // the plan trusts an answer only when its agents are the live configuration's,
+  // in order: that is what `resolve` must keep reporting
+  assert.deepEqual(implicit.agents.map((x) => x.name), live);
+  assert.equal(R.keepOnFirstAnalysis(implicit, ["rsp", "cmd"], { kind: "coverage", agent: "rsp" }).known, false);
+
+  // THE OLD BEHAVIOUR, as a mutation proof: the bare mutations lose what was inferred
+  assert.deepEqual(
+    shape(resolveOf(ops.addScoreboard(base, { name: "pkt_sb", source: "cmd", monitor: "rsp" }))),
+    { mode: "declared", scoreboards: ["pkt_sb@cmd"], coverage: [], inferred: [] },
+    "the bare addScoreboard no longer drops the inferred coverage: the fold may be redundant now"
+  );
+  assert.deepEqual(
+    shape(resolveOf(ops.addCoverage(base, "rsp"))),
+    { mode: "declared", scoreboards: [], coverage: ["rsp"], inferred: [] },
+    "the bare addCoverage no longer drops the inferred scoreboard and collector"
+  );
+
+  // 1. the tutorial's gesture: a scoreboard on cmd — the inferred one's source.
+  //    It REPLACES sbd; the coverage on cmd survives. And the text is the
+  //    tutorial's listing: the gesture alone now writes what steps 5 + 6 wrote.
+  const sbSpec = { name: "pkt_sb", source: "cmd", monitor: "rsp", match: "out_of_order", matchKey: "out_addr" };
+  const p1 = R.keepOnFirstAnalysis(implicit, live, { kind: "scoreboard", source: "cmd" });
+  assert.deepEqual([p1.known, p1.replaced, p1.coverage], [true, ["sbd"], ["cmd"]]);
+  const t1 = ops.addScoreboardKeeping(base, sbSpec, p1);
+  assert.deepEqual(shape(resolveOf(t1)), {
+    mode: "declared", scoreboards: ["pkt_sb@cmd"], coverage: ["cmd"], inferred: [],
+  });
+  const tutorialDoc = readFileSync("docs/tutorial-yapp-buffer.md", "utf8").replace(/\r\n/g, "\n");
+  assert.equal(/```yaml\n([\s\S]*?)```/.exec(tutorialDoc)?.[1], t1.replace(/\r\n/g, "\n"),
+    "the scoreboard gesture on an implicit bench does not write the tutorial's listing");
+
+  // 2. a scoreboard on ANOTHER source keeps the inferred one beside it — and the
+  //    bench with both generates (two scoreboards, one per stream)
+  const p2 = R.keepOnFirstAnalysis(implicit, live, { kind: "scoreboard", source: "rsp" });
+  const t2 = ops.addScoreboardKeeping(base, { name: "rsp_sb", source: "rsp" }, p2);
+  assert.deepEqual(shape(resolveOf(t2)), {
+    mode: "declared", scoreboards: ["rsp_sb@rsp", "sbd@cmd"], coverage: ["cmd"], inferred: [],
+  });
+  generate("first-analysis-two-sb", t2, ["tb_top.sv", "cmd_cov.svh"]);
+
+  // 3. coverage on another agent keeps the scoreboard AND the inferred collector
+  const p3 = R.keepOnFirstAnalysis(implicit, live, { kind: "coverage", agent: "rsp" });
+  const t3 = ops.addCoverageKeeping(base, "rsp", p3);
+  assert.deepEqual(shape(resolveOf(t3)), {
+    mode: "declared", scoreboards: ["sbd@cmd"], coverage: ["cmd", "rsp"], inferred: [],
+  });
+  generate("first-analysis-cov", t3, ["tb_top.sv", "rsp_cov.svh"]);
+
+  // the invariant behind all three, stated once: nothing inferred is lost unless
+  // the plan says it was replaced
+  for (const [text, plan] of [[t1, p1], [t2, p2], [t3, p3]]) {
+    const after = shape(resolveOf(text));
+    for (const id of shape(implicit).inferred) {
+      const name = id.slice(id.indexOf(":") + 1);
+      const still = id.startsWith("cov:")
+        ? after.coverage.includes(name)
+        : after.scoreboards.some((s) => s.startsWith(`${name}@`));
+      assert.ok(still || plan.replaced.includes(name), `${id} was inferred and is gone without being replaced`);
+    }
+  }
+  console.log("  ok    first analysis entry: what quick-uvm inferred is kept (or replaced on the same source), asked of the generator");
+
+  // --- WHERE WHAT `resolve` REPORTS IS NOT GENERATED (adversarial review, Nov
+  // 2026). quick-uvm 1.2.0 reports sbd + a collector on agents[0] for ANY bench
+  // without `analysis:`; on a replicated agent, a VIP and a composition the
+  // generator generates neither, and REFUSES both once declared — keeping the
+  // reported set there turned a bench that generated into one that does not.
+  // `inferenceIsReal` fences those shapes off (no ghost, no materialise offer,
+  // the plain gesture). Each lock below has four legs; the day quick-uvm wires
+  // one of these shapes, or stops over-reporting it, a leg fails and says which.
+  const tryGen = (text, extra = {}) => {
+    const d = mkdtempSync(join(tmpdir(), "quickuvm-e2e-shape-"));
+    const f = join(d, "b.quickuvm.yaml");
+    writeFileSync(f, text);
+    for (const [name, body] of Object.entries(extra)) {
+      writeFileSync(join(d, name), body);
+    }
+    const r = quickUvm(["generate", "-c", f, "-o", join(d, "tb")], d);
+    return { status: r.status, out: `${r.stdout}${r.stderr}`, dir: d };
+  };
+  const walk = (dir) =>
+    readdirSync(dir, { withFileTypes: true }).flatMap((e) =>
+      e.isDirectory() ? walk(join(dir, e.name)) : [join(dir, e.name)]
+    );
+  const generated = (g, re) =>
+    walk(join(g.dir, "tb")).filter((f) => re.test(readFileSync(f, "utf8"))).map((f) => basename(f));
+  const shapeLock = (label, text, extra, gesture, bare, keeping, wall, absent) => {
+    const cfg = ops.parseQuvm(text);
+    const agents = (cfg.agents ?? []).map((x) => x.name);
+    // 1. the fence knows the shape
+    assert.equal(R.inferenceIsReal(cfg), false, `${label}: the fence does not know this shape`);
+    assert.deepEqual(R.inferredComponents(resolveOf(text, extra), cfg), [], `${label}: a ghost would be drawn`);
+    // 2. `resolve` still over-reports it (when it stops, the fence is redundant here)
+    const reported = resolveOf(text, extra);
+    assert.ok(
+      R.inferredComponents(reported).length > 0,
+      `${label}: quick-uvm resolve no longer reports inferred components here — fixed upstream, the fence may go`
+    );
+    // 3. the bench generates as it is, WITHOUT the components resolve reports
+    const implicitGen = tryGen(text, extra);
+    assert.equal(implicitGen.status, 0, `${label}: the implicit bench does not generate:\n${implicitGen.out.slice(-600)}`);
+    for (const [what, re, only] of absent) {
+      const hits = generated(implicitGen, re).filter((f) => !only || only.test(f));
+      assert.deepEqual(hits, [], `${label}: the generator DOES generate ${what} now (${hits.join(", ")}) — the fence hides real components`);
+    }
+    // 4. the plain gesture generates; the reported set, declared with it, is refused
+    const plan = R.keepOnFirstAnalysis(reported, agents, gesture);
+    assert.equal(plan.known, true, `${label}: the plan would not have been made`);
+    assert.ok(plan.scoreboards.length + plan.coverage.length > 0, `${label}: nothing would have been kept`);
+    const plain = tryGen(bare(text), extra);
+    assert.equal(plain.status, 0, `${label}: the plain gesture no longer generates:\n${plain.out.slice(-600)}`);
+    const kept = tryGen(keeping(text, plan), extra);
+    assert.notEqual(kept.status, 0, `${label}: quick-uvm now ACCEPTS the reported set declared — it wires this shape, the fence may go`);
+    assert.match(kept.out, wall, `${label}: it failed for a reason other than the shape's wall`);
+  };
+
+  // a replicated agent: per-replica scoreboards, no collector
+  let rep = ops.setDut(ops.newConfigText("buf"), {
+    module: "buf", clock: "clk", reset: "rst_n", resetActiveLow: true, combinational: false,
+  });
+  rep = ops.createAgent(rep, { name: "cmd", inputs: [{ name: "d", width: 8 }], outputs: [{ name: "q", width: 8 }] });
+  const repText = rep.replace("    sequence_item: cmd_seq_item\n", "    sequence_item: cmd_seq_item\n    replicas: 3\n");
+  assert.notEqual(repText, rep, "the replicas fixture did not apply");
+  // the new scoreboard is on ANOTHER name and the same source: sbd is replaced,
+  // and what is kept is the collector — the entry the replicated env refuses
+  shapeLock(
+    "replicas", repText, {},
+    { kind: "scoreboard", source: "cmd" },
+    (t) => ops.addScoreboard(t, { name: "sbd", source: "cmd" }),
+    (t, plan) => ops.addScoreboardKeeping(t, { name: "sbd", source: "cmd" }, plan),
+    /replicas/,
+    [["a coverage collector in the env", /_cov(_h)?\s*=|_cov\b[^\n]*type_id::create/, /_env\.svh$/]]
+  );
+
+  // a VIP: only the agent packages and a manifest are emitted
+  let vip = ops.setBenchField(ops.setBenchField(base, "layout", "packaged"), "kind", "vip");
+  const vipText = vip.replace(/tests:\n  - \{ name: \w+ \}\n/, ""); // a vip refuses a declared test list
+  assert.notEqual(vipText, vip, "the vip fixture did not apply");
+  shapeLock(
+    "kind: vip", vipText, {},
+    { kind: "coverage", agent: "rsp" },
+    // the only coverage a VIP accepts is a rich model on the agent it ships (a 1-bit
+    // field: a wider coverpoint needs explicit bins)
+    (t) => ops.upgradeCoverage(ops.addCoverage(t, "rsp"), "rsp", "out_valid"),
+    (t, plan) => ops.upgradeCoverage(ops.addCoverageKeeping(t, "rsp", plan), "rsp", "out_valid"),
+    /kind: vip/,
+    [["the scoreboard sbd", /\bsbd\b/, null]]
+  );
+
+  // a composition with a boundary agent (hybrid): the top env wires the blocks'
+  // envs; `analysis.coverage` and a single-stream scoreboard are refused there
+  const blocks = {
+    "producer.quickuvm.yaml": [
+      "project: {name: producer}",
+      'dut: {name: producer, clock: clk, reset: "", combinational: true}',
+      "agents:",
+      "  - name: prod_agent",
+      "    interface: prod_if",
+      "    sequence_item: prod_item",
+      "    ports:",
+      "      inputs: [{name: pin, width: 8}]",
+      "      outputs: [{name: dout, width: 8, randomize: false}]",
+      "",
+    ].join("\n"),
+    "consumer.quickuvm.yaml": [
+      "project: {name: consumer}",
+      'dut: {name: consumer, clock: clk, reset: "", combinational: true}',
+      "agents:",
+      "  - name: cons_agent",
+      "    interface: cons_if",
+      "    sequence_item: cons_item",
+      "    active: false",
+      "    ports:",
+      "      inputs: [{name: din, width: 8}]",
+      "      outputs: [{name: cout, width: 8, randomize: false}]",
+      "",
+    ].join("\n"),
+  };
+  let hyb = ops.setDut(ops.newConfigText("sys_top"), {
+    module: "sys_top", clock: "clk", reset: null, resetActiveLow: false, combinational: true,
+  });
+  hyb = ops.createSubenvs(hyb, [
+    { name: "p1", config: "producer.quickuvm.yaml", params: {} },
+    { name: "c1", config: "consumer.quickuvm.yaml", params: {} },
+  ]);
+  hyb = ops.addConnections(hyb, [{ from: "p1.dout", to: "c1.din" }]);
+  hyb = ops.createAgent(hyb, { name: "topcmd", inputs: [{ name: "z", width: 8 }], outputs: [] });
+  const xsb = { name: "xsb", source: "p1.prod_agent", monitor: "c1.cons_agent" };
+  shapeLock(
+    "hybrid composition", hyb, blocks,
+    { kind: "scoreboard", source: "p1.prod_agent" },
+    (t) => ops.addScoreboard(t, xsb),
+    (t, plan) => ops.addScoreboardKeeping(t, xsb, plan),
+    /subenvs/,
+    [
+      ["the scoreboard sbd in the top env", /\bsbd\b/, /^sys_top_env\.svh$/],
+      ["a collector on the boundary agent", /topcmd_cov/, /^sys_top_env\.svh$/],
+    ]
+  );
+  // a selftest is NOT fenced: it really generates the inferred scoreboard
+  const selftest = ops.setBenchField(ops.setBenchField(base, "layout", "packaged"), "kind", "selftest");
+  assert.equal(R.inferenceIsReal(ops.parseQuvm(selftest)), true);
+  const stGen = tryGen(selftest);
+  assert.equal(stGen.status, 0, `the selftest does not generate:\n${stGen.out.slice(-400)}`);
+  assert.ok(generated(stGen, /\bsbd\b/).some((f) => /_env\.svh$/.test(f)), "a selftest no longer generates sbd: it should be fenced too");
+  console.log("  ok    where resolve over-reports (replicas, vip, hybrid): fenced — the plain gesture generates, the reported set is refused");
+}
+
 console.log("the end-to-end flow (yamlops -> quick-uvm generate) is green");
