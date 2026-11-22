@@ -1,109 +1,113 @@
-# 02 — Modelul de proiect
+# 02 — The project model
 
-Modelul de proiect este documentul JSON emis de backend și consumat de host și
-webview. Este contractul stabil al sistemului: schema formală este
-`schema/project-model.schema.json`, iar acest document explică semantica și
-cazurile limită. Câmpul `schema_version` (întreg, azi `1`) se incrementează la
-orice modificare incompatibilă; host-ul refuză versiuni necunoscute.
+The project model is the JSON document emitted by the backend and consumed by
+the host and the webview. It is the stable contract of the system: the formal
+schema is `schema/project-model.schema.json`, and this document explains the
+semantics and the edge cases. The `schema_version` field (an integer, today
+`1`) is incremented on any incompatible change; the host refuses unknown
+versions.
 
-## Structura de ansamblu
+## Overall structure
 
 ```json
 {
   "schema_version": 1,
   "tops": ["demo_top"],
-  "modules":   { "<nume-definitie>": { ports, iface_ports, loc } },
+  "modules":   { "<definition-name>": { ports, iface_ports, loc } },
   "instances": [ { path, module, params, loc, iface? } ],
-  "views":     { "<cale-instanta>": { module, pins, nets } }
+  "views":     { "<instance-path>": { module, pins, nets } }
 }
 ```
 
-`modules` descrie *definițiile* (o intrare per modul/interfață, cu porturile
-așa cum au fost elaborate la prima instanțiere întâlnită); `instances` descrie
-*arborele elaborat* (o intrare per instanță, cu valorile efective ale
-parametrilor); `views` descrie conectivitatea internă a instanțelor care au
-copii.
+`modules` describes the *definitions* (one entry per module/interface, with the
+ports as they were elaborated at the first instantiation encountered);
+`instances` describes the *elaborated tree* (one entry per instance, with the
+effective parameter values); `views` describes the internal connectivity of the
+instances that have children.
 
-## ID-uri stabile
+## Stable IDs
 
-Orice element adresabil se identifică prin cale ierarhică elaborată:
+Every addressable element is identified by an elaborated hierarchical path:
 
-- instanță: `demo_top.u_soc.g_ch[1].u_ch` (blocurile generate apar cu numele
-  și indexul construcției: `g_ch[1]`);
-- pin de instanță într-o vedere: `g_ch[1].u_ch.dout` (relativ la vedere);
-- port al modulului vederii: `<port>.din` (prefixul `<port>` îl distinge de
-  pinii instanțelor copil);
-- net: numele lui în scope-ul vederii.
+- an instance: `demo_top.u_soc.g_ch[1].u_ch` (generate blocks appear with the
+  name and the index of the construct: `g_ch[1]`);
+- an instance pin in a view: `g_ch[1].u_ch.dout` (relative to the view);
+- a port of the view's module: `<port>.din` (the `<port>` prefix distinguishes
+  it from the pins of the child instances);
+- a net: its name in the view's scope.
 
-Aceste chei sunt folosite de fișierul sidecar de layout (doc. 04), de overlay-ul
-de configurare și de protocolul de mesaje (doc. 05). Ele sunt stabile la
-re-parsare câtă vreme designul nu se redenumește — exact proprietatea cerută de
-memoria spațială a utilizatorului.
+These keys are used by the layout sidecar file (doc. 04), by the configuration
+overlay and by the message protocol (doc. 05). They are stable across
+re-parsing as long as the design is not renamed — exactly the property the
+user's spatial memory requires.
 
-## Porturi și tipuri
+## Ports and types
 
-Per port: `name`, `dir` (`in` / `out` / `inout` / `ref`), `type` (textul
-tipului elaborat, ex. `logic[15:0]$[0:2]`), `width` (lățimea totală în biți,
-numerică — niciodată simbolică, pentru că modelul e post-elaborare),
-`unpacked_dims` (lista dimensiunilor unpacked, `null` dacă nu e tablou),
-`elem_width` (lățimea elementului pentru tablouri), `loc` (fișier + linie).
+Per port: `name`, `dir` (`in` / `out` / `inout` / `ref`), `type` (the text of
+the elaborated type, e.g. `logic[15:0]$[0:2]`), `width` (the total width in
+bits, numeric — never symbolic, because the model is post-elaboration),
+`unpacked_dims` (the list of unpacked dimensions, `null` if it is not an
+array), `elem_width` (the element width for arrays), `loc` (file + line).
 
-Cazuri limită documentate:
+Documented edge cases:
 
-- **tablouri unpacked**: `width` = produsul dimensiunilor × lățimea
-  elementului (`ch_out`: 3 × 16 = 48); UI-ul afișează `elem_width` pe pin și
-  multiplicitatea separat;
-- **porturi de interfață**: nu apar în `ports`, ci în `iface_ports`
-  (`{name, interface, modport, loc}`); detaliul interfeței (semnale cu lățimi
-  elaborate + modporturi cu direcții) e pe *instanța* de interfață
-  (`instances[].iface`), pentru că lățimile depind de parametrii instanței;
-- **tipuri fără dimensiune fixă** (dynamic array, string etc.): `width: null`;
-  UI-ul le afișează fără etichetă de lățime.
+- **unpacked arrays**: `width` = the product of the dimensions × the element
+  width (`ch_out`: 3 × 16 = 48); the UI shows `elem_width` on the pin and the
+  multiplicity separately;
+- **interface ports**: they do not appear in `ports`, but in `iface_ports`
+  (`{name, interface, modport, loc}`); the detail of the interface (signals
+  with elaborated widths + modports with directions) is on the interface
+  *instance* (`instances[].iface`), because the widths depend on the
+  instance's parameters;
+- **types without a fixed size** (dynamic array, string etc.): `width: null`;
+  the UI shows them without a width label.
 
-## Vederi și conectivitate
+## Views and connectivity
 
-O vedere există pentru fiecare instanță cu instanțe copil. Conține:
+A view exists for every instance with child instances. It contains:
 
-- `pins`: lista `{pin, conn}` — fiecare pin al fiecărei instanțe copil, cu
-  expresia de conexiune normalizată;
-- `nets`: lista `{name, endpoints, fanout, render}` — capetele includ pinii
-  instanțelor și porturile modulului (`<port>.x`); `render` este *sugestia*
-  fir/eticheta calculată din fan-out (prag configurabil, implicit >4 →
-  eticheta).
+- `pins`: the list `{pin, conn}` — every pin of every child instance, with the
+  normalized connection expression;
+- `nets`: the list `{name, endpoints, fanout, render}` — the endpoints include
+  the instance pins and the module's ports (`<port>.x`); `render` is the
+  wire/label *suggestion* computed from the fan-out (configurable threshold,
+  by default >4 → label).
 
-### Expresii de conexiune normalizate
+### Normalized connection expressions
 
-Descriptor recursiv cu `kind`:
+A recursive descriptor with `kind`:
 
-| kind | semnificație | câmpuri |
+| kind | meaning | fields |
 |---|---|---|
-| `net` | referință simplă la un net | `net` |
-| `concat` | concatenare | `parts[]` (recursiv) |
-| `select` | selecție element/interval | `base` (recursiv), `index` (numeric, elaborat per instanță; textul sursă în `text` poate conține genvar) |
-| `const` | legare la constantă (tie-off) | `value` |
-| `iface` | conexiune de interfață | `ref` (ex. `bus_i.slave`) |
-| `expr` | expresie generală nerecunoscută | `text` (sintaxa sursă) — UI o afișează ca "logică de conexiune", fără pretenția de a o desena |
-| `null` | pin neconectat | — (marcaj vizual de pin flotant) |
+| `net` | a plain reference to a net | `net` |
+| `concat` | concatenation | `parts[]` (recursive) |
+| `select` | element/range selection | `base` (recursive), `index` (numeric, elaborated per instance; the source text in `text` may contain the genvar) |
+| `const` | tied to a constant (tie-off) | `value` |
+| `iface` | interface connection | `ref` (e.g. `bus_i.slave`) |
+| `expr` | an unrecognized general expression | `text` (the source syntax) — the UI shows it as "connection logic", without claiming to draw it |
+| `null` | unconnected pin | — (a visual mark of a floating pin) |
 
-Regula de proiectare: descriptorii există ca UI-ul să poată desena joncțiuni și
-să numere corect fan-out-ul, nu ca să reimplementeze evaluarea de expresii.
-Orice caz nou întâlnit în practică se adaugă ca `kind` nou doar dacă are
-consecință vizuală; altfel cade în `expr`.
+The design rule: the descriptors exist so that the UI can draw junctions and
+count the fan-out correctly, not to reimplement expression evaluation. Any new
+case met in practice is added as a new `kind` only if it has a visual
+consequence; otherwise it falls into `expr`.
 
-## Politici care NU sunt în model
+## Policies that are NOT in the model
 
-Modelul transportă fapte despre design; politicile de afișare aparțin UI-ului:
+The model carries facts about the design; the display policies belong to the
+UI:
 
-- regula "ceas/reset se afișează ca etichetă indiferent de fan-out" se aplică
-  în UI pe baza rolurilor stabilite la configurare (sau euristic pe nume),
-  nu în extractor;
-- plierea instanțelor generate (`ch[0..2]`) e o operație de vedere: UI-ul
-  grupează instanțele cu același prefix de cale și același modul/parametri;
-- gruparea pinilor după prefix (`axi_*`) e de asemenea în UI.
+- the rule "clock/reset is shown as a label whatever the fan-out" is applied in
+  the UI based on the roles established at configuration time (or
+  heuristically by name), not in the extractor;
+- folding the generated instances (`ch[0..2]`) is a view operation: the UI
+  groups the instances with the same path prefix and the same
+  module/parameters;
+- grouping the pins by prefix (`axi_*`) is also in the UI.
 
-## Extensii planificate ale schemei (nu implementate)
+## Planned extensions of the schema (not implemented)
 
-- `schema_version: 2`: atribute de fișier-sursă la nivel de definiție pentru
-  proiecte multi-bibliotecă Bender (câmp `library`);
-- diagnostice de compilare incluse în model (`diags[]`), ca host-ul să nu
-  parseze stderr.
+- `schema_version: 2`: source-file attributes at definition level for
+  multi-library Bender projects (a `library` field);
+- compilation diagnostics included in the model (`diags[]`), so that the host
+  does not parse stderr.

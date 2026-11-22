@@ -1,93 +1,98 @@
-# 01 — Arhitectura generală
+# 01 — General architecture
 
-## Scop și diferențiator
+## Purpose and differentiator
 
-Extensia oferă două lucruri legate: (a) vizualizarea unui proiect SystemVerilog
-ca diagramă bloc navigabilă și (b) definirea, prin selecție directă pe diagramă,
-a configurației YAML pentru QuickUVM. Vizualizarea de una singură există în alte
-unelte (TerosHDL cu Yosys, hierarchy view în svlangserver); bucla
-diagramă → configurație de verificare nu există nicăieri și este motivul
-proiectului. Orice decizie de design se judecă după cât servește această buclă.
+The extension offers two related things: (a) the visualization of a
+SystemVerilog project as a navigable block diagram and (b) the definition, by
+direct selection on the diagram, of the YAML configuration for QuickUVM.
+Visualization on its own exists in other tools (TerosHDL with Yosys, the
+hierarchy view in svlangserver); the diagram → verification configuration loop
+exists nowhere and is the reason for the project. Every design decision is
+judged by how well it serves this loop.
 
-## Componente și responsabilități
+## Components and responsibilities
 
 ```
 ┌────────────────────────────────────────────────────────────────────┐
 │ VSCode                                                             │
-│  ┌──────────────────────┐   mesaje JSON    ┌────────────────────┐  │
+│  ┌──────────────────────┐  JSON messages   ┌────────────────────┐  │
 │  │ extension host (TS)  │◄────────────────►│ webview            │  │
-│  │ - tree view ierarhie │   (protocol      │ - diagramă SVG     │  │
-│  │ - comenzi, QuickPick │    versionat,    │ - layout elkjs     │  │
-│  │ - diagnostice        │    doc. 05)      │ - selecție, drag   │  │
-│  │ - task quick-uvm     │                  │ - inspector config │  │
-│  │ - WorkspaceEdit YAML │                  └────────────────────┘  │
+│  │ - hierarchy tree view│   (versioned     │ - SVG diagram      │  │
+│  │ - commands, QuickPick│    protocol,     │ - elkjs layout     │  │
+│  │ - diagnostics        │    doc. 05)      │ - selection, drag  │  │
+│  │ - quick-uvm task     │                  │ - config inspector │  │
+│  │ - YAML WorkspaceEdit │                  └────────────────────┘  │
 │  └─────────┬────────────┘                                          │
 │            │ stdio JSON                                            │
 └────────────┼───────────────────────────────────────────────────────┘
              ▼
    ┌───────────────────────┐        ┌─────────────────────┐
-   │ backend semantic      │  -f    │ bender              │
-   │ svmodel (pyslang)     │◄───────│ listă fișiere,      │
-   │ -> model de proiect   │        │ define, target-uri  │
+   │ semantic backend      │  -f    │ bender              │
+   │ svmodel (pyslang)     │◄───────│ file list,          │
+   │ -> project model      │        │ defines, targets    │
    └───────────────────────┘        └─────────────────────┘
 ```
 
-**Bender** furnizează lista ordonată de fișiere, directoarele de include și
-define-urile (`bender script flist-plus`; formatul `flist` simplu pierde
-`export_include_dirs`). Extensia nu ghicește componența proiectului; pentru
-proiecte fără Bender, fallback: glob configurabil pe workspace + fișier `.f`
-scris de utilizator.
+**Bender** supplies the ordered file list, the include directories and the
+defines (`bender script flist-plus`; the plain `flist` format loses
+`export_include_dirs`). The extension does not guess the project's composition;
+for projects without Bender, the fallback is a configurable glob over the
+workspace + a `.f` file written by the user.
 
-**Backend-ul semantic** (`backend/svmodel.py`, pyslang) compilează și
-elaborează designul și emite modelul de proiect JSON. Elaborarea completă este
-cerința care a decis alegerea slang în locul sv-parser: lățimi `[W-1:0]`
-evaluate numeric, `generate` desfăcut cu valorile reale ale parametrilor,
-interfețe cu modporturi rezolvate semantic (istoria comparației: doc. 06,
-jurnalul deciziilor). Backend-ul e proces separat, pornit de extensie la
-deschiderea proiectului și re-rulat la salvarea fișierelor SV (debounced);
-modelul de compilare slang e whole-design, dar rapid — nu se optimizează
-incremental înainte de a măsura o problemă reală.
+**The semantic backend** (`backend/svmodel.py`, pyslang) compiles and
+elaborates the design and emits the JSON project model. Full elaboration is the
+requirement that decided the choice of slang over sv-parser: `[W-1:0]` widths
+evaluated numerically, `generate` unrolled with the real parameter values,
+interfaces with semantically resolved modports (the history of the comparison:
+doc. 06, the decision journal). The backend is a separate process, started by
+the extension when the project is opened and re-run when SV files are saved
+(debounced); slang's compilation model is whole-design, but fast — it is not
+optimized incrementally before a real problem has been measured.
 
-**Extension host** (TypeScript) deține: tree view-ul de ierarhie în sidebar
-(nativ), comenzile ("Setează ca DUT", "Creează agent din selecție",
-"Re-aranjează", "Generează testbench"), QuickPick-urile, diagnosticele
-(Problems), task-ul `quick-uvm generate` și toate editările YAML prin
-`WorkspaceEdit`. Regulă: tot ce poate fi UI nativ VSCode este nativ.
+**The extension host** (TypeScript) owns: the hierarchy tree view in the
+sidebar (native), the commands ("Set as DUT", "Create Agent from Selection",
+"Re-arrange", "Generate Testbench"), the QuickPicks, the diagnostics
+(Problems), the `quick-uvm generate` task and all the YAML edits through
+`WorkspaceEdit`. Rule: everything that can be native VSCode UI is native.
 
-**Webview-ul** deține doar ce nu poate fi nativ: diagrama (SVG generat manual
-peste layout elkjs) și inspectorul de configurare. `retainContextWhenHidden`
-activ; `getState`/`setState` ca plasă de siguranță la restart; temă prin
-variabilele CSS `--vscode-*`.
+**The webview** owns only what cannot be native: the diagram (hand-generated
+SVG over an elkjs layout) and the configuration inspector.
+`retainContextWhenHidden` is on; `getState`/`setState` as a safety net at
+restart; theming through the `--vscode-*` CSS variables.
 
-## Fluxurile de date principale
+## The main data flows
 
-1. **Deschidere proiect**: bender → `.f` → svmodel → model JSON → host → webview
-   (layout inițial ELK complet) + tree view.
-2. **Modificare sursă SV**: watcher → svmodel re-rulat → model nou → diff pe
-   ID-uri stabile → webview actualizează incremental (ELK interactiv doar
-   pentru elementele noi; doc. 04). Pe erori de compilare: modelul vechi rămâne
-   afișat, banner "vedere neactualizată (N erori)", diagnosticele merg în
+1. **Opening a project**: bender → `.f` → svmodel → JSON model → host → webview
+   (full initial ELK layout) + tree view.
+2. **An SV source change**: watcher → svmodel re-run → new model → diff on
+   stable IDs → the webview updates incrementally (interactive ELK only for
+   the new elements; doc. 04). On compilation errors: the old model stays
+   displayed, the banner "View out of date (N errors)", the diagnostics go to
    Problems.
-3. **Configurare QuickUVM**: selecție pe diagramă → comandă → `WorkspaceEdit`
-   pe fișierul YAML → parser YAML în host → overlay actualizat pe diagramă
-   (culori agenți, indicator de acoperire). YAML-ul e sursă de adevăr; doc. 03
-   definește maparea, doc. 05 fluxurile UI.
-4. **Generare**: buton/comandă → task VSCode `quick-uvm generate` → erori
-   Pydantic parsate în Problems; ulterior `quick-uvm status` → decorații pe
-   fișierele generate în Explorer.
+3. **QuickUVM configuration**: selection on the diagram → command →
+   `WorkspaceEdit` on the YAML file → YAML parser in the host → updated overlay
+   on the diagram (agent colours, coverage indicator). The YAML is the source
+   of truth; doc. 03 defines the mapping, doc. 05 the UI flows.
+4. **Generation**: button/command → the VSCode task `quick-uvm generate` →
+   Pydantic errors parsed into Problems; later `quick-uvm status` → decorations
+   on the generated files in the Explorer.
 
-## Invarianți (rezumat; detalii în CLAUDE.md)
+## Invariants (summary; details in CLAUDE.md)
 
-- modelul JSON = contract stabil; backend înlocuibil (slang CLI `--ast-json`,
-  tool C++ pe libslang, sau alt front-end) fără a atinge UI-ul;
-- YAML = sursă de adevăr; UI fără stare proprie de configurare;
-- pozițiile nodurilor aparțin utilizatorului; auto-layout complet doar la cerere;
-- ID-uri stabile = căi ierarhice elaborate;
-- invalidare grațioasă pentru override-uri orfane și pentru cod care nu compilează.
+- the JSON model = the stable contract; the backend is replaceable (the slang
+  CLI `--ast-json`, a C++ tool on libslang, or another front-end) without
+  touching the UI;
+- the YAML = the source of truth; the UI has no configuration state of its own;
+- node positions belong to the user; full auto-layout only on request;
+- stable IDs = elaborated hierarchical paths;
+- graceful invalidation for orphaned overrides and for code that does not
+  compile.
 
-## Ce este explicit în afara scopului (MVP)
+## What is explicitly out of scope (MVP)
 
-- editare de schemă (extensia nu modifică RTL-ul);
-- netlist post-sinteză (dacă apare cerința: Yosys/UHDM, decizie separată);
-- suport VHDL / mixed-language;
-- layout automat "frumos" cu optimizări continue — contrazice invariantul 3.
+- schematic editing (the extension does not modify the RTL);
+- post-synthesis netlists (if the requirement appears: Yosys/UHDM, a separate
+  decision);
+- VHDL / mixed-language support;
+- a "pretty" automatic layout with continuous optimizations — it contradicts
+  invariant 3.

@@ -1,38 +1,39 @@
-# 04 — Layout, poziții deținute de utilizator și rutare
+# 04 — Layout, user-owned positions and routing
 
-## Strategia de layout (decizie închisă)
+## The layout strategy (closed decision)
 
-Combinație a două mecanisme, cu roluri precise:
+A combination of two mechanisms, with precise roles:
 
-1. **Layout inițial de calitate** — la prima deschidere a unei vederi sau la
-   comanda explicită "Re-aranjează tot": ELK `layered` complet
-   (minimizarea încrucișărilor, `portConstraints: FIXED_SIDE`, intrări pe
-   stânga, ieșiri pe dreapta, ceas/reset grupate stânga-jos, rutare ortogonală
-   de pornire).
-2. **Pozițiile aparțin utilizatorului** — după layoutul inițial, nodurile se
-   pot trage liber; pozițiile (calculate sau mutate) se persistă. La modificări
-   de design, ELK rulează în **mod interactiv**
-   (`layering/crossingMinimization/nodePlacement: INTERACTIVE`) cu
-   pozițiile existente ca semințe: nodurile cunoscute rămân pe loc, doar cele
-   noi primesc poziții, inserate în context. Niciun re-layout total implicit,
-   niciodată.
+1. **A quality initial layout** — at the first opening of a view or at the
+   explicit command "Re-arrange all": the full ELK `layered` algorithm
+   (crossing minimization, `portConstraints: FIXED_SIDE`, inputs on the
+   left, outputs on the right, clock/reset grouped bottom-left, a starting
+   orthogonal routing).
+2. **The positions belong to the user** — after the initial layout, the nodes
+   can be dragged freely; the positions (computed or moved) are persisted. On
+   design changes, ELK runs in **interactive mode**
+   (`layering/crossingMinimization/nodePlacement: INTERACTIVE`) with the
+   existing positions as seeds: the known nodes stay in place, only the new
+   ones get positions, inserted in context. No implicit total re-layout,
+   ever.
 
-   **Semințele sunt totale sau deloc** (iul. 2026, D21): primul gest de
-   poziție face aranjamentul *întregii* vederi al utilizatorului — la finalul
-   oricărui drag se persistă TOATE pozițiile curente (noduri, pliaje, steaguri
-   de graniță; mesajul `layout/snapshot`, docs/05), nu doar elementele trase;
-   iar la randarea unei vederi deja aranjate, elementele rămase fără sămânță
-   (noi din recompilare, membri de pliaj proaspăt expandați, sidecar parțial
-   moștenit) se pin-uiesc imediat, la poziția în care ELK interactiv tocmai
-   le-a inserat. Motivul: modul interactiv plasează elementele fără sămânță
-   *altfel* decât layoutul complet pe care îl vede utilizatorul — cu semințe
-   parțiale, steagurile granițelor săreau cu sute de pixeli la redeschidere
-   (regresie reală). Vederile neatinse (fără nicio sămânță) rămân complet
-   automate: nu se persistă nimic pentru simpla vizitare a unei vederi.
+   **The seeds are total or none at all** (Jul 2026, D21): the first position
+   gesture makes the arrangement of the *whole* view the user's — at the end
+   of any drag ALL the current positions are persisted (nodes, folds, boundary
+   flags; the `layout/snapshot` message, docs/05), not only the dragged
+   elements; and when a view that is already arranged is rendered, the
+   elements left without a seed (new from a recompile, members of a freshly
+   expanded fold, a partial inherited sidecar) are pinned immediately, at the
+   position where interactive ELK has just inserted them. The reason:
+   interactive mode places the elements without a seed *differently* from the
+   full layout the user sees — with partial seeds, the boundary flags jumped by
+   hundreds of pixels at reopening (a real regression). The untouched views
+   (with no seed at all) stay fully automatic: nothing is persisted for merely
+   visiting a view.
 
-Rezolvarea poziției unui nod, în ordine: override manual → poziția persistată
-din sesiunea anterioară → poziție calculată de ELK interactiv în jurul celor de
-mai sus.
+Resolving the position of a node, in order: manual override → the position
+persisted from the previous session → a position computed by interactive ELK
+around the ones above.
 
 The edges are **automatic by default**: the routes are recomputed from the
 current positions of the nodes (the user arranges blocks and pins, and does not
@@ -41,46 +42,46 @@ routing overrides below, D27) is the user's, like a position: it is kept
 relative to its pins, follows them, and goes back to the router only on an
 explicit reset.
 
-## Fișierul sidecar de layout
+## The layout sidecar file
 
-Un fișier per proiect, textual, diff-abil, în git lângă YAML-ul QuickUVM.
-Calea implicită: `.vscode/quickuvm-architect.yaml` (nu aglomerează rădăcina;
-`.vscode/` e deja convenția pentru starea de proiect a editorului);
-configurabilă prin setarea `quickuvm.layoutFile` (relativă la rădăcina
-workspace-ului).
+One file per project, textual, diffable, in git next to the QuickUVM YAML.
+The default path: `.vscode/quickuvm-architect.yaml` (it does not clutter the
+root; `.vscode/` is already the convention for the editor's project state);
+configurable through the `quickuvm.layoutFile` setting (relative to the
+workspace root).
 
 ```yaml
 schema_version: 1
 views:
-  demo_top.u_soc:                 # cheia vederii = calea instantei
+  demo_top.u_soc:                 # the view's key = the instance path
     nodes:
       u_add:        {x: 120, y: 80}
       u_inv:        {x: 120, y: 220, flipH: true}
       "g_ch[0..2]": {x: 320, y: 150, collapsed: true}
-    ports:                         # override de ordine/latura a pinilor
+    ports:                         # override of the pins' order/side
       din:   {side: west, order: 1}
       clk:   {side: west, order: 90}
     edges:                         # level 3: hand-routed wires, by edge id
       "sum:u_add.dout-><port>.sum":
         route: source+16 source-40 target-16   # offsets from the pins, never absolute
     nets:
-      din:   {render: label}       # nivel 4: fir <-> eticheta
+      din:   {render: label}       # level 4: wire <-> label
       clk:   {render: label}
-orphans: []                        # override-uri cu tinte disparute (v. mai jos)
+orphans: []                        # overrides whose targets disappeared (see below)
 ```
 
-Reguli:
+Rules:
 
-- toate cheile sunt ID-urile stabile din model (doc. 02); pliajele generate
-  folosesc notația `nume[lo..hi]`;
-- fișierul conține *doar* override-uri și poziții — niciodată date derivate din
-  model (lățimi, direcții etc.);
-- scriere atomică (temp + rename), o singură instanță scriitoare (host-ul);
-- camera (pan/zoom) NU se persistă: e stare de sesiune a webview-ului —
-  prima deschidere a unei vederi se încadrează mereu în fereastră, iar
-  cadrul se păstrează doar la comutarea între vederi în aceeași sesiune
-  (decizie revenită în iul. 2026: cadrele moștenite între sesiuni au produs
-  constant deschideri „pe jumătate în afara ferestrei").
+- all the keys are the stable IDs from the model (doc. 02); the generated
+  folds use the notation `name[lo..hi]`;
+- the file contains *only* overrides and positions — never data derived from
+  the model (widths, directions etc.);
+- atomic writing (temp + rename), a single writing instance (the host);
+- the camera (pan/zoom) is NOT persisted: it is session state of the webview —
+  the first opening of a view is always fitted to the window, and the
+  frame is kept only when switching between views in the same session
+  (a decision reversed in Jul 2026: the frames inherited across sessions
+  constantly produced openings "half outside the window").
 - docs/08 R18 (Oct 2026): two more overrides, both VIEW state. On a TB level's
   node (`tb:<config>|<focus>`), `collapsed: true` = the block drawn as its header
   only (expanded = absent; the RTL meaning of the key — a generated fold's
@@ -131,7 +132,7 @@ Reguli:
   view holding nothing but rules is kept. They are presentation, like the
   positions: no rule changes the layout or the YAML.
 
-## Invalidarea grațioasă
+## Graceful invalidation
 
 The secondary notation (docs/08 R21) follows the same rule, by kind: a node's
 **colour** lives on its node entry and migrates into `orphans` with it; a
@@ -164,29 +165,31 @@ never invalidated: a route whose edge is gone from the configuration stays in
 the file, inert, and is drawn again if the edge comes back (an undo of the YAML
 edit); "Re-arrange all" clears it.
 
-Când o cheie din sidecar nu mai există în model (redenumire, eroare temporară
-de compilare), intrarea se mută în `orphans` cu data ultimei vederi valide; nu
-se șterge. UI-ul oferă "Curăță override-urile orfane" și, la redenumiri
-detectabile (același modul + aceiași parametri + aceeași poziție în părinte),
-propune migrarea cheii. Este același principiu fail-closed din QuickUVM
-(secțiunile pragma), aplicat layoutului.
+When a key in the sidecar no longer exists in the model (a rename, a temporary
+compilation error), the entry is moved into `orphans` with the date of the last
+valid view; it is not deleted. The UI offers "Clean Orphaned Layout Overrides"
+and, on detectable renames (the same module + the same parameters + the same
+position in the parent), proposes migrating the key. It is the same fail-closed
+principle as in QuickUVM (the pragma sections), applied to the layout.
 
-## Ruterul de interconexiuni
+## The interconnect router
 
-Consecință a pozițiilor libere: rutarea nu mai poate veni din ELK (care rutează
-doar propriile plasări). Componentă separată de rutare ortogonală cu evitare de
-obstacole, cu două implementări candidate:
+A consequence of the free positions: the routing can no longer come from ELK
+(which routes only its own placements). A separate component for orthogonal
+routing with obstacle avoidance, with two candidate implementations:
 
-- **libavoid** (Adaptagrams, ruterul din Inkscape) prin build WASM — obstacole,
-  puncte de trecere, penalizări; de evaluat mărimea build-ului în webview;
-- **ruter propriu** pe grilă (Lee / A* cu cost pe direcție și pe apropierea de
-  obstacole) — la scara diagramei (zeci de obstacole, sute de muchii) e simplu
-  și suficient; avantaj: zero dependențe, control total al esteticii
-  (spațiere între trasee paralele, joncțiuni).
+- **libavoid** (Adaptagrams, the router in Inkscape) through a WASM build —
+  obstacles, waypoints, penalties; the size of the build in the webview is to
+  be evaluated;
+- **our own router** on a grid (Lee / A* with a cost on direction and on the
+  proximity to obstacles) — at the scale of the diagram (tens of obstacles,
+  hundreds of edges) it is simple and sufficient; the advantage: zero
+  dependencies, full control of the aesthetics (spacing between parallel
+  routes, junctions).
 
-Decizia se ia în faza 3 pe un prototip comparativ; interfața ruterului e fixă:
-`route(obstacles, pins, constraints) -> polylines`, ca implementarea să fie
-interschimbabilă.
+The decision is taken in phase 3 on a comparative prototype; the router's
+interface is fixed: `route(obstacles, pins, constraints) -> polylines`, so
+that the implementation is interchangeable.
 
 ## The hierarchy of routing overrides
 
@@ -366,12 +369,12 @@ schematic views only (the verification view has no Net section — context menu
 and palette there). There are no visible handles — the cursor is the
 affordance.
 
-## Randare
+## Rendering
 
-SVG generat manual în webview (nu canvas, nu framework de diagramming):
-hit-testing nativ pe elemente, stilizare CSS pentru overlay-ul de agenți
-(schimbare de clasă, nu re-randare), export vectorial trivial (SVG → PDF pentru
-documentație și materiale didactice). The gesture map: zoom on the wheel,
+Hand-generated SVG in the webview (no canvas, no diagramming framework):
+native hit-testing on the elements, CSS styling for the agent overlay
+(a class change, not a re-render), trivial vector export (SVG → PDF for
+documentation and teaching materials). The gesture map: zoom on the wheel,
 **pan on the middle button**, left-click on the background = the **selection
 lasso** (on the symbol it selects pins — the gesture behind "Agent from
 selection"; on a schematic it selects blocks and flags). The modifiers held
@@ -408,52 +411,57 @@ badges. It is a CSS switch on one attribute of the root `<svg>`
 (`data-lod="low"`), never a re-layout: positions, sizes and routes are the
 same at both levels, so the camera can cross the threshold freely (with
 hysteresis, docs/05).
-**Minimap** (navigatorul de ansamblu; cererea utilizatorului, iul. 2026):
-miniatura întregii scene într-un colț (dreapta-jos, 180×120) + dreptunghiul
-zonei vizibile; click sau drag pe minimap **centrează camera** pe punctul
-respectiv (zoomul se păstrează), tasta **M** îl comută. Doar în vederile-schemă
-(RTL + TB) — simbolul încape mereu; nu apare în exportul SVG (e chrome de UI,
-nu conținut). Implementare: miniatura e o **copie vie** prin
-`<use href="#viewport">` — zero re-randare, orice schimbare (drag, selecție,
-ghidaje) apare instant; transformul `U = M ∘ V⁻¹` anulează camera copiată și
-aduce lumea la scara minimapului. Toată geometria (încadrare, dreptunghi de
-vedere, salt de cameră) e în modulul **pur** `src/webview/minimap.ts`
-(`test:minimap`); `refreshMinimap`/`updateMinimap` în `main.ts` o leagă de DOM
-(refresh la randare/drag-end/resize/toggle; update ieftin per cadru din
-`applyTransform`, cu auto-corecția ancorării — prima randare poate rula cu
-canvasul încă ascuns de ecranul de bun-venit, `clientWidth=0`). Gesturile pe
-minimap nu ajung la canvas (altfel porneau lasso-ul / goleau selecția).
-**Ghidaje de aliniere la drag, pe CAPETELE PINILOR** (`alignSnap`, pur,
-`test:router`; cererea utilizatorului, iul. 2026): alinierea ține cont DOAR de
-pini, nu de marginile blocului — două capete de pini la același y ⇒ fir
-orizontal drept, exact ce contează pentru o schemă curată. Punctul de aliniere e
-CAPĂTUL pinului (vârful stub-ului, unde se leagă firul și stă marcajul `{}`/`[]`),
-nu marginea blocului: la `cx − stubLen` pe vest / `cx + cw + stubLen` pe est, cu
-`stubLen = MARKER_STUB` pentru pinii cu marcator concat/select (firul se leagă
-dincolo de chip), altfel `STUB` — deci ghidajul vertical trece prin vârfurile
-pinilor, nu prin marginea blocului (`pinTipOffsets` pur în `schematic.ts`,
-`test:router`; latura vine din geometrie, ca ancora din `routeEdges`, deci
-răsturnările o urmează). Pe fiecare axă, dacă un capăt de pin al nodului APUCAT
-ajunge în ~6px (ecran) de un capăt de pin al altui bloc, blocul se mută ca ele să
-se alinieze EXACT (peste snap-ul de grilă) și apare o linie de ghidaj punctată
-(`.align-guide`, 1px la orice zoom) de la capătul tras la cel potrivit, cu un mic
-surplus pe capete (`ALIGN_GUIDE_PAD`) ca să rămână vizibilă chiar când capetele
-coincid pe axă; pe axa fără potrivire rămâne snap-ul de grilă. Steagurile de
-graniță (porturile modulului, fără stub) folosesc centrul lor. Se caută cel mai
-apropiat capăt, deci snap-ul poate fi la orice vecin, nu doar la frați. Ghidajele
-se curăță la drag-end. Grupul se mută cu nodul primar (offseturile relative se
-păstrează). `nodeAlignPts`/`nodePortPoints` în `main.ts` extrag punctele (RTL:
-capetele din `pinTipOffsets`; TB: `TbPlaced.ports`, fără stub-uri).
-**Ctrl+Z / Ctrl+Shift+Z (sau Ctrl+Y)** = undo/redo de **poziții** (din
-validarea quick wins, iul. 2026): istoric de sesiune per cheie de layout
-(RTL per vedere, TB per nivel) care anulează mutările de blocuri/steaguri și
-re-aranjările ⟲ — fiecare pas aplicat se persistă normal prin
-`layout/snapshot` (sidecar-ul rămâne sursa persistată; flip-ul și pliajele
-nu intră în istoric). **Săgețile** derulează viewport-ul (pan din tastatură,
-cererea utilizatorului, iul. 2026): convenție de scroll (jos = vezi conținut
-dedesubt), pas mai mare cu Shift, ținut apăsat = derulare continuă; camera
-devine a utilizatorului și se salvează ca la pan-ul cu mouse-ul (stare de
-sesiune). Nu declanșează în câmpurile inspectorului (bail pe INPUT/SELECT/…).
+**Minimap** (the overview navigator; the user's request, Jul 2026):
+a thumbnail of the whole scene in a corner (bottom-right, 180×120) + the
+rectangle of the visible area; a click or a drag on the minimap **centres the
+camera** on that point (the zoom is kept), the **M** key toggles it. Only in
+the schematic views (RTL + TB) — the symbol always fits; it does not appear in
+the SVG export (it is UI chrome, not content). Implementation: the thumbnail
+is a **live copy** through `<use href="#viewport">` — zero re-rendering, any
+change (drag, selection, guides) appears instantly; the transform
+`U = M ∘ V⁻¹` cancels the copied camera and brings the world to the minimap's
+scale. All the geometry (the fit, the view rectangle, the camera jump) is in
+the **pure** module `src/webview/minimap.ts` (`test:minimap`);
+`refreshMinimap`/`updateMinimap` in `main.ts` tie it to the DOM (a refresh at
+render/drag-end/resize/toggle; a cheap per-frame update from
+`applyTransform`, with self-correction of the anchoring — the first render may
+run with the canvas still hidden by the welcome screen, `clientWidth=0`). The
+gestures on the minimap do not reach the canvas (otherwise they started the
+lasso / cleared the selection).
+**Alignment guides while dragging, on the PIN ENDS** (`alignSnap`, pure,
+`test:router`; the user's request, Jul 2026): the alignment takes ONLY the
+pins into account, not the block's edges — two pin ends at the same y ⇒ a
+straight horizontal wire, exactly what matters for a clean schematic. The
+alignment point is the END of the pin (the tip of the stub, where the wire
+attaches and the `{}`/`[]` marker sits), not the block's edge: at
+`cx − stubLen` on the west / `cx + cw + stubLen` on the east, with
+`stubLen = MARKER_STUB` for the pins with a concat/select marker (the wire
+attaches beyond the chip), otherwise `STUB` — so the vertical guide passes
+through the tips of the pins, not through the block's edge (`pinTipOffsets`,
+pure, in `schematic.ts`, `test:router`; the side comes from the geometry, like
+the anchor in `routeEdges`, so the flips follow it). On each axis, if a pin end
+of the GRABBED node comes within ~6px (screen) of a pin end of another block,
+the block is moved so that they align EXACTLY (over the grid snap) and a dotted
+guide line appears (`.align-guide`, 1px at any zoom) from the dragged end to
+the matched one, with a small overshoot at the ends (`ALIGN_GUIDE_PAD`) so that
+it stays visible even when the ends coincide on the axis; on the axis without a
+match the grid snap remains. The boundary flags (the module's ports, without a
+stub) use their centre. The nearest end is searched for, so the snap can be to
+any neighbour, not only to siblings. The guides are cleared at drag-end. The
+group moves with the primary node (the relative offsets are kept).
+`nodeAlignPts`/`nodePortPoints` in `main.ts` extract the points (RTL: the ends
+from `pinTipOffsets`; TB: `TbPlaced.ports`, without stubs).
+**Ctrl+Z / Ctrl+Shift+Z (or Ctrl+Y)** = undo/redo of **positions** (from the
+validation of the quick wins, Jul 2026): a session history per layout key
+(RTL per view, TB per level) that undoes the moves of blocks/flags and the ⟲
+re-arrangements — each applied step is persisted normally through
+`layout/snapshot` (the sidecar stays the persisted source; the flip and the
+folds do not enter the history). **The arrow keys** scroll the viewport (pan
+from the keyboard, the user's request, Jul 2026): the scroll convention (down
+= see the content below), a larger step with Shift, held down = continuous
+scrolling; the camera becomes the user's and is saved as with the mouse pan
+(session state). They do not fire in the inspector's fields (a bail on
+INPUT/SELECT/…).
 **Keyboard parity with node editors** (docs/08 R5, Oct 2026): `Home` fits all
 like `F`; `G` fits the selection (blocks and flags; pins alone fall back to fit
 all); `U` / `PageUp` go up one level (TB: agent → env → root; RTL: the parent
@@ -469,249 +477,267 @@ the selection by one grid step (`Shift` ×5) through the same path as a drag end
 it (session state, like the camera; an empty slot never moves the camera).
 `F2` rename waits for the rename mutation (docs/08 R14). The pure rules live in
 `src/webview/navfind.ts` (`test:navfind`).
-**Trasare interactivă** (faza 4, implementată): în vederea-schemă,
-**Shift+click** pe un net (fir sau etichetă) sau pe un bloc/steag selectează
-**conul aval** (tot ce e condus, tranzitiv, de element), iar
-**Shift+Alt+click** — **conul amonte** (tot ce îl conduce). Traversarea
-(`netCone` în `scene.ts`, pură, `test:scene`) urmează exact ce e desenat:
-muchiile wire după direcție, interfețele în ambele sensuri, iar net-urile
-afișate ca **etichetă** prin conectivitatea pinilor și a **steagurilor de
-graniță** (`pin.nets`/`bport.nets` — etichetele nu au muchii; un net-etichetă
-care atinge un port al vederii NU-și pierde capătul de graniță din con);
-pliajele generate sunt un singur nod, ca pe ecran. Clasificarea semínței
-(`coneOf`) e robustă la ținta clicului: un click pe interiorul unui pin
-(numele portului, adnotarea) pornește din net-urile pinului, nu dintr-un net
-inexistent, iar un Shift+click pe ceva nerecunoscut păstrează selecția (nu o
-golește).
-**Cross-probing la hover** (faza 4, implementată): staționarea pe un pin
-(~300 ms) revelează declarația portului în editoarele **deja vizibile**, cu
-o evidențiere tranzitorie a liniei — ne-intruziv prin construcție (nu
-deschide tab-uri, nu fură focusul, nu mută cursorul; `openSource` cu
-`peek: true`, docs/05); saltul complet rămâne pe dublu-click. Setarea
-`quickuvm.hoverCrossProbe` îl stinge. **Cross-probing editor→diagramă**
-(reciproca; faza 4, implementată): host-ul urmărește cursorul din sursele SV
-(debounced 150ms) și, prin `probe/highlight` (docs/05), webview-ul aprinde un
-**halou galben persistent** (`.xprobe`) pe elementul de sub cursor — DISTINCT
-de selecție (selecția de lucru nu e atinsă) și DOAR în vederea curentă
-(non-invaziv: fără navigare, fără mișcare de cameră; ținta absentă = niciun
-halou). Rezoluția (fișier,linie)→țintă e pură (`buildLocIndex`/`resolveLoc` în
-`src/locmap.ts`, `test:locmap`): potrivire exactă pe linie (portul bate
-instanța bate antetul de modul — stil ANSI pe o linie), altfel cel mai
-apropiat element care CUPRINDE de deasupra (instanțe/module; porturile doar
-exact); instanțele generate împart linia sursă → toate se aprind (pliajul, o
-dată — maparea pe id-urile vederii e tot pură, `probeIds`, cu `memberPaths`
-pe nodurile-pliaj). Căile se compară normalizat (lower+slash — capcana
-Windows din `isComposedChild`). Navigarea explicită: comanda **„Reveal in
-Diagram"** din meniul contextual al editorului (`.sv/.svh/.v/.vh`, insensibil
-la caz) deschide diagrama la element — instanță → schema vederii-conținătoare
-+ selecție (generate: toți membrii; cu pliajul închis, id-urile membrilor se
-remapează pe pliaj prin `remapSelection` în `presentScene` — pur, `test:locmap`
-— altfel navigarea reușea dar selecția era goală); top fără vedere-părinte →
-schema lui dacă există (antetul unui modul dezvăluie interiorul, consecvent);
-port/modul → vederea instanței modulului (preferă instanța vederii curente) cu
-steagul/pinul selectat; ținta lipsă → mesaj, nu eșec tăcut. `select/reveal`
-face și ecou `select/changed` spre host (altfel comenzile din paletă care
-citesc selecția acționau pe nimic). Haloul `.xprobe` NU intră în exportul SVG
-(stare de sesiune, nu conținut — scos de pe clonă ca `.selected`).
-**Limitare cunoscută** (recenzia adversarială, structurală — modelul n-are
-sfârșiturile elementelor): „cel mai apropiat deasupra" nu vede granițele
-dintre module — cursorul într-o construcție ne-elaborată (pachet, modul
-nefolosit) care URMEAZĂ în fișier unor instanțe poate cădea pe ultima
-instanță de deasupra; inofensiv (doar halou/reveal aproximativ) și
-nedeclanșabil pe fixture-urile actuale, corectabil doar cu end-loc în model.
-**Decorațiile de stare quick-uvm** (faza 4, implementată; deciziile prin
-AskUserQuestion: ambele surse, badge în colț + tooltip): validările
-model↔YAML (`checkConfig`) ajung pe diagramă ca **badge-uri** ⚠ (warning) /
-✕ (error) în colțul dreapta-sus al elementului vizat, cu mesajele în tooltip
-— pinii RTL ai DUT-ului (lățime greșită, revendicare dublă, ignorat+mapat;
-steagul `<port>.X` pe vederea DUT-ului însuși, pinii instanțelor de DUT în
-vederea-părinte) și blocurile TB (`agent:<nume>`; hibrid/dut-missing pe
-Env). La nivelul-rădăcină TB, problemele agenților se **agregă pe Env**
-(bubble-up cu prefixul agentului, severitatea maximă) — rădăcina nu pare
-curată cu agenți stricați dedesubt. Portul orfan NU țintește pinul (a
-dispărut din model), doar agentul. Rezultatul ultimului „Generează
-testbench" e un **cip în antet** (`✓/✕ generate`, tooltip cu detaliul
-Pydantic + momentul; ✕ și la eșecul de lansare ENOENT); absent până la prima
-rulare. Mesajul `status/decorations` (docs/05), derivarea și maparea pure în
-`src/status.ts` (`decosFromFindings`/`statusIdsRtl`/`statusIdsTb`,
-`test:status`); badge-urile se re-desenează după fiecare randare
-(idempotent, poziționate pe `getBBox`) și NU intră în exportul SVG
-(diagnostic de sesiune, nu conținut). **Export SVG** (faza 4, implementată):
-butonul ⤓ din header (orice vedere) sau comanda `quickuvm.exportSvg` scrie
-un SVG **autonom**: stilurile calculate se inline-uiesc (culorile temei
-curente se coc în fișier — CSS-ul tematizat prin `var(--vscode-*)` nu
-călătorește), camera de sesiune devine `viewBox` pe conținut, fundalul temei
-se coace într-un rect. Exportul PDF e amânat: SVG-ul se convertește curat cu
-unelte externe (browser, Inkscape), iar o bibliotecă de PDF în webview nu-și
-justifică greutatea (D5 anticipa exportul vectorial — corect pe fond, dar
-„trivial" doar după inline-area stilurilor).
+**Interactive tracing** (phase 4, implemented): in the schematic view,
+**Shift+click** on a net (wire or label) or on a block/flag selects the
+**downstream cone** (everything driven, transitively, by the element), and
+**Shift+Alt+click** — the **upstream cone** (everything that drives it). The
+traversal (`netCone` in `scene.ts`, pure, `test:scene`) follows exactly what
+is drawn: the wire edges by direction, the interfaces both ways, and the nets
+shown as a **label** through the connectivity of the pins and of the
+**boundary flags** (`pin.nets`/`bport.nets` — labels have no edges; a label
+net that touches a port of the view does NOT lose its boundary end from the
+cone); the generated folds are a single node, as on screen. The classification
+of the seed (`coneOf`) is robust to the click's target: a click on the inside
+of a pin (the port name, the annotation) starts from the pin's nets, not from
+a nonexistent net, and a Shift+click on something unrecognized keeps the
+selection (it does not clear it).
+**Cross-probing on hover** (phase 4, implemented): dwelling on a pin
+(~300 ms) reveals the port's declaration in the **already visible** editors,
+with a transient highlight of the line — non-intrusive by construction (it
+does not open tabs, does not steal the focus, does not move the cursor;
+`openSource` with `peek: true`, docs/05); the full jump stays on the
+double-click. The `quickuvm.hoverCrossProbe` setting turns it off.
+**Cross-probing editor→diagram** (the reciprocal; phase 4, implemented): the
+host tracks the cursor in the SV sources (debounced 150ms) and, through
+`probe/highlight` (docs/05), the webview lights a **persistent yellow halo**
+(`.xprobe`) on the element under the cursor — DISTINCT from the selection (the
+working selection is not touched) and ONLY in the current view (non-invasive:
+no navigation, no camera movement; an absent target = no halo). The resolution
+(file,line)→target is pure (`buildLocIndex`/`resolveLoc` in `src/locmap.ts`,
+`test:locmap`): an exact match on the line (the port beats the instance beats
+the module header — ANSI style on one line), otherwise the nearest ENCLOSING
+element from above (instances/modules; the ports only exactly); the generated
+instances share the source line → all of them light up (the fold, once — the
+mapping onto the view's ids is pure too, `probeIds`, with `memberPaths` on the
+fold nodes). The paths are compared normalized (lower+slash — the Windows
+pitfall from `isComposedChild`). Explicit navigation: the **"Reveal in
+Diagram"** command in the editor's context menu (`.sv/.svh/.v/.vh`,
+case-insensitive) opens the diagram at the element — an instance → the
+schematic of the containing view + the selection (generate: all the members;
+with the fold closed, the members' ids are remapped onto the fold through
+`remapSelection` in `presentScene` — pure, `test:locmap` — otherwise the
+navigation succeeded but the selection was empty); a top without a parent
+view → its schematic if it exists (a module's header reveals the inside,
+consistently); a port/module → the view of the module's instance (it prefers
+the instance of the current view) with the flag/pin selected; a missing
+target → a message, not a silent failure. `select/reveal` also echoes
+`select/changed` to the host (otherwise the palette commands that read the
+selection acted on nothing). The `.xprobe` halo does NOT enter the SVG export
+(session state, not content — removed from the clone like `.selected`).
+**Known limitation** (the adversarial review, structural — the model does not
+have the ends of the elements): "the nearest above" does not see the
+boundaries between modules — the cursor in a non-elaborated construct (a
+package, an unused module) that FOLLOWS some instances in the file may fall on
+the last instance above; harmless (only an approximate halo/reveal) and not
+triggerable on the current fixtures, correctable only with an end-loc in the
+model.
+**The quick-uvm status decorations** (phase 4, implemented; the decisions
+through AskUserQuestion: both sources, a badge in the corner + a tooltip): the
+model↔YAML validations (`checkConfig`) reach the diagram as **badges**
+⚠ (warning) / ✕ (error) in the top-right corner of the targeted element, with
+the messages in the tooltip — the RTL pins of the DUT (wrong width, double
+claim, ignored+mapped; the flag `<port>.X` on the view of the DUT itself, the
+pins of the DUT instances in the parent view) and the TB blocks
+(`agent:<name>`; hybrid/dut-missing on Env). At the TB root level, the agents'
+problems are **aggregated on Env** (a bubble-up with the agent's prefix, the
+maximum severity) — the root does not look clean with broken agents
+underneath. The orphaned port does NOT target the pin (it has disappeared from
+the model), only the agent. The result of the last "Generate Testbench" is a
+**chip in the header** (`✓/✕ generate`, a tooltip with the Pydantic detail +
+the time; ✕ also on the ENOENT launch failure); absent until the first run.
+The `status/decorations` message (docs/05), the derivation and the mapping
+pure in `src/status.ts` (`decosFromFindings`/`statusIdsRtl`/`statusIdsTb`,
+`test:status`); the badges are redrawn after every render (idempotent,
+positioned on `getBBox`) and do NOT enter the SVG export (a session
+diagnostic, not content). **SVG export** (phase 4, implemented): the ⤓ button
+in the header (any view) or the `quickuvm.exportSvg` command writes a
+**self-contained** SVG: the computed styles are inlined (the colours of the
+current theme are baked into the file — the CSS themed through
+`var(--vscode-*)` does not travel), the session camera becomes a `viewBox` on
+the content, the theme's background is baked into a rect. The PDF export is
+deferred: the SVG converts cleanly with external tools (browser, Inkscape),
+and a PDF library in the webview does not justify its weight (D5 anticipated
+the vector export — right in substance, but "trivial" only after inlining the
+styles).
 
-**Vocabular de desen — core** (faza 4, implementat): **busele** poartă
-lățimea (`ScenePin`/`SceneBPort`/`SceneEdge` au `width`): pinul/steagul arată
-`/N` deasupra stub-ului (combinat `/16×3` la tabloul unpacked), iar
-firul/stub-ul se îngroașă pe **clase de lățime** (`widthClass` →
-w-s 2-8 / w-m 9-16 / w-l >16). Lățimea netului pe muchie e derivată prin
-`netWidth` (reutilizat din `probe.ts`) — DOAR de la un capăt cu **același
-semnal** (portul propriu al vederii sau un pin de copil cu `conn.kind==="net"`),
-niciodată prin select/concat (invariantul de lățime din CLAUDE.md).
-**Eticheta portului** (`portLabel`, pur, `test:scene`) urmează ordinea de
-declarare SystemVerilog: dimensiunile **packed înaintea numelui** (din
-`elem_width`), **unpacked după** (din sufixul `type` de după separatorul intern
-`$`, ca să păstreze intervalul exact declarat) — `[15:0]ch_out[0:2]` pentru un
-tablou unpacked, `[15:0]din` pentru un vector packed, doar numele la 1 bit.
-Corectează `ch_out[15:0]` vechi (iul. 2026, cererea utilizatorului), care
-prezenta un tablou unpacked ca vector plat de 16 biți și contrazicea selecturile
-`[0]`/`[1]`/`[2]` care-l alimentează. Eticheta e **compactă (fără spații** între
-dimensiuni și nume, ca să economisească lățime); lizibilitatea vine din
-**colorarea diferită**: la desen (`portLabelText` + `splitLabel`, ambele pure)
-numele stă în culoarea plină, iar dimensiunile în tspan-uri `.dim` cu
-`fill-opacity: 0.55` — o nuanță care urmează culoarea numelui la
-hover/select/iface, ca numele să rămână proeminent. **Măsurarea** blocului
-folosește șirul compact cu fontul editorului (monospace, `measurer(mono)` —
-altfel etichetele monospace mai late erau subestimate și porturile vest/est se
-suprapuneau). **Junction
-dots** (`junctionDots`, pur, consumat în `routeEdges` după rutare): un punct
-unde un net se contopește — pentru fiecare vârf al netului se numără direcțiile
-cardinale distincte în care pleacă un segment al netului, iar **≥3 direcții la
-un vârf** = joncțiune reală (T cu 3, sau contopire 4-way ca la fan-in-ul unei
-magistrale — 3 `dout`-uri într-un port `ch_out`; cererea utilizatorului, iul.
-2026). Un **cot** (2 direcții) nu primește punct. **Nu** se marchează
-încrucișările periculoase: (1) net-uri DIFERITE care se ating — detecția e
-**grupată pe net**, deci nu-s în același grup; (2) o încrucișare a aceluiași net
-fără cot (două fire drepte) nu are vârf la intersecție, deci nu ajunge la
-verificare. Trunchiul comun al unui fan-out (waive-ul) se dedup pe vârf.
-**Pieptenele de magistrală** (`combPolys`, pur, `test:router`): un net cu fan
-(≥2 muchii wire, capete pe rânduri diferite) se redesenează ca un **trunchi
-vertical + o priză orizontală per capăt**, nu ca o STEA în care toate muchiile
-converg în sink (care făcea un 4-way — un singur punct). `trunkX` = x-ul vertical
-dominant din rutarea A* (ocolește obstacolele), iar `routeEdges` aplică pieptenele
-DOAR dacă prizele/trunchiul nu taie vreun bloc (`combClear`) — altfel rămâne
-rutarea per-muchie. Priza de sus + trunchiul + priza de jos se desenează ca **o
-SINGURĂ polilinie** (spina), ca cele două colțuri de capăt să aibă jonctiune
-(miter), nu două capete „butt" separate care lăsau un gol la îmbinare (observația
-utilizatorului); prizele interioare rămân separate — ating latura groasă a
-trunchiului, acoperite de el. Rezultatul: prize separate, fiecare cu punctul ei de T
-(sink-ul dincolo de surse = capăt de trunchi, deci capetele-priză sunt coturi
-fără punct; cererea utilizatorului, iul. 2026). **Glife de adnotare** (implementate ulterior): `ScenePin.noteKind`
-(`select`/`const`/`concat`/`nc`/`expr`/`mixed`) e discriminatorul care ALEGE
-glifa în stratul de desen, fără să reparseze textul notei (`noteOf` în
-scene.ts). `drawAnnotation` (schematic.ts) desenează: `const` = cutie tie-cell
-cu valoarea, `select`/`concat` = **chip de accent cu parantezele SV** (`{}`
-concat, `[]` select — chiar operatorii din sursă) + eticheta, `nc` = cerc,
-restul text. Chip-ul înlocuiește pana netlistsvg veche (iul. 2026): pana era
-plină și convergea spre bloc, deci se citea ca un al doilea **cap de săgeată**
-peste săgeata de direcție a firelor — triaj adversarial pe 8 familii, cererea
-explicită a utilizatorului. (Ulterior, tot la cererea utilizatorului, **săgeata
-de direcție a firelor RTL a fost scoasă** — `marker-end` eliminat din
-`edgeElement` —, direcția fiind implicită din latura portului: intrări pe vest,
-ieșiri pe est. Săgețile rămân în vederea TB, unde steagurile disting
-in/out/inout; markerul `#arrow` din defs rămâne, folosit acolo.) Chip-ul n-are
-vârf orientat de-a lungul firului
-(dreptunghi rotunjit, parantezele poartă distincția), iar textul `{…}`/`[hi:lo]`
-rămâne purtătorul de sens la „decorations off" (chip-ul e decorație, ascuns
-acolo; nota nu se scoate). Chip-ul stă la un `MARKER_GAP` de capătul stub-ului,
-spre exterior (nu lipit de port) — altfel colțul lui de sus se suprapunea cu
-eticheta de lățime și cu nota. **Firul traversează chip-ul ORIZONTAL**, în
-aceeași direcție cu portul (cererea utilizatorului): pentru un pin cu marcator,
-stub-ul VIZIBIL se extinde la `MARKER_STUB` (= `STUB+GAP+CW+MARKER_TAIL` = 48)
-ȘI ancora de rutare a firului (`routeEdges`) se mută tot la `MARKER_STUB`, așa
-că trunchiul fanout-ului se leagă DINCOLO de marcator (la stânga la
-intrări/vest, la dreapta la ieșiri/est) și stub-ul orizontal desenat prin chip
-îl traversează. **Pinul STRĂPUNGE vizibil chip-ul** (cererea utilizatorului,
-iul. 2026): stub-ul iese `MARKER_TAIL` (=12px) dincolo de marginea exterioară a
-chip-ului (36), altfel părea ascuns sub el (se oprea exact la margine, firul
-părea să izvorască din chip); 36+12=48 e multiplu de 8, deci vârful/ancora cade
-PE GRILĂ (pin pe grilă = fir drept). Abordarea cu obstacol de rutare (să împingă
-trunchiul) a fost RESPINSĂ — un obstacol respinge și ramura orizontală (firul
-ocolea chip-ul, rămânea „pe uscat"); ancora e soluția corectă (fir rutat până la
-ancoră + stub-decorație prin chip). **Tranziția de grosime** stub-port (lățimea
-portului) → muchie-net (lățimea netului) cade acum la VÂRF, coliniară cu firul
-(fără colț), deci nu produce îmbinări rupte; nota veche „tranziția sub chip"
-(ancora exact la marginea chip-ului) e ÎNLOCUITĂ de cererea mai nouă — pinul
-vizibil dincolo de chip bate ascunderea tranziției. Fundalul e OPAC
-(`color-mix` cu `editor-background`), deci maschează firul de dedesubt. Centrarea verticală a parantezelor NU folosește `dominant-baseline`
-(getBBox + dominant-baseline diferă între versiuni de Chromium — harness vs
-webview VSCode —, iar nudge-ul ieșea greșit): semnul primește un `y` de start
-aproximativ centrat, iar `centerChipSigns` (apelat după `drawSchematic`, cu
-elementele în DOM) măsoară cutia reală a semnului și a dreptunghiului pe
-**baseline alfabetic** (getBBox fiabil peste tot) și nudge-uiește semnul până
-coincid centrele. Se re-aplică pe cadrul următor și după `document.fonts.ready`
-(primul getBBox poate rula înainte ca fontul editorului să fie aplicat).
-Independent de font, idempotent per randare.
-Iterația intermediară a fost un romb cu semn de
-lățime `+`/`−`, înlocuit fiindcă semnul cerea un mnemonic; parantezele sunt
-sintaxa însăși. `estPinText`
-adaugă o alocare fixă (`GLYPH_W`) pentru const/select/concat, în AMBELE
-consumatoare (marginile ELK și obstacolele ruterului), ca glifele mai late să
-nu iasă din zona rezervată.
-**Secțiuni de pini pe rol** (vederea-simbol, symbolator): pinii de ceas/reset
-(euristica `isClockOrReset`) sunt deja grupați jos-stânga (`buildPins`);
-gruparea se face VIZIBILĂ printr-un gap + divizor + titlu — `draw` (main.ts)
-detectează granița signals→clock/reset pe vest, deplasează grupul clock/reset
-în jos cu `SECTION_GAP` (ELK FIXED_ORDER nu lasă gol per-grup), mărește cutia
-și desenează un divizor punctat + eticheta „clock / reset" (grupul de sus e
-implicit prin contrast). Doar în vederea-simbol și doar când modulul are
-ceas/reset (combinațional pur rămâne plat).
-Vocabularul (slash+lățime, junction dots) se poate ascunde cu setarea
-`quickuvm.schematicDecorations` (implicit pornit; clasă `decor-off` pe canvas
-prin `ui/config` — gradarea grosimii firelor rămâne, e natura firului).
-**Firul folosește o culoare OPACĂ amestecată cu fundalul, nu `opacity`**:
-firele aceluiași net care împart trunchiul (waive-ul de fan-out) își cumulau
-transparența și dădeau un efect de gradient la suprapunere (observat la
-validare) — amestecul opac dă aceeași softness fără acumulare.
+**Drawing vocabulary — core** (phase 4, implemented): **buses** carry their
+width (`ScenePin`/`SceneBPort`/`SceneEdge` have `width`): the pin/flag shows
+`/N` above the stub (combined `/16×3` for an unpacked array), and the
+wire/stub thickens by **width classes** (`widthClass` →
+w-s 2-8 / w-m 9-16 / w-l >16). The net's width on the edge is derived through
+`netWidth` (reused from `probe.ts`) — ONLY from an end with the **same
+signal** (the view's own port or a child pin with `conn.kind==="net"`),
+never through select/concat (the width invariant in CLAUDE.md).
+**The port label** (`portLabel`, pure, `test:scene`) follows the SystemVerilog
+declaration order: the **packed dimensions before the name** (from
+`elem_width`), the **unpacked ones after** (from the `type` suffix after the
+internal separator `$`, so as to keep the exact declared range) —
+`[15:0]ch_out[0:2]` for an unpacked array, `[15:0]din` for a packed vector,
+only the name at 1 bit. It corrects the old `ch_out[15:0]` (Jul 2026, the
+user's request), which presented an unpacked array as a flat 16-bit vector and
+contradicted the selects `[0]`/`[1]`/`[2]` that feed it. The label is
+**compact (no spaces** between the dimensions and the name, to save width);
+the readability comes from the **different colouring**: when drawn
+(`portLabelText` + `splitLabel`, both pure) the name is in the full colour,
+and the dimensions in `.dim` tspans with `fill-opacity: 0.55` — a shade that
+follows the name's colour on hover/select/iface, so that the name stays
+prominent. **The measuring** of the block uses the compact string with the
+editor's font (monospace, `measurer(mono)` — otherwise the wider monospace
+labels were underestimated and the west/east ports overlapped). **Junction
+dots** (`junctionDots`, pure, consumed in `routeEdges` after routing): a dot
+where a net merges — for each vertex of the net the distinct cardinal
+directions in which a segment of the net leaves are counted, and **≥3
+directions at a vertex** = a real junction (a T with 3, or a 4-way merge as at
+the fan-in of a bus — 3 `dout`s into one `ch_out` port; the user's request,
+Jul 2026). A **bend** (2 directions) gets no dot. The dangerous crossings are
+**not** marked: (1) DIFFERENT nets that touch — the detection is **grouped
+per net**, so they are not in the same group; (2) a crossing of the same net
+without a bend (two straight wires) has no vertex at the intersection, so it
+does not reach the check. The common trunk of a fan-out (the waive) is
+deduplicated per vertex.
+**The bus comb** (`combPolys`, pure, `test:router`): a net with a fan
+(≥2 wire edges, ends on different rows) is redrawn as a **vertical trunk + one
+horizontal tap per end**, not as a STAR in which all the edges converge in the
+sink (which made a 4-way — a single dot). `trunkX` = the dominant vertical x
+from the A* routing (it goes around the obstacles), and `routeEdges` applies
+the comb ONLY if the taps/the trunk do not cut any block (`combClear`) —
+otherwise the per-edge routing stays. The top tap + the trunk + the bottom tap
+are drawn as **ONE SINGLE polyline** (the spine), so that the two end corners
+have a join (miter), not two separate "butt" ends that left a gap at the joint
+(the user's observation); the interior taps stay separate — they touch the
+thick side of the trunk, covered by it. The result: separate taps, each with its own T dot
+(the sink beyond the sources = a trunk end, so the tap ends are bends
+without a dot; the user's request, Jul 2026). **Annotation glyphs** (implemented later): `ScenePin.noteKind`
+(`select`/`const`/`concat`/`nc`/`expr`/`mixed`) is the discriminator that
+CHOOSES the glyph in the drawing layer, without re-parsing the note's text
+(`noteOf` in scene.ts). `drawAnnotation` (schematic.ts) draws: `const` = a
+tie-cell box with the value, `select`/`concat` = an **accent chip with the SV
+brackets** (`{}` concat, `[]` select — the very operators from the source) +
+the label, `nc` = a circle, the rest text. The chip replaces the old
+netlistsvg wedge (Jul 2026): the wedge was filled and converged towards the
+block, so it read as a second **arrowhead** over the wires' direction arrow —
+an adversarial triage over 8 families, the user's explicit request. (Later,
+again at the user's request, **the direction arrow of the RTL wires was
+removed** — `marker-end` dropped from `edgeElement` —, the direction being
+implicit from the port's side: inputs on the west, outputs on the east. The
+arrows stay in the TB view, where the flags distinguish in/out/inout; the
+`#arrow` marker in defs stays, used there.) The chip has no
+tip oriented along the wire
+(a rounded rectangle, the brackets carry the distinction), and the text
+`{…}`/`[hi:lo]` stays the carrier of the meaning at "decorations off" (the
+chip is decoration, hidden there; the note is not removed). The chip sits one
+`MARKER_GAP` from the end of the stub, outwards (not glued to the port) —
+otherwise its top corner overlapped the width label and the note. **The wire
+crosses the chip HORIZONTALLY**, in the same direction as the port (the user's
+request): for a pin with a marker, the VISIBLE stub extends to `MARKER_STUB`
+(= `STUB+GAP+CW+MARKER_TAIL` = 48) AND the wire's routing anchor
+(`routeEdges`) moves to `MARKER_STUB` as well, so the fanout's trunk attaches
+BEYOND the marker (to the left at inputs/west, to the right at outputs/east)
+and the horizontal stub drawn through the chip crosses it. **The pin visibly
+PIERCES the chip** (the user's request, Jul 2026): the stub comes out
+`MARKER_TAIL` (=12px) beyond the chip's outer edge (36), otherwise it looked
+hidden under it (it stopped exactly at the edge, the wire seemed to spring
+from the chip); 36+12=48 is a multiple of 8, so the tip/anchor falls ON THE
+GRID (pin on the grid = straight wire). The approach with a routing obstacle
+(to push the trunk) was REJECTED — an obstacle also repels the horizontal
+branch (the wire went around the chip, which was left "high and dry"); the
+anchor is the right solution (a wire routed up to the anchor + a decoration
+stub through the chip). **The thickness transition** port stub (the port's
+width) → net edge (the net's width) now falls at the TIP, collinear with the
+wire (no corner), so it produces no broken joins; the old note "the transition
+under the chip" (the anchor exactly at the chip's edge) is REPLACED by the
+newer request — the pin visible beyond the chip beats hiding the transition.
+The background is OPAQUE
+(`color-mix` with `editor-background`), so it masks the wire underneath. The vertical centring of the brackets does NOT use `dominant-baseline`
+(getBBox + dominant-baseline differ between Chromium versions — harness vs
+the VSCode webview —, and the nudge came out wrong): the sign gets a starting
+`y` that is approximately centred, and `centerChipSigns` (called after
+`drawSchematic`, with the elements in the DOM) measures the real box of the
+sign and of the rectangle on the **alphabetic baseline** (getBBox reliable
+everywhere) and nudges the sign until the centres coincide. It is re-applied
+on the next frame and after `document.fonts.ready` (the first getBBox may run
+before the editor's font is applied).
+Independent of the font, idempotent per render.
+The intermediate iteration was a diamond with a
+width sign `+`/`−`, replaced because the sign needed a mnemonic; the brackets
+are the syntax itself. `estPinText`
+adds a fixed allowance (`GLYPH_W`) for const/select/concat, in BOTH
+consumers (the ELK margins and the router's obstacles), so that the wider
+glyphs do not leave the reserved area.
+**Pin sections by role** (the symbol view, symbolator): the clock/reset pins
+(the `isClockOrReset` heuristic) are already grouped bottom-left
+(`buildPins`); the grouping is made VISIBLE through a gap + a divider + a
+title — `draw` (main.ts) detects the signals→clock/reset boundary on the
+west, shifts the clock/reset group down by `SECTION_GAP` (ELK FIXED_ORDER
+leaves no per-group gap), enlarges the box and draws a dotted divider + the
+label "clock / reset" (the top group is implicit by contrast). Only in the
+symbol view and only when the module has a clock/reset (a purely
+combinational one stays flat).
+The vocabulary (slash+width, junction dots) can be hidden with the
+`quickuvm.schematicDecorations` setting (on by default; a `decor-off` class on
+the canvas through `ui/config` — the grading of the wire thickness stays, it
+is the nature of the wire).
+**The wire uses an OPAQUE colour mixed with the background, not `opacity`**:
+the wires of the same net that share the trunk (the fan-out waive)
+accumulated their transparency and gave a gradient effect where they
+overlapped (observed at validation) — the opaque mix gives the same softness
+without the accumulation.
 
-**Lumea pe grilă e universală**: în orice vedere-schemă, toate pozițiile —
-inclusiv steagurile porturilor de graniță, mutabile și ele (chei `<port>.x`
-în sidecar) — se rotunjesc la grilă la fiecare randare (pozițiile ELK sunt
-fracționare; saltul e sub jumătate de pas). Consecințe: ancorele cad pe
-rânduri de grilă (ruterul scoate trasee integral ortogonale pe grid), iar
-alinierea pin-la-pin e posibilă între orice două elemente, mutate sau nu.
-**Nudge anti-suprapunere la expandare** (din validare): pe o vedere aranjată,
-D21 pinuiește TOȚI vecinii, deci ELK interactiv nu-i poate împinge să facă loc
-membrilor unui pliaj proaspăt expandat — care pot ateriza peste noduri
-pinuite. La randare, elementele FĂRĂ sămânță (membri noi) care s-ar suprapune
-se mută la cel mai apropiat loc liber pe grilă (`freeSpot`, pur — scanează pe
-cercuri crescătoare, preferă jos), fără să atingă blocurile utilizatorului; o
-vedere proaspătă (fără semințe) trece prin ELK complet, deci n-are nevoie de
-nudge. `⟲` rămâne calea pentru un aranjament curat.
+**The world on the grid is universal**: in any schematic view, all the
+positions — including the flags of the boundary ports, movable too (keys
+`<port>.x` in the sidecar) — are rounded to the grid at every render (the ELK
+positions are fractional; the jump is under half a step). Consequences: the
+anchors fall on grid rows (the router produces fully orthogonal routes on the
+grid), and pin-to-pin alignment is possible between any two elements, moved
+or not.
+**Anti-overlap nudge at expansion** (from validation): on an arranged view,
+D21 pins ALL the neighbours, so interactive ELK cannot push them to make room
+for the members of a freshly expanded fold — which can land on top of pinned
+nodes. At render, the elements WITHOUT a seed (new members) that would overlap
+are moved to the nearest free spot on the grid (`freeSpot`, pure — it scans
+on growing circles, prefers below), without touching the user's blocks; a
+fresh view (without seeds) goes through full ELK, so it needs no
+nudge. `⟲` stays the way to a clean arrangement.
 
-**Traseele vin întotdeauna din ruterul propriu** — ELK dă doar pozițiile;
-un singur comportament de rutare (halou, etichete protejate, ocupanță) în
-toate vederile, cu sau fără override-uri.
+**The routes always come from our own router** — ELK gives only the
+positions; a single routing behaviour (halo, protected labels, occupancy) in
+all the views, with or without overrides.
 
-Suprapunerea paralelă a două net-uri distincte pe același culoar e scumpă
-(`overlapPenalty`, implicit 8/celulă) — pe lungime, firele diferite stau pe
-culoare separate. **Excepție lângă capetele comune** (`fanoutRadius`, implicit
-6 celule): firele care pornesc din aceeași sursă (fan-out — portul de analiză
-al unui agent spre scoreboard ȘI coverage) sau converg spre aceeași destinație
-(fan-in) au voie să împartă trunchiul chiar lângă capătul comun, în loc să fie
-forțate să forcheze la pin. Raza e ancorată la capetele muchiei *care se
-rutează* (nu la puncte de trecere arbitrare) și doar *anulează penalizarea*, nu
-forțează suprapunerea: la lungime egală ruterul tot preferă culoare separate,
-deci net-urile din pini vecini nu se lipesc — waive-ul mușcă doar când
-suprapunerea chiar scurtează traseul (adică exact la capăt comun). Nu confunda
-cu net-ul unic cu fan-out (`group` comun), unde suprapunerea e liberă pe toată
-lungimea.
+The parallel overlap of two distinct nets on the same corridor is expensive
+(`overlapPenalty`, default 8/cell) — along their length, different wires stay
+on separate corridors. **An exception near the common ends** (`fanoutRadius`,
+default 6 cells): the wires that start from the same source (fan-out — an
+agent's analysis port towards the scoreboard AND the coverage) or converge on
+the same destination (fan-in) are allowed to share the trunk right next to the
+common end, instead of being forced to fork at the pin. The radius is anchored
+at the ends of the edge *being routed* (not at arbitrary waypoints) and only
+*cancels the penalty*, it does not force the overlap: at equal length the
+router still prefers separate corridors, so the nets from neighbouring pins do
+not stick together — the waive bites only when the overlap really shortens the
+route (that is, exactly at a common end). Do not confuse it with the single
+net with fan-out (a common `group`), where the overlap is free along the whole
+length.
 
-Nodurile suportă **răsturnare** (flip), persistată în sidecar per nod
-(`flipH`/`flipV`): orizontal = laturile vest↔est se schimbă (intrările apar
-pe dreapta), vertical = ordinea pinilor se inversează pe fiecare latură.
-Flip-ul e o **reatribuire a sloturilor de pini pe grilă, nu o oglindire
-geometrică** — textul (nume, etichete) nu se oglindește niciodată, iar pinii
-rămân pe aceleași rânduri de grilă. Porturile fiind `FIXED_POS`, ELK primește
-pozițiile deja răsturnate, deci traseele lui rămân valabile și pe noduri
-răsturnate.
+The nodes support **flipping** (flip), persisted in the sidecar per node
+(`flipH`/`flipV`): horizontal = the west↔east sides are swapped (the inputs
+appear on the right), vertical = the order of the pins is reversed on each
+side. The flip is a **reassignment of the pin slots on the grid, not a
+geometric mirroring** — the text (names, labels) is never mirrored, and the
+pins stay on the same grid rows. The ports being `FIXED_POS`, ELK receives the
+positions already flipped, so its routes stay valid on flipped nodes
+too.
 
-Grila (pas 8) urmează convenția EDA: **pinii se agață de grilă, nu doar
-cutia**. Geometria internă a nodurilor e multiplu de grilă prin construcție
-(primul centru de pin la +40 sub banda de titlu, pas de pin `PIN_PITCH`=24 —
-lărgit de la 16 la validare, ca decorațiile să aibă aer între rânduri; rămâne
-multiplu de 8, deci pinii rămân pe grilă —, lățimi și
-înălțimi rotunjite la 8, porturi `FIXED_POS` calculate de extensie — nu de
-ELK), astfel încât snap-ul colțului stânga-sus pune automat toate punctele de
-conexiune pe grilă: pin aliniat cu pin = fir perfect drept. Consecință: pinii
-stau în ordinea declarației din modul (norma din schematics); reordonarea vine
-din override-urile de nivel 2. Interactive routing of the edges did become a
+The grid (step 8) follows the EDA convention: **the pins snap to the grid, not
+only the box**. The internal geometry of the nodes is a multiple of the grid
+by construction (the first pin centre at +40 under the title band, the pin
+pitch `PIN_PITCH`=24 — widened from 16 at validation, so that the decorations
+have air between the rows; it stays a multiple of 8, so the pins stay on the
+grid —, widths and heights rounded to 8, `FIXED_POS` ports computed by the
+extension — not by ELK), so that snapping the top-left corner automatically
+puts all the connection points on the grid: pin aligned with pin = a perfectly
+straight wire. A consequence: the pins sit in the order of the declaration in
+the module (the norm in schematics); reordering comes from the level 2
+overrides. Interactive routing of the edges did become a
 requirement (Nov 2026) and was built on our own router and SVG (level 3 above,
 D27): the re-evaluation towards JointJS that this paragraph used to reserve was
 not needed.

@@ -1,67 +1,77 @@
-# CLAUDE.md — context pentru sesiunile de lucru pe QuickUVM Architect
+# CLAUDE.md — context for the working sessions on QuickUVM Architect
 
-## Ce este proiectul
+## What the project is
 
-Extensie VSCode pentru proiectarea de circuite integrate digitale: vizualizează
-un design SystemVerilog ca diagramă interactivă și generează, prin selecție pe
-diagramă, configurația YAML pentru generatorul de testbench-uri QuickUVM
-(https://github.com/arcadie-cracan/QuickUVM). Citește `README.md` și apoi
-`docs/01-arhitectura.md` … `docs/06-plan-mvp.md` înainte de orice modificare —
-deciziile arhitecturale sunt deja luate și motivate acolo; nu le rediscuta fără
-un motiv nou.
+A VSCode extension for the design of digital integrated circuits: it visualizes
+a SystemVerilog design as an interactive diagram and generates, by selection on
+the diagram, the YAML configuration for the QuickUVM testbench generator
+(https://github.com/arcadie-cracan/QuickUVM). Read `README.md` and then
+`docs/01-arhitectura.md` … `docs/06-plan-mvp.md` before any change — the
+architectural decisions are already made and motivated there; do not reopen
+them without a new reason.
 
-## Invarianți arhitecturali (nu se încalcă)
+## Architectural invariants (never to be broken)
 
-1. **Modelul de proiect JSON este contractul stabil** între backend și UI
-   (`schema/project-model.schema.json`). Backend-ul (azi pyslang) este
-   înlocuibil; UI-ul nu vede niciodată API-ul slang direct.
-2. **Fișierul YAML QuickUVM este sursa de adevăr** pentru configurarea
-   verificării. UI-ul nu ține stare proprie de configurare: orice acțiune
-   produce o editare de text în YAML (prin `WorkspaceEdit`), deci undo/redo,
-   diff și editarea manuală funcționează natural.
-3. **Pozițiile nodurilor aparțin utilizatorului.** Layout automat complet doar
-   la prima deschidere sau la comanda explicită "Re-aranjează"; la modificări de
-   design, ELK rulează în mod interactiv doar pentru elementele noi. Pozițiile
-   se persistă în fișierul sidecar (`docs/04-layout-si-rutare.md`).
-4. **ID-uri stabile** = căile ierarhice elaborate (`demo_top.u_soc.g_ch[1].u_ch`).
-   Orice element adresabil (nod, pin, net, vedere) se identifică prin ele.
-5. **Invalidare grațioasă**: override-uri (poziții, waypoints) ale căror ținte
-   dispar din design se marchează orfane, nu se șterg automat. Diagrama nu
-   dispare pe cod stricat — rămâne ultimul model valid + banner.
+1. **The JSON project model is the stable contract** between the backend and
+   the UI (`schema/project-model.schema.json`). The backend (pyslang today) is
+   replaceable; the UI never sees the slang API directly.
+2. **The QuickUVM YAML file is the source of truth** for the verification
+   configuration. The UI keeps no configuration state of its own: every action
+   produces a text edit in the YAML (through `WorkspaceEdit`), so undo/redo,
+   diff and manual editing work naturally.
+3. **Node positions belong to the user.** A full automatic layout only at the
+   first opening or at the explicit "Re-arrange" command; on design changes,
+   ELK runs in interactive mode only for the new elements. The positions are
+   persisted in the sidecar file (`docs/04-layout-si-rutare.md`).
+4. **Stable IDs** = the elaborated hierarchical paths (`demo_top.u_soc.g_ch[1].u_ch`).
+   Every addressable element (node, pin, net, view) is identified by them.
+5. **Graceful invalidation**: overrides (positions, waypoints) whose targets
+   disappear from the design are marked orphaned, not deleted automatically.
+   The diagram does not disappear on broken code — the last valid model stays
+   + a banner.
 
-## Convenții de cod
+## Code conventions
 
-- **TOTUL ÎN ENGLEZĂ** (decizie 2026-07-30 — aceasta ESTE „decizia separată"
-  pe care o aștepta regula veche): nu doar comentariile din `src/**`,
-  `backend/**`, `scripts/**` (regula din 2026-07-20, pentru creșterea
-  comunității), ci și **documentația**: `docs/**`, acest fișier, `README.md`,
-  mesajele de eroare aruncate din host și comentariile fixturilor din
-  `examples*/**`. Backend Python: PEP 8.
-  **Migrarea e în curs** — corpusul e mare (~3100 de linii cu română la data
-  deciziei, majoritatea în `docs/06-plan-mvp.md`, `CLAUDE.md`,
-  `docs/07-plan-post-mvp.md`, `docs/04-layout-si-rutare.md`). Regula pentru
-  orice sesiune: **nu adăuga română nouă nicăieri**, iar când atingi un fișier
-  din listă, tradu-i secțiunile pe care le modifici. Traducerea e o rescriere
-  atentă, nu o înlocuire mecanică: documentele sunt înregistrări
-  arhitecturale dense (listele de capcane, jurnalul deciziilor), unde o
-  redare aproximativă pierde exact motivul pentru care regula există.
-  Comunicarea în chat cu utilizatorul rămâne în română cu diacritice.
-- **UI-ul extensiei: engleză** (decizia D19), localizat prin `package.nls.json`
-  (+`package.nls.ro.json`) și `vscode.l10n.t()` + `l10n/bundle.l10n.ro.json`;
-  orice șir nou vizibil utilizatorului în host se împachetează în `l10n.t()`
-  și primește traducerea în bundle-ul ro; webview-ul e monolingv englez în
-  MVP; jurnalele (Output) nu se localizează. Terminologia **Symbol view /
-  Schematic view** (D18) e adoptată integral: UI, protocol (`ViewMode:
-  symbol|schematic`), comenzi (`quickuvm.openSymbolView`/`openSchematicView`),
-  fișiere (`src/webview/schematic.ts`), documentație („vederea-simbol" /
-  „vederea-schemă").
-- Extensia: TypeScript strict, fără framework în webview (SVG generat manual +
-  elkjs); mesajele extensie↔webview respectă protocolul versionat din
-  `docs/05-ui-si-protocol.md` — orice mesaj nou se adaugă întâi acolo.
-- Nu introduce dependențe mari fără justificare scrisă în jurnalul deciziilor
-  (`docs/06-plan-mvp.md`, secțiunea "Jurnalul deciziilor").
+- **EVERYTHING IN ENGLISH** (decision 2026-07-30 — this IS the "separate
+  decision" the old rule was waiting for): not only the comments in `src/**`,
+  `backend/**`, `scripts/**` (the rule of 2026-07-20, for the growth of the
+  community), but also the **documentation**: `docs/**`, this file,
+  `README.md`, the error messages thrown from the host and the fixture
+  comments in `examples*/**`. Python backend: PEP 8.
+  **The documentation's migration is complete** (Nov 2026) — the corpus was
+  large (~3100 lines with Romanian at the date of the decision, most of them
+  in `docs/06-plan-mvp.md`, `CLAUDE.md`, `docs/07-plan-post-mvp.md`,
+  `docs/04-layout-si-rutare.md`): `docs/**`, this file, `README.md`, the error
+  messages thrown from the host and the header written into a new
+  configuration are English. What is still Romanian (census of 21 Nov 2026):
+  the test names, the summary lines and some comments in `scripts/*.mjs` and
+  `scripts/harness.html`, the comments of `media/webview.css`, the docstrings
+  in `backend/tests/**`, a few fixture comments in `examples*/**`, and the
+  comments in `.gitignore` / `.gitattributes`. The rule for any session: **add
+  no new Romanian anywhere**, and when you touch one of the remaining files,
+  translate the parts you change. A translation is a careful rewrite, not a
+  mechanical substitution: the documents are dense architectural records (the
+  pitfall lists, the decision journal), where an approximate rendering loses
+  exactly the reason the rule exists.
+  Communication with the user in chat stays in Romanian with diacritics.
+- **The extension's UI: English** (decision D19), localized through
+  `package.nls.json` (+`package.nls.ro.json`) and `vscode.l10n.t()` +
+  `l10n/bundle.l10n.ro.json`; every new user-visible string in the host is
+  wrapped in `l10n.t()` and gets its translation in the ro bundle; the webview
+  is monolingual English in the MVP; the logs (Output) are not localized. The
+  **Symbol view / Schematic view** terminology (D18) is adopted throughout: UI,
+  protocol (`ViewMode: symbol|schematic`), commands
+  (`quickuvm.openSymbolView`/`openSchematicView`), files
+  (`src/webview/schematic.ts`), documentation ("the symbol view" / "the
+  schematic view"; „vederea-simbol" / „vederea-schemă" while the documents
+  were Romanian).
+- The extension: strict TypeScript, no framework in the webview (hand-generated
+  SVG + elkjs); the extension↔webview messages follow the versioned protocol in
+  `docs/05-ui-si-protocol.md` — any new message is added there first.
+- Do not introduce large dependencies without a written justification in the
+  decision journal (`docs/06-plan-mvp.md`, the "Decision journal" section).
 
-## Cum se rulează și testează backend-ul
+## How to run and test the backend
 
 ```bash
 pip install pyslang
@@ -70,54 +80,55 @@ python3 ../backend/svmodel.py adder.sv inverter.sv chan.sv soc_top.sv \
         --top demo_top -o model.json
 ```
 
-`examples-probe/deep_pipe.sv` e o fixtură separată pentru cross-probing (8
-module într-un singur fișier, instanțiate în lanț de `deep_pipe`; porturile lor
-sunt la linii mult distanțate, ca hover-ul pe pini să deruleze vizibil sursa —
-configurația de lansare „cross-probing: deep_pipe").
+`examples-probe/deep_pipe.sv` is a separate fixture for cross-probing (8
+modules in a single file, instantiated in a chain by `deep_pipe`; their ports
+are on lines far apart, so that hovering the pins visibly scrolls the source —
+the launch configuration "cross-probing: deep_pipe").
 
-`examples/soc_top.sv` este designul de regresie: conține deliberat parametri
-propagați, lățimi simbolice, `generate for`, tablou unpacked de porturi,
-interfață cu modporturi și conexiuni prin concatenare/select — dacă o
-modificare a extractorului le păstrează pe toate corecte în `model.json`,
-e probabil sănătoasă. Verificări-cheie așteptate:
+`examples/soc_top.sv` is the regression design: it deliberately contains
+propagated parameters, symbolic widths, `generate for`, an unpacked array of
+ports, an interface with modports and connections through concatenation/select
+— if a change to the extractor keeps all of them correct in `model.json`, it
+is probably sound. The key checks expected:
 
-- 8 instanțe, inclusiv `demo_top.u_soc.g_ch[0..2].u_ch` (NCH=3 propagat, nu 2);
+- 8 instances, including `demo_top.u_soc.g_ch[0..2].u_ch` (NCH=3 propagated, not 2);
 - `soc_top.ch_out`: `width=48`, `unpacked_dims=[3]`, `elem_width=16`;
-- `chan` elaborat cu `W=16`: porturi `logic[15:0]`, `width=16`;
-- `demo_top.bus_i`: modport `slave` cu `addr/wdata/we: in`;
-- în vederea `demo_top.u_soc`: `din` are `fanout=9`, `render=label`;
-  pinul `g_ch[1].u_ch.dout` are `conn.kind=select`, `index="1"`.
+- `chan` elaborated with `W=16`: ports `logic[15:0]`, `width=16`;
+- `demo_top.bus_i`: modport `slave` with `addr/wdata/we: in`;
+- in the view `demo_top.u_soc`: `din` has `fanout=9`, `render=label`;
+  the pin `g_ch[1].u_ch.dout` has `conn.kind=select`, `index="1"`.
 
-Verificările sunt implementate ca teste pytest în
-`backend/tests/test_svmodel.py` (plus snapshot contra `examples/model.json` și
-validare contra schemei JSON). Rulează-le după orice modificare a extractorului:
+The checks are implemented as pytest tests in
+`backend/tests/test_svmodel.py` (plus a snapshot against `examples/model.json`
+and validation against the JSON schema). Run them after any change to the
+extractor:
 
 ```bash
 pip install -r backend/requirements-dev.txt
 python -m pytest backend/tests
 ```
 
-## Cum se compilează și rulează extensia
+## How to build and run the extension
 
 ```bash
 npm install
 npm run build            # esbuild: dist/extension.js + dist/webview.js
 npm run typecheck        # tsc --noEmit (strict)
-npm run test:scene       # scena vederii-schema (Node, fara DOM)
-npm run test:tbscene     # scena pe niveluri a vederii de verificare (faza 3b)
-npm run test:tblayout    # layout-ul TB: laturile porturilor, flip, seminte
-npm run test:tbtree      # arborele ierarhiei de verificare (faza 3b, Node)
-npm run test:yamlops     # mutatiile YAML pure (+ topConfigPaths/isComposedChild)
-npm run test:filelist    # caile/listele slang: quotare .f, exclude outputDir, loc.file
-npm run test:heuristics  # euristicile pe nume: ceas/reset/activ-jos (_ni/_bi)
-npm run test:configcheck # nucleul pur al validarilor model<->YAML (hibrid, latimi)
-npm run test:probe       # modulul pur al probelor K2 (cale XMR + latime, pe model real)
-npm run test:compose     # compunerea H1: conexiuni + subenvMapping + planWireEdits
-npm run test:sidecar     # mutatiile pure ale sidecar-ului de layout
-npm run test:router      # ruterul A* pe grila + obstacolele din etichetele pinilor
-npm run test:minimap     # matematica minimapului (incadrare, U = M ∘ V⁻¹, salt)
-npm run test:locmap      # cross-probing editor->diagrama: loc->tinta + tinta->id-uri
-npm run test:status      # decoratiile de stare: findings->decoratii + decoratii->id-uri
+npm run test:scene       # the schematic view's scene (Node, no DOM)
+npm run test:tbscene     # the level-based scene of the verification view (phase 3b)
+npm run test:tblayout    # the TB layout: the sides of the ports, flip, seeds
+npm run test:tbtree      # the verification hierarchy tree (phase 3b, Node)
+npm run test:yamlops     # the pure YAML mutations (+ topConfigPaths/isComposedChild)
+npm run test:filelist    # the slang paths/lists: .f quoting, the outputDir exclusion, loc.file
+npm run test:heuristics  # the name heuristics: clock/reset/active-low (_ni/_bi)
+npm run test:configcheck # the pure core of the model<->YAML validations (hybrid, widths)
+npm run test:probe       # the pure module of the K2 probes (XMR path + width, on the real model)
+npm run test:compose     # the H1 composition: connections + subenvMapping + planWireEdits
+npm run test:sidecar     # the pure mutations of the layout sidecar
+npm run test:router      # the A* grid router + the obstacles from the pin labels
+npm run test:minimap     # the minimap math (fitting, U = M ∘ V⁻¹, jump)
+npm run test:locmap      # editor->diagram cross-probing: loc->target + target->ids
+npm run test:status      # the status decorations: findings->decorations + decorations->ids
 npm run test:navfind     # keyboard navigation (docs/08 R5): view history, Ctrl+F ranking, up-level, fit bounds; level of detail (R6): hysteresis, title fit
 npm run test:textedit    # the MINIMAL edit between two YAML texts + the span to highlight (docs/08 R4)
 npm run test:yamlmap     # YAML caret -> TB element and element -> YAML span (docs/08 R4)
@@ -138,163 +149,174 @@ npm run test:e2e         # yamlops -> real quick-uvm generate + the elaboration 
 npm run shots            # the tutorials' figures: the real webview, captured (docs/tutorial-shots/); `-- --arrange` to place the blocks by hand first
 ```
 
-F5 în VSCode (configurația "Rulează extensia (examples/)") deschide un
-Extension Development Host pe `examples/`, unde `quickuvm.top=demo_top` e
-presetat în `.vscode/settings.json`. Webview-ul se poate proba și fără VSCode
-cu `scripts/harness.html` (stub `acquireVsCodeApi` + modelul de regresie):
-`python -m http.server 8123` din rădăcină, apoi
-`/scripts/harness.html?view=demo_top.u_soc&mode=schematic` (adaugă `&nomodel=1`
-ca să simulezi editorul per-fișier din felia 4: vederea TB doar din config).
-Pentru **validarea de închidere a MVP-ului** există un tutorial pas-cu-pas —
-`docs/tutorial-yapp-buffer.md` — cu fixtura `examples-yapp/yapp_buffer.sv`
-(configurația de lansare „tutorial: yapp_buffer"); pașii sunt verificați empiric
-(svmodel parsează designul, iar config-ul rezultat generează curat cu quick-uvm).
-**Fixtura NU e routerul YAPP** (redenumită iul. 2026): routerul e demuxul 1→3 din
-`QuickUVM/examples/yapp/rtl/yapp_router.sv` (`out0_*`/`out1_*`/`out2_*`, un singur
-agent), subiectul walkthrough-ului `docs/yapp-router-walkthrough.html` și al
-capturilor din `docs/tutorial-shots/`. Fixtura e reducerea lui la un buffer de un
-slot, fiindcă handshake-ul `ready` în ambele sensuri e ce dă cei **doi** agenți
-ceruți de criteriul de închidere. Cât timp ambele module s-au numit `yapp_router`,
-pașii tutorialului și capturile descriau designuri diferite — nu reintroduce
-coliziunea de nume.
+F5 in VSCode (the configuration "Run the extension (examples/: demo_top
+regression design)") opens an Extension Development Host on `examples/`, where
+`quickuvm.top=demo_top` is preset in `.vscode/settings.json`. The webview can
+also be tried without VSCode with `scripts/harness.html` (an
+`acquireVsCodeApi` stub + the regression model):
+`python -m http.server 8123` from the root, then
+`/scripts/harness.html?view=demo_top.u_soc&mode=schematic` (add `&nomodel=1`
+to simulate the per-file editor of slice 4: the TB view from the config alone).
+For the **closing validation of the MVP** there is a step-by-step tutorial —
+`docs/tutorial-yapp-buffer.md` — with the fixture `examples-yapp/yapp_buffer.sv`
+(the launch configuration "tutorial: yapp_buffer"); the steps are verified
+empirically (svmodel parses the design, and the resulting config generates
+cleanly with quick-uvm).
+**The fixture is NOT the YAPP router** (renamed Jul 2026): the router is the
+1→3 demux in `QuickUVM/examples/yapp/rtl/yapp_router.sv`
+(`out0_*`/`out1_*`/`out2_*`, a single agent), the subject of the walkthrough
+`docs/yapp-router-walkthrough.html` and of the captures in
+`docs/tutorial-shots/`. The fixture is its reduction to a one-slot buffer,
+because the `ready` handshake in both directions is what gives the **two**
+agents the closure criterion requires. As long as both modules were named
+`yapp_router`, the tutorial's steps and the captures described different
+designs — do not reintroduce the name collision.
 
-## Capcane cunoscute (descoperite la validare)
+## Known pitfalls (discovered at validation)
 
-> **Referința de schemă autoritară e `docs/quickuvm-schema-reference.md`**
-> (sondată empiric pe quick-uvm 1.0.0: verdicte A1–A26, tabele de chei,
-> mesajele de eroare verbatim). Notele de mai jos marchează local ce s-a
-> schimbat la 1.0; la conflict, referința câștigă. Extensia poate condiționa
-> pe `quick-uvm --version` >= 1.0.0 (schema e înghețată, deprecările vin cu
-> erori-ghid).
+> **The authoritative schema reference is `docs/quickuvm-schema-reference.md`**
+> (probed empirically on quick-uvm 1.0.0: verdicts A1–A26, key tables, the
+> error messages verbatim). The notes below mark locally what changed at 1.0;
+> on a conflict, the reference wins. The extension may condition on
+> `quick-uvm --version` >= 1.0.0 (the schema is frozen, the deprecations come
+> with teaching errors).
 
-- **Waiver-ul de porturi (D15) e cheia DE SCHEMĂ `dut.unverified_ports`**
-  (quick-uvm >= 1.0.0): 1.0 respinge ORICE cheie necunoscută
-  (extra="forbid", inclusiv prefixul `x_`), așa că vechiul bloc
-  `x_quickuvm_architect` a fost PROMOVAT în schemă, nu ocolit. Regula:
-  intenție de verificare → cheie de schemă; stare de vedere → sidecar; fără
-  coș `x_` intermediar. Un port waived pe care un agent îl conectează e
-  REFUZAT de generator la generate („connected by agent ... Remove it from
-  one side") → diagnosticul `ignored-and-mapped` e acum ERROR, iar la golire
-  dispare DOAR cheia (blocul `dut` rămâne — e configurație obligatorie).
+- **The port waiver (D15) is the SCHEMA key `dut.unverified_ports`**
+  (quick-uvm >= 1.0.0): 1.0 rejects ANY unknown key (extra="forbid", the `x_`
+  prefix included), so the old `x_quickuvm_architect` block was PROMOTED into
+  the schema, not worked around. The rule: verification intent → a schema key;
+  view state → the sidecar; no intermediate `x_` basket. A waived port that an
+  agent connects is REFUSED by the generator at generate ("connected by agent
+  ... Remove it from one side") → the `ignored-and-mapped` diagnostic is now
+  an ERROR, and on emptying ONLY the key disappears (the `dut` block stays —
+  it is mandatory configuration).
 
-- pyslang 11 e organizat pe submodule: `from pyslang.driver import Driver`,
-  `from pyslang import ast`; multe metode C++ `getX()` sunt proprietăți `x`.
-- `Driver.reportCompilation` poate întoarce valori neintuitive, iar cu
-  `quiet=True` **înghite complet diagnosticele** (erori invizibile, model
-  degradat emis tacit — regresie reală prinsă pe common_cells). `svmodel`
-  folosește `comp.getAllDiagnostics()` + `DiagnosticEngine.reportAll()` pe
-  stderr și refuză modelul la erori; nu reintroduce `reportCompilation`.
-- `bender script flist` NU emite `+incdir+`/`+define+` (pierde
-  `export_include_dirs` din Bender.yml, include-urile eșuează); extensia
-  folosește `bender script flist-plus`. Căile `+incdir+` cu spații se citează
-  interior: `+incdir+"cale"` (validat cu slang 11).
-- Conexiunile porturilor de ieșire vin împachetate în `AssignmentExpression`
-  (latura externă e `.left`); intrările pot veni în `ConversionExpression`.
-- Textul sintactic al selecturilor din generate păstrează genvar-ul (`ch_out[g]`);
-  indexul numeric per instanță se ia din `e.selector.constant`.
-- GitHub API e limitat de rată din unele medii; preferă `pip install pyslang`
-  sau clone direct pe `github.com`.
-- `Driver.parseCommandLine` desparte pe spații: căile (fișiere, `-f`) se
-  citează cu ghilimele duble — și pe linia de comandă sintetică din
-  `build_model`, și pe liniile fișierelor `.f` generate de extensie.
-- slang relativizează `loc.file` față de cwd-ul procesului (poate ieși
-  `..\..\...`); host-ul reconstituie calea absolută prin join cu rădăcina
-  workspace-ului (`resolveLocPath` în `src/filelistops.ts` — pur, testat în
-  `test:filelist` —, consumat de `openLoc` din `src/panel.ts`).
-- ELK `FIXED_ORDER` numără porturile în sens orar: pe latura de vest indexul
-  crește de jos în sus — ordinea vizuală se obține inversând indecșii
-  (`layoutSymbol` în `src/webview/main.ts`).
-- ELK layered pune nodurile fără muchii de intrare în primul strat, iar pe
-  cele neconectate le împachetează pe componente separate: porturile de
-  graniță ale vederii-schemă cer `layerConstraint:
-  FIRST_SEPARATE/LAST_SEPARATE` **plus** `separateConnectedComponents: false`
-  — cu `FIRST/LAST` simplu, steagurile se amestecă printre instanțele ale
-  căror intrări sunt net-uri etichetate (`layoutSchematic` în
-  `src/webview/schematic.ts`).
-- La net-urile cu mai multe surse (slice-uri asamblate prin select, `ch_out`),
-  muchiile se trag din fiecare sursă spre fiecare destinație — cu un singur
-  „driver" ales, celelalte surse ar deveni ținte și layering-ul se strică
-  (`buildSchematicScene` în `src/webview/scene.ts`).
-- Pinii instanțelor de interfață NU au direcție proprie (un semnal de
-  interfață nu e intrinsec in/out — direcția se dă per modport, la modulul
-  conectat); dacă latura lor rămâne fixă (VEST, ca porturile de intrare),
-  firul unui net fără driver clar (ex. `clk` între `bus_i.clk` și
-  `u_soc.clk`) iese pe latura opusă țintei și ocolește tot blocul (384px, 4
-  coturi). Latura pinilor de interfață se orientează după rolul în net
-  (sursă → EST, destinație → VEST), iar la net-uri fără driver clar instanța
-  de interfață e preferată drept sursă (`buildSchematicScene`).
-- Obstacolele MOI de text ale pinilor (etichete de net / adnotări const,
-  desenate în afara blocului) trebuie limitate la ÎNĂLȚIMEA unui pas de pin
-  (`PIN_PITCH`, nu mai mult): un obstacol mai înalt sângerează în rândul
-  pinului vecin și-i forțează firul pe un ocol inutil în scară (`routeEdges`
-  în `src/webview/schematic.ts`). `PIN_PITCH` e acum **24** (era 16) — lărgit
-  la validare, ca decorațiile (`/N`, glife const/split-join, cercuri nc) să
-  aibă aer între rânduri; rămâne multiplu de 8 (pin pe grilă = fir drept).
-- Adnotarea unui pin care e capăt de fir (select `[N]` pe `dout`, concat)
-  stă chiar pe traseul propriului fir, ca eticheta lui — NU trebuie să fie
-  obstacol pentru el, altfel firul își ocolește propria etichetă cu coturi
-  inutile (ex. `g_ch[0/2].u_ch.dout → ch_out`: 4 coturi în loc de 2, un
-  „cârlig" jos-apoi-dreapta la ieșire). `routeEdges` sare peste obstacolul
-  pinilor care sunt capete ale unei muchii-fir (`wirePins`); adnotările
-  pinilor FĂRĂ fir (const `=1'b1`, nc, etichete de net) rămân obstacole
-  pentru firele ALTOR net-uri.
-- În vederea TB, etichetele porturilor se desenează mereu DEASUPRA portului
-  (`py - 5`, pe AMBELE laturi), nu pe rândul firului (`drawBox` în
-  `src/webview/tbschematic.ts`): firul iese orizontal la `py`, deci nu-l mai
-  taie. **Alinierea verticală e CONSTANTĂ la răsturnare** (cererea
-  utilizatorului la validare): H schimbă latura vest↔est, dar NU sus/jos —
-  altfel un bloc răsturnat își muta etichetele deasupra↔dedesubt. Anchorul
-  (`end` la vest, `start` la est) le ține pe latura exterioară, deci porturile
-  care se privesc (DUT est ↔ Env vest) rămân separate ORIZONTAL (~9px la
-  layout-ul implicit, fără suprapunere). Nota veche „est deasupra/vest dedesubt"
-  (separare pe laturi opuse ale firului) e ÎNLOCUITĂ — dădea inconsecvență la
-  flip. A face din etichete obstacole MOI pentru ruter a fost încercat și RESPINS
-  — supra-constrânge ruterul TB (mai multe intersecții, nu mai puține).
-- `cycleBreaking: INTERACTIVE` inversează muchii după pozițiile-semințe și
-  aruncă `UnsupportedConfigurationException` în combinație cu
-  `LAST_SEPARATE` pe steagurile granițelor — modul interactiv folosește doar
-  layering/crossingMinimization/nodePlacement INTERACTIVE (direcțiile
-  muchiilor noastre sunt fixe semantic; `layoutSchematic`).
-- Modul INTERACTIVE plasează elementele FĂRĂ sămânță altfel decât layoutul
-  complet (rândurile steagurilor de graniță se reamestecă — până la 384px
-  diferență pe verticală, deterministic): semințele trebuie să fie totale
-  sau deloc (D21). De aceea drag-end trimite `layout/snapshot` cu TOATE
-  pozițiile vederii, iar randarea unei vederi aranjate pin-uiește imediat
-  elementele fără sămânță; nu reintroduce persistarea doar a elementelor
-  trase (regresie reală: porturile săreau la redeschiderea panelului).
-- Plasarea porturilor ELK nu e controlabilă fin: `portsSurrounding` e ignorat
-  la plasare (contează doar la dimensionare), iar etichetele INSIDE umflă
-  pasul dintre porturi (24 în loc de 16) — pentru pinii pe grilă (docs/04),
-  porturile sunt `FIXED_POS`, calculate de `layoutSchematic`
-  (`src/webview/schematic.ts`), cu dimensiunile nodului rotunjite la 8.
-- Măsurarea textului pentru lățimea blocului trebuie făcută cu **fontul cu
-  care se desenează**: etichetele de pin/port sunt monospace
-  (`--vscode-editor-font-family`), NU fontul UI proporțional
-  (`--vscode-font-family`). `measurer()` din `src/webview/svg.ts` măsura totul
-  cu fontul proporțional, care subestima lățimea etichetelor monospace (mai
-  late) → blocuri prea înguste, etichete de porturi vest/est suprapuse (regresie
-  reală, expusă de etichetele SV `[15:0] ch_out [0:2]` mai lungi). `measurer`
-  ia acum un flag `mono`, iar `layoutSchematic`/`buildPins` cer măsurarea
-  etichetelor de pin cu `mono=true`; numele/parametrii (proporționali) rămân pe
-  fontul UI.
-- Procesele Python copil se pornesc cu `PYTHONUTF8=1`: consola Windows e
-  cp1252, iar quick-uvm scrie săgeți Unicode (crash real la primul echo);
-  aceeași protecție și pe svmodel (sursele citate în diagnostice).
-- Pe Windows, scriptul `quick-uvm.exe` poate ateriza în
-  `%APPDATA%\Python\PythonXXX\Scripts` (instalare user), în afara PATH-ului;
-  `generate.ts` are fallback `python -c "from quick_uvm.cli import main; main()"`.
-- Pachetul npm `yaml` e CJS: la legarea ESM pentru scripturile Node de test
-  e nevoie de shim-ul `createRequire` în banner (vezi `scripts/*.mjs`).
-- `createSubenv` creează config-uri de bloc (`<modul>.quickuvm.yaml`) lângă
-  config-ul top, iar descoperirea config-ului activ (glob pe
-  `**/*.quickuvm.yaml`) alegea primul fișier alfabetic: scaffold-ul
-  `chan.quickuvm.yaml` „fura" tăcut config-ul activ la următorul refresh
-  (DUT devine `chan`, overlay-ul și acțiunile mor pe vederile soc — butoane
-  inactive fără explicație; regresie reală prinsă la validarea interactivă).
-  Descoperirea e acum stabilă (config-ul activ nu se schimbă cât timp
-  fișierul lui există) și exclude la alegerea inițială fișierele referite ca
-  `subenvs[].config` de un alt config (`topConfigPaths` în `src/yamlops.ts`,
-  testată în `test:yamlops`); nu reintroduce alegerea pur alfabetică.
+- pyslang 11 is organised in submodules: `from pyslang.driver import Driver`,
+  `from pyslang import ast`; many C++ `getX()` methods are `x` properties.
+- `Driver.reportCompilation` can return unintuitive values, and with
+  `quiet=True` it **swallows the diagnostics completely** (invisible errors, a
+  degraded model emitted silently — a real regression caught on common_cells).
+  `svmodel` uses `comp.getAllDiagnostics()` + `DiagnosticEngine.reportAll()`
+  on stderr and refuses the model on errors; do not reintroduce
+  `reportCompilation`.
+- `bender script flist` does NOT emit `+incdir+`/`+define+` (it loses
+  `export_include_dirs` from Bender.yml, the includes fail); the extension
+  uses `bender script flist-plus`. The `+incdir+` paths with spaces are quoted
+  on the inside: `+incdir+"path"` (validated with slang 11).
+- The connections of the output ports come wrapped in an
+  `AssignmentExpression` (the external side is `.left`); the inputs may come
+  in a `ConversionExpression`.
+- The syntactic text of the selects inside a generate keeps the genvar
+  (`ch_out[g]`); the numeric index per instance is taken from
+  `e.selector.constant`.
+- The GitHub API is rate-limited from some environments; prefer
+  `pip install pyslang` or cloning directly from `github.com`.
+- `Driver.parseCommandLine` splits on spaces: the paths (files, `-f`) are
+  quoted with double quotes — both on the synthetic command line in
+  `build_model` and on the lines of the `.f` files the extension generates.
+- slang relativizes `loc.file` to the process's cwd (it can come out as
+  `..\..\...`); the host reconstructs the absolute path by a join with the
+  workspace root (`resolveLocPath` in `src/filelistops.ts` — pure, tested in
+  `test:filelist` —, consumed by `openLoc` in `src/panel.ts`).
+- ELK `FIXED_ORDER` counts the ports clockwise: on the west side the index
+  grows from bottom to top — the visual order is obtained by reversing the
+  indices (`layoutSymbol` in `src/webview/main.ts`).
+- ELK layered puts the nodes without incoming edges in the first layer, and
+  packs the unconnected ones as separate components: the boundary ports of
+  the schematic view need `layerConstraint: FIRST_SEPARATE/LAST_SEPARATE`
+  **plus** `separateConnectedComponents: false` — with a plain `FIRST/LAST`,
+  the flags get mixed in among the instances whose inputs are labelled nets
+  (`layoutSchematic` in `src/webview/schematic.ts`).
+- On the nets with several sources (slices assembled through select,
+  `ch_out`), the edges are drawn from every source to every destination —
+  with a single chosen "driver", the other sources would become targets and
+  the layering breaks (`buildSchematicScene` in `src/webview/scene.ts`).
+- The pins of the interface instances have NO direction of their own (an
+  interface signal is not intrinsically in/out — the direction is given per
+  modport, at the connected module); if their side stays fixed (WEST, like
+  the input ports), the wire of a net without a clear driver (e.g. `clk`
+  between `bus_i.clk` and `u_soc.clk`) leaves on the side opposite the target
+  and goes around the whole block (384px, 4 bends). The side of the interface
+  pins is oriented by their role in the net (source → EAST, destination →
+  WEST), and on the nets without a clear driver the interface instance is
+  preferred as the source (`buildSchematicScene`).
+- The SOFT text obstacles of the pins (net labels / const annotations, drawn
+  outside the block) must be limited to the HEIGHT of one pin pitch
+  (`PIN_PITCH`, no more): a taller obstacle bleeds into the neighbouring
+  pin's row and forces its wire onto a needless staircase detour
+  (`routeEdges` in `src/webview/schematic.ts`). `PIN_PITCH` is now **24** (it
+  was 16) — widened at validation, so that the decorations (`/N`, the
+  const/split-join glyphs, the nc circles) have air between the rows; it
+  stays a multiple of 8 (a pin on the grid = a straight wire).
+- The annotation of a pin that is a wire end (the select `[N]` on `dout`, a
+  concat) sits right on the path of its own wire, like its label — it must
+  NOT be an obstacle for it, otherwise the wire goes around its own label
+  with needless bends (e.g. `g_ch[0/2].u_ch.dout → ch_out`: 4 bends instead
+  of 2, a down-then-right "hook" at the exit). `routeEdges` skips the
+  obstacle of the pins that are the ends of a wire edge (`wirePins`); the
+  annotations of the pins WITHOUT a wire (const `=1'b1`, nc, net labels)
+  remain obstacles for the wires of OTHER nets.
+- In the TB view, the port labels are always drawn ABOVE the port (`py - 5`,
+  on BOTH sides), not on the wire's row (`drawBox` in
+  `src/webview/tbschematic.ts`): the wire leaves horizontally at `py`, so the
+  label no longer cuts across it. **The vertical alignment is CONSTANT under
+  a flip** (the user's request at validation): H swaps the side west↔east,
+  but NOT above/below — otherwise a flipped block would move its labels
+  above↔below. The anchor (`end` on the west, `start` on the east) keeps them
+  on the outer side, so the ports that face each other (DUT east ↔ Env west)
+  stay separated HORIZONTALLY (~9px in the default layout, no overlap). The
+  old note "east above/west below" (separation on opposite sides of the wire)
+  is REPLACED — it gave an inconsistency on flip. Making the labels SOFT
+  obstacles for the router was tried and REJECTED — it over-constrains the TB
+  router (more crossings, not fewer).
+- `cycleBreaking: INTERACTIVE` reverses edges according to the seed positions
+  and throws `UnsupportedConfigurationException` in combination with
+  `LAST_SEPARATE` on the boundary flags — the interactive mode uses only
+  layering/crossingMinimization/nodePlacement INTERACTIVE (the directions of
+  our edges are semantically fixed; `layoutSchematic`).
+- The INTERACTIVE mode places the elements WITHOUT a seed differently from
+  the full layout (the rows of the boundary flags get reshuffled — up to
+  384px of vertical difference, deterministically): the seeds must be total
+  or absent (D21). That is why drag-end sends `layout/snapshot` with ALL the
+  positions of the view, and the rendering of an arranged view immediately
+  pins the elements without a seed; do not reintroduce persisting only the
+  dragged elements (a real regression: the ports jumped when the panel was
+  reopened).
+- ELK's port placement cannot be controlled finely: `portsSurrounding` is
+  ignored at placement (it matters only at sizing), and the INSIDE labels
+  inflate the pitch between the ports (24 instead of 16) — for the pins on
+  the grid (docs/04), the ports are `FIXED_POS`, computed by `layoutSchematic`
+  (`src/webview/schematic.ts`), with the node's dimensions rounded to 8.
+- Measuring the text for the block's width must be done with **the font it
+  is drawn with**: the pin/port labels are monospace
+  (`--vscode-editor-font-family`), NOT the proportional UI font
+  (`--vscode-font-family`). `measurer()` in `src/webview/svg.ts` used to
+  measure everything with the proportional font, which underestimated the
+  width of the (wider) monospace labels → blocks too narrow, overlapping
+  west/east port labels (a real regression, exposed by the longer SV labels
+  `[15:0] ch_out [0:2]`). `measurer` now takes a `mono` flag, and
+  `layoutSchematic`/`buildPins` ask for the pin labels to be measured with
+  `mono=true`; the names/parameters (proportional) stay on the UI font.
+- The child Python processes are started with `PYTHONUTF8=1`: the Windows
+  console is cp1252, and quick-uvm writes Unicode arrows (a real crash at the
+  first echo); the same protection on svmodel too (the sources quoted in the
+  diagnostics).
+- On Windows, the `quick-uvm.exe` script can land in
+  `%APPDATA%\Python\PythonXXX\Scripts` (a user install), outside the PATH;
+  `generate.ts` has the fallback `python -c "from quick_uvm.cli import main; main()"`.
+- The npm package `yaml` is CJS: bundling to ESM for the Node test scripts
+  needs the `createRequire` shim in the banner (see `scripts/*.mjs`).
+- `createSubenv` creates block configs (`<module>.quickuvm.yaml`) next to the
+  top config, and the discovery of the active config (a glob on
+  `**/*.quickuvm.yaml`) used to pick the first file alphabetically: the
+  scaffold `chan.quickuvm.yaml` silently "stole" the active config at the
+  next refresh (the DUT becomes `chan`, the overlay and the actions die on
+  the soc views — inactive buttons with no explanation; a real regression
+  caught at the interactive validation). The discovery is now stable (the
+  active config does not change as long as its file exists) and excludes
+  from the initial choice the files referenced as `subenvs[].config` by
+  another config (`topConfigPaths` in `src/yamlops.ts`, tested in
+  `test:yamlops`); do not reintroduce the purely alphabetical choice.
 - **Gestures write the MINIMAL edit, never a whole-document replace** (docs/08
   R4, Oct 2026): `applyTextChange` in `src/config.ts` — shared by the active-config
   target and the custom editor's document target — replaces only the span
@@ -316,33 +338,35 @@ coliziunea de nume.
   error) — `setDut` writes the TOP-LEVEL mapping `reset: {active_low, external}`
   and does not touch a hand-written `reset:` LIST (multi-reset domains);
   `external` is DERIVED, not asked (the reset pitfall below, D25).
-- **Validarea compunerii (`subenvs`) s-a călit în quick-uvm** (re-sondat pe
-  build-ul curent 0.9.2, iul. 2026 — utilizatorul a mai lucrat la generator;
-  `models.py` a crescut de la ~2600 la 3216 de linii). Reguli DURE noi de care
-  compunerea derivată (felia 3, încă neimplementată) trebuie să țină cont: (1)
-  `subenvs` cer `layout: packaged` (deja asigurat de `createSubenvs`); (2) un
-  bench de subsistem cere **≥2 subenv-uri** — compunerea unui SINGUR bloc e
-  respinsă la `generate` (mesaj clar, dar abia la generare); (3) blocurile
-  compuse **împart un namespace**: numele de agent/interfață/tranzacție/secvență
-  trebuie unice între config-uri de bloc DISTINCTE — două `subenvs` către
-  ACELAȘI config (ex. `g_ch[0].u_ch` și `g_ch[1].u_ch`, ambele `chan`) sunt OK
-  (același env-package reutilizat), fiindcă `createSubenvs` numește agentul
-  `<modul>_a` (distinct per modul). **HIBRIDUL E DIN NOU LEGAL** (quick-uvm >= 1.0.0,
-  re-sondat empiric: agenți de graniță, H2): un bench cu `subenvs` POATE avea
-  agenți proprii la top — diagnosticul „hybrid" a fost SCOS din ConfigService,
-  iar lock-ul din `test:e2e` păzește acum sensul invers (dacă generatorul l-ar
-  re-interzice, gestul de compunere cu agenți la top ar muri tăcut). Un top de
-  subsistem PUR (fără agenți) rămâne un ÎNVELIȘ combinational
-  (`dut: {combinational: true, reset: ''}`) — `createSubenvs` îl setează așa,
-  altfel garda de ceas-fantomă din 1.0 refuză generarea (un ceas de top
-  neconectat la DUT). **Nesting-ul
-  FUNCȚIONEAZĂ**: un subenv al cărui config e el însuși subsistem e acceptat
-  (compunere pe mai multe niveluri validă, dar fiecare nivel cere ≥2). Corolar
-  pentru „Compose into parent bench" (`composeIntoParent` → `parentComposition`
-  pur + `createSubenv`): NU se poate cabla un lanț cu un singur subenv per nivel;
-  gestul compune blocul + FRAȚII lui în părintele imediat (≥2). Restul faptelor
-  despre probe (cele 3 bug-uri, regulile de validare) rămân VALIDE pe acest
-  build — re-confirmate empiric.
+- **The validation of composition (`subenvs`) was hardened in quick-uvm**
+  (re-probed on the current build 0.9.2, Jul 2026 — the user has worked on the
+  generator some more; `models.py` grew from ~2600 to 3216 lines). New HARD
+  rules that the derived composition (slice 3, not yet implemented) must take
+  into account: (1) `subenvs` require `layout: packaged` (already ensured by
+  `createSubenvs`); (2) a subsystem bench requires **≥2 subenvs** — composing
+  a SINGLE block is rejected at `generate` (a clear message, but only at
+  generation); (3) the composed blocks **share a namespace**: the
+  agent/interface/transaction/sequence names must be unique across DISTINCT
+  block configs — two `subenvs` pointing to the SAME config (e.g.
+  `g_ch[0].u_ch` and `g_ch[1].u_ch`, both `chan`) are OK (the same env-package
+  reused), because `createSubenvs` names the agent `<module>_a` (distinct per
+  module). **THE HYBRID IS LEGAL AGAIN** (quick-uvm >= 1.0.0, re-probed
+  empirically: boundary agents, H2): a bench with `subenvs` MAY have agents of
+  its own at the top — the "hybrid" diagnostic was REMOVED from ConfigService,
+  and the lock in `test:e2e` now guards the opposite direction (if the
+  generator forbade it again, the composition gesture with agents at the top
+  would die silently). A PURE subsystem top (no agents) remains a
+  combinational SHELL (`dut: {combinational: true, reset: ''}`) —
+  `createSubenvs` sets it so, otherwise the phantom-clock guard of 1.0 refuses
+  the generation (a top clock not connected to the DUT). **Nesting
+  WORKS**: a subenv whose config is itself a subsystem is accepted
+  (composition on several levels is valid, but every level requires ≥2). A
+  corollary for "Compose into parent bench" (`composeIntoParent` → the pure
+  `parentComposition` + `createSubenv`): a chain with a single subenv per
+  level CANNOT be wired; the gesture composes the block + its SIBLINGS into
+  the immediate parent (≥2). The rest of the facts about the probes (the 3
+  bugs, the validation rules) remain VALID on this build — re-confirmed
+  empirically.
 - **`generate` exiting 0 is NOT "the bench elaborates" — and the reset is where it
   bit** (Nov 2026, D25). The MVP was validated on the generator's exit code; the
   first real compile of the tutorial bench (Xcelium 25.09) failed at
@@ -409,19 +433,21 @@ coliziunea de nume.
   `docs/upstream-quickuvm-reset-undriven.md`). The lint proves declarations,
   not behaviour: only a simulator proves the bench runs, and the extension has
   none — say "generates", never "works", about anything not compiled.
-- **Blocul `analysis:` comută QuickUVM între mod implicit și declarat**
-  (probat pe 0.9.2, RE-CONFIRMAT pe 1.0.0; `test:e2e` scenariul 4): FĂRĂ cheia `analysis:`, generatorul intră în
-  mod **implicit** și auto-cablează un scoreboard ȘI un colector de coverage la
-  „primary agent" (`// Scoreboard (wired to primary agent: cmd)` în env); CU
-  `analysis:` — chiar `{}` gol — intră în mod **declarat** și cablează exact ce e
-  listat (gol ⇒ nimic). Deci mutațiile de ștergere **nu au voie să curețe blocul
-  `analysis` golit**: ar comuta explicit→implicit și ar **reînvia** scoreboard-ul
-  și coverage-ul tocmai șterse din diagramă (ștergi ceva, primești înapoi mai
-  mult — regresie reală, prinsă doar de e2e, invizibilă testelor pure). Se curăță
-  doar listele-copil (`scoreboards: []`/`coverage: []`), niciodată maparea
-  `analysis` (vezi `keepAnalysis` în `src/yamlops.ts`). Fișierul `<agent>_cov.svh`
-  se generează oricum, per agent — `analysis` controlează **cablarea în env**, nu
-  existența clasei.
+- **The `analysis:` block switches QuickUVM between implicit and declared
+  mode** (probed on 0.9.2, RE-CONFIRMED on 1.0.0; `test:e2e` scenario 4):
+  WITHOUT the `analysis:` key, the generator enters **implicit** mode and
+  auto-wires a scoreboard AND a coverage collector onto the "primary agent"
+  (`// Scoreboard (wired to primary agent: cmd)` in the env); WITH `analysis:`
+  — even an empty `{}` — it enters **declared** mode and wires exactly what is
+  listed (empty ⇒ nothing). So the delete mutations **are not allowed to clean
+  up the emptied `analysis` block**: that would switch explicit→implicit and
+  **resurrect** the scoreboard and the coverage just deleted from the diagram
+  (you delete something, you get more back — a real regression, caught only by
+  e2e, invisible to the pure tests). Only the child lists are cleaned
+  (`scoreboards: []`/`coverage: []`), never the `analysis` mapping (see
+  `keepAnalysis` in `src/yamlops.ts`). The `<agent>_cov.svh` file is generated
+  anyway, per agent — `analysis` controls the **wiring in the env**, not the
+  existence of the class.
 - **The inferred components are drawn from `quick-uvm resolve`, never re-derived**
   (Aug. 2026, QuickUVM#118). Implicit mode wires a scoreboard AND a coverage
   collector onto the primary agent, so a config with no `analysis:` key generates
@@ -460,85 +486,93 @@ coliziunea de nume.
   total snapshot) — a later declared `sb:<name>` inherits the position; and the
   `drawn` dedup guard in `levelEnv` is unreachable by construction (no
   `analysis:` key ⇒ no declared sb/cov node), kept as a defensive wall only.
-- **Probele whitebox (K2)** — sondat empiric pe quick-uvm 0.9.2
-  (`ProbeConfig`/`validate_probes` în `quick_uvm/models.py`; `test:e2e`
-  scenariul 5): obligatorii doar `name` (identificator SV) și `path`; `width`
-  implicit **1** — o probă fără lățime TRUNCHIAZĂ tăcut un semnal lat, deci
-  extensia o cere explicit când nu o poate deriva. `path` e lipit **verbatim**
-  după `dut_inst.` în tb_top (`assign probe_if.<name> = dut_inst.<path>;`),
-  deci e relativ la instanța DUT și **nu e validat** de generator (o cale
-  greșită trece tăcut). Spre deosebire de `analysis:`, blocul `probes:` NU
-  comută moduri — absența lui e byte-identică, deci lista goală se curăță
-  liniștit. Refuzuri reale ale generatorului (toate replicate în `proposeProbe`,
-  `src/probe.ts`): `probes` + `subenvs` = **eroare dură** (H1); nume care se
-  ciocnește cu o interfață/port de agent, cu ceasul sau reset-ul (același
-  namespace tb_top/config-DB); agenți multi-instanțiați (`instances`; cu
-  `replicas` merge). ATENȚIE 1.0: >1 domeniu de ceas NU se mai refuză —
-  proba are câmp `clock:` care alege domeniul de eșantionare.
-  **Bug-urile din 0.9.2, re-verificate pe 1.0.0** (repro + xrun): (1) `layout:
-  packaged` + probă cu `coverage` → `env_pkg` nu include `probe_monitor`
-  (xmvlog *E,NOIPRT, tip necunoscut) — ÎNCĂ RUPT, nu oferim `coverage` pe
-  config-uri packaged; (2) un bloc-frunză **compus ca subenv** își generează
-  fișierele de probă, dar tb_top-ul subsistemului n-are instanță `probe_if`,
-  nici XMR, nici `config_db`, iar `probe_if.sv` nu intră în filelist →
-  **exit 0, rupt tăcut** — ÎNCĂ RUPT, extensia avertizează (`isComposedChild`);
-  (3) `struct` + `coverage` crăpa generatorul — REPARAT în 1.0 (generează și
-  compilează curat).
-- **Lățimea unui net NU e în model** și derivarea naivă e GREȘITĂ: `ViewNet` are
-  doar `{name, endpoints, fanout, render}`. Lățimea se ia DOAR de la un capăt
-  care e **același semnal** — portul propriu al modulului vederii (svmodel
-  seamănă netul cu numele portului) sau un pin de copil legat cu **netul întreg**
-  (`conn.kind === "net"`) — niciodată prin `select`/`concat`/`expr`. Dovada e în
-  `examples/model.json`: `ch_out` are 48 de biți dar toți pinii lui sunt porturi
-  de 16 prin `select`; `din` are 8 dar pinul e port de 16 prin `concat`
-  (`netWidth` în `src/probe.ts`, testat în `test:probe`). Corolar: **nu se pot
-  sonda semnale interne pure** (registre de stare, fire din `assign`) — modelul
-  emite net-uri doar din conexiunile porturilor instanțelor-copil.
-- **Cheile de compunere: `connections` și scoreboard-urile cross-bloc** — sondat
-  empiric (1.0.0: cheia `subenv_scoreboards` NU mai există — e respinsă cu
-  eroare-ghid; un scoreboard cross-bloc e o intrare `analysis.scoreboards` cu
-  capete calificate `<subenv>.<agent>`, vezi `isCrossBlockSb` în
-  `src/quickuvm.ts`; `test:e2e` scenariul 6): valide DOAR pe un bench cu `subenvs`; primul token al
-  oricărui capăt e **numele instanței subenv** (`subenvs[].name`), nu `dut.name`.
-  `connections: [{from: <subenv>.<port>, to: <subenv>.<port>}]` — `from` = port de
-  **ieșire** al blocului sursă, `to` = port de **intrare** al blocului destinație,
-  lățimi EGALE, un singur driver per destinație, iar agentul blocului **destinație
-  trebuie PASIV** (`active: false`); generează un `assign` FIZIC în tb_top. Firul
-  cablează **porturi de interfață de agent**, deci copiii trebuie să aibă agenți
-  ÎNAINTE (de asta compunerea derivată e un gest separat de `createSubenv`, care
-  scheletul copiilor nu creează agenți). Scoreboard-ul cross-bloc: `analysis: {scoreboards: [{name, source:
-  <subenv>.<AGENT>, monitor: <subenv>.<AGENT>}]}` — cheiat pe **AGENT**, nu
-  port; intră sub regula `keepAnalysis` (maparea `analysis` nu se șterge). Niciuna nu comută moduri (absența = byte-identică),
-  deci listele goale se curăță liniștit. Derivarea din model: `deriveConnections`
-  în `src/compose.ts` (pur, `test:compose`) — net inter-bloc = un net FĂRĂ capăt
-  `<port>.X`, cu o ieșire și una+ intrări între subenv-uri; direcția din `port.dir`,
-  lățimea din model; refuză multi-driver. **Invarianți căliți la recenzia
-  adversarială** (nu-i reintroduce regresia): (1) un net de **feedthrough**
-  (portul părintelui condus de un copil ȘI citit de altul) e conexiune reală —
-  NU se sare tot net-ul fiindcă atinge `<port>.X`; capătul de graniță cade la
-  filtrul per-capăt, net-urile pur de graniță cad la testul 0-drivere/0-sink.
-  (2) Lățimea vine din **definiția-per-nume** a modulului, comună mai multor
-  elaborări — pentru două instanțe ale ACELUIAȘI modul (parametri diferiți) e
-  nesigură, deci nu se verifică (quick-uvm face verificarea autoritară); la
-  module DIFERITE nepotrivirea se avertizează dar **tot se cablează** (nu arunca
-  o conexiune reală — skip-ul pierdea conexiuni). (3) `wireConnections`
-  reconstruiește rel→subenv fără filtrul `.` (membrii de generate au rel adânc);
-  numele revendicat de mai mulți rel = ambiguu (`subenvName` e many-to-one) → se
-  scoate + avertizează. (4) Pasivizarea grupează editările pe **URI de fișier**
-  (două sinks pot referi ACELAȘI config-copil) — o singură `edit.replace` per
-  fișier, cu pasivizările pliate pe textul în evoluție, altfel două replace pe
-  același range se corup. (5) Se pasivizează **TOȚI agenții** blocului
-  destinație care dețin porturi conduse, nu doar primul (`filter`, nu `find`
-  în `planWireEdits`, `src/compose.ts`): porturile conduse ale unui sink pot
-  aparține unor agenți DIFERIȚI, iar quick-uvm refuză generarea dacă oricare
-  rămâne activ („agent ... is active and would drive ...") — cu un singur
-  agent pasivizat, gestul raporta succes pe o stare ruptă (bug pre-existent
-  găsit și confirmat empiric la recenzia adversarială a călirii, 16 iul.
-  2026; blocul destinație multi-agent E o compunere validă — cu toți agenții
-  pasivi, generarea e curată). Planificatorul editului multi-fișier e PUR
-  (`planWireEdits` + `subenvMapping` în `src/compose.ts`, `test:compose`);
-  host-ul din `actions.ts` doar citește fișierele și construiește
-  `WorkspaceEdit`-ul din plan.
+- **The whitebox probes (K2)** — probed empirically on quick-uvm 0.9.2
+  (`ProbeConfig`/`validate_probes` in `quick_uvm/models.py`; `test:e2e`
+  scenario 5): only `name` (an SV identifier) and `path` are mandatory; `width`
+  defaults to **1** — a probe without a width silently TRUNCATES a wide
+  signal, so the extension asks for it explicitly when it cannot derive it.
+  `path` is pasted **verbatim** after `dut_inst.` in tb_top
+  (`assign probe_if.<name> = dut_inst.<path>;`), so it is relative to the DUT
+  instance and is **not validated** by the generator (a wrong path passes
+  silently). Unlike `analysis:`, the `probes:` block does NOT switch modes —
+  its absence is byte-identical, so the empty list is cleaned up without
+  worry. Real refusals of the generator (all replicated in `proposeProbe`,
+  `src/probe.ts`): `probes` + `subenvs` = a **hard error** (H1); a name that
+  collides with an agent interface/port, with the clock or the reset (the same
+  tb_top/config-DB namespace); multi-instantiated agents (`instances`; with
+  `replicas` it works). NOTE 1.0: >1 clock domain is NO longer refused — the
+  probe has a `clock:` field that chooses the sampling domain.
+  **The bugs of 0.9.2, re-checked on 1.0.0** (repro + xrun): (1) `layout:
+  packaged` + a probe with `coverage` → `env_pkg` does not include
+  `probe_monitor` (xmvlog *E,NOIPRT, unknown type) — STILL BROKEN, we do not
+  offer `coverage` on packaged configs; (2) a leaf block **composed as a
+  subenv** generates its probe files, but the subsystem's tb_top has no
+  `probe_if` instance, no XMR and no `config_db`, and `probe_if.sv` does not
+  enter the filelist → **exit 0, silently broken** — STILL BROKEN, the
+  extension warns (`isComposedChild`); (3) `struct` + `coverage` used to crash
+  the generator — FIXED in 1.0 (it generates and compiles cleanly).
+- **The width of a net is NOT in the model** and the naive derivation is
+  WRONG: `ViewNet` has only `{name, endpoints, fanout, render}`. The width is
+  taken ONLY from an endpoint that is **the same signal** — the own port of
+  the view's module (svmodel seeds the net with the port's name) or a child
+  pin tied to the **whole net** (`conn.kind === "net"`) — never through
+  `select`/`concat`/`expr`. The proof is in `examples/model.json`: `ch_out`
+  has 48 bits but all its pins are 16-bit ports through `select`; `din` has 8
+  but the pin is a 16-bit port through `concat` (`netWidth` in `src/probe.ts`,
+  tested in `test:probe`). Corollary: **purely internal signals cannot be
+  probed** (state registers, wires from an `assign`) — the model emits nets
+  only from the connections of the child instances' ports.
+- **The composition keys: `connections` and the cross-block scoreboards** —
+  probed empirically (1.0.0: the `subenv_scoreboards` key NO longer exists —
+  it is rejected with a teaching error; a cross-block scoreboard is an
+  `analysis.scoreboards` entry with qualified endpoints `<subenv>.<agent>`,
+  see `isCrossBlockSb` in `src/quickuvm.ts`; `test:e2e` scenario 6): valid
+  ONLY on a bench with `subenvs`; the first token of any endpoint is **the
+  name of the subenv instance** (`subenvs[].name`), not `dut.name`.
+  `connections: [{from: <subenv>.<port>, to: <subenv>.<port>}]` — `from` = an
+  **output** port of the source block, `to` = an **input** port of the
+  destination block, EQUAL widths, a single driver per destination, and the
+  agent of the **destination block must be PASSIVE** (`active: false`); it
+  generates a PHYSICAL `assign` in tb_top. The wire connects **agent interface
+  ports**, so the children must have agents BEFOREHAND (that is why the
+  derived composition is a gesture separate from `createSubenv`, whose
+  skeletons for the children create no agents). The cross-block scoreboard:
+  `analysis: {scoreboards: [{name, source: <subenv>.<AGENT>, monitor: <subenv>.<AGENT>}]}`
+  — keyed on the **AGENT**, not the port; it falls under the `keepAnalysis`
+  rule (the `analysis` mapping is not deleted). Neither switches modes
+  (absence = byte-identical), so the empty lists are cleaned up without worry.
+  The derivation from the model: `deriveConnections` in `src/compose.ts` (pure,
+  `test:compose`) — an inter-block net = a net WITHOUT a `<port>.X` endpoint,
+  with one output and one+ inputs across subenvs; the direction from
+  `port.dir`, the width from the model; it refuses multi-driver. **Invariants
+  hardened at the adversarial review** (do not reintroduce the regression):
+  (1) a **feedthrough** net (the parent's port driven by one child AND read by
+  another) is a real connection — the whole net is NOT skipped because it
+  touches `<port>.X`; the boundary endpoint is dropped by the per-endpoint
+  filter, the purely boundary nets by the 0-drivers/0-sinks test. (2) The width
+  comes from the module's **per-name definition**, shared by several
+  elaborations — for two instances of the SAME module (different parameters)
+  it is unreliable, so it is not checked (quick-uvm does the authoritative
+  check); for DIFFERENT modules the mismatch is warned about but **still
+  wired** (do not throw a real connection away — the skip was losing
+  connections). (3) `wireConnections` rebuilds rel→subenv without the `.`
+  filter (the generate members have a deep rel); a name claimed by several
+  rels = ambiguous (`subenvName` is many-to-one) → it is taken out + warned
+  about. (4) The passivation groups the edits by **file URI** (two sinks may
+  refer to the SAME child config) — a single `edit.replace` per file, with the
+  passivations folded over the evolving text, otherwise two replaces on the
+  same range corrupt each other. (5) **ALL the agents** of the destination
+  block that own driven ports are made passive, not only the first (`filter`,
+  not `find` in `planWireEdits`, `src/compose.ts`): the driven ports of a sink
+  may belong to DIFFERENT agents, and quick-uvm refuses the generation if any
+  of them stays active ("agent ... is active and would drive ...") — with a
+  single agent made passive, the gesture reported success on a broken state (a
+  pre-existing bug found and confirmed empirically at the adversarial review
+  of the hardening, 16 Jul 2026; a multi-agent destination block IS a valid
+  composition — with all the agents passive, the generation is clean). The
+  planner of the multi-file edit is PURE (`planWireEdits` + `subenvMapping` in
+  `src/compose.ts`, `test:compose`); the host in `actions.ts` only reads the
+  files and builds the `WorkspaceEdit` from the plan.
 - The testbench quick-uvm generates contains a **stub of the DUT** (a duplicate
   definition that wins slang's resolution → `port does not exist` on the real
   design) plus sources that need `uvm_macros.svh`: the `quickuvm.outputDir`
@@ -1454,273 +1488,291 @@ coliziunea de nume.
   was drawn unmapped and counted against the coverage).
 
 
-## Faza curentă
+## Current phase
 
-Fazele 0–2 sunt încheiate: 0 (validare backend), 1 (schelet extensie +
-vederea-simbol; bifată interactiv pe common_cells, `examples-bender/`),
-2 (configurarea QuickUVM: overlay din YAML prin `ConfigService`, acțiunile
-`setDut`/`createAgentFromPins`/`createAgentFromIface`/`ignorePort` prin
-`WorkspaceEdit` cu mutații pure în `src/yamlops.ts`, validări model↔YAML cu
-quick-fix de lățime, inspector lateral, „Generează testbench" cu fallback
-`python -c`; validată cu `npm run test:e2e` și bifată interactiv în Extension
-Development Host). Faza 3 e în lucru: vederea-schemă din `views` e
-implementată read-only (iul. 2026) — scena pură în `src/webview/scene.ts`
-(noduri copil cu parametri, pliaj generate `g_ch[0..2].u_ch` cu
-expandare/re-pliere, muchii din nets cu dedup pe pliaje, etichete pentru
-`render=label`, adnotări select/const/nc/concat, muchii de interfață), layout
-și desen în `src/webview/schematic.ts`, navigare completă (mod derivat din
-selecția în ierarhie — fără comutator Symbol/Schematic, D24; dublu-click =
-intră în bloc — schema dacă există, la frunze sursa; Ctrl+dublu-click = sursa
-oriunde; breadcrumb, comanda `quickuvm.openSchematicView`, sincronizare
-diagramă→ierarhie), protocol extins (`view/show.mode`, `nav/drill.mode`);
-teste în `npm run test:scene`, validare interactivă în `scripts/harness.html`.
-Drag + sidecar sunt implementate (iul. 2026): pozițiile/pliajele/răsturnările se
-persistă în `.vscode/quickuvm-architect.yaml` (mutații pure în
-`src/sidecarops.ts`, `npm run test:sidecar`; serviciu host `src/sidecar.ts`
-cu scriere atomică, watcher și invalidare grațioasă cu restaurarea orfanelor;
-mesajele `layout/full`/`layout/snapshot`/`fold/toggled`/`node/flipped` din
-docs/05; camera e stare de sesiune, nu de proiect — prima deschidere a
-unei vederi se încadrează mereu în fereastră, docs/04); muchiile TUTUROR vederilor-schemă se rutează cu ruterul propriu A* pe
-grilă din `routeEdges` (`src/webview/schematic.ts`, `src/webview/router.ts`,
-`npm run test:router`; halou + obstacole de text pe etichetele pinilor;
-fallback naiv per muchie fără drum) — ELK dă doar pozițiile, iar lumea pe
-grilă e universală (docs/04). La recompilare, pozițiile utilizatorului devin
-semințe pentru ELK interactiv: nodurile cunoscute rămân exact pe loc, doar
-elementele noi primesc poziții, inserate în context; semințele sunt totale
-sau deloc (D21, iul. 2026) — drag-end persistă snapshot-ul întregii vederi
-(`layout/snapshot`), randarea unei vederi aranjate pin-uiește elementele
-fără sămânță, iar `layout/full` se trimite înaintea lui `model/full` la
-`ready`; „Re-aranjează tot"
-(butonul ⟲, `relayout/request`) e singura cale de re-layout total. Pinii
-stau pe grilă prin construcție (porturi
-`FIXED_POS`, primul centru la +40, pas 24 (PIN_PITCH), dimensiuni multiple de 8 — pin
-aliniat = fir drept, docs/04), iar blocurile suportă răsturnare H/V
-(reatribuirea sloturilor de pini, nu oglindire; tastele H/V + inspector;
-`node/flipped` → sidecar). Lumea pe grilă e universală: toate
-pozițiile, inclusiv steagurile granițelor (mutabile, chei `<port>.x`), se
-rotunjesc la grilă la fiecare randare (docs/04). ELK interactiv pentru
-elemente noi + „Re-aranjează tot" (⟲) sunt implementate. Decizia
-libavoid vs. ruter propriu e închisă — D20 (ruterul propriu, cu condiții de
-reevaluare în jurnal). Override-ul de nivel 4 (fir↔etichetă per net) e
-implementat (iul. 2026): click pe traseu sau pe eticheta netului → secțiunea
-Net din inspector cu „Show as label"/„Show as wire"; mesajul `net/render`,
-persistență în sidecar sub `nets.<net>.render` doar la abatere de la
-sugestia din model, invalidare grațioasă cu `kind: net`; nivelul 1 (stil)
-amânat — există un singur stil de rutare. `createSubenv` e implementat
-(iul. 2026): butonul „Create subenv" din inspector pe blocurile selectate
-în vederea-schemă (pliajele se desfac în membri), confirmare multi-select,
-config-urile de bloc lipsă se creează schelet + dut euristic; mutația
-`createSubenvs` în yamlops (nume SV sanitizate, `params` doar întregi —
-schema cere `dict[str,int]`, `layout: packaged` asigurat pe top); atenție
-la constrângerile H1 din QuickUVM (HEAD, iul. 2026): copiii cu ceas sunt
-acceptați din slice-ul M1 dacă sunt single-clock cu cel mult un reset,
-`params` cer `parameters:` declarați în agentul blocului (docs/03);
-scenariul 3 din `test:e2e` acoperă compunerea, inclusiv un copil cu ceas.
-**Faza 3 e ÎNCHEIATĂ** (iul. 2026, criteriul bifat pe common_cells —
-docs/06). **Faza 3b e în lucru** — felia 1 (vederea de verificare
-read-only) e implementată ca **model pe niveluri** (D24): scena plată per nivel
-`TbScene` cu `focus`+`breadcrumb` în `src/webview/tbscene.ts`; fiecare bloc
-= cutie UML (stereotip + compartimente text cu structura internă),
-dublu-clic pe un bloc cu `drill` coboară un nivel (`""` testbench →
-`env` → `agent:X`), cu steaguri de graniță pentru conexiunile ce
-traversează nivelul. **Direcția porturilor e vizibilă** (iul. 2026): toate
-muchiile au săgeată la capăt (sensul datelor → sursă = ieșire, țintă =
-intrare), iar steagurile de graniță își arată direcția prin orientarea
-vârfului — `dir` dedus din muchii în `buildTbScene` (`in` = doar sursă →
-vârf spre interior; `out` = doar țintă → vârf spre exterior; `inout` =
-ambele → hexagon turtit, fuziunea celor două vârfuri). Astfel `<if>` la un
-agent activ = hexagon (driver-ul conduce + monitorul eșantionează), la un agent
-pasiv = `in` (doar eșantionare); `<ap>` = `out`, `<sqr>` = `in`. Portul
-`if` al monitorului stă pe EST (ca driver-ul, latura DUT-ului) — altfel
-firul `if→monitor` ocolea monitorul (4 coturi/430px → 2/182px). Rădăcina
-TB = DUT + Env (D24); DUT-ul se desenează
-când există `dut.name` ȘI e verificat direct — config frunză SAU hibrid:
-`hasDut = dut.name && (fără subenvs || are agenți)`; se omite la subsistemele
-PURE (subenvs fără agenți), unde `dut.name` e doar containerul de împachetare
-(`buildTbScene` în `src/webview/tbscene.ts`). ATENȚIE 1.0 — hibridul (subenvs +
-agenți proprii) e LEGAL (agenți de graniță H2): ramura hibridă a lui `hasDut`
-desenează un config VALID acum; diagnosticul dur a fost scos (vezi capcana
-actualizată din secțiunea de compunere). Layout+desen plat în
+Phases 0–2 are closed: 0 (backend validation), 1 (extension skeleton + the
+symbol view; ticked interactively on common_cells, `examples-bender/`),
+2 (the QuickUVM configuration: the overlay from the YAML through
+`ConfigService`, the actions
+`setDut`/`createAgentFromPins`/`createAgentFromIface`/`ignorePort` through
+`WorkspaceEdit` with pure mutations in `src/yamlops.ts`, model↔YAML
+validations with a width quick-fix, the side inspector, "Generate testbench"
+with the `python -c` fallback; validated with `npm run test:e2e` and ticked
+interactively in the Extension Development Host). Phase 3 is in progress: the
+schematic view from `views` is implemented read-only (Jul 2026) — the pure
+scene in `src/webview/scene.ts` (child nodes with parameters, the generate
+fold `g_ch[0..2].u_ch` with expanding/re-folding, edges from the nets with
+dedup over the folds, labels for `render=label`, select/const/nc/concat
+annotations, interface edges), layout and drawing in
+`src/webview/schematic.ts`, full navigation (the mode derived from the
+selection in the hierarchy — no Symbol/Schematic switch, D24; double-click =
+enter the block — the schematic if there is one, the source at leaves;
+Ctrl+double-click = the source anywhere; the breadcrumb, the command
+`quickuvm.openSchematicView`, diagram→hierarchy synchronization), an extended
+protocol (`view/show.mode`, `nav/drill.mode`); tests in `npm run test:scene`,
+interactive validation in `scripts/harness.html`.
+Drag + sidecar are implemented (Jul 2026): the positions/folds/flips are
+persisted in `.vscode/quickuvm-architect.yaml` (pure mutations in
+`src/sidecarops.ts`, `npm run test:sidecar`; the host service `src/sidecar.ts`
+with atomic writing, a watcher and graceful invalidation with the restoring of
+the orphans; the messages
+`layout/full`/`layout/snapshot`/`fold/toggled`/`node/flipped` from docs/05;
+the camera is session state, not project state — the first opening of a view
+is always fitted into the window, docs/04); the edges of ALL the schematic
+views are routed with the project's own A* grid router in `routeEdges`
+(`src/webview/schematic.ts`, `src/webview/router.ts`, `npm run test:router`;
+halo + text obstacles on the pin labels; a naive fallback for each edge
+without a path) — ELK gives only the positions, and the world on the grid is
+universal (docs/04). On recompilation, the user's positions become seeds for
+interactive ELK: the known nodes stay exactly in place, only the new elements
+get positions, inserted in context; the seeds are total or absent (D21, Jul
+2026) — drag-end persists the snapshot of the whole view (`layout/snapshot`),
+the rendering of an arranged view pins the elements without a seed, and
+`layout/full` is sent before `model/full` at `ready`; "Re-arrange all"
+(the ⟲ button, `relayout/request`) is the only path to a total re-layout. The
+pins sit on the grid by construction (`FIXED_POS` ports, the first centre at
++40, pitch 24 (PIN_PITCH), dimensions multiples of 8 — an aligned pin = a
+straight wire, docs/04), and the blocks support H/V flipping (the pin slots
+are reassigned, not mirrored; the H/V keys + the inspector; `node/flipped` →
+sidecar). The world on the grid is universal: all the positions, the boundary
+flags included (movable, keys `<port>.x`), are rounded to the grid at every
+render (docs/04). Interactive ELK for new elements + "Re-arrange all" (⟲) are
+implemented. The libavoid vs. own router decision is closed — D20 (the own
+router, with re-evaluation conditions in the journal). The level 4 override
+(wire↔label per net) is implemented (Jul 2026): a click on the route or on the
+net's label → the Net section of the inspector with "Show as label"/"Show as
+wire"; the `net/render` message, persistence in the sidecar under
+`nets.<net>.render` only on a deviation from the model's suggestion, graceful
+invalidation with `kind: net`; level 1 (style) is postponed — there is a
+single routing style. `createSubenv` is implemented (Jul 2026): the "Create
+subenv" button in the inspector on the blocks selected in the schematic view
+(the folds are expanded into their members), a multi-select confirmation, the
+missing block configs are created as a skeleton + a heuristic dut; the
+`createSubenvs` mutation in yamlops (sanitized SV names, `params` integers
+only — the schema requires `dict[str,int]`, `layout: packaged` ensured on the
+top); mind the H1 constraints of QuickUVM (HEAD, Jul 2026): the children with
+a clock are accepted as of the M1 slice if they are single-clock with at most
+one reset, `params` require `parameters:` declared in the block's agent
+(docs/03); scenario 3 of `test:e2e` covers the composition, a child with a
+clock included.
+**Phase 3 is CLOSED** (Jul 2026, the criterion ticked on common_cells —
+docs/06). **Phase 3b is in progress** — slice 1 (the read-only verification
+view) is implemented as a **level-based model** (D24): the flat per-level
+scene `TbScene` with `focus`+`breadcrumb` in `src/webview/tbscene.ts`; every
+block = a UML box (a stereotype + text compartments with the internal
+structure), a double-click on a block with `drill` descends one level (`""`
+testbench → `env` → `agent:X`), with boundary flags for the connections that
+cross the level. **The direction of the ports is visible** (Jul 2026): all the
+edges have an arrow at the end (the sense of the data → source = output,
+target = input), and the boundary flags show their direction through the
+orientation of the tip — `dir` deduced from the edges in `buildTbScene` (`in`
+= source only → the tip pointing inwards; `out` = target only → the tip
+pointing outwards; `inout` = both → a flattened hexagon, the fusion of the
+two tips). Thus `<if>` on an active agent = a hexagon (the driver drives + the
+monitor samples), on a passive agent = `in` (sampling only); `<ap>` = `out`,
+`<sqr>` = `in`. The monitor's `if` port sits on the EAST (like the driver's,
+the DUT's side) — otherwise the wire `if→monitor` went around the monitor (4
+bends/430px → 2/182px). The TB root = DUT + Env (D24); the DUT is drawn when
+`dut.name` exists AND it is verified directly — a leaf config OR a hybrid:
+`hasDut = dut.name && (no subenvs || has agents)`; it is omitted on the PURE
+subsystems (subenvs without agents), where `dut.name` is only the packaging
+container (`buildTbScene` in `src/webview/tbscene.ts`). NOTE 1.0 — the hybrid
+(subenvs + agents of its own) is LEGAL (boundary agents H2): the hybrid branch
+of `hasDut` draws a VALID config now; the hard diagnostic was removed (see the
+updated pitfall in the composition section). Flat layout+drawing in
 `src/webview/tbschematic.ts`
-(ELK layered, porturi FIXED_POS pe grilă, ruterul A* comun cu nodurile ca
-obstacole; izolat de `schematic.ts` RTL). Navigare: `tb/focus`
-(webview→host, drill/breadcrumb) + `tb/navigate` (host→webview, reveal din
-arbore), sincronizare pe identitatea `<focus>|<bloc>`. Mesajul
-`config/full`, `ViewMode: "tb"`, cheia `tb:<cale-config>` (invalidarea
-sidecar-ului NU atinge vederile `tb:`), comanda
+(ELK layered, FIXED_POS ports on the grid, the shared A* router with the nodes
+as obstacles; isolated from the RTL `schematic.ts`). Navigation: `tb/focus`
+(webview→host, drill/breadcrumb) + `tb/navigate` (host→webview, reveal from
+the tree), synchronization on the identity `<focus>|<block>`. The
+`config/full` message, `ViewMode: "tb"`, the key `tb:<config-path>` (the
+sidecar invalidation does NOT touch the `tb:` views), the command
 `quickuvm.openVerificationView`.
-**Drag + poziții în vederea TB e implementat** (iul. 2026): aceeași mecanică
-de drag/sidecar/semințe/D21/cameră/⟲ ca vederea-schemă RTL, cheiată **per
-nivel** — `layoutKey()` întoarce `viewId` la RTL și `tb:<config>|<focus>` la
-TB, fiindcă id-urile nodurilor se repetă între nivelurile de agent
-(`u.sequencer` la `agent:cmd` și `agent:rsp`) și s-ar ciocni sub o cheie
-comună. `layoutTb` primește `seeds` (ELK interactiv, ca `layoutSchematic`),
-`renderTb` forțează semințele + pin-uiește elementele fără sămânță (D21
-total, inclusiv steagurile de graniță). Porturile `TbPlaced` sunt acum
-**relative** la originea nodului (ancora = `n.x + offset`), deci firele
-urmează blocul la drag fără re-layout; `drawTbEdges` e reutilizabil pentru
-re-rutarea live. Mânerele de drag sunt polimorfe (`dragChild`/`dragReroute`/
-`dragEachPos`/`dragSelector` ramifică pe `state.mode`; RTL neschimbat).
-**Flip în TB** (iul. 2026): pe **blocuri**, H schimbă laturile porturilor
-(vest↔est), V inversează ordinea pe fiecare latură (ca RTL, prin `flipPorts`
-în `tbschematic.ts`; `toggleFlip` folosește `layoutKey()`; taste H/V + butoane
-în inspector). Pe **steaguri de graniță**, H face o **răsturnare LOCALĂ pe
-orizontală** (`TbBPlaced.flipH`, consumat de `drawBoundary`+`anchor`):
-oglindește forma în jurul centrului propriu ȘI mută ancora pe latura opusă a
-steagului, DAR **nu-i schimbă poziția/latura ELK** (deci `FIRST/LAST_SEPARATE`
-rămâne satisfăcut — nicio aruncare). La un steag `inout` (hexagon simetric)
-forma nu se schimbă, dar ancora sare de la un vârf la celălalt — util: alege
-care conexiune iese dreaptă (ex. `<if>` la nivel de agent: neflipat →
-`driver→if` drept și `if→monitor` cu cot; flipat → invers). La un steag
-direcțional, oglindirea + mutarea ancorei pe latura exterioară produc un cot
-(blocul e mereu pe latura interioară) — răsturnare pur locală, reversibilă
-(D24, cererea explicită a utilizatorului). V nu are sens pe un steag (o singură
-conexiune). **De ce DOAR local, nu mutare pe latura opusă** (probat empiric,
-`scripts/_probe-flip*.mjs`): ELK layered fixează latura unui steag direcțional
-după direcția muchiei (sursă→primul strat/stânga, țintă→ultimul strat/dreapta)
-și **ignoră o sămânță pe latura opusă** — chiar și FĂRĂ `layerConstraint`
-(`<ap>`, țintă, semințat la x=8 → ELK îl ține la x=792). Un flip care ar
-schimba latura ELK ar cere `FIRST_SEPARATE` cu muchie de intrare (sau invers)
-→ ELK **aruncă** (`UnsupportedConfigurationException`) și `renderTb` eșua
-TĂCUT. De aceea flip-ul e local (pură geometrie post-layout, fără ELK).
-**Steag `inout` + semințe**: un steag INOUT nu satisface NICIUNA dintre
-constrângeri → NU primește `layerConstraint` (ELK îl așază în mijloc; bonus,
-dispare ocolul `if→monitor`, iar `monitor.if` revine pe VEST). `renderTb`
-prinde orice aruncare din `layoutTb` (banner, nu eșec tăcut). Săgeata muchiilor e `markerUnits:
-"userSpaceOnUse"` (dimensiune fixă, nu scalată cu grosimea firului — altfel
-firul de interfață gros o umfla, iar la hover se micșora). Harness-ul suportă
-`mode=tb` (injectează `config/full` + persistă snapshot/`node/flipped` în
-`sessionStorage`).
-**Unificarea DESIGN (D24) e implementată** (iul. 2026): vederea RTL nu mai
-are comutator Symbol/Schematic — modul e derivat din nodul selectat în
-ierarhie. Arborele Design Hierarchy are o **rădăcină sintetică „top module"**
-(`src/tree.ts`, `InstanceNode.inst` opțional, `contextValue` `top-root` vs
-`instance`) imediat deasupra top-ului: click pe „top module" → **simbolul**
-top-ului (`openSymbolView`, mod `symbol`); click pe orice nod cu nume →
-**schema** internă (`openSchematicView`; frunzele cad grațios pe simbol în
-webview). Buton „Set top module" pe rădăcină (inline `$(gear)` + meniu
-contextual + link în welcome view). `nav/drill` poartă `mode` ca host-ul să
-distingă simbolul top-ului (reveal pe rădăcina sintetică) de schema lui
-(reveal pe nodul instanței): `panel.ts` ține `currentMode`, `revealInstance`
-în `extension.ts` alege rădăcina doar la `mode==="symbol" && viewId===tops[0]`.
-Capcană rezolvată la review: `model/full` NU trimite `nav/drill` la prima
-deschidere (host-ul trimite oricum un `view/show` explicit imediat după — un
-`nav/drill` ar concura și ar fixa host-ul pe top); îl trimite doar la
-recompilarea care șterge vederea curentă (când NU vine `view/show`).
-Sidebar-ul are două secțiuni: **Design Hierarchy**
-(arborele RTL, `src/tree.ts`) și **Verification Hierarchy** (arborele
-mediului TB derivat din config, `src/tbtree-build.ts` pur +
-`src/tbtree.ts`); id-urile arborelui de verificare coincid cu ale
-diagramei TB (ambele din `buildTbScene`), deci navigarea arbore↔diagramă e
-simetrică fără mapare (comanda `quickuvm.revealTbComponent`, mesajul
-`select/reveal`). **Felia 2 (editarea) e implementată**: adăugarea (paletă în
-inspector), **ștergerea** și **editarea proprietăților** (iul. 2026). Mutații
-pure în `src/yamlops.ts`: `removeScoreboard`/`removeCoverage`/
-`removeVirtualSequence` (frunze, idempotente la țintă lipsă — no-op = text
-neschimbat, ca `addCoverage`), `removeAgent` (cascadă: coverage-ul agentului,
-scoreboard-urile cu `source`/`monitor`==agent — se șterge întreg scoreboard-ul,
-nu se degradează —, pașii de vseq care-l folosesc + secvențele rămase goale;
-`subenv_scoreboards` are capete `<subenv>.<AGENT>` — nume calificate cu prefix de
-subenv, care referă agenți ai config-urilor COPIL (alte fișiere), nu agenții
-bare ai config-ului curent, deci `removeAgent` (care compară nume bare) nu-l
-atinge corect) și `setScoreboardField` (câmp generic; valoarea implicită se șterge —
-`match=in_order` sau gol; **cascadă**: monitor gol → single-stream șterge
-`match`+`match_key`, `match=in_order` șterge `match_key`; NU forțează flow, deci
-stilul scris de mână rămâne). Curățarea blocurilor golite prin `pruneEmptySeq`/
-`pruneEmptyMap` (ca `writeIgnored`). Acțiuni host în `src/actions.ts`:
-`deleteComponent` (confirmare **modală** `showWarningMessage {modal:true}`; la
-agent, `detail` rezumă cascada prin `agentCascade` — secvența dispare doar dacă
-TOȚI pașii sunt ai agentului, altfel „a step in X") și `editScoreboard`
-(editare **inline**: valoarea vine din inspector, `max_latency`→`Number`). ID→
-nume în inspector: `tbsb`→`sb.name` (căutat după etichetă), `tbcov`→agentul din
-`cov:<agent>`, `tbagent`→etichetă, `tbvsqr`→un buton Delete per
-`virtual_sequences[]`. Editorul de proprietăți (`tbScoreboardEditor`):
-`<select>` source/monitor (monitorul exclude sursa)/match (dezactivat fără
-monitor), `<input>` match_key (dezactivat dacă nu e out_of_order)/max_latency;
-`ActionKind` `deleteComponent`/`editScoreboard` (protocol.ts). Validat în
-`scripts/harness.html?mode=tb` (mesajele corecte pe scoreboard/coverage/agent/
-vseq). **Invarianți căliți la recenzia adversarială** (nu-i reintroduce
-regresia): (1) o ștergere fără țintă întoarce textul ORIGINAL byte-identic (nu
-`doc.toString`), altfel un no-op ar re-serializa și ar șterge containere goale
-scrise de mână (`scoreboards: []`) → WorkspaceEdit fantomă; `removeNamedFromSeq`
-întoarce `bool`, apelantul se scurtcircuitează la `text`. (2) `removeAgent`
-curăță DOAR containerele pe care ACEASTĂ operație le-a golit (`covChanged`/
-`sbChanged`/`vseqChanged`), iar un vseq dispare doar dacă i s-au scos efectiv
-pași (`stepsRemoved > 0`) — un `body: []` pre-existent rămâne, coerent cu ce
-promite `agentCascade` în modală. (3) `setScoreboardField` REFUZĂ golirea lui
-`source` (obligatoriu A2). (4) În editor, `<select>` Source exclude monitorul
-curent (și invers), ca la add. (5) Ramura `tbsb` din inspector se restrânge la
-`id.startsWith("sb:")` — nodurile cross-bloc `xsb:` (`subenv_scoreboards`) au
-altă sursă și încă n-au editor/ștergere. (6) Ștergerea are și **gest de
-tastatură** (`Delete`/`Backspace` pe nodul TB selectat → aceeași `tbDeleteTarget`
-+ confirmare modală ca butonul); handler-ul `keydown` (pe `window`) se
-scurtcircuitează dacă `e.target` e `INPUT`/`SELECT`/`TEXTAREA`/contenteditable —
-altfel `f`/`h`/`Delete` tastate în câmpurile inspectorului (match_key,
-max_latency) ar comanda diagrama în loc să ajungă în câmp. (7) **Meniu
-contextual** în vederea TB (`contextmenu` pe canvas): clic-dreapta pe o
-componentă → Open (dacă are `drill`) / Flip H / Flip V / Delete (marcat
-`danger`); pe `vsqr` o intrare per secvență, pe un steag doar Flip H, pe
-DUT/Env fără Delete; pe fundal NU se face `preventDefault` (rămâne meniul
-implicit). Se închide la Escape (înaintea golirii selecției),
-`pointerdown` în afară (listener pe `window` în faza de **capture**, ca să
-preceadă handlerele canvas-ului) și la zoom. Clic-dreapta pe un element din
-AFARA selecției îl selectează (convenția editoarelor). `tbDeleteTarget` e
-sursa unică de rezoluție id→nume pentru buton, tastă ȘI meniu (nu pot devia).
-**Felia 3 e în lucru** — **proba whitebox (K2) e implementată** (iul. 2026):
-selectezi un net în vederea-schemă → „Create probe" din secțiunea Net trimite
-`createProbe {net}`; toată deducerea stă în modulul **pur** `src/probe.ts`
-(`proposeProbe` — rezolvă instanța DUT din numele de MODUL din YAML, calculează
-calea XMR relativă la ea și derivă lățimea corect; `test:probe`, 15 teste pe
-modelul real). Refuzurile replică exact ce respinge generatorul (vezi capcanele
-de mai sus). Mutații `addProbe`/`removeProbe` în yamlops (`probes` e listă de
-prim nivel, se curăță goală — NU e ca `analysis`); ștergerea probelor e în
-vederea TB (nodul `probes` le agregă, deci un buton per probă, ca la `vsqr`).
-**Compunerea derivată e implementată** (iul. 2026): `deriveConnections` în
-modulul pur `src/compose.ts` (`test:compose`) transformă net-urile inter-bloc
-ale vederii-schemă (net fără capăt `<port>.X`, o ieșire → una+ intrări între
-subenv-uri) în `connections`, cu direcția din `port.dir` și lățimea din model;
-gestul „Wire connections from design" (`wireConnections`) scrie `connections`
-prin `addConnections` ȘI pune automat pasivi agenții blocurilor-destinație
-(`setAgentActive(false)`) — `WorkspaceEdit` ATOMIC pe mai multe fișiere (top +
-config-uri copil); când un copil n-are încă agent, avertizează. `test:e2e`
-scenariul 6 dovedește lanțul + că un agent activ e refuzat și flip-ul îl repară.
-„Compose into parent bench" (`composeIntoParent` → `parentComposition` pur +
-`createSubenv`) e implementat (un nivel, din copil; ≥2 blocuri). **Felia 4 e
-implementată** (iul. 2026): `QuvmConfigEditor` (`src/customeditor.ts`) e
-editorul IMPLICIT al `*.quickuvm.yaml` (`customEditors` `priority: default` în
-package.json) — deschizi fișierul → diagrama TB, cu fallback text nativ. TB e
-config-driven (`renderTb` nu atinge `state.model` — verificat; header-ul omite
-butonul „Design" fără model), deci se randează din textul documentului;
-layout-ul merge prin sidecar-ul COMUN (`tb:<cale>`), gesturile de editare aplică
-pe DOCUMENT. Refactorul-cheie: interfața `TbEditTarget` (`current`/`configUri`/
-`apply`) — `ConfigService` o satisface (config-ul ACTIV), `DocumentEditTarget`
-(în customeditor.ts) o implementează (documentul deschis), iar gesturile de
-editare TB din `actions.ts` iau `cfg: TbEditTarget = this.config` → ACELEAȘI
-metode (cu QuickPick-uri) merg pe oricare țintă, zero duplicare. `diagramHtml`
-(în `panel.ts`) e HTML-ul webview partajat. Orice schimbare de text →
-`config/full` → re-randare (fără buclă). Validat în harness cu `?nomodel=1`.
-**Faza 3b e ÎNCHEIATĂ** (16 iul. 2026): utilizatorul a parcurs integral
-tutorialul `docs/tutorial-yapp-buffer.md` în Extension Development Host —
-criteriul de închidere (mediu cu ≥2 agenți + scoreboard two-stream +
-coverage, construit și re-aranjat integral grafic, YAML lizibil, `generate`
-curat) e bifat. **MVP-ul e validat.**
-După închidere a rulat o **trecere de călire a plasei de teste** (16 iul.
-2026): regresiile DOVEDITE reale fără gardă au primit teste prin
-extrageri-la-pur — `src/filelistops.ts` (quotare .f + exclude outputDir +
-`resolveLocPath`; `test:filelist`), `src/heuristics.ts` (regexurile de nume,
-inclusiv `_ni/_bi`; `test:heuristics`), `src/configcheck.ts` (nucleul
-validărilor model↔YAML: `checkConfig` întoarce findings structurate, config.ts
-doar le mapează pe Diagnostic cu l10n — D19; `test:configcheck`),
-`subenvName`/`subenvMapping`/`planWireEdits` în `src/compose.ts` (maparea
-rel→subenv cu excluderea ambigue + planul editului multi-fișier cu pliere per
-fișier partajat; `test:compose`), `edgeObstacles` în `schematic.ts`
-(obstacolele din etichete: înălțime PIN_PITCH + excluderea pinilor de fir;
-`test:router`), `probeCoverageAllowed` în `probe.ts` și `isComposedChild` în
-`yamlops.ts` (compară căile NORMALIZAT — vechiul `includes(fsPath)` rata
-diferențele de caz pe Windows). Tot atunci: cei doi octeți NUL bruți din
-`yamlops.ts` (separatori de chei de dedup) au devenit secvențe `\0` escapate —
-un NUL brut face ripgrep să trateze fișierul ca BINAR și-l exclude tăcut din
-căutări.
+**Drag + positions in the TB view are implemented** (Jul 2026): the same
+drag/sidecar/seeds/D21/camera/⟲ mechanics as the RTL schematic view, keyed
+**per level** — `layoutKey()` returns `viewId` for RTL and
+`tb:<config>|<focus>` for TB, because the node ids repeat between the agent
+levels (`u.sequencer` at `agent:cmd` and `agent:rsp`) and would collide under
+a common key. `layoutTb` receives `seeds` (interactive ELK, like
+`layoutSchematic`), `renderTb` forces the seeds + pins the elements without a
+seed (D21 total, the boundary flags included). The `TbPlaced` ports are now
+**relative** to the node's origin (the anchor = `n.x + offset`), so the wires
+follow the block on drag without a re-layout; `drawTbEdges` is reusable for
+the live re-routing. The drag handles are polymorphic (`dragChild`/`dragReroute`/
+`dragEachPos`/`dragSelector` branch on `state.mode`; RTL unchanged).
+**Flip in TB** (Jul 2026): on **blocks**, H swaps the sides of the ports
+(west↔east), V reverses the order on each side (like RTL, through `flipPorts`
+in `tbschematic.ts`; `toggleFlip` uses `layoutKey()`; the H/V keys + buttons
+in the inspector). On **boundary flags**, H does a **LOCAL horizontal
+flip** (`TbBPlaced.flipH`, consumed by `drawBoundary`+`anchor`): it mirrors
+the shape around its own centre AND moves the anchor to the opposite side of
+the flag, BUT **does not change its ELK position/side** (so
+`FIRST/LAST_SEPARATE` stays satisfied — no throw). On an `inout` flag (a
+symmetric hexagon) the shape does not change, but the anchor jumps from one
+tip to the other — useful: it chooses which connection comes out straight
+(e.g. `<if>` at agent level: unflipped → `driver→if` straight and
+`if→monitor` with a bend; flipped → the reverse). On a directional flag, the
+mirroring + moving the anchor to the outer side produce a bend (the block is
+always on the inner side) — a purely local, reversible flip (D24, the user's
+explicit request). V makes no sense on a flag (a single connection). **Why
+ONLY local, not a move to the opposite side** (probed empirically,
+`scripts/_probe-flip*.mjs`): ELK layered fixes the side of a directional flag
+by the direction of the edge (source→first layer/left, target→last
+layer/right) and **ignores a seed on the opposite side** — even WITHOUT
+`layerConstraint` (`<ap>`, a target, seeded at x=8 → ELK keeps it at x=792). A
+flip that changed the ELK side would require `FIRST_SEPARATE` with an incoming
+edge (or the reverse) → ELK **throws** (`UnsupportedConfigurationException`)
+and `renderTb` used to fail SILENTLY. That is why the flip is local (pure
+post-layout geometry, no ELK).
+**`inout` flag + seeds**: an INOUT flag satisfies NEITHER of the constraints →
+it gets NO `layerConstraint` (ELK places it in the middle; as a bonus, the
+`if→monitor` detour disappears, and `monitor.if` returns to the WEST).
+`renderTb` catches any throw from `layoutTb` (a banner, not a silent failure).
+The arrow of the edges is `markerUnits: "userSpaceOnUse"` (a fixed size, not
+scaled with the wire's thickness — otherwise the thick interface wire inflated
+it, and on hover it shrank). The harness supports `mode=tb` (it injects
+`config/full` + persists snapshot/`node/flipped` in `sessionStorage`).
+**The DESIGN unification (D24) is implemented** (Jul 2026): the RTL view no
+longer has a Symbol/Schematic switch — the mode is derived from the node
+selected in the hierarchy. The Design Hierarchy tree has a **synthetic "top
+module" root** (`src/tree.ts`, `InstanceNode.inst` optional, `contextValue`
+`top-root` vs `instance`) immediately above the top: a click on "top module" →
+the **symbol** of the top (`openSymbolView`, mode `symbol`); a click on any
+named node → its internal **schematic** (`openSchematicView`; the leaves fall
+back gracefully to the symbol in the webview). A "Set top module" button on
+the root (inline `$(gear)` + context menu + a link in the welcome view).
+`nav/drill` carries `mode` so that the host can tell the top's symbol (reveal
+on the synthetic root) from its schematic (reveal on the instance's node):
+`panel.ts` keeps `currentMode`, `revealInstance` in `extension.ts` chooses the
+root only for `mode==="symbol" && viewId===tops[0]`.
+A pitfall resolved at review: `model/full` does NOT send `nav/drill` at the
+first opening (the host sends an explicit `view/show` right after anyway — a
+`nav/drill` would race it and pin the host on the top); it sends it only at
+the recompilation that deletes the current view (when NO `view/show` comes).
+The sidebar has two sections: **Design Hierarchy**
+(the RTL tree, `src/tree.ts`) and **Verification Hierarchy** (the tree of the
+TB environment derived from the config, the pure `src/tbtree-build.ts` +
+`src/tbtree.ts`); the ids of the verification tree coincide with those of the
+TB diagram (both from `buildTbScene`), so the tree↔diagram navigation is
+symmetric with no mapping (the command `quickuvm.revealTbComponent`, the
+message `select/reveal`). **Slice 2 (editing) is implemented**: adding (a
+palette in the inspector), **deleting** and **editing the properties** (Jul
+2026). Pure mutations in `src/yamlops.ts`: `removeScoreboard`/`removeCoverage`/
+`removeVirtualSequence` (leaves, idempotent on a missing target — a no-op =
+unchanged text, like `addCoverage`), `removeAgent` (a cascade: the agent's
+coverage, the scoreboards with `source`/`monitor`==agent — the whole
+scoreboard is deleted, it is not degraded —, the vseq steps that use it + the
+sequences left empty; `subenv_scoreboards` has endpoints `<subenv>.<AGENT>` —
+names qualified with a subenv prefix, which refer to agents of the CHILD
+configs (other files), not to the bare agents of the current config, so
+`removeAgent` (which compares bare names) rightly does not touch it) and
+`setScoreboardField` (a generic field; the default value is deleted —
+`match=in_order` or empty; **cascade**: an empty monitor → single-stream
+deletes `match`+`match_key`, `match=in_order` deletes `match_key`; it does NOT
+force flow, so the hand-written style stays). The emptied blocks are cleaned
+up through `pruneEmptySeq`/`pruneEmptyMap` (like `writeIgnored`). Host actions
+in `src/actions.ts`: `deleteComponent` (a **modal** confirmation
+`showWarningMessage {modal:true}`; for an agent, `detail` summarizes the
+cascade through `agentCascade` — the sequence disappears only if ALL its steps
+are the agent's, otherwise "a step in X") and `editScoreboard` (**inline**
+editing: the value comes from the inspector, `max_latency`→`Number`). ID→name
+in the inspector: `tbsb`→`sb.name` (looked up by label), `tbcov`→the agent in
+`cov:<agent>`, `tbagent`→the label, `tbvsqr`→one Delete button per
+`virtual_sequences[]`. The property editor (`tbScoreboardEditor`): `<select>`
+source/monitor (the monitor excludes the source)/match (disabled without a
+monitor), `<input>` match_key (disabled unless it is out_of_order)/max_latency;
+`ActionKind` `deleteComponent`/`editScoreboard` (protocol.ts). Validated in
+`scripts/harness.html?mode=tb` (the correct messages on scoreboard/coverage/agent/
+vseq). **Invariants hardened at the adversarial review** (do not reintroduce
+the regression): (1) a delete without a target returns the ORIGINAL text
+byte-identical (not `doc.toString`), otherwise a no-op would re-serialize and
+delete hand-written empty containers (`scoreboards: []`) → a phantom
+WorkspaceEdit; `removeNamedFromSeq` returns a `bool`, the caller
+short-circuits to `text`. (2) `removeAgent` cleans ONLY the containers that
+THIS operation emptied (`covChanged`/`sbChanged`/`vseqChanged`), and a vseq
+disappears only if steps were actually taken out of it (`stepsRemoved > 0`) —
+a pre-existing `body: []` stays, consistent with what `agentCascade` promises
+in the modal. (3) `setScoreboardField` REFUSES the emptying of `source`
+(mandatory, A2). (4) In the editor, the Source `<select>` excludes the current
+monitor (and vice versa), as at add. (5) The `tbsb` branch of the inspector is
+restricted to `id.startsWith("sb:")` — the cross-block `xsb:` nodes
+(`subenv_scoreboards`) have another source and have no editor/delete yet. (6)
+Deleting also has a **keyboard gesture** (`Delete`/`Backspace` on the selected
+TB node → the same `tbDeleteTarget` + modal confirmation as the button); the
+`keydown` handler (on `window`) short-circuits if `e.target` is
+`INPUT`/`SELECT`/`TEXTAREA`/contenteditable — otherwise `f`/`h`/`Delete` typed
+in the inspector's fields (match_key, max_latency) would command the diagram
+instead of reaching the field. (7) A **context menu** in the TB view
+(`contextmenu` on the canvas): a right-click on a component → Open (if it has
+`drill`) / Flip H / Flip V / Delete (marked `danger`); on `vsqr` one entry per
+sequence, on a flag only Flip H, on DUT/Env no Delete; on the background
+`preventDefault` is NOT called (the default menu stays). It closes on Escape
+(before the selection is cleared), on a `pointerdown` outside (a listener on
+`window` in the **capture** phase, so that it precedes the canvas's handlers)
+and on zoom. A right-click on an element OUTSIDE the selection selects it (the
+editors' convention). `tbDeleteTarget` is the single source of the id→name
+resolution for the button, the key AND the menu (they cannot diverge).
+**Slice 3 is in progress** — **the whitebox probe (K2) is implemented** (Jul
+2026): you select a net in the schematic view → "Create probe" in the Net
+section sends `createProbe {net}`; all the deduction lives in the **pure**
+module `src/probe.ts` (`proposeProbe` — it resolves the DUT instance from the
+MODULE name in the YAML, computes the XMR path relative to it and derives the
+width correctly; `test:probe`, 15 tests on the real model). The refusals
+replicate exactly what the generator rejects (see the pitfalls above). The
+mutations `addProbe`/`removeProbe` in yamlops (`probes` is a top-level list,
+it is cleaned up when empty — it is NOT like `analysis`); deleting the probes
+is in the TB view (the `probes` node aggregates them, so one button per probe,
+as for `vsqr`).
+**The derived composition is implemented** (Jul 2026): `deriveConnections` in
+the pure module `src/compose.ts` (`test:compose`) turns the inter-block nets
+of the schematic view (a net without a `<port>.X` endpoint, one output → one+
+inputs across subenvs) into `connections`, with the direction from `port.dir`
+and the width from the model; the gesture "Wire connections from design"
+(`wireConnections`) writes `connections` through `addConnections` AND
+automatically makes the agents of the destination blocks passive
+(`setAgentActive(false)`) — an ATOMIC `WorkspaceEdit` over several files (the
+top + the child configs); when a child has no agent yet, it warns. `test:e2e`
+scenario 6 proves the chain + that an active agent is refused and the flip
+repairs it.
+"Compose into parent bench" (`composeIntoParent` → the pure
+`parentComposition` + `createSubenv`) is implemented (one level, from the
+child; ≥2 blocks). **Slice 4 is implemented** (Jul 2026): `QuvmConfigEditor`
+(`src/customeditor.ts`) is the DEFAULT editor of `*.quickuvm.yaml`
+(`customEditors` `priority: default` in package.json) — you open the file →
+the TB diagram, with the native text fallback. TB is config-driven (`renderTb`
+does not touch `state.model` — verified; the header omits the "Design" button
+without a model), so it is rendered from the document's text; the layout goes
+through the SHARED sidecar (`tb:<path>`), the editing gestures apply to the
+DOCUMENT. The key refactor: the `TbEditTarget` interface
+(`current`/`configUri`/`apply`) — `ConfigService` satisfies it (the ACTIVE
+config), `DocumentEditTarget` (in customeditor.ts) implements it (the open
+document), and the TB editing gestures in `actions.ts` take
+`cfg: TbEditTarget = this.config` → THE SAME methods (with their QuickPicks)
+work on either target, zero duplication. `diagramHtml` (in `panel.ts`) is the
+shared webview HTML. Any text change → `config/full` → re-render (no loop).
+Validated in the harness with `?nomodel=1`.
+**Phase 3b is CLOSED** (16 Jul 2026): the user went through the whole
+tutorial `docs/tutorial-yapp-buffer.md` in the Extension Development Host —
+the closure criterion (an environment with ≥2 agents + a two-stream
+scoreboard + coverage, built and re-arranged entirely graphically, a readable
+YAML, a clean `generate`) is ticked. **The MVP is validated.**
+After the closure a **hardening pass over the test net** was run (16 Jul
+2026): the regressions PROVEN real that had no guard got tests through
+extractions-to-pure — `src/filelistops.ts` (.f quoting + the outputDir
+exclusion + `resolveLocPath`; `test:filelist`), `src/heuristics.ts` (the name
+regexes, `_ni/_bi` included; `test:heuristics`), `src/configcheck.ts` (the
+core of the model↔YAML validations: `checkConfig` returns structured findings,
+config.ts only maps them onto Diagnostic with l10n — D19; `test:configcheck`),
+`subenvName`/`subenvMapping`/`planWireEdits` in `src/compose.ts` (the
+rel→subenv mapping with the exclusion of the ambiguous ones + the plan of the
+multi-file edit with folding per shared file; `test:compose`), `edgeObstacles`
+in `schematic.ts` (the obstacles from the labels: PIN_PITCH height + the
+exclusion of the wire pins; `test:router`), `probeCoverageAllowed` in
+`probe.ts` and `isComposedChild` in `yamlops.ts` (it compares the paths
+NORMALIZED — the old `includes(fsPath)` missed the case differences on
+Windows). At the same time: the two raw NUL bytes in `yamlops.ts` (separators
+of dedup keys) became escaped `\0` sequences — a raw NUL makes ripgrep treat
+the file as BINARY and silently excludes it from searches.
 **Sprint R10–R11 (docs/08) is implemented** (Oct 2026): the temporary-wire
 gesture — creation from a port's hotspot into empty canvas, connection with
 legality before the drop — on the pure module `src/webview/wiring.ts`
@@ -1831,4 +1883,4 @@ user in the Extension Development Host** (21 Nov 2026): the gestures and the
 cursor shapes in both view families, the sidebar's "Reset route" (the relay
 through the host), ⟲ with its undo, and the refresh of a second surface (the
 panel and a per-file editor on the same level).
-Planul complet: `docs/06-plan-mvp.md`.
+The complete plan: `docs/06-plan-mvp.md`.

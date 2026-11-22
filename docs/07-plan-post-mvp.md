@@ -1,52 +1,52 @@
-# 07 — Plan post-MVP: bucla de feedback a generării + paritate de schemă
+# 07 — Post-MVP plan: the generation feedback loop + schema parity
 
-Continuă `docs/06-plan-mvp.md` (MVP închis, Faza 4 finisată). Trei direcții cerute
-de utilizator (iul. 2026), investigate empiric în **ambele** repo-uri (QuickUVM
-generatorul + QuickUVM Architect extensia). Referința de schemă folosită peste
-tot: `docs/quickuvm-schema-reference.md` (suprafața v1.0.0).
+Continues `docs/06-plan-mvp.md` (MVP closed, Phase 4 finished). Three directions
+requested by the user (Jul 2026), investigated empirically in **both** repos (QuickUVM
+the generator + QuickUVM Architect the extension). The schema reference used
+throughout: `docs/quickuvm-schema-reference.md` (the v1.0.0 surface).
 
-**Constatarea de arhitectură** (independent confirmată de investigația liniei 1 și
-a liniei 2): direcțiile 1 și 2 au AMÂNDOUĂ nevoie de aceeași primitivă — o mapare
-autoritară **element de config → fișiere generate**. Hard-codarea acestei mapări în
-TypeScript driftează (numele generate sunt lossy față de config: un scoreboard flat
-își pierde numele → `<dut>_scoreboard.svh`, `<agent>_cov.svh` se emite necondiționat,
-layout-urile packaged/subsystem multiplică cazurile). Deci fundația comună e un
-**manifest de generare emis de QuickUVM**, o singură sursă de adevăr. El deblochează
-atât decorația (linia 1) cât și declanșatorul incremental (linia 2). Linia 3
-(paritate GUI) e independentă și poate merge în paralel.
+**The architectural finding** (confirmed independently by the investigations of line 1
+and of line 2): directions 1 and 2 BOTH need the same primitive — an authoritative
+mapping **config element → generated files**. Hard-coding this mapping in TypeScript
+drifts (the generated names are lossy with respect to the config: a flat scoreboard
+loses its name → `<dut>_scoreboard.svh`, `<agent>_cov.svh` is emitted unconditionally,
+the packaged/subsystem layouts multiply the cases). So the common foundation is a
+**generation manifest emitted by QuickUVM**, a single source of truth. It unblocks
+both the decoration (line 1) and the incremental trigger (line 2). Line 3 (GUI
+parity) is independent and can proceed in parallel.
 
-Ordinea globală: **Track A (manifestul QuickUVM) → Linia 1 → Linia 2**; **Linia 3**
-în paralel, începând cu reparațiile de paritate negativă (bug-uri).
+The global order: **Track A (the QuickUVM manifest) → Line 1 → Line 2**; **Line 3**
+in parallel, starting with the negative-parity repairs (bugs).
 
 ---
 
-## Principiu UX — „simple by default, powerful when needed"
+## UX principle — "simple by default, powerful when needed"
 
-Aceeași filozofie ca a generatorului ([[quickuvm-design-philosophy]]), aplicată
-inspectorului. Encodată PUR și testat în `src/inspector.ts` (`npm run test:inspector`),
-ca regulile să nu trăiască împrăștiate prin condiții inline în DOM.
+The same philosophy as the generator's ([[quickuvm-design-philosophy]]), applied to
+the inspector. Encoded PURELY and tested in `src/inspector.ts` (`npm run test:inspector`),
+so that the rules do not live scattered through inline conditions in the DOM.
 
-Trei reguli, deliberat distincte:
+Three rules, deliberately distinct:
 
-1. **SCOP.** Inspectorul arată proprietățile a CE E SELECTAT, nimic altceva.
-   Secțiunile la nivel de bench (RAL, regresie, ceasuri, reseturi, teste, identitate)
-   apar doar în *bench scope* — nicio componentă selectată, exact ce produce selectarea
-   nodului rădăcină din arborele de verificare (`selectId` null). Înainte se randau sub
-   ORICE selecție: ~55 de rânduri irelevante sub fiecare clic.
-2. **RELEVANȚĂ ⇒ ascunde.** Un câmp al cărui comutator stă chiar lângă el se ascunde
-   până devine util (`mode: responder` dezvăluie rândurile de responder). Nu se pierde
-   nimic: comutatorul E punctul de descoperire. Fiecare rând ascuns corespunde unui zid
-   de validator QuickUVM — l-ar fi refuzat oricum.
-3. **RARITATE ⇒ „Advanced".** Un câmp mereu valid dar rar atins stă sub o dezvăluire,
-   niciodată dezactivat și niciodată eliminat — nu există alt control care să-l scoată
-   la iveală. Starea deschis/închis se ține minte (`vscode.setState`).
+1. **SCOPE.** The inspector shows the properties of WHAT IS SELECTED, nothing else.
+   The bench-level sections (RAL, regression, clocks, resets, tests, identity)
+   appear only in *bench scope* — no component selected, exactly what selecting the
+   root node of the verification tree produces (`selectId` null). Before, they were
+   rendered under ANY selection: ~55 irrelevant rows under every click.
+2. **RELEVANCE ⇒ hide.** A field whose switch sits right next to it is hidden until
+   it becomes useful (`mode: responder` reveals the responder rows). Nothing is lost:
+   the switch IS the point of discovery. Every hidden row corresponds to a QuickUVM
+   validator wall — it would have refused it anyway.
+3. **RARITY ⇒ "Advanced".** A field that is always valid but rarely touched sits under
+   a disclosure, never disabled and never removed — there is no other control that
+   would bring it to light. The open/closed state is remembered (`vscode.setState`).
 
-Corolar: **un control dezactivat e zgomot permanent.** Se folosește doar când blocajul
-vine din ALTĂ secțiune (ex. „In use by spi" pe un domeniu de ceas), unde utilizatorul
-nu poate deduce de aici cum să-l deblocheze.
+Corollary: **a disabled control is permanent noise.** It is used only when the block
+comes from ANOTHER section (e.g. "In use by spi" on a clock domain), where the user
+cannot deduce from here how to unblock it.
 
-Efect măsurat pe un bench realist (RAL + regresie + 2 domenii de ceas + 1 reset +
-2 teste, agent cu 4 porturi selectat): **~100 de controale → sub 30**.
+Effect measured on a realistic bench (RAL + regression + 2 clock domains + 1 reset +
+2 tests, an agent with 4 ports selected): **~100 controls → under 30**.
 
 ---
 
@@ -175,379 +175,388 @@ produce. The guard only ever hides ghosts, never invents them.
 
 ---
 
-### Vocabularul stărilor de generare
+### The vocabulary of the generation states
 
-Trei stări, colorate și insignate cu vocabularul PROPRIU al VS Code, ca să nu fie
-nimic de învățat:
+Three states, coloured and badged with VS Code's OWN vocabulary, so that there is
+nothing to learn:
 
-| stare | insignă | culoare (token) | ce înseamnă |
+| state | badge | colour (token) | what it means |
 |---|---|---|---|
-| nesalvat | `●` | verde `gitDecoration.untrackedResourceForeground` | declarat în editor, încă nu în fișier — un crash îl pierde |
-| negenerat | `U` | chihlimbar `list.warningForeground` | pe disc, dar fără cod în spate (git: *untracked*) |
-| învechit | `M` | albastru `charts.blue` | cod există, configurația a mers mai departe (git: *modified*) |
+| unsaved | `●` | green `gitDecoration.untrackedResourceForeground` | declared in the editor, not yet in the file — a crash loses it |
+| ungenerated | `U` | amber `list.warningForeground` | on disk, but with no code behind it (git: *untracked*) |
+| stale | `M` | blue `charts.blue` | code exists, the configuration has moved on (git: *modified*) |
 
-`●` e exact marcajul pe care VS Code îl pune pe un tab nesalvat; `U`/`M` sunt
-literele git cu înțelesul lor git. Prioritate: nesalvat > negenerat > învechit.
+`●` is exactly the mark VS Code puts on an unsaved tab; `U`/`M` are the git letters
+with their git meaning. Priority: unsaved > ungenerated > stale.
 
-Culoarea duce greul la o privire, insigna e plasa de siguranță: în temele High
-Contrast VS Code aplatizează culorile decorațiilor, iar culoarea singură e ilizibilă
-pentru utilizatorii cu daltonism — deci **niciun canal nu are voie să fie singurul
-purtător**. De aceea nu s-a renunțat la glif.
+Colour does the heavy lifting at a glance, the badge is the safety net: in the High
+Contrast themes VS Code flattens the decoration colours, and colour alone is
+unreadable for users with colour blindness — so **no channel is allowed to be the
+only carrier**. That is why the glyph was not given up.
 
-Chihlimbarul (`list.warningForeground`) și auriul (`gitDecoration.modified…`) sunt la
-un pas de nuanță distanță, deci nu se folosesc pe două stări vecine; albastrul separă
-curat a treia stare.
+The amber (`list.warningForeground`) and the gold (`gitDecoration.modified…`) are one
+step of hue apart, so they are not used on two neighbouring states; the blue
+separates the third state cleanly.
 
-Declarațiile se compară la nivel de **owner**, nu de nod: mai mulți `vseq:*`
-colapsează pe unicul nod `vsqr`, deci întrebarea „există nodul?" ar rata un AL DOILEA
-vseq adăugat pe un bench care are deja unul.
+The declarations are compared at the level of the **owner**, not of the node: several
+`vseq:*` collapse onto the single `vsqr` node, so the question "does the node exist?"
+would miss a SECOND vseq added to a bench that already has one.
 
-### Unde trăiește un control (felia 2 de UX)
+### Where a control lives (UX slice 2)
 
-Inspectorul e randat de DOUĂ suprafețe, din același modul
-(`src/webview/inspector-view.ts`), diferențiate de un singur steag `canvas`:
+The inspector is rendered by TWO surfaces, from the same module
+(`src/webview/inspector-view.ts`), told apart by a single `canvas` flag:
 
-| suprafață | `canvas` | ce arată |
+| surface | `canvas` | what it shows |
 |---|---|---|
-| bara laterală „Properties" (sub arbori) | `false` | tot ce **editează CONFIGURAȚIA**: proprietăți de agent/scoreboard/coverage/subenv, porturi, setările de bench, paleta de adăugare, Generate |
-| aside-ul diagramei | `true` | tot ce **acționează asupra DESENULUI**: flip, fold, render de net, con, selecție de pini, citirea schematică a vederii curente |
+| the "Properties" side bar (under the trees) | `false` | everything that **edits the CONFIGURATION**: agent/scoreboard/coverage/subenv properties, ports, the bench settings, the add palette, Generate |
+| the diagram's aside | `true` | everything that **acts on the DRAWING**: flip, fold, net render, cone, pin selection, the schematic reading of the current view |
 
-Criteriul e *pe ce acționează controlul*, nu unde arată mai bine. Niciuna nu randează
-controalele celeilalte, deci nimic nu e duplicat și nu se afișează niciun buton care
-n-ar putea face nimic de acolo. Aside-ul se ASCUNDE când rămâne gol (o vedere TB fără
-selecție), și exact acei 250px se întorc la pânză.
+The criterion is *what the control acts on*, not where it looks better. Neither
+renders the other's controls, so nothing is duplicated and no button is shown that
+could do nothing from there. The aside HIDES when it is left empty (a TB view with no
+selection), and exactly those 250px go back to the canvas.
 
-Bara laterală e un bundle SEPARAT (`dist/properties.js`, **33 KB** față de 3.6 MB al
-diagramei): e mereu deschisă, deci nu are voie să care ELK-ul după ea. Ăsta a fost
-motivul extragerii inspectorului înainte de mutare.
-
----
-
-## Track A — manifestul de generare QuickUVM (fundația comună)
-
-**Repo: QuickUVM.** Un singur slice, prin fluxul de PR QuickUVM. Trei adăugiri mici,
-compatibile înapoi (verificate în `quick_uvm/cli.py` + `quick_uvm/generator.py`):
-
-1. **`FileSpec` primește un `owner`** — felul + numele elementului (`agent:host`,
-   `scoreboard:sbd`, `test:test1`, `env`, `top`, `aggregate`). Locurile de
-   `specs.append` cunosc deja elementul (sunt în buclele `for agent…`/`for test…`/
-   per-scoreboard, `generator.py:502-568, 357-455, 390-392`), deci e o setare de
-   câmp, fără logică nouă. Azi asocierea element→fișiere există doar ca **cod
-   imperativ**, se pierde după ce lista e construită.
-2. **O comandă `manifest` (sau `list --json`)** care emite, per element: identitatea,
-   fișierele exacte pe care le deține, ȘI **setul global de fișiere agregate**
-   (`tb_pkg.sv`+`pkg.f` la flat; `*_env_pkg.*`+`*_test_pkg.*`+`run.f` la packaged;
-   variantele de subenv la compoziție). Derivat direct din `files_to_generate()`,
-   deci mereu corect pentru flat/packaged/subenv/VIP/selftest fără ca Architect-ul
-   să ghicească. Reutilizează verificarea de existență pe care `list` o face deja
-   (`cli.py:245-248`), ca manifestul să poarte și „exists on disk" per fișier — exact
-   ce alimentează **linia 1**.
-3. **`--only` devine repetabil** (`multiple=True`; `only` devine set; filtrul
-   `spec.output not in only`). Azi `--only` ia UN singur nume de fișier
-   (`cli.py:77-82`, `generator.py:922-923`), deci regenerarea unui agent (~10-12
-   fișiere) cere o invocare per fișier. ~3 linii, compatibil înapoi. Plus un
-   **avertisment când un `--only` nu potrivește niciun spec** (element redenumit +
-   nume vechi = no-op tăcut azi).
-
-**De ce manifest + `--only`, nu un vocabular de elemente în CLI** (`--only-agent NAME`):
-numele fișierelor encodează convențiile QuickUVM (`{name}_cfg.svh`, `default_seq_name`,
-prefixe de scoreboard, specializări C3 per-parametru). Autoritatea numirii TREBUIE să
-stea în QuickUVM. Cu manifestul, Architect-ul citește numele și le trimite înapoi prin
-`--only` — o singură sursă de adevăr, mai mic decât a re-encoda maparea în CLI.
-
-**Precedent existent**: `add-test` (`cli.py:280-306`) e deja regenerare per-element —
-apelează `generate_all(only=f"{name}.svh")` ȘI `generate_all(only=f"{dut}_tb_pkg.sv")`,
-adică „fișierul elementului + agregatul". Regula asta se generalizează (vezi Riscuri).
-
-**Invarianți verificați**: randarea per-fișier e complet independentă (contextul vine
-din întregul config prin `_flat_base_ctx`, `generator.py:147-221`), deci orice fișier
-se poate regenera izolat. Păstrarea pragma-urilor e identică sub `--only` (`_write` →
-`merge(...)` fail-closed + backup-uri `.bak.N`, `generator.py:884, 897-900`).
-
-**Verificare (mutation-proof)**: regenerarea scoped a unui agent lasă fișierele
-celorlalți agenți byte-identice; omiterea agregatelor lasă `tb_pkg.sv` stale
-(documentează regula de co-regenerare); test unitar pe forma manifestului contra
-exemplelor commit-uite (flat/packaged/subenv).
+The side bar is a SEPARATE bundle (`dist/properties.js`, **33 KB** against the
+diagram's 3.6 MB): it is always open, so it must not drag ELK along with it. That was
+the reason for extracting the inspector before the move.
 
 ---
 
-## Linia 1 — decorația elementelor negenerate
+## Track A — the QuickUVM generation manifest (the common foundation)
 
-**Repo: QuickUVM Architect.** O stea/badge în ierarhia de verificare (și în diagrama
-TB) care marchează elementele TB fără cod generat în spate (există în config, dar
-`quick-uvm generate` nu le-a produs fișierul, sau config-ul s-a schimbat de la ultima
-generare).
+**Repo: QuickUVM.** A single slice, through the QuickUVM PR flow. Three small,
+backward-compatible additions (verified in `quick_uvm/cli.py` + `quick_uvm/generator.py`):
 
-**Arhitectura (verificată)**: id-urile din arborele de verificare
-(`tbtree-build.ts`/`tbtree.ts`) = id-urile din diagrama TB (`tbscene.ts`) minus
-prefixul `v:` — deci un singur spațiu canonic de chei de element servește ambele
-suprafețe. Sistemul de decorații de stare existent (`status.ts` `decosFromFindings`/
-`statusIdsTb`, badge SVG `applyStatusBadges` în `main.ts`) e tiparul de urmat, DAR
-„negenerat" e o stare derivată din filesystem, nu o constatare de validare — se poartă
-pe un canal paralel, nu se suprapune peste `StatusDeco`.
+1. **`FileSpec` gets an `owner`** — the kind + the name of the element (`agent:host`,
+   `scoreboard:sbd`, `test:test1`, `env`, `top`, `aggregate`). The `specs.append`
+   sites already know the element (they are in the `for agent…`/`for test…`/
+   per-scoreboard loops, `generator.py:502-568, 357-455, 390-392`), so it is a field
+   assignment, with no new logic. Today the element→files association exists only as
+   **imperative code**, and is lost once the list is built.
+2. **A `manifest` command (or `list --json`)** that emits, per element: the identity,
+   the exact files it owns, AND **the global set of aggregate files**
+   (`tb_pkg.sv`+`pkg.f` for flat; `*_env_pkg.*`+`*_test_pkg.*`+`run.f` for packaged;
+   the subenv variants for a composition). Derived directly from `files_to_generate()`,
+   so always correct for flat/packaged/subenv/VIP/selftest without the Architect
+   guessing. It reuses the existence check that `list` already does
+   (`cli.py:245-248`), so that the manifest also carries "exists on disk" per file —
+   exactly what feeds **line 1**.
+3. **`--only` becomes repeatable** (`multiple=True`; `only` becomes a set; the filter
+   `spec.output not in only`). Today `--only` takes ONE single file name
+   (`cli.py:77-82`, `generator.py:922-923`), so regenerating an agent (~10-12
+   files) requires one invocation per file. ~3 lines, backward-compatible. Plus a
+   **warning when an `--only` matches no spec** (a renamed element + the old name = a
+   silent no-op today).
 
-**Detecție**: modul pur nou `src/genstate.ts` (fără `vscode`, testat în
-`scripts/test-genstate.mjs`), cu `computeGenState(config, present, opts?)` →
-`generated | missing | stale` per cheie de element. Sursa de adevăr = **manifestul
-Track A** (`fromManifest`); un tabel de nume hard-codat rămâne fallback pentru
-QuickUVM pre-manifest. I/O de filesystem stă în host (`workspace.fs.readDirectory`
-pe dir-ul de ieșire — `quickuvm.outputDir`, rezolvat ca în `generate.ts:76,111`; a-l
-citi pentru existență e ortogonal față de excluderea lui din glob-urile de surse).
+**Why a manifest + `--only`, not a vocabulary of elements in the CLI** (`--only-agent NAME`):
+the file names encode QuickUVM's conventions (`{name}_cfg.svh`, `default_seq_name`,
+scoreboard prefixes, per-parameter C3 specializations). The naming authority MUST
+stay in QuickUVM. With the manifest, the Architect reads the names and sends them back
+through `--only` — a single source of truth, smaller than re-encoding the mapping in
+the CLI.
 
-**Suprafețe**:
-- **Arbore**: `FileDecorationProvider` (idiomatic pentru stea/badge) — `tbtree.ts`
-  setează `item.resourceUri` la un uri sintetic ce encodează cheia de element;
-  `provideFileDecoration` întoarce `{ badge: "★", tooltip, propagate: true }`
-  (bubble-up la `env`/rădăcină, coerent cu bubble-up-ul din `status.ts`). Fallback
-  ieftin: `★` în `item.description`.
-- **Diagramă**: `ungeneratedIdsTb(keys, presentIds)` pur în `status.ts` (simetric cu
-  `statusIdsTb`) + un badge stea distinct (`.gen-badge`) în `main.ts`, separat vizual
-  de badge-urile de severitate `✕`/`!`.
+**Existing precedent**: `add-test` (`cli.py:280-306`) is already per-element
+regeneration — it calls `generate_all(only=f"{name}.svh")` AND
+`generate_all(only=f"{dut}_tb_pkg.sv")`, that is, "the element's file + the
+aggregate". This rule generalizes (see Risks).
 
-**Recalculare**: la schimbarea config-ului (`config.onOverlay`), la finalul generării
-(`generator.onStatus`), la schimbări în dir-ul de ieșire (un `FileSystemWatcher`
-debounced pe `<outDir>/**`, model `sidecar.ts:187-217`), și la schimbarea setării
-`quickuvm.outputDir`.
+**Verified invariants**: per-file rendering is completely independent (the context
+comes from the whole config through `_flat_base_ctx`, `generator.py:147-221`), so any
+file can be regenerated in isolation. Pragma preservation is identical under `--only`
+(`_write` → `merge(...)` fail-closed + `.bak.N` backups, `generator.py:884, 897-900`).
 
-**Slice-uri**:
-- **1.1** — detector pur `genstate.ts` + teste (layout flat întâi; prinde cazurile
-  dificile: numele scoreboard-ului flat picat, `<agent>_cov.svh` necondiționat).
-- **1.2** — steaua în arbore (serviciu host `genwatch.ts` + `FileDecorationProvider`
-  + `resourceUri` + `setUngenerated`). *Livrabilul principal.*
-- **1.3** — badge-ul stea în diagramă (payload `status/decorations` extins +
+**Verification (mutation-proof)**: the scoped regeneration of an agent leaves the
+other agents' files byte-identical; omitting the aggregates leaves `tb_pkg.sv` stale
+(it documents the co-regeneration rule); a unit test on the shape of the manifest
+against the committed examples (flat/packaged/subenv).
+
+---
+
+## Line 1 — decorating the ungenerated elements
+
+**Repo: QuickUVM Architect.** A star/badge in the verification hierarchy (and in the
+TB diagram) that marks the TB elements with no generated code behind them (they exist
+in the config, but `quick-uvm generate` has not produced their file, or the config has
+changed since the last generation).
+
+**The architecture (verified)**: the ids in the verification tree
+(`tbtree-build.ts`/`tbtree.ts`) = the ids in the TB diagram (`tbscene.ts`) minus
+the `v:` prefix — so a single canonical space of element keys serves both
+surfaces. The existing status-decoration system (`status.ts` `decosFromFindings`/
+`statusIdsTb`, the SVG badge `applyStatusBadges` in `main.ts`) is the pattern to
+follow, BUT "ungenerated" is a state derived from the filesystem, not a validation
+finding — it is carried on a parallel channel, not overlaid on `StatusDeco`.
+
+**Detection**: a new pure module `src/genstate.ts` (no `vscode`, tested in
+`scripts/test-genstate.mjs`), with `computeGenState(config, present, opts?)` →
+`generated | missing | stale` per element key. The source of truth = **the Track A
+manifest** (`fromManifest`); a hard-coded name table stays as the fallback for a
+pre-manifest QuickUVM. The filesystem I/O stays in the host
+(`workspace.fs.readDirectory` on the output dir — `quickuvm.outputDir`, resolved as
+in `generate.ts:76,111`; reading it for existence is orthogonal to excluding it from
+the source globs).
+
+**Surfaces**:
+- **Tree**: `FileDecorationProvider` (idiomatic for a star/badge) — `tbtree.ts`
+  sets `item.resourceUri` to a synthetic uri that encodes the element key;
+  `provideFileDecoration` returns `{ badge: "★", tooltip, propagate: true }`
+  (bubble-up to `env`/the root, consistent with the bubble-up in `status.ts`). A
+  cheap fallback: `★` in `item.description`.
+- **Diagram**: a pure `ungeneratedIdsTb(keys, presentIds)` in `status.ts` (symmetric
+  with `statusIdsTb`) + a distinct star badge (`.gen-badge`) in `main.ts`, visually
+  separate from the `✕`/`!` severity badges.
+
+**Recomputation**: on a config change (`config.onOverlay`), at the end of a
+generation (`generator.onStatus`), on changes in the output dir (a debounced
+`FileSystemWatcher` on `<outDir>/**`, modelled on `sidecar.ts:187-217`), and when the
+`quickuvm.outputDir` setting changes.
+
+**Slices**:
+- **1.1** — the pure detector `genstate.ts` + tests (the flat layout first; it catches
+  the difficult cases: the dropped name of the flat scoreboard, the unconditional
+  `<agent>_cov.svh`).
+- **1.2** — the star in the tree (the host service `genwatch.ts` +
+  `FileDecorationProvider` + `resourceUri` + `setUngenerated`). *The main deliverable.*
+- **1.3** — the star badge in the diagram (the extended `status/decorations` payload +
   `ungeneratedIdsTb` + `applyGenBadges`).
-- **1.4** (opțional) — starea `stale` + puntea `fromManifest` (aici `stale` devine
-  fiabil). **Livrat pe hash de conținut, nu pe mtime**: quick-uvm nu rescrie fișierele
-  al căror conținut nu s-a schimbat (asta ține build-urile downstream liniștite), deci
-  după o regenerare mtime-urile rămân vechi și euristica „fișier mai vechi decât
-  config-ul" ar rămâne blocată pe `stale` la infinit. Extensia înregistrează în
-  `workspaceState`, per element, hash-ul config-ului din care a generat; `stale` =
-  hash înregistrat ≠ hash curent. Element fără înregistrare (generat din CLI, în afara
-  extensiei) nu e revendicat `stale` — badge-ul nu minte niciodată.
+- **1.4** (optional) — the `stale` state + the `fromManifest` bridge (here `stale`
+  becomes reliable). **Shipped on a content hash, not on mtime**: quick-uvm does not
+  rewrite files whose content has not changed (this keeps downstream builds quiet), so
+  after a regeneration the mtimes stay old and the heuristic "file older than the
+  config" would stay stuck on `stale` forever. The extension records in
+  `workspaceState`, per element, the hash of the config it generated from; `stale` =
+  recorded hash ≠ current hash. An element with no record (generated from the CLI,
+  outside the extension) is not claimed `stale` — the badge never lies.
 
-**Decizii deschise pentru utilizator**:
-- Limbaj vizual: stea (FileDecoration) vs rând estompat vs icon overlay; în diagramă,
-  glif stea vs contur estompat.
-- O stare sau două: „negenerat" și „stale" colapsate în „needs generate", sau
-  distincte? (`stale` e nefiabil FĂRĂ manifest — orice atingere a YAML-ului
-  marchează tot stale.)
-- Nodul DUT: se decorează? Singurul lui fișier e stub-ul `<d>.sv` (byproduct, nu cod
-  TB) — probabil exclus, sau mapat pe `tb_top.sv`/`clkgen.sv`.
-- Subenv-uri (`sub:<name>`): codul lor stă în dir-ul de ieșire al config-ului COPIL —
-  verificare recursivă, sau nedecorat în v1?
-- Nodul de coverage: `<agent>_cov.svh` există indiferent de `analysis.coverage`, deci
-  existența fișierului nu distinge „coverage generat" — proxy grosier până la manifest.
-- Bubble-up: `env`/rădăcina arată steaua când orice descendent e negenerat?
-
----
-
-## Linia 2 — generare incrementală per-element
-
-**Repo-uri: QuickUVM (capabilitate) + QuickUVM Architect (UX).** Regenerarea doar a
-fișierelor unui element (agent/scoreboard/test/subenv), declanșată plauzibil când
-utilizatorul încearcă să coboare în codul unui element încă negenerat.
-
-**Capabilitatea QuickUVM = Track A** (`--only` repetabil + manifest). Nimic în plus.
-
-**Hazardul central (verificat)**: fișierele agregate sunt manifeste de întreg-config
-(`pkg.f.j2` iterează fiecare interfață; `tb_pkg.sv.j2` include fiecare agent/
-scoreboard/test). Deci:
-- **MODIFY al unui element existent e SIGUR** de regenerat singur (agregatele
-  referă nume, nu conținut).
-- **ADD / REMOVE / RENAME NU e** — agregatele (`tb_pkg.sv`+`pkg.f`, sau variantele
-  packaged/subenv) devin stale până la co-regenerare. Exact regula `add-test`.
-Concluzie: Architect-ul **adaugă mereu setul agregat** la orice generare scoped
-(sunt câteva fișiere ieftine — regula `add-test` generalizată e default-ul sigur).
-
-**UX Architect** (azi „coborârea în cod" pentru elemente TB e aproape complet nouă:
-elementele TB n-au cale de open-source — doar RTL are `openLoc`; item-urile din
-arborele TB n-au `contextValue`, deci niciun meniu contextual; DAR identitatea de
-element există: `VNode.focus`/`selectId`, id-urile de drill din `tbscene.ts`):
-- **Acțiune „Generate this item"** (meniu contextual pe nodurile arborelui TB) —
-  `contextValue` per fel de VNode + intrare `view/item/context` gated pe
-  `view == quickuvm.verification` + comandă `quickuvm.generateItem`.
-- **Auto-oferta la coborâre** — acțiune distinctă „Open Generated Code" pe item-urile
-  TB. La invocare: rezolvă fișierele elementului din manifest; dacă vreunul lipsește/
-  e stale, modal „Generate `<item>` now?" → generare scoped → `openLoc` în fișierul
-  produs.
-
-**Puncte de atingere**: `generate.ts` refactorizat cu un helper scoped (arg-build +
-`run()` + fallback ENOENT + `publishDiagnostics` + status chip partajate), plus
-`generateItem(files)` care adaugă `--only <f>` per fișier + mereu setul agregat;
-`actions.ts` metodele noi `generateItem`/`openGeneratedCode` (frați cu
-`openSubenvConfig`, `actions.ts:1306`); `tbtree-build.ts`/`tbtree.ts` poartă felul +
-`contextValue` (+ flag `generated`/`stale` pentru linia 1); `package.json` cele două
-comenzi + meniuri; cache de manifest per-config (invalidat la salvarea YAML).
-
-**Slice-uri**:
-- **2.1** = Track A (QuickUVM: manifest + `--only` repetabil).
-- **2.2** — Architect: acțiunea „Generate this item" (citește/cache-uiește manifestul,
-  `contextValue`, `generate.ts` refactorizat în scoped-generate).
-- **2.3** — Architect: oferta la coborâre („Open Generated Code": lipsă/stale → modal
-  → generare scoped → `openLoc`).
-- **2.4** — convergență cu linia 1 (același manifest decorează + declanșează).
-
-**Riscuri / întrebări deschise**:
-- Filelist-uri stale (riscul principal) — ADD/REMOVE/RENAME co-regenerează mereu
-  agregatele; MODIFY nu. Manifestul expune fișierele-proprii ȘI setul agregat.
-- „Per element" vs „per fișier" — unitatea de UX e elementul; mecanismul rămâne
-  per-fișier prin `--only`. Manifestul le împacă (și trebuie să enumere fișierele
-  EMISE real — prefixele/specializările variază).
-- Variație layout/compoziție — manifestul e calculat din config-ul real; Architect-ul
-  nu hardcodează nume. Deschis: pentru un element compus, regenerarea per-element are
-  sens doar din config-ul TOP (rezoluția subenv se face acolo) — manifestul exprimă
-  ownership peste arborele de compoziție, sau Architect-ul face scope la config-copil?
-- Regenerarea scoped reflectă editările pending (contextul vine din YAML-ul curent) —
-  dezirabil (o singură sursă de adevăr), dar de semnalat în UX: e „regenerează acest
-  element din config-ul curent", nu „dintr-un snapshot".
+**Open decisions for the user**:
+- Visual language: a star (FileDecoration) vs a dimmed row vs an icon overlay; in the
+  diagram, a star glyph vs a dimmed outline.
+- One state or two: "ungenerated" and "stale" collapsed into "needs generate", or
+  distinct? (`stale` is unreliable WITHOUT the manifest — any touch of the YAML marks
+  everything stale.)
+- The DUT node: is it decorated? Its only file is the `<d>.sv` stub (a byproduct, not
+  TB code) — probably excluded, or mapped onto `tb_top.sv`/`clkgen.sv`.
+- Subenvs (`sub:<name>`): their code lives in the output dir of the CHILD config — a
+  recursive check, or undecorated in v1?
+- The coverage node: `<agent>_cov.svh` exists regardless of `analysis.coverage`, so
+  the file's existence does not distinguish "coverage generated" — a coarse proxy
+  until the manifest.
+- Bubble-up: do `env`/the root show the star when any descendant is ungenerated?
 
 ---
 
-## Linia 3 — paritate de schemă GUI ↔ QuickUVM
+## Line 2 — incremental per-element generation
 
-**Repo: QuickUVM Architect.** Constatarea de bază: GUI-ul autorizează cam **schema
-0.9.2** — exact ce recunoaște `src/quickuvm.ts:1-6` („subsetul de config pe care îl
-atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/replica,
-`inouts`, porturi bogate, `analysis` bogat, `register_model`, `regress`,
-`kind: vip|selftest`, `from_vip`, uniunile multi-clock/reset, `top_name`) e
-**neexpus**. Suprafața completă de editare = uniunea `ActionKind` cu 17 membri
-(`protocol.ts:38-62`) — nu există altă cale de scriere.
+**Repos: QuickUVM (capability) + QuickUVM Architect (UX).** Regenerating only the
+files of one element (agent/scoreboard/test/subenv), plausibly triggered when the
+user tries to descend into the code of an element not yet generated.
 
-### Paritate NEGATIVĂ — se repară primele (GUI-ul e greșit, nu doar tăcut)
+**The QuickUVM capability = Track A** (repeatable `--only` + the manifest). Nothing more.
 
-- **Porturi inout blocate**: `createAgentFromPins` sare inout cu „inout not supported
-  by the QuickUVM schema" (`actions.ts:218-223`) — stale, 1.0 suportă `inouts`/
-  `open_drain`/`pullup`. Deblocare + câmpuri follow-on. Leverage mare (I2C/bidir).
-- **Agenți hibrizi/de graniță blocați**: `createSubenv` refuză un bench cu agenți +
-  subenvs (`actions.ts:599-612`) — stale, A9 a ridicat interdicția. Garda devine o
-  ofertă, nu un refuz.
-- **`QuvmProbe` e înaintea mutației lui**: `enum/struct/real/clock` sunt modelate
-  (`quickuvm.ts:77-89`) și desenate, dar `addProbe` le pică (`yamlops.ts:623-628`).
-  Pe jumătate cablat, ieftin de închis.
+**The central hazard (verified)**: the aggregate files are whole-config manifests
+(`pkg.f.j2` iterates over every interface; `tb_pkg.sv.j2` includes every agent/
+scoreboard/test). So:
+- **A MODIFY of an existing element is SAFE** to regenerate alone (the aggregates
+  refer to names, not content).
+- **ADD / REMOVE / RENAME is NOT** — the aggregates (`tb_pkg.sv`+`pkg.f`, or the
+  packaged/subenv variants) become stale until co-regenerated. Exactly the `add-test` rule.
+Conclusion: the Architect **always adds the aggregate set** to any scoped generation
+(they are a few cheap files — the generalized `add-test` rule is the safe default).
 
-### Grupuri de goluri (leverage × tractabilitate)
+**Architect UX** (today "descending into the code" for TB elements is almost entirely
+new: TB elements have no path to open their source — only RTL has `openLoc`; the
+items of the TB tree have no `contextValue`, hence no context menu; BUT the element
+identity exists: `VNode.focus`/`selectId`, the drill ids in `tbscene.ts`):
+- **A "Generate this item" action** (context menu on the TB tree nodes) — a
+  `contextValue` per VNode kind + a `view/item/context` entry gated on
+  `view == quickuvm.verification` + the `quickuvm.generateItem` command.
+- **The auto-offer on descent** — a distinct "Open Generated Code" action on the TB
+  items. On invocation: resolve the element's files from the manifest; if any is
+  missing/stale, the modal "Generate `<item>` now?" → scoped generation → `openLoc`
+  into the produced file.
 
-- **Ieftine — „încă o mutație yamlops + un control de inspector"** (punctul forte al
-  GUI-ului): toggle `active` agent (mutația EXISTĂ, `yamlops.ts:264`, lipsește doar
-  butonul); scoreboard `window`/`reference_model.language`/`max_latency`-la-add;
-  `register_model` (toate câmpurile scalare/enum/bool → un formular + o mutație);
-  `regress` (4 scalare); `kind`/`top_name`/`auto_vseq_mode`/`layout`/metadate
-  `project`; editare `tests[]`; `clock` period/unit/source + `reset` active_low/
-  external ca inspector de sine-stătător; `subenvs.namespace`.
-- **Medii — editor imbricat/listă, tot pur config**: intrări `coverage` bogate
-  (coverpoints/bins/crosses); tipuri de port bogate (`enum`/`struct`/`packed_dims`/
-  `type`/`constraint`); `parameters`+`instances` agent; autorarea scoreboard-urilor
-  cross-bloc cu capete `<subenv>.<agent>` (desenul EXISTĂ, `tbscene.ts:795`; trebuie
-  un selector de capete).
-- **Scumpe — geometrie/interacțiune nouă sau cross-fișier**: liste multi-clock/
-  multi-reset (comutator de mod + atribuire de domeniu per-agent + vizualizare per
-  domeniu); agenți de graniță desenați la topul compoziției + cablați ca capete
-  connection/xsb; `kind: vip` + consum `from_vip` (flux cross-fișier de VIP).
+**Touch points**: `generate.ts` refactored with a scoped helper (arg-build +
+`run()` + the ENOENT fallback + `publishDiagnostics` + the status chip, shared), plus
+`generateItem(files)` which adds `--only <f>` per file + always the aggregate set;
+`actions.ts` the new methods `generateItem`/`openGeneratedCode` (siblings of
+`openSubenvConfig`, `actions.ts:1306`); `tbtree-build.ts`/`tbtree.ts` carry the kind +
+`contextValue` (+ a `generated`/`stale` flag for line 1); `package.json` the two
+commands + menus; a per-config manifest cache (invalidated when the YAML is saved).
 
-### Roadmap fazat P1–P5
+**Slices**:
+- **2.1** = Track A (QuickUVM: the manifest + repeatable `--only`).
+- **2.2** — Architect: the "Generate this item" action (reads/caches the manifest,
+  `contextValue`, `generate.ts` refactored into scoped-generate).
+- **2.3** — Architect: the offer on descent ("Open Generated Code": missing/stale →
+  modal → scoped generation → `openLoc`).
+- **2.4** — convergence with line 1 (the same manifest decorates + triggers).
 
-- **P1 — adâncimea autorării de agent** (inspector; mai ales config, geometrie mică).
-  Azi un agent se CREEAZĂ dar nu se EDITEAZĂ niciodată. Inspector de proprietăți de
-  agent (scena desenează/selectează deja `tbagent`, `tbscene.ts:424`), oglindind
-  `tbScoreboardEditor`. `setAgentField` peste `mode`, `respond`, `request_valid`,
+**Risks / open questions**:
+- Stale filelists (the main risk) — ADD/REMOVE/RENAME always co-regenerate the
+  aggregates; MODIFY does not. The manifest exposes the own-files AND the aggregate set.
+- "Per element" vs "per file" — the UX unit is the element; the mechanism stays
+  per-file through `--only`. The manifest reconciles them (and must enumerate the
+  files actually EMITTED — the prefixes/specializations vary).
+- Layout/composition variation — the manifest is computed from the real config; the
+  Architect does not hard-code names. Open: for a composed element, per-element
+  regeneration makes sense only from the TOP config (the subenv resolution happens
+  there) — does the manifest express ownership across the composition tree, or does
+  the Architect scope to the child config?
+- Scoped regeneration reflects the pending edits (the context comes from the current
+  YAML) — desirable (a single source of truth), but to be signalled in the UX: it is
+  "regenerate this element from the current config", not "from a snapshot".
+
+---
+
+## Line 3 — GUI ↔ QuickUVM schema parity
+
+**Repo: QuickUVM Architect.** The basic finding: the GUI authors roughly **the 0.9.2
+schema** — exactly what `src/quickuvm.ts:1-6` acknowledges ("the QuickUVM config
+subset that the extension touches"). Everything the 1.0 campaign added
+(reactive/hybrid/replica agents, `inouts`, rich ports, rich `analysis`,
+`register_model`, `regress`, `kind: vip|selftest`, `from_vip`, the multi-clock/reset
+unions, `top_name`) is **unexposed**. The complete editing surface = the `ActionKind`
+union with 17 members (`protocol.ts:38-62`) — there is no other write path.
+
+### NEGATIVE parity — repaired first (the GUI is wrong, not merely silent)
+
+- **Inout ports blocked**: `createAgentFromPins` skips inout with "inout not supported
+  by the QuickUVM schema" (`actions.ts:218-223`) — stale, 1.0 supports `inouts`/
+  `open_drain`/`pullup`. Unblocking + follow-on fields. High leverage (I2C/bidir).
+- **Hybrid/boundary agents blocked**: `createSubenv` refuses a bench with agents +
+  subenvs (`actions.ts:599-612`) — stale, A9 lifted the ban. The guard becomes an
+  offer, not a refusal.
+- **`QuvmProbe` is ahead of its mutation**: `enum/struct/real/clock` are modelled
+  (`quickuvm.ts:77-89`) and drawn, but `addProbe` drops them (`yamlops.ts:623-628`).
+  Half-wired, cheap to close.
+
+### Gap groups (leverage × tractability)
+
+- **Cheap — "one more yamlops mutation + one inspector control"** (the GUI's strong
+  point): the agent `active` toggle (the mutation EXISTS, `yamlops.ts:264`, only the
+  button is missing); scoreboard `window`/`reference_model.language`/`max_latency`-at-add;
+  `register_model` (all the scalar/enum/bool fields → one form + one mutation);
+  `regress` (4 scalars); `kind`/`top_name`/`auto_vseq_mode`/`layout`/`project`
+  metadata; `tests[]` editing; `clock` period/unit/source + `reset` active_low/
+  external as a standalone inspector; `subenvs.namespace`.
+- **Medium — a nested/list editor, still pure config**: rich `coverage` entries
+  (coverpoints/bins/crosses); rich port types (`enum`/`struct`/`packed_dims`/
+  `type`/`constraint`); agent `parameters`+`instances`; authoring cross-block
+  scoreboards with `<subenv>.<agent>` endpoints (the drawing EXISTS, `tbscene.ts:795`;
+  an endpoint selector is needed).
+- **Expensive — new geometry/interaction or cross-file**: multi-clock/
+  multi-reset lists (a mode switch + per-agent domain assignment + per-domain
+  visualization); boundary agents drawn at the top of the composition + wired as
+  connection/xsb endpoints; `kind: vip` + `from_vip` consumption (a cross-file VIP flow).
+
+### Phased roadmap P1–P5
+
+- **P1 — the depth of agent authoring** (inspector; mostly config, little geometry).
+  Today an agent is CREATED but never EDITED. An agent property inspector (the scene
+  already draws/selects `tbagent`, `tbscene.ts:424`), mirroring
+  `tbScoreboardEditor`. `setAgentField` over `mode`, `respond`, `request_valid`,
   `request_ready`, `reorder_by`, `reorder_policy`, `proactive`, `replicas`,
-  `seq_item_style`, `clock`/`reset` per-agent; cablarea `setAgentActive` existent la
-  un toggle Active/Passive. Închide tot golul reactiv/hibrid/replica.
-  **LIVRAT.** `tbAgentEditor` (webview) + acțiunea `editAgent` + op-ul pur
-  `setAgentField`, cu toate câmpurile de mai sus. Două lucruri au ieșit din construcție:
-  (a) referința de schemă documenta `request_ready` ca fiind pe *inițiator* — greșit,
-  validatorul îl acceptă DOAR pe responder (`examples/axi_handshake` îl confirmă);
-  rândurile responder din §1.5 sunt corectate. (b) Regulile de cuplare sunt *ziduri de
-  validator*, nu convenții, deci nu ajunge să dezactivezi controalele: `setAgentField`
-  **cascadează ștergerile** (înapoi la `initiator` ⇒ cad toate cheile responder-only;
-  `respond` afară din `pipelined` ⇒ cad `reorder_*`). Dovedit prin mutație în e2e —
-  aceeași configurație cu cheia rămasă în urmă e REFUZATĂ de quick-uvm.
-  Rămas în afara feliei: `idle` (dict port→valoare, cere un editor imbricat) și
+  `seq_item_style`, per-agent `clock`/`reset`; wiring the existing `setAgentActive` to
+  an Active/Passive toggle. It closes the whole reactive/hybrid/replica gap.
+  **DELIVERED.** `tbAgentEditor` (webview) + the `editAgent` action + the pure op
+  `setAgentField`, with all the fields above. Two things came out of building it:
+  (a) the schema reference documented `request_ready` as being on the *initiator* —
+  wrong, the validator accepts it ONLY on the responder (`examples/axi_handshake`
+  confirms it); the responder rows of §1.5 are corrected. (b) The coupling rules are
+  *validator walls*, not conventions, so disabling the controls is not enough:
+  `setAgentField` **cascades the deletions** (back to `initiator` ⇒ all the
+  responder-only keys fall; `respond` out of `pipelined` ⇒ `reorder_*` fall). Proven
+  by mutation in e2e — the same configuration with the key left behind is REFUSED by
+  quick-uvm.
+  Left out of the slice: `idle` (a port→value dict, needs a nested editor) and
   `instances`/`parameters` (C3).
-- **P2a LIVRAT — RAL + regresie.** Panelul „Verification settings" (inspector, în modul
-  TB, independent de selecție) autorează cele două blocuri *comutate prin prezență*:
-  `register_model:` (add cu cele trei câmpuri obligatorii cerute în față — `bus_agent`
-  doar dintre agenții INIȚIATORI — apoi map/adapter/backdoor_root/`csr_tests` multiselect/
-  `coverage`/`use_predictor`/`reg_test`/`reg_test_door`, plus remove) și `regress:`
-  (simulator/filelist/seeds/coverage, add/remove). Regula descoperită la construcție:
-  **ștergerea lui `regress:` trebuie să ia cu ea `tests[].seeds`** — QuickUVM refuză
-  seeds fără bloc de regresie, deci `removeRegress` cascadează (dovedit prin mutație în
-  e2e: aceeași configurație cu seeds rămas = REFUZ). Câmpurile obligatorii ale RAL-ului
-  refuză golirea în loc să corupă blocul.
-- **P2b LIVRAT — teste + identitatea bench-ului.** Editor `tests[]` (add/delete,
-  `num_items`, `vseq`, `seeds` inert până există `regress:`) și secțiunea „Bench"
-  (`layout`, `kind`, `top_name`, `auto_virtual_sequences`/`auto_vseq_mode`, metadate
-  `project`). Două lucruri ieșite din construcție: (a) referința documenta greșit
-  `tests` — **absența ≠ lista goală**: absent ⇒ `test1` implicit (rulabil), pe când
-  `tests: []` e ACCEPTAT și dă ZERO teste (doar `<dut>_base_test.svh`, bench fără ce
-  rula); de aceea ștergerea ultimului test scoate CHEIA, nu scrie `[]`. (b) `layout` și
-  `kind` au precondiții dure (subenvs⇒packaged, `instances` C3⇒flat, vip aruncă tot
-  stratul de bench), deci opțiunile blocate sunt DEZACTIVATE cu motivul afișat —
-  `benchid.ts` (pur, testat) le calculează, iar e2e-ul verifică în AMBELE sensuri că
-  verdictul gărzii coincide cu ce refuză/acceptă efectiv quick-uvm.
-  Rămas: `tests[].sequence` (agent+nume+count) și `project.imports`.
-- **P2 — formulare de config la nivel de bench** (pur config, doar formular). Panel
-  „Verification settings": `register_model` (RAL — `bus_agent` din agenții
-  inițiatori, `csr_tests` multiselect, `coverage` bool), `regress`, `kind`/
-  `top_name`/`auto_vseq_mode`/`layout`, metadate `project`, editor `tests[]` (cu
-  gărzile „seeds cere regress" și „ștergerea ultimului test reînvie test1"). Leverage
-  mare (RAL + regresia sunt centrale la benchurile reale).
-- **P3a LIVRAT — adâncimea scoreboard-ului.** Editorul de scoreboard capătă `window`
-  (boundary dintre porturile EȘANTIONATE ale agentului sursă + `length`) și
-  `reference_model.language` (sv / c — doar comutatorul, nu corpul). Ambele sunt
-  mapări imbricate, deci `setScoreboardField` primește câmpuri cu punct
-  (`window.boundary`, `reference_model.language`), iar o valoare implicită șterge
-  MAPAREA, nu doar cheia. Cuplarea descoperită: **un window cere un scoreboard cu un
-  singur flux** — adăugarea unui `monitor` îl șterge în cascadă, iar adăugarea unui
-  window peste două fluxuri e refuzată la sursă (dovedit prin mutație: aceeași
-  configurație cu window-ul rămas = REFUZ).
-  Rămas pentru P3b: autorarea `coverage` bogat (editor imbricat coverpoints/bins/
-  crosses) și scoreboard-urile cross-bloc (selectorul `<subenv>.<agent>` cere ca
-  host-ul să citească configurațiile copiilor — fezabil, vezi `actions.ts` la
-  `openTextDocument(childUri)`).
-- **P3b LIVRAT — autorarea `coverage` bogat.** Un nod de coverage selectat deschide
-  editorul imbricat: upgrade `coverage: [cmd]` (simplă rutare) → model bogat, apoi
-  coverpoints (câmpuri din porturile agentului, unul per câmp), bin-uri cu o
-  mini-sintaxă pe un rând (`5` / `0..7` / `1, 2, 3` → value/range/values), crossuri
-  peste coverpoints DECLARATE, `goal`, și downgrade înapoi la rutare. Găsit la
-  construcție: **șapte locuri citeau `analysis.coverage` ca listă de șiruri** — nodul
-  din diagramă ar fi ajuns `[object Object]` de îndată ce feature-ul creează prima
-  intrare bogată; toate trec acum prin `coveredAgent`. Cascada: ștergerea unui
-  coverpoint ia cu ea crossurile care îl refereau (dovedit prin mutație). Editările
-  modifică intrarea PE LOC, deci `illegal_bins`/`transitions`/bin-urile de cross
-  scrise de mână nu se pierd (test dedicat).
-  Rămas pentru P3c: scoreboard-uri cross-bloc (selectorul `<subenv>.<agent>` cere
-  citirea configurațiilor copil) și coada adâncă (`at_least`, `auto_bin_max`,
-  `illegal_bins`/`ignore_bins`/`transitions`, selecția `binsof` a crossurilor).
-- **P3c LIVRAT — scoreboard-uri cross-bloc. P3 COMPLET.** Selectoarele de capăt
-  (source/monitor, la adăugare și în inspector) oferă acum, pe o COMPOZIȚIE, și
-  agenții blocurilor copil, calificați `<subenv>.<agent>` — exact ce face un
-  scoreboard să fie cross-bloc. Cum copiii trăiesc în ALTE fișiere, `ConfigService`
-  citește fiecare `subenvs[].config` la refresh și publică `childAgents` spre webview;
-  un copil lipsă sau neparsabil nu contribuie nimic (compoziția se editează
-  incremental, deci e o stare intermediară normală, nu o eroare). Un capăt scris de
-  mână pe care nu-l cunoaștem rămâne selectabil, altfel deschiderea inspectorului
-  l-ar rescrie tăcut la prima opțiune. Regula prinsă de e2e: **blocurile compuse
-  împart UN namespace**, deci numele de agenți trebuie unice ÎNTRE copii.
-  Rămas (coada adâncă, hand-edit): `at_least`, `auto_bin_max`,
-  `illegal_bins`/`ignore_bins`, `transitions`, selecția `binsof` a crossurilor.
-- **P3 — adâncimea de analysis** (câmpuri ieftine + un editor imbricat). Extinde
-  editorul de scoreboard cu `window`, `reference_model.language` (dropdown sv/c — DOAR
-  butonul, nu corpul), `max_latency`-la-add; autorare `coverage` bogat; autorare
-  scoreboard cross-bloc (selector de capete `<subenv>.<agent>`).
-- **P4a LIVRAT — domenii de ceas (M1).** Secțiunea „Clocks" autorează uniunea
-  `clock:` mapare ↔ LISTĂ de domenii: adăugarea primului domeniu convertește maparea
-  în listă (purtând câmpurile ei în primul domeniu, numit după ceasul curent),
-  editare per-domeniu (period/unit/source/name), ștergere, și colapsare înapoi la un
-  singur ceas dintr-o listă cu un element. Asta face utilizabil selectorul de domeniu
-  per-agent livrat în P1 — până acum nimic nu crea listele din care alegea.
-  Cascada: un domeniu **folosit de un agent nu se poate șterge** (QuickUVM refuză un
-  `clock:` de agent către un domeniu nedeclarat) — dovedit prin mutație. Verificat că
-  `source: dut` chiar produce un ceas OBSERVAT în `tb_top` (nu în `clkgen`, unde nu
-  are ce căuta: TB-ul nu-l generează).
-  Rămas pentru P4b: domenii de RESET (invariantul suplimentar `dut.reset` = numele
-  unui domeniu declarat sub listă), `open_drain`/`pullup` pe inouts, tipuri de port
-  bogate (enum/struct/packed_dims).
+- **P2a DELIVERED — RAL + regression.** The "Verification settings" panel (inspector,
+  in TB mode, independent of the selection) authors the two *presence-switched*
+  blocks: `register_model:` (add with the three mandatory fields asked for up front —
+  `bus_agent` only among the INITIATOR agents — then
+  map/adapter/backdoor_root/`csr_tests` multiselect/
+  `coverage`/`use_predictor`/`reg_test`/`reg_test_door`, plus remove) and `regress:`
+  (simulator/filelist/seeds/coverage, add/remove). The rule discovered while building:
+  **deleting `regress:` must take `tests[].seeds` with it** — QuickUVM refuses
+  seeds without a regression block, so `removeRegress` cascades (proven by mutation in
+  e2e: the same configuration with the seeds left behind = REFUSAL). The mandatory
+  fields of the RAL refuse being emptied instead of corrupting the block.
+- **P2b DELIVERED — tests + the bench identity.** A `tests[]` editor (add/delete,
+  `num_items`, `vseq`, `seeds` inert until `regress:` exists) and the "Bench" section
+  (`layout`, `kind`, `top_name`, `auto_virtual_sequences`/`auto_vseq_mode`, `project`
+  metadata). Two things that came out of building it: (a) the reference documented
+  `tests` wrongly — **absence ≠ the empty list**: absent ⇒ the default `test1`
+  (runnable), whereas `tests: []` is ACCEPTED and gives ZERO tests (only
+  `<dut>_base_test.svh`, a bench with nothing to run); that is why deleting the last
+  test removes the KEY, it does not write `[]`. (b) `layout` and `kind` have hard
+  preconditions (subenvs⇒packaged, C3 `instances`⇒flat, vip throws away the whole
+  bench layer), so the blocked options are DISABLED with the reason shown —
+  `benchid.ts` (pure, tested) computes them, and the e2e checks in BOTH directions
+  that the guard's verdict coincides with what quick-uvm actually refuses/accepts.
+  Left: `tests[].sequence` (agent+name+count) and `project.imports`.
+- **P2 — bench-level config forms** (pure config, form only). A "Verification
+  settings" panel: `register_model` (RAL — `bus_agent` from the initiator agents,
+  `csr_tests` multiselect, `coverage` bool), `regress`, `kind`/
+  `top_name`/`auto_vseq_mode`/`layout`, `project` metadata, a `tests[]` editor (with
+  the guards "seeds require regress" and "deleting the last test resurrects test1").
+  High leverage (RAL + regression are central to real benches).
+- **P3a DELIVERED — scoreboard depth.** The scoreboard editor gains `window` (the
+  boundary among the SAMPLED ports of the source agent + `length`) and
+  `reference_model.language` (sv / c — only the switch, not the body). Both are
+  nested mappings, so `setScoreboardField` takes dotted fields
+  (`window.boundary`, `reference_model.language`), and a default value deletes the
+  MAPPING, not just the key. The coupling discovered: **a window requires a scoreboard
+  with a single stream** — adding a `monitor` deletes it in cascade, and adding a
+  window over two streams is refused at the source (proven by mutation: the same
+  configuration with the window left behind = REFUSAL).
+  Left for P3b: authoring rich `coverage` (a nested coverpoints/bins/
+  crosses editor) and the cross-block scoreboards (the `<subenv>.<agent>` selector
+  requires the host to read the children's configurations — feasible, see
+  `actions.ts` at `openTextDocument(childUri)`).
+- **P3b DELIVERED — authoring rich `coverage`.** A selected coverage node opens the
+  nested editor: the upgrade `coverage: [cmd]` (plain routing) → rich model, then
+  coverpoints (fields from the agent's ports, one per field), bins with a one-line
+  mini-syntax (`5` / `0..7` / `1, 2, 3` → value/range/values), crosses over DECLARED
+  coverpoints, `goal`, and the downgrade back to routing. Found while building:
+  **seven places read `analysis.coverage` as a list of strings** — the diagram node
+  would have ended up as `[object Object]` as soon as the feature creates the first
+  rich entry; all of them now go through `coveredAgent`. The cascade: deleting a
+  coverpoint takes with it the crosses that referred to it (proven by mutation). The
+  edits modify the entry IN PLACE, so hand-written `illegal_bins`/`transitions`/cross
+  bins are not lost (a dedicated test).
+  Left for P3c: cross-block scoreboards (the `<subenv>.<agent>` selector requires
+  reading the child configurations) and the deep tail (`at_least`, `auto_bin_max`,
+  `illegal_bins`/`ignore_bins`/`transitions`, the `binsof` selection of the crosses).
+- **P3c DELIVERED — cross-block scoreboards. P3 COMPLETE.** The endpoint selectors
+  (source/monitor, at add and in the inspector) now offer, on a COMPOSITION, the
+  agents of the child blocks as well, qualified `<subenv>.<agent>` — exactly what
+  makes a scoreboard cross-block. As the children live in OTHER files, `ConfigService`
+  reads every `subenvs[].config` at refresh and publishes `childAgents` to the webview;
+  a missing or unparsable child contributes nothing (a composition is edited
+  incrementally, so it is a normal intermediate state, not an error). A hand-written
+  endpoint we do not know stays selectable, otherwise opening the inspector would
+  silently rewrite it to the first option. The rule caught by the e2e: **composed
+  blocks share ONE namespace**, so agent names must be unique ACROSS children.
+  Left (the deep tail, hand-edit): `at_least`, `auto_bin_max`,
+  `illegal_bins`/`ignore_bins`, `transitions`, the `binsof` selection of the crosses.
+- **P3 — analysis depth** (cheap fields + a nested editor). Extends the scoreboard
+  editor with `window`, `reference_model.language` (an sv/c dropdown — ONLY the
+  button, not the body), `max_latency`-at-add; authoring rich `coverage`; authoring
+  cross-block scoreboards (a `<subenv>.<agent>` endpoint selector).
+- **P4a DELIVERED — clock domains (M1).** The "Clocks" section authors the `clock:`
+  union mapping ↔ LIST of domains: adding the first domain converts the mapping into
+  a list (carrying its fields into the first domain, named after the current clock),
+  per-domain editing (period/unit/source/name), deletion, and collapsing back to a
+  single clock from a one-element list. This makes the per-agent domain selector
+  delivered in P1 usable — until now nothing created the lists it chose from.
+  The cascade: a domain **used by an agent cannot be deleted** (QuickUVM refuses an
+  agent `clock:` pointing to an undeclared domain) — proven by mutation. Verified that
+  `source: dut` really produces an OBSERVED clock in `tb_top` (not in `clkgen`, where
+  it has no business: the TB does not generate it).
+  Left for P4b: RESET domains (the additional invariant `dut.reset` = the name of a
+  declared domain under a list), `open_drain`/`pullup` on inouts, rich port types
+  (enum/struct/packed_dims).
 - **P4b DELIVERED — reset domains.** Symmetric with the clocks, plus two invariants
   the clocks do not have: under a LIST `dut.reset` names a declared DOMAIN (not a
   port), and a domain's `clock:` gate must name a declared clock domain. Three
@@ -570,76 +579,79 @@ atinge extensia"). Tot ce a adăugat campania 1.0 (agenți reactivi/hibrizi/repl
   `active_low: false`, the deviation the user asked for.
   Left for P4c: `open_drain`/`pullup` on inouts and the rich port types
   (enum/struct/packed_dims).
-- **P4c LIVRAT — adâncimea de porturi. P4 COMPLET.** Inspectorul de agent capătă un
-  bloc „Ports" per port: `width` (rutat prin `setAgentPortWidth`, aceeași cale cu
-  gestul de pin din diagramă), `randomize`, `constraint`, `enum` simbolic
-  (mini-sintaxă `NAME=valoare, …`) și, pe INOUTS, perechea open-drain. Cuplările
-  impuse la sursă, nu la generare: (a) `open_drain: true` **aprinde și `pullup: true`**
-  și nu-l lasă scos — o linie open-drain nu conduce niciodată 1, deci fără pullup
-  plutește în X din clipa în care toți eliberează („not a style preference" zice chiar
-  validatorul); (b) open-drain doar pe 1 bit; (c) `enum`/`type`/`packed_dims`/`struct`
-  sunt EXCLUSIVE — setarea uneia o scoate pe cealaltă autorată, iar peste
-  `packed_dims`/`struct` scrise de mână se REFUZĂ în loc să se piardă tăcut.
-  e2e-ul citește codul generat: `1'bz` în interfață și numele simbolice în seq_item.
-- **P4 — adâncimea de porturi & ceasuri** (mediu-scump; atinge gestul de pini +
-  geometrie). Deblocare inouts (`actions.ts:218`) cu `open_drain`/`pullup`; tipuri de
-  port bogate; inspector clock/reset independent de setDut; autorare liste
-  multi-clock/multi-reset cu atribuire de domeniu per-agent (respectând distincția
-  listă-vs-mapare).
-- **P5 LIVRAT — compoziție & VIP. LINIA 3 COMPLETĂ.** (a) *Consumul unui VIP prin
-  referință*: „VIP agent (by reference)…" din paleta de adăugare deschide un selector
-  de `.qvip`, citește agenții pe care îi livrează manifestul și scrie
-  `{name, from_vip}` cu calea RELATIVĂ la configurația consumatoare. Regula descoperită
-  rulând: **`from_vip` cere `layout: packaged`** (VIP-ul E un pachet extern) — op-ul îl
-  pune, ca `createSubenvs`, iar `layoutBlockers` blochează întoarcerea la flat.
-  (b) *`subenvs.namespace`*: selector pe nodul de subenv, cu AUTO explicat în etichetă
-  (prefixează doar când același `config` e compus de ≥2 ori — un bloc folosit o dată
-  rămâne byte-identic). (c) Garda hibridă era deja ridicată dintr-o felie anterioară.
-  Verificat pe cod generat: sursa agentului referit NU se regenerează.
-  **Finding pentru QuickUVM**: antetul `templates/vip_manifest.qvip.j2:3` documentează
-  sintaxa VECHE (`agent_refs: {name, manifest}`), redenumită în 1.0 în
-  `agents: {name, from_vip}` — manifestele generate poartă instrucțiuni greșite.
-- **P5 — paritate de compoziție & VIP** (scump; geometrie nouă + cross-fișier). Garda
-  hibridă stale (`actions.ts:599-612`) devine flux suportat (agenți de graniță la top,
-  capete connection/xsb); autorare `kind: vip` (emite manifestul `.qvip`) + consum
-  `from_vip` (rezolvă manifestul, înlănțuie `-F`); `subenvs.namespace`. Frecvență
-  per-utilizator cea mai mică, cost cel mai mare — ultimul.
+- **P4c DELIVERED — port depth. P4 COMPLETE.** The agent inspector gains a "Ports"
+  block per port: `width` (routed through `setAgentPortWidth`, the same path as the
+  pin gesture in the diagram), `randomize`, `constraint`, a symbolic `enum`
+  (mini-syntax `NAME=value, …`) and, on INOUTS, the open-drain pair. The couplings are
+  enforced at the source, not at generation: (a) `open_drain: true` **also turns on
+  `pullup: true`** and does not let it be removed — an open-drain line never drives 1,
+  so without a pullup it floats at X from the moment everyone releases ("not a style
+  preference", says the validator itself); (b) open-drain only on 1 bit; (c)
+  `enum`/`type`/`packed_dims`/`struct` are EXCLUSIVE — setting one removes the other
+  authored one, and over hand-written `packed_dims`/`struct` the edit is REFUSED
+  instead of them being silently lost.
+  The e2e reads the generated code: `1'bz` in the interface and the symbolic names in
+  the seq_item.
+- **P4 — port & clock depth** (medium-expensive; touches the pin gesture +
+  geometry). Unblocking inouts (`actions.ts:218`) with `open_drain`/`pullup`; rich
+  port types; a clock/reset inspector independent of setDut; authoring
+  multi-clock/multi-reset lists with per-agent domain assignment (respecting the
+  list-vs-mapping distinction).
+- **P5 DELIVERED — composition & VIP. LINE 3 COMPLETE.** (a) *Consuming a VIP by
+  reference*: "VIP agent (by reference)…" in the add palette opens a `.qvip` picker,
+  reads the agents the manifest ships and writes `{name, from_vip}` with the path
+  RELATIVE to the consuming configuration. The rule discovered by running it:
+  **`from_vip` requires `layout: packaged`** (the VIP IS an external package) — the op
+  sets it, like `createSubenvs`, and `layoutBlockers` blocks the return to flat.
+  (b) *`subenvs.namespace`*: a selector on the subenv node, with AUTO explained in the
+  label (it prefixes only when the same `config` is composed ≥2 times — a block used
+  once stays byte-identical). (c) The hybrid guard had already been lifted by an
+  earlier slice. Verified on generated code: the source of the referenced agent is NOT
+  regenerated.
+  **Finding for QuickUVM**: the header `templates/vip_manifest.qvip.j2:3` documents
+  the OLD syntax (`agent_refs: {name, manifest}`), renamed in 1.0 to
+  `agents: {name, from_vip}` — the generated manifests carry wrong instructions.
+- **P5 — composition & VIP parity** (expensive; new geometry + cross-file). The stale
+  hybrid guard (`actions.ts:599-612`) becomes a supported flow (boundary agents at the
+  top, connection/xsb endpoints); authoring `kind: vip` (emits the `.qvip` manifest) +
+  `from_vip` consumption (resolves the manifest, chains `-F`); `subenvs.namespace`.
+  The lowest per-user frequency, the highest cost — last.
 
-### Anti-scope (deliberat NEparitate — rămân hand-edit)
+### Anti-scope (deliberate NON-parity — these stay hand-edit)
 
-Coerent cu filozofia „GUI-ul editează *config*; corpurile predict/reference-model sunt
-*cod* scris de om":
-- **Corpuri SystemVerilog libere**: `constraints: list[str]`, expresii `constraint`
-  per-port/scoreboard, `emit_when`, și **corpul C/SV `predict()`** din
-  `reference_model`. Se expune butonul de *limbaj* (P3), niciodată corpul.
-- **Corpuri de secvențe directed/nested**: `sequences[].steps[]` cu `directed`/
-  `nested` + `field` per-pas alunecă spre cod procedural. Cel mult `{name, kind:
+Consistent with the philosophy "the GUI edits *config*; the predict/reference-model
+bodies are *code* written by a human":
+- **Free SystemVerilog bodies**: `constraints: list[str]`, per-port/scoreboard
+  `constraint` expressions, `emit_when`, and **the C/SV `predict()` body** of
+  `reference_model`. The *language* button is exposed (P3), never the body.
+- **Directed/nested sequence bodies**: `sequences[].steps[]` with `directed`/
+  `nested` + a per-step `field` slide towards procedural code. At most `{name, kind:
   random|incrementing, count}`.
-- **Clauze `select` de cross-bin**, dicționare `idle`, nume de clasă `frontdoor`
-  custom, `path` de probă liber dincolo de XMR-ul derivat din model — nișă, low-
-  leverage, mai curat hand-edit (`createProbe` derivă deja XMR-ul corect; un editor de
-  path liber invită capcana truncherii tăcute).
+- **Cross-bin `select` clauses**, `idle` dictionaries, custom `frontdoor` class
+  names, a free probe `path` beyond the XMR derived from the model — niche, low-
+  leverage, cleaner hand-edited (`createProbe` already derives the correct XMR; a free
+  path editor invites the silent-truncation pitfall).
 
-Fiindcă `yamlops.ts` editează Document-ul `yaml` chirurgical (comentarii/chei
-necunoscute păstrate, `yamlops.ts:1-5`), toate item-urile anti-scope rămân
-**hand-editabile alături** de editările GUI, fără pierdere — exact de ce nu trebuie
-autorate din GUI.
+Because `yamlops.ts` edits the `yaml` Document surgically (comments/unknown keys
+preserved, `yamlops.ts:1-5`), all the anti-scope items remain **hand-editable
+alongside** the GUI edits, with no loss — exactly why they do not have to be authored
+from the GUI.
 
 ---
 
-## Secvențiere & dependențe
+## Sequencing & dependencies
 
 ```
-Track A (QuickUVM: manifest + --only repetabil)   ─┬─► Linia 1 (decorație)
-                                                    └─► Linia 2 (incremental)
+Track A (QuickUVM: manifest + repeatable --only)  ─┬─► Line 1 (decoration)
+                                                    └─► Line 2 (incremental)
 
-Linia 3 (paritate) — independentă, în paralel:
-   paritate negativă (inouts, hibrid, probe fields)  ← ieftin, oricând
-   P1 → P2 → P3 → P4 → P5                             ← ordonat, config-întâi
+Line 3 (parity) — independent, in parallel:
+   negative parity (inouts, hybrid, probe fields)    ← cheap, any time
+   P1 → P2 → P3 → P4 → P5                             ← ordered, config-first
 ```
 
-Track A e singura muncă QuickUVM; restul e Architect. Paritatea negativă (3
-reparații de gărzi stale) e cel mai bun raport valoare/efort și nu depinde de nimic.
-Recomandare de start: **Track A** (deblochează două direcții cu un PR) în paralel cu
-**paritatea negativă** (trei bug-uri de deblocat), apoi liniile 1/2 pe manifest și
-P1→P2 pe paritate.
+Track A is the only QuickUVM work; the rest is Architect. Negative parity (3
+repairs of stale guards) has the best value/effort ratio and depends on nothing.
+Starting recommendation: **Track A** (unblocks two directions with one PR) in parallel
+with **negative parity** (three bugs to unblock), then lines 1/2 on the manifest and
+P1→P2 on parity.

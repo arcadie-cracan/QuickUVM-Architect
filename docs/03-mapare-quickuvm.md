@@ -1,11 +1,12 @@
-# 03 — Maparea model de proiect → configurație QuickUVM
+# 03 — Mapping the project model → the QuickUVM configuration
 
-Acest document definește formal cum se traduc selecțiile pe diagramă în câmpuri
-ale YAML-ului QuickUVM. Referința de schemă QuickUVM: README-ul proiectului
-QuickUVM (secțiunea "Config format") și modelele Pydantic din
-`quick_uvm/models.py`. Principiu: YAML-ul este sursa de adevăr; extensia îl
-*editează*, nu îl deține — orice câmp pe care extensia nu îl înțelege se
-păstrează neatins la rescriere (editări chirurgicale, nu serializare completă).
+This document defines formally how selections on the diagram are translated
+into fields of the QuickUVM YAML. The QuickUVM schema reference: the README of
+the QuickUVM project (the "Config format" section) and the Pydantic models in
+`quick_uvm/models.py`. Principle: the YAML is the source of truth; the
+extension *edits* it, it does not own it — any field the extension does not
+understand is kept untouched on rewrite (surgical edits, not a full
+serialization).
 
 ## Designating the DUT
 
@@ -85,143 +86,151 @@ It is silent where the generator wires no reset or the YAML cannot tell: a
 combinational DUT, `kind: selftest` / `kind: vip`, a pure subsystem top, and a
 bench with a `from_vip` agent (its ports live in the VIP manifest).
 
-## Agenți din selecție de pini
+## Agents from a pin selection
 
-Selecție: mulțime de pini ai DUT-ului → "Creează agent din selecție".
+Selection: a set of the DUT's pins → "Create Agent from Selection".
 
-Regula centrală (atenție la inversare!): direcțiile din `agents[].ports` sunt
-din perspectiva DUT-ului, ca în exemplele QuickUVM — porturile pe care agentul
-le *conduce* sunt intrările DUT-ului:
+The central rule (mind the inversion!): the directions in `agents[].ports` are
+from the DUT's perspective, as in the QuickUVM examples — the ports the agent
+*drives* are the DUT's inputs:
 
-| Pin DUT | YAML |
+| DUT pin | YAML |
 |---|---|
-| `dir: in` (fără ceas/reset) | `agents[].ports.inputs[]` cu `{name, width}` |
-| `dir: out` | `agents[].ports.outputs[]` cu `{name, width, randomize: false}` |
-| `dir: inout` | nesuportat de schema QuickUVM azi → diagnostic; utilizatorul decide (exclude sau tratare în pragma) |
+| `dir: in` (without clock/reset) | `agents[].ports.inputs[]` with `{name, width}` |
+| `dir: out` | `agents[].ports.outputs[]` with `{name, width, randomize: false}` |
+| `dir: inout` | not supported by the QuickUVM schema today → diagnostic; the user decides (exclude it, or handle it in a pragma) |
 
-`width` se copiază numeric din model (post-elaborare — niciodată expresie).
-Pentru tablouri unpacked: QuickUVM nu are noțiunea; extensia propune fie
-aplatizare (`width = width_total`), fie excludere cu diagnostic — decizie
-explicită per port.
+`width` is copied numerically from the model (post-elaboration — never an
+expression). For unpacked arrays: QuickUVM has no such notion; the extension
+proposes either flattening (`width = width_total`) or exclusion with a
+diagnostic — an explicit decision per port.
 
-Nume implicite generate (editabile): `interface: <agent>_if`,
-`transaction: <agent>_seq_item`, `active: true`, `trans_style` din setarea
-globală a extensiei.
+Generated default names (editable): `interface: <agent>_if`,
+`transaction: <agent>_seq_item`, `active: true`, `trans_style` from the
+extension's global setting.
 
-## Agenți din interfețe SV
+## Agents from SV interfaces
 
-Selecție: un `iface_port` al DUT-ului → "Creează agent din interfață".
+Selection: an `iface_port` of the DUT → "Agent from interface".
 
-Sursa: `instances[].iface` al instanței de interfață conectate (semnale cu
-lățimi elaborate) + modportul din `iface_ports[].modport`. Desfacerea în
-`ports.inputs/outputs` folosește direcțiile modportului *DUT-ului*, cu aceeași
-inversare de perspectivă: semnal `in` în modportul DUT → agentul îl conduce →
-`inputs`. Semnalul de ceas al interfeței (dacă există) se leagă de `dut.clock`,
-nu intră în agent. Limită cunoscută: QuickUVM își generează propriul
-`<ag>_if.sv`; interfața SV existentă e sursa *specificației* agentului, nu e
-refolosită ca fișier — dacă refolosirea devine cerință, e o evoluție de discutat
-în QuickUVM, nu o problemă a extensiei.
+The source: the `instances[].iface` of the connected interface instance
+(signals with elaborated widths) + the modport from `iface_ports[].modport`.
+The expansion into `ports.inputs/outputs` uses the directions of the *DUT's*
+modport, with the same inversion of perspective: a signal that is `in` in the
+DUT's modport → the agent drives it → `inputs`. The interface's clock signal
+(if there is one) is tied to `dut.clock`; it does not go into the agent. Known
+limitation: QuickUVM generates its own `<ag>_if.sv`; the existing SV interface
+is the source of the agent's *specification*, it is not reused as a file — if
+reuse becomes a requirement, it is an evolution to discuss in QuickUVM, not a
+problem of the extension.
 
-## Sub-blocuri → subenvs
+## Sub-blocks → subenvs
 
-Selecție: o instanță în vederea-schemă → "Generează subenv".
+Selection: an instance in the schematic view → "Create subenv".
 
-| Sursă în model | Câmp YAML |
+| Source in the model | YAML field |
 |---|---|
-| numele instanței (sau al pliajului `ch[0..2]`) | `subenvs[].name` |
-| calea către config-ul blocului (creat la nevoie prin același flux, recursiv) | `subenvs[].config` |
-| `instances[].params` | `subenvs[].params` (copiere directă) |
+| the name of the instance (or of the fold `ch[0..2]`) | `subenvs[].name` |
+| the path to the block's config (created when needed through the same flow, recursively) | `subenvs[].config` |
+| `instances[].params` | `subenvs[].params` (a direct copy) |
 
-Cazul "aceeași definiție, parametri diferiți" (exemplul `channels`): extensia
-detectează instanțe ale aceluiași modul și generează subenv-uri care partajează
-config-ul, cu `params` diferiți — mecanismul de auto-namespacing e deja în
-QuickUVM.
+The case "same definition, different parameters" (the `channels` example): the
+extension detects instances of the same module and generates subenvs that share
+the config, with different `params` — the auto-namespacing mechanism is already
+in QuickUVM.
 
-Implementare (iul. 2026, acțiunea `createSubenv`):
+Implementation (Jul 2026, the `createSubenv` action):
 
-- selecția = blocuri (instanțe sau pliaje) în vederea-schemă a modulului DUT;
-  un pliaj se desface în membri — câte un subenv per instanță;
-- `subenvs[].name` = calea relativă sanitizată la identificator SV
-  (`g_ch[1].u_ch` → `g_ch_1_u_ch`); coliziunile primesc sufix numeric;
-  subenv-urile cu același nume deja prezente în YAML se sar (idempotent);
-- `subenvs[].config` = `<modul>.quickuvm.yaml` lângă config-ul top; dacă
-  lipsește, se creează schelet (`newConfigText` + `dut` euristic — aceleași
-  euristici de ceas/reset ca la „Set as DUT"), iar rezumatul apare în
-  confirmarea multi-select: nimic nu se aplică tacit;
-- `params` = copiere directă a parametrilor elaborați, dar **doar valorile
-  întregi** (schema QuickUVM cere `dict[str, int]`); restul se omit cu notă;
-- mutația asigură `layout: packaged` pe config-ul top (compunerea o cere:
-  fiecare bloc copil e un pachet env reutilizabil; validat de QuickUVM);
-- config-urile de bloc create nu perturbă config-ul activ: descoperirea e
-  stabilă (fișierul activ rămâne activ cât timp există), iar la alegerea
-  inițială dintre mai multe fișiere se exclud cele referite ca
-  `subenvs[].config` de un altul — top-ul câștigă, nu primul alfabetic
-  (regresie reală prinsă la validarea interactivă a `createSubenv`);
-- fluxul recursiv e explicit: „Set as DUT" pe un modul diferit de DUT-ul
-  config-ului activ întreabă — suprascrii DUT-ul config-ului activ
-  (semantica fazei 2) sau creezi `<modul>.quickuvm.yaml` dedicat blocului,
-  care devine config-ul activ al sesiunii; comutarea ulterioară între
-  config-uri: comanda „Choose Active Config" (scrie `quickuvm.configFile`);
-- gestul „Create subenv" e autonom și pe vederile ne-DUT: butonul e activ
-  oricând sunt blocuri selectate, iar nepotrivirea de DUT se rezolvă ÎN
-  flux — oferta „Create `<modul>`.quickuvm.yaml and set its DUT" (config-ul
-  blocului devine activ, cu euristicile Set as DUT confirmate), apoi
-  propunerile de subenv continuă în același gest; un buton mort care cere
-  explicație e un gest greșit proiectat (raportat la validarea interactivă
-  pe common_cells).
+- the selection = blocks (instances or folds) in the schematic view of the DUT
+  module; a fold is expanded into its members — one subenv per instance;
+- `subenvs[].name` = the relative path sanitized to an SV identifier
+  (`g_ch[1].u_ch` → `g_ch_1_u_ch`); collisions get a numeric suffix; subenvs
+  with the same name already present in the YAML are skipped (idempotent);
+- `subenvs[].config` = `<module>.quickuvm.yaml` next to the top config; if it
+  is missing, a skeleton is created (`newConfigText` + a heuristic `dut` — the
+  same clock/reset heuristics as for "Set as DUT"), and the summary appears in
+  the multi-select confirmation: nothing is applied silently;
+- `params` = a direct copy of the elaborated parameters, but **only the integer
+  values** (the QuickUVM schema requires `dict[str, int]`); the rest are
+  omitted with a note;
+- the mutation ensures `layout: packaged` on the top config (composition
+  requires it: every child block is a reusable env package; validated by
+  QuickUVM);
+- the block configs that are created do not disturb the active config:
+  discovery is stable (the active file stays active as long as it exists), and
+  the initial choice among several files excludes those referenced as
+  `subenvs[].config` by another one — the top wins, not the first
+  alphabetically (a real regression caught at the interactive validation of
+  `createSubenv`);
+- the recursive flow is explicit: "Set as DUT" on a module other than the
+  active config's DUT asks — do you overwrite the active config's DUT (the
+  phase 2 semantics) or do you create a `<module>.quickuvm.yaml` dedicated to
+  the block, which becomes the session's active config; switching between
+  configs afterwards: the "Choose Active Config" command (it writes
+  `quickuvm.configFile`);
+- the "Create subenv" gesture is self-sufficient on non-DUT views too: the
+  button is enabled whenever blocks are selected, and the DUT mismatch is
+  resolved IN the flow — the offer "Create `<module>`.quickuvm.yaml and set its
+  DUT" (the block's config becomes active, with the Set as DUT heuristics
+  confirmed), then the subenv proposals continue in the same gesture; a dead
+  button that needs an explanation is a badly designed gesture (reported at the
+  interactive validation on common_cells).
 
-Constrângeri moștenite din QuickUVM (verificate pe HEAD, iul. 2026 — slice-ul
-M1 clocked-subenv a ridicat restricția combinațional-only): blocurile copil
-cu ceas sunt acceptate dacă sunt **single-clock, cu cel mult un reset**
-(scheletul euristic creat de extensie satisface mereu condiția; frunzele
-multi-clock rămân un slice viitor); `params` cere ca agentul blocului să
-declare parametrul în `parameters:` (scheletul creat de extensie nu are încă
-agenți, deci `generate` eșuează vizibil până când agentul blocului e
-configurat — fluxul recursiv rămâne responsabilitatea utilizatorului); un
-bloc parametrizat trebuie să fie single-agent; un bloc cu `register_model`
-nu se poate compune încă.
+Constraints inherited from QuickUVM (verified on HEAD, Jul 2026 — the M1
+clocked-subenv slice lifted the combinational-only restriction): child blocks
+with a clock are accepted if they are **single-clock, with at most one reset**
+(the heuristic skeleton created by the extension always satisfies the
+condition; multi-clock leaves remain a future slice); `params` requires the
+block's agent to declare the parameter in `parameters:` (the skeleton created
+by the extension has no agents yet, so `generate` fails visibly until the
+block's agent is configured — the recursive flow remains the user's
+responsibility); a parameterized block must be single-agent; a block with
+`register_model` cannot be composed yet.
 
-## Net-uri interne → probes (schiță, QuickUVM ≥0.9.2 / K2)
+## Internal nets → probes (sketch, QuickUVM ≥0.9.2 / K2)
 
-Selecție: un net în orice vedere-schemă de sub DUT → „Create probe" (gest
-planificat, faza 3b/4).
+Selection: a net in any schematic view below the DUT → "Create probe" (a
+planned gesture, phase 3b/4).
 
-| Sursă în model | Câmp YAML |
+| Source in the model | YAML field |
 |---|---|
-| numele netului (sanitizat la identificator SV) | `probes[].name` |
-| calea elaborată a netului minus calea instanței DUT (invariantul 4) | `probes[].path` |
-| lățimea netului din model | `probes[].width` |
+| the net's name (sanitized to an SV identifier) | `probes[].name` |
+| the net's elaborated path minus the DUT instance's path (invariant 4) | `probes[].path` |
+| the net's width from the model | `probes[].width` |
 
-Probele sunt OBSERVE-only (XMR generat de QuickUVM în interfața de probe);
-`enum`/`type` (coverage simbolic pe FSM-uri) cer ca extractorul să emită
-tipurile net-urilor — azi svmodel dă doar lățimi. Constrângere QuickUVM:
-`probes` nu sunt încă acceptate pe bench-uri subsystem (H1).
+Probes are OBSERVE-only (an XMR generated by QuickUVM in the probe interface);
+`enum`/`type` (symbolic coverage on FSMs) require the extractor to emit the
+nets' types — today svmodel gives only widths. QuickUVM constraint: `probes`
+are not yet accepted on subsystem benches (H1).
 
-## Restul configurației
+## The rest of the configuration
 
-`project`, `clock.period/unit`, `tests[]`, `analysis`, `register_model` nu au
-corespondent geometric pe diagrama designului — în fazele 2–3 se editează în
-inspectorul lateral (formular simplu). Excepție utilă: `analysis.scoreboards[].source`
-și `analysis.coverage[]` se pot alege prin click pe agent în diagramă. Din faza
-3b, `analysis`, `virtual_sequences` și compoziția `subenvs` primesc reprezentare
-și editare directă în vederea de verificare (docs/05, decizia D16); maparea
-gesturilor pe câmpuri YAML se adaugă în acest document la implementare.
+`project`, `clock.period/unit`, `tests[]`, `analysis`, `register_model` have no
+geometric counterpart on the design's diagram — in phases 2–3 they are edited in
+the side inspector (a simple form). A useful exception: `analysis.scoreboards[].source`
+and `analysis.coverage[]` can be chosen by clicking an agent in the diagram. From
+phase 3b on, `analysis`, `virtual_sequences` and the `subenvs` composition get a
+representation and direct editing in the verification view (docs/05, decision
+D16); the mapping of the gestures onto YAML fields is added to this document at
+implementation time.
 
-## Indicatorul de acoperire și validarea
+## The coverage indicator and validation
 
-Invariant afișat permanent: fiecare port al DUT-ului este în exact una din
-stările {agent X, ceas/reset, ignorat explicit, nemapat}. "Nemapat" e starea de
-lucru; generarea cu porturi nemapate cere confirmare. Validări la editare:
+An invariant displayed permanently: every port of the DUT is in exactly one of
+the states {agent X, clock/reset, explicitly ignored, unmapped}. "Unmapped" is
+the working state; generating with unmapped ports asks for confirmation.
+Validations at edit time:
 
-- port din YAML inexistent în model → diagnostic (Problems + marcaj pe
-  diagramă); nu se șterge automat (invalidare grațioasă);
-- lățime din YAML ≠ lățimea din model → diagnostic cu quick-fix "actualizează
-  la N";
-- suprapunere de pini între agenți → eroare (un pin aparține unui singur agent).
+- a port in the YAML that does not exist in the model → diagnostic (Problems +
+  a mark on the diagram); it is not deleted automatically (graceful
+  invalidation);
+- a width in the YAML ≠ the width in the model → diagnostic with the quick-fix
+  "Update width of "<port>" to N";
+- overlapping pins between agents → error (a pin belongs to a single agent).
 
-## Ciclul de generare
+## The generation cycle
 
-"Generează testbench" → task `quick-uvm generate --config <yaml> --output <dir>`;
-erorile Pydantic/CLI se parsează în Problems. Post-MVP: `quick-uvm status`
-alimentează decorații pe fișierele generate (user-modified / orphaned /
-out-of-band), făcând vizibil contractul fail-closed al QuickUVM.
+"Generate Testbench" → the task `quick-uvm generate --config <yaml> --output <dir>`;
+the Pydantic/CLI errors are parsed into Problems. Post-MVP: `quick-uvm status`
+feeds decorations on the generated files (user-modified / orphaned /
+out-of-band), making QuickUVM's fail-closed contract visible.

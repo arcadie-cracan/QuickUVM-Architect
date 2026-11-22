@@ -1,135 +1,139 @@
-# QuickUVM Architect — extensie VSCode pentru vizualizarea designurilor SystemVerilog și proiectarea grafică a mediilor QuickUVM
+# QuickUVM Architect — a VSCode extension for visualizing SystemVerilog designs and graphically designing QuickUVM environments
 
-Extensie VSCode care afișează diagrame interactive ale unui design SystemVerilog
-(vederea-simbol și vederea-schemă) și permite definirea, prin selecție și
-desen direct pe diagramă, a configurației YAML pentru
-[QuickUVM](https://github.com/arcadie-cracan/QuickUVM), generatorul de medii de
-verificare UVM — până la editarea grafică a arhitecturii testbench-ului
-(vederea de verificare, faza 3b).
+A VSCode extension that displays interactive diagrams of a SystemVerilog design
+(the symbol view and the schematic view) and lets you define, by selecting and
+drawing directly on the diagram, the YAML configuration for
+[QuickUVM](https://github.com/arcadie-cracan/QuickUVM), the generator of UVM
+verification environments — up to the graphical editing of the testbench
+architecture (the verification view, phase 3b).
 
-Diferențiatorul față de uneltele existente (TerosHDL, svls, verible-verilog-ls):
-bucla **diagramă interactivă → configurație de verificare**, care nu există în
-niciun tool open-source; vizualizarea nu e scopul, ci mecanismul de specificare.
+The differentiator from the existing tools (TerosHDL, svls, verible-verilog-ls):
+the **interactive diagram → verification configuration** loop, which exists in
+no open-source tool; visualization is not the goal, but the specification
+mechanism.
 
-## Numele
+## The name
 
-Nume afișat în Marketplace: **QuickUVM Architect — SystemVerilog schematic
-viewer & UVM testbench designer**; identificator de extensie:
-`quickuvm-architect`; spațiul de nume tehnic (comenzi, setări, view-uri):
-`quickuvm.*`; prefixul comenzilor în paleta VSCode: `QuickUVM Architect:`.
-Numele pune utilizatorul în rolul arhitectului de verificare: studiază
-structura RTL (vederile simbol și schemă) și proiectează arhitectura
-mediului UVM (vederea de verificare). Sub-brand al QuickUVM — generatorul și
-editorul lui grafic, găsibile împreună. Istoric: proiectul s-a numit QuickXray
-până în iul. 2026 (metafora radiografiei acoperea doar jumătatea de
-vizualizare); redenumirea și alternativele respinse: docs/06-plan-mvp.md,
-deciziile D11 și D17.
+Name displayed in the Marketplace: **QuickUVM Architect — SystemVerilog schematic
+viewer & UVM testbench designer**; extension identifier:
+`quickuvm-architect`; the technical namespace (commands, settings, views):
+`quickuvm.*`; the command prefix in the VSCode palette: `QuickUVM Architect:`.
+The name puts the user in the role of the verification architect: they study
+the RTL structure (the symbol and schematic views) and design the architecture
+of the UVM environment (the verification view). A sub-brand of QuickUVM — the
+generator and its graphical editor, findable together. History: the project was
+called QuickXray until Jul 2026 (the X-ray metaphor covered only the
+visualization half); the renaming and the rejected alternatives:
+docs/06-plan-mvp.md, decisions D11 and D17.
 
-## Arhitectura pe scurt
+## The architecture in brief
 
 ```
-Bender (listă fișiere + define)
-   └─> backend semantic: pyslang/slang (elaborare completă)
-          └─> model de proiect JSON  (schema/project-model.schema.json)
-                 └─> extension host TypeScript (tree view, comenzi, diagnostice)
-                        └─> webview: diagramă SVG peste layout ELK
-                               └─> selecție -> editare YAML QuickUVM (sursă de adevăr)
-                                      └─> quick-uvm generate (task VSCode)
+Bender (file list + defines)
+   └─> semantic backend: pyslang/slang (full elaboration)
+          └─> JSON project model  (schema/project-model.schema.json)
+                 └─> TypeScript extension host (tree view, commands, diagnostics)
+                        └─> webview: SVG diagram over an ELK layout
+                               └─> selection -> QuickUVM YAML edit (source of truth)
+                                      └─> quick-uvm generate (VSCode task)
 ```
 
-Deciziile de proiectare și motivațiile lor sunt în `docs/` (începe cu
-`docs/01-arhitectura.md`); jurnalul deciziilor deja luate este în
+The design decisions and their motivations are in `docs/` (start with
+`docs/01-arhitectura.md`); the journal of the decisions already taken is in
 `docs/06-plan-mvp.md`.
 
-## Starea actuală
+## Current state
 
-**Faza 0 (validare backend) — încheiată**: `backend/svmodel.py` este un
-extractor funcțional care produce modelul de proiect complet — ierarhie elaborată
-cu ID-uri stabile, porturi cu lățimi numerice (inclusiv tablouri unpacked),
-parametri per instanță, interfețe cu modporturi, conectivitate cu expresii
-normalizate și fan-out per net. Validat pe `examples/` (design derivat din
-exemplele QuickUVM `soc` și `channels`, extins cu generate, parametri și
-interfață cu modport) și acoperit de teste pytest (`backend/tests/`).
+**Phase 0 (backend validation) — closed**: `backend/svmodel.py` is a
+working extractor that produces the complete project model — an elaborated
+hierarchy with stable IDs, ports with numeric widths (unpacked arrays included),
+per-instance parameters, interfaces with modports, connectivity with normalized
+expressions and per-net fan-out. Validated on `examples/` (a design derived from
+the QuickUVM examples `soc` and `channels`, extended with generate, parameters
+and an interface with a modport) and covered by pytest tests (`backend/tests/`).
 
-**Faza 1 (schelet de extensie + vederea-simbol read-only) — încheiată**:
-extensie TypeScript cu backend-ul pornit ca proces copil (debounce la salvare,
-diagnostice slang în Problems, ultimul model valid păstrat la erori), tree view
-de ierarhie cu parametrii efectivi, webview cu vederea-simbol (layout ELK,
-intrări stânga / ieșiri dreapta / ceas-reset stânga-jos, lățimi și multiplicități
-pe pin, interfețe hașurate, pan/zoom, selecție, salt-la-sursă din pin) și listă
-de fișiere din Bender cu fallback `.f`/glob. Criteriul de încheiere a fost
-validat interactiv pe un proiect Bender real (common_cells,
-`examples-bender/`): ierarhie, vederea-simbol, salt-la-sursă din pin.
+**Phase 1 (extension skeleton + read-only symbol view) — closed**:
+a TypeScript extension with the backend started as a child process (debounce on
+save, slang diagnostics in Problems, the last valid model kept on errors), a
+hierarchy tree view with the effective parameters, a webview with the symbol
+view (ELK layout, inputs left / outputs right / clock-reset bottom-left, widths
+and multiplicities on the pin, hatched interfaces, pan/zoom, selection,
+jump-to-source from a pin) and a file list from Bender with a `.f`/glob
+fallback. The closure criterion was validated interactively on a real Bender
+project (common_cells, `examples-bender/`): the hierarchy, the symbol view,
+jump-to-source from a pin.
 
-**Faza 2 (configurarea QuickUVM — nucleul valoric) — încheiată**: overlay
-de configurare derivat din YAML (culori + forme pe pinii agenților, roluri
-ceas/reset, indicator de acoperire N/M), acțiunile „Setează ca DUT" (euristici
-confirmate explicit), „Creează agent din selecție" (cu inversarea perspectivei
-DUT→agent din docs/03), „Agent din interfață" (desfacerea modportului),
-„Ignoră portul" (persistat în `x_quickuvm_architect.ignored_ports`) — toate ca editări
-chirurgicale de YAML prin `WorkspaceEdit` (biblioteca `yaml`, comentariile și
-câmpurile străine se păstrează); validări model↔YAML ca diagnostice (port
-orfan, lățime divergentă cu quick-fix, pin revendicat de doi agenți);
-inspector lateral în webview; comanda „Generează testbench" cu erorile
-quick-uvm în Problems. Fluxul DUT→agent→testbench generat e validat
-programatic contra quick-uvm real (`npm run test:e2e`) și bifat interactiv în
+**Phase 2 (QuickUVM configuration — the core of the value) — closed**: a
+configuration overlay derived from the YAML (colours + shapes on the agents'
+pins, clock/reset roles, the N/M coverage indicator), the actions "Set as DUT"
+(heuristics confirmed explicitly), "Create Agent from Selection" (with the
+DUT→agent perspective inversion from docs/03), "Agent from interface"
+(expanding the modport), "Ignore port" (persisted in
+`x_quickuvm_architect.ignored_ports`) — all as surgical YAML edits through
+`WorkspaceEdit` (the `yaml` library; comments and foreign fields are
+preserved); model↔YAML validations as diagnostics (orphaned port, diverging
+width with a quick-fix, a pin claimed by two agents); a side inspector in the
+webview; the "Generate Testbench" command with the quick-uvm errors in
+Problems. The DUT→agent→generated testbench flow is validated programmatically
+against the real quick-uvm (`npm run test:e2e`) and ticked interactively in the
 Extension Development Host.
 
 ## Quickstart
 
-Backend singur (faza 0):
+The backend alone (phase 0):
 
 ```bash
-pip install pyslang            # slang 11 cu API Python
+pip install pyslang            # slang 11 with the Python API
 cd examples
 python3 ../backend/svmodel.py adder.sv inverter.sv chan.sv soc_top.sv \
         --top demo_top -o model.json
 ```
 
-`model.json` este exact structura pe care o consumă webview-ul; un exemplar
-generat este inclus în `examples/model.json`.
+`model.json` is exactly the structure the webview consumes; a generated copy
+is included in `examples/model.json`.
 
-Extensia (faza 1):
+The extension (phase 1):
 
 ```bash
 npm install
 npm run build                  # dist/extension.js + dist/webview.js
 python -m pip install -r backend/requirements-dev.txt
-python -m pytest backend/tests # 14 teste pe extractor
+python -m pytest backend/tests # 14 tests on the extractor
 ```
 
-Apoi F5 în VSCode (configurația „Rulează extensia (examples/)”): se deschide un
-Extension Development Host pe `examples/`, cu `quickuvm.top=demo_top` presetat;
-vederea „QuickUVM Architect → Ierarhie” arată arborele, click pe o instanță deschide
-vederea-simbol, dublu-click pe un pin sare la declarația portului.
+Then F5 in VSCode (the configuration "Run the extension (examples/: demo_top
+regression design)"): an Extension Development Host opens on `examples/`, with
+`quickuvm.top=demo_top` preset; the view "QuickUVM Architect → Design
+Hierarchy" shows the tree, a click on an instance opens the symbol view, a
+double-click on a pin jumps to the port's declaration.
 
-Pentru validarea pe un proiect Bender real există configurația de lansare
-„Rulează extensia (Bender: common_cells)”, care deschide clona din
-`examples-bender/common_cells` (top presetat `cdc_fifo_gray`; detalii și cum se
-reface clona: `examples-bender/README.md`).
+For validation on a real Bender project there is the launch configuration
+"Run the extension (Bender: common_cells)", which opens the clone in
+`examples-bender/common_cells` (preset top `cdc_fifo_gray`; details and how to
+recreate the clone: `examples-bender/README.md`).
 
-## Structura depozitului
+## Repository structure
 
-| Cale | Conținut |
+| Path | Contents |
 |---|---|
-| `backend/svmodel.py` | extractorul de model (pyslang), CLI compatibil cu liste `.f` de la Bender |
-| `backend/tests/` | testele pytest ale extractorului (criterii CLAUDE.md, snapshot, validare schemă) |
-| `src/` | extensia TypeScript: `extension.ts` (orchestrare), `backend.ts` (proces copil + diagnostice), `filelist.ts` (Bender/.f/glob), `tree.ts` (ierarhia), `panel.ts` (webview), `model.ts`/`protocol.ts` (contractul), `webview/main.ts` (diagrama ELK+SVG) |
-| `media/` | stiluri webview (variabile de temă VSCode) și iconița |
-| `schema/project-model.schema.json` | schema JSON a modelului de proiect — contractul backend↔UI |
-| `docs/01-arhitectura.md` | arhitectura generală și responsabilitățile componentelor |
-| `docs/02-model-de-proiect.md` | modelul de proiect: semantică, ID-uri stabile, cazuri limită |
-| `docs/03-mapare-quickuvm.md` | maparea formală model → YAML QuickUVM |
-| `docs/04-layout-si-rutare.md` | strategia de layout (ELK + poziții deținute de utilizator), formatul sidecar, ierarhia de override-uri de rutare |
-| `docs/05-ui-si-protocol.md` | vederile, fluxurile UI de configurare, protocolul de mesaje extensie↔webview |
-| `docs/06-plan-mvp.md` | planul pe faze, riscuri, jurnalul deciziilor |
+| `backend/svmodel.py` | the model extractor (pyslang), a CLI compatible with `.f` lists from Bender |
+| `backend/tests/` | the extractor's pytest tests (the CLAUDE.md criteria, snapshot, schema validation) |
+| `src/` | the TypeScript extension: `extension.ts` (orchestration), `backend.ts` (child process + diagnostics), `filelist.ts` (Bender/.f/glob), `tree.ts` (the hierarchy), `panel.ts` (webview), `model.ts`/`protocol.ts` (the contract), `webview/main.ts` (the ELK+SVG diagram) |
+| `media/` | webview styles (VSCode theme variables) and the icon |
+| `schema/project-model.schema.json` | the JSON schema of the project model — the backend↔UI contract |
+| `docs/01-arhitectura.md` | the general architecture and the responsibilities of the components |
+| `docs/02-model-de-proiect.md` | the project model: semantics, stable IDs, edge cases |
+| `docs/03-mapare-quickuvm.md` | the formal mapping model → QuickUVM YAML |
+| `docs/04-layout-si-rutare.md` | the layout strategy (ELK + user-owned positions), the sidecar format, the hierarchy of routing overrides |
+| `docs/05-ui-si-protocol.md` | the views, the configuration UI flows, the extension↔webview message protocol |
+| `docs/06-plan-mvp.md` | the phased plan, risks, the decision journal |
 | `docs/07-plan-post-mvp.md` | post-MVP plan: generation feedback loop, schema parity, the inference gap |
 | `docs/08-ux-inspiration.md` | UX research synthesis: the tools we can learn from, the directness diagnosis, 25 prioritized recommendations |
-| `examples/` | design de test + `model.json` generat |
-| `CLAUDE.md` | convenții și context pentru sesiunile de lucru cu Claude Code |
+| `examples/` | the test design + the generated `model.json` |
+| `CLAUDE.md` | conventions and context for the working sessions with Claude Code |
 
-## Cerințe
+## Requirements
 
-- Python ≥ 3.10, `pyslang` ≥ 11 (faza 0–1)
-- Node.js ≥ 20 + `@types/vscode` (fazele 1+, scheletul de extensie)
-- opțional: `bender` pentru liste de fișiere, `quick-uvm` pentru generare
+- Python ≥ 3.10, `pyslang` ≥ 11 (phases 0–1)
+- Node.js ≥ 20 + `@types/vscode` (phases 1+, the extension skeleton)
+- optional: `bender` for file lists, `quick-uvm` for generation
