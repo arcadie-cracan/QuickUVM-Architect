@@ -110,13 +110,15 @@ const BPORT_H = 16;
 // inflate the step); the price is that the pins stay in declaration order, which is
 // exactly the norm in schematics (the order overrides come in phase 4, level 2).
 // Corner on the grid => all pins on the grid => aligned pin = straight wire.
-/** the center of the first pin, below the title band (multiple of 8) */
-const PIN_TOP = 40;
+/** the center of the first pin, below the title band (multiple of 8).
+ *  Exported, like PIN_PITCH, for the layout test: a test that repeats the
+ *  number instead of reading it stops testing the day the number changes */
+export const PIN_TOP = 40;
 /** the step between pin centers. MULTIPLE OF 8 mandatory (pin on the grid =
  *  straight wire, docs/04); 24 (not 16) gives room to the decorations — `/N` widths,
  *  const/split-join glyphs, nc circles — which at 16 trod on each other between rows
  *  (observation at validation) */
-const PIN_PITCH = 24;
+export const PIN_PITCH = 24;
 
 /** round up to a multiple of the grid */
 function ceilGrid(v: number): number {

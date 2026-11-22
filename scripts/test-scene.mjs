@@ -254,15 +254,21 @@ await esbuild.build({
   platform: "node",
   logLevel: "silent",
 });
-const { layoutSchematic } = await import(pathToFileURL(outFile2));
+const { layoutSchematic, PIN_PITCH, PIN_TOP } = await import(pathToFileURL(outFile2));
 const ELK = require("elkjs/lib/elk.bundled.js");
 const layout = await layoutSchematic(new ELK(), socExp, (t) => t.length * 7.2);
+// every block of `demo_top.u_soc` has ONE pin per side, so that view alone says
+// nothing about the distance between two pins; `demo_top` has u_soc with three
+// on the west and three on the east
+const topLayout = await layoutSchematic(new ELK(), top, (t) => t.length * 7.2);
 
-test("layout: the pins on the grid of 8 with pitch 16, the nodes multiples of 8", () => {
-  const bports = new Set(socExp.boundary.map((b) => b.id));
-  for (const c of layout.children ?? []) {
+/** checks one layout; returns how many pin-to-pin distances it compared */
+function checkPinGrid(scene, lay) {
+  const bports = new Set(scene.boundary.map((b) => b.id));
+  let pairs = 0;
+  for (const c of lay.children ?? []) {
     if (bports.has(c.id)) {
-      continue; // the boundary flags are not draggable (yet)
+      continue; // a boundary flag has no pin rows
     }
     assert.equal(c.width % 8, 0, `${c.id}: width ${c.width}`);
     assert.equal(c.height % 8, 0, `${c.id}: height ${c.height}`);
@@ -272,15 +278,34 @@ test("layout: the pins on the grid of 8 with pitch 16, the nodes multiples of 8"
       assert.equal(center % 8, 0, `${c.id}/${p.id}: the center at ${center}`);
       bySide[p.x < c.width / 2 ? "west" : "east"].push(center);
     }
-    for (const side of Object.values(bySide)) {
+    for (const [name, side] of Object.entries(bySide)) {
       side.sort((a, b) => a - b);
+      if (side.length) {
+        assert.equal(side[0], PIN_TOP, `${c.id} ${name}: the first pin at ${side[0]}`);
+      }
       for (let i = 1; i < side.length; i++) {
         assert.equal(
-          side[i] - side[i - 1], 16, `${c.id}: pitch ${side[i] - side[i - 1]}`
+          side[i] - side[i - 1], PIN_PITCH, `${c.id} ${name}: pitch ${side[i] - side[i - 1]}`
         );
+        pairs += 1;
       }
     }
   }
+  return pairs;
+}
+
+test("layout: the pins on the grid of 8, the first at PIN_TOP, one PIN_PITCH apart; the nodes multiples of 8", () => {
+  // the constants themselves: on the grid (a pin on the grid = a straight wire,
+  // docs/04), and 24 — at 16 the decorations trod on each other between rows
+  assert.equal(PIN_PITCH % 8, 0, "the pitch is a multiple of the grid");
+  assert.equal(PIN_TOP % 8, 0, "the first pin is on the grid");
+  assert.equal(PIN_PITCH, 24);
+  checkPinGrid(socExp, layout);
+  // the distance between two pins is only compared where a block HAS two on a
+  // side: without this count the check passed for years on a pitch of 16 that
+  // was no longer the pitch, because no block of the view had two
+  const pairs = checkPinGrid(top, topLayout);
+  assert.ok(pairs >= 4, `only ${pairs} pin-to-pin distance(s) compared: the fixture no longer has a block with several pins on a side`);
 });
 
 // ------------------------- total seeds (the reopen-drift regression)
