@@ -102,7 +102,7 @@ test("kindBlockers: vip lists the bench-layer sections that would be DROPPED", (
     "analysis.scoreboards",
     "analysis.coverage",
   ]) {
-    assert.ok(msg.includes(s), `${s} lipseste din mesaj: ${msg}`);
+    assert.ok(msg.includes(s), `${s} is missing from the message: ${msg}`);
   }
   // clean vip candidate: nothing bench-layer present
   assert.deepEqual(kindBlockers(bench({ layout: "packaged" }), "vip"), []);

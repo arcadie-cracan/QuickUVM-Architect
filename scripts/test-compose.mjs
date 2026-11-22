@@ -3,7 +3,7 @@
 //
 // SYNTHETIC models for the pipeline topology (the soc_top regression model is a
 // STAR — all nets touch own ports — so it has no inter-block net;
-// we use it for the „the star derives nothing" case).
+// we use it for the "the star derives nothing" case).
 import assert from "node:assert/strict";
 import { mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -56,26 +56,26 @@ const PIPE = mkModel({
 });
 const SUBS = new Map([["u_prod", "u_prod"], ["u_cons", "u_cons"]]);
 
-test("pipeline: un net iesire->intrare devine o conexiune; sink identificat", () => {
+test("pipeline: an output->input net becomes one connection; the sink is identified", () => {
   const r = deriveConnections(PIPE, "top", SUBS);
   assert.deepEqual(r.connections, [{ from: "u_prod.dout", to: "u_cons.din", width: 8 }]);
   assert.deepEqual(r.sinks, ["u_cons"]); // the agent of u_cons must be passive
   assert.deepEqual(r.warnings, []);
 });
 
-test("directia conteaza: from = IESIREA sursei, to = INTRAREA destinatiei", () => {
+test("the direction matters: from = the source's OUTPUT, to = the destination's INPUT", () => {
   // same model, but querying with u_cons as source would not appear (it has only `in`)
   const r = deriveConnections(PIPE, "top", SUBS);
   assert.equal(r.connections[0].from, "u_prod.dout");
   assert.equal(r.connections[0].to, "u_cons.din");
 });
 
-test("subenv necompus: capatul catre el se ignora (nu se cableaza la un ne-subenv)", () => {
+test("uncomposed subenv: the endpoint toward it is ignored (nothing is wired to a non-subenv)", () => {
   const r = deriveConnections(PIPE, "top", new Map([["u_prod", "u_prod"]]));
   assert.deepEqual(r.connections, []); // u_cons is not in the map
 });
 
-test("net de granita (atinge <port>.X) NU e conexiune inter-bloc", () => {
+test("a boundary net (touches <port>.X) is NOT an inter-block connection", () => {
   const m = mkModel({
     children: { u_a: { module: "a", ports: [{ name: "dout", dir: "out", width: 8 }] } },
     ownPorts: [{ name: "y", dir: "out", type: "logic", width: 8, unpacked_dims: null, elem_width: null, loc: null }],
@@ -84,7 +84,7 @@ test("net de granita (atinge <port>.X) NU e conexiune inter-bloc", () => {
   assert.deepEqual(deriveConnections(m, "top", new Map([["u_a", "u_a"]])).connections, []);
 });
 
-test("multi-driver: doua iesiri pe acelasi net -> avertisment, nimic cablat", () => {
+test("multi-driver: two outputs on the same net -> a warning, nothing wired", () => {
   const m = mkModel({
     children: {
       u_a: { module: "a", ports: [{ name: "o", dir: "out", width: 8 }] },
@@ -98,7 +98,7 @@ test("multi-driver: doua iesiri pe acelasi net -> avertisment, nimic cablat", ()
   assert.match(r.warnings[0], /drivers/i);
 });
 
-test("nepotrivire de latime (module DIFERITE) -> avertisment, DAR se cableaza", () => {
+test("width mismatch (DIFFERENT modules) -> a warning, BUT it is still wired", () => {
   // the generator does the authoritative check: we don't drop a real connection,
   // we only warn (regression caught in review — the skip lost connections)
   const m = mkModel({
@@ -113,7 +113,7 @@ test("nepotrivire de latime (module DIFERITE) -> avertisment, DAR se cableaza", 
   assert.match(r.warnings[0], /width mismatch/i);
 });
 
-test("feedthrough: un net care atinge SI un port propriu ramane conexiune inter-bloc", () => {
+test("feedthrough: a net that ALSO touches an own port remains an inter-block connection", () => {
   // the parent port `y` driven by u_a.o AND read by u_b.i: net `y` =
   // [<port>.y, u_a.o, u_b.i]. The old boundary guard dropped the whole net and
   // lost the real pair u_a->u_b (regression caught in review)
@@ -129,7 +129,7 @@ test("feedthrough: un net care atinge SI un port propriu ramane conexiune inter-
   assert.deepEqual(r.connections, [{ from: "u_a.o", to: "u_b.i", width: 8 }]);
 });
 
-test("acelasi modul (parametri per-instanta): latimea partajata NU blocheaza cablarea", () => {
+test("same module (per-instance parameters): the shared width does NOT block the wiring", () => {
   // two instances of the same module: the width from the per-name definition is common,
   // so unreliable under different parameters — we don't check, quick-uvm decides
   const m = mkModel({
@@ -144,7 +144,7 @@ test("acelasi modul (parametri per-instanta): latimea partajata NU blocheaza cab
   assert.deepEqual(r.warnings, []);
 });
 
-test("fan-out: o iesire spre DOUA intrari -> doua conexiuni, doi sinks", () => {
+test("fan-out: one output to TWO inputs -> two connections, two sinks", () => {
   const m = mkModel({
     children: {
       u_a: { module: "a", ports: [{ name: "o", dir: "out", width: 8 }] },
@@ -161,13 +161,13 @@ test("fan-out: o iesire spre DOUA intrari -> doua conexiuni, doi sinks", () => {
   assert.deepEqual(r.sinks.sort(), ["u_b", "u_c"]);
 });
 
-test("numele subenv difera de rel: capetele folosesc NUMELE subenv", () => {
+test("the subenv name differs from rel: the endpoints use the subenv NAME", () => {
   const r = deriveConnections(PIPE, "top", new Map([["u_prod", "p1"], ["u_cons", "c1"]]));
   assert.deepEqual(r.connections, [{ from: "p1.dout", to: "c1.din", width: 8 }]);
   assert.deepEqual(r.sinks, ["c1"]);
 });
 
-test("modelul de regresie (soc_top) e o STEA: nicio conexiune inter-bloc", () => {
+test("the regression model (soc_top) is a STAR: no inter-block connection", () => {
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
   // all children of soc_top, keyed rel->name (as subenvs)
   const subs = new Map([
@@ -175,12 +175,12 @@ test("modelul de regresie (soc_top) e o STEA: nicio conexiune inter-bloc", () =>
     ["g_ch[0].u_ch", "u_ch0"], ["g_ch[1].u_ch", "u_ch1"], ["g_ch[2].u_ch", "u_ch2"],
   ]);
   const r = deriveConnections(model, "demo_top.u_soc", subs);
-  assert.deepEqual(r.connections, [], `steaua nu ar trebui sa dea conexiuni: ${JSON.stringify(r)}`);
+  assert.deepEqual(r.connections, [], `the star should yield no connections: ${JSON.stringify(r)}`);
 });
 
 // ------------------------------------------- parentComposition (Compose up)
 
-test("parentComposition: dintr-un bloc -> parintele imediat + copiii-bloc directi", () => {
+test("parentComposition: from a block -> the immediate parent + the direct block-children", () => {
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
   // from the chan view g_ch[1].u_ch: the parent is u_soc (soc_top), and the
   // direct block-children are u_add, u_inv and the three channels (bus_i = interface, excluded)
@@ -191,20 +191,20 @@ test("parentComposition: dintr-un bloc -> parintele imediat + copiii-bloc direct
   ]);
 });
 
-test("parentComposition: dintr-un copil direct (u_add) -> acelasi parinte u_soc", () => {
+test("parentComposition: from a direct child (u_add) -> the same parent u_soc", () => {
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
   const pc = parentComposition(model, "demo_top.u_soc.u_add");
   assert.equal(pc.parentPath, "demo_top.u_soc");
   assert.ok(pc.childRels.includes("u_add") && pc.childRels.includes("g_ch[0].u_ch"));
 });
 
-test("parentComposition: un modul TOP nu are parinte -> null", () => {
+test("parentComposition: a TOP module has no parent -> null", () => {
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
   assert.equal(parentComposition(model, "demo_top"), null);
-  assert.equal(parentComposition(model, "nu.exista"), null);
+  assert.equal(parentComposition(model, "no.such"), null);
 });
 
-test("parentComposition: parintele lui u_soc e demo_top; copiii lui = u_soc (bus_i exclus)", () => {
+test("parentComposition: the parent of u_soc is demo_top; its children = u_soc (bus_i excluded)", () => {
   const model = JSON.parse(readFileSync("examples/model.json", "utf8"));
   const pc = parentComposition(model, "demo_top.u_soc");
   assert.equal(pc.parentPath, "demo_top");
@@ -214,12 +214,12 @@ test("parentComposition: parintele lui u_soc e demo_top; copiii lui = u_soc (bus
 
 // ------------------------------------------- subenvMapping + planWireEdits
 
-test("subenvName: membru de generate -> identificator SV", () => {
+test("subenvName: a generate member -> an SV identifier", () => {
   assert.equal(subenvName("g_ch[1].u_ch"), "g_ch_1_u_ch");
   assert.equal(subenvName("u_add"), "u_add");
 });
 
-test("subenvMapping: rel adanc mapat; numele ambigue se exclud + raporteaza", () => {
+test("subenvMapping: a deep rel is mapped; the ambiguous names are excluded + reported", () => {
   const model = {
     schema_version: 1, tops: ["top"], modules: {}, views: {},
     instances: [
@@ -248,7 +248,7 @@ agents:
         - { name: din, width: 8 }
 `;
 
-test("planWireEdits: connections pe top + agentul sink-ului pus pasiv", () => {
+test("planWireEdits: connections on the top + the sink's agent set passive", () => {
   const subenvs = [
     { name: "u_prod", config: "producer.quickuvm.yaml" },
     { name: "u_cons", config: "chan.quickuvm.yaml" },
@@ -266,11 +266,11 @@ test("planWireEdits: connections pe top + agentul sink-ului pus pasiv", () => {
   assert.deepEqual(plan.passivated, ["u_cons.chan_a"]);
   assert.deepEqual(plan.manual, []);
   const child = plan.childTexts.get("file:///ws/chan.quickuvm.yaml");
-  assert.ok(child, "config-ul copil trebuie editat");
+  assert.ok(child, "the child config must be edited");
   assert.match(child, /active: false/);
 });
 
-test("planWireEdits: doua sinks spre ACELASI fisier copil se PLIAZA (#4)", () => {
+test("planWireEdits: two sinks into the SAME child file are FOLDED (#4)", () => {
   // shared block: two `chan` instances reference the same config; the passivations
   // must be folded into ONE single text, not two replacements that corrupt each other
   const shared = `dut:
@@ -303,7 +303,7 @@ agents:
     ["chan.quickuvm.yaml", { key: "file:///ws/chan.quickuvm.yaml", text: shared }],
   ]);
   const plan = planWireEdits("dut:\n  name: top\n", subenvs, derived, children);
-  assert.equal(plan.childTexts.size, 1, "UN singur text final per fisier");
+  assert.equal(plan.childTexts.size, 1, "ONE single final text per file");
   const child = plan.childTexts.get("file:///ws/chan.quickuvm.yaml");
   // BOTH passivations present in the same text (folded onto the evolving text)
   const passives = child.match(/active: false/g) ?? [];
@@ -311,7 +311,7 @@ agents:
   assert.deepEqual(plan.passivated, ["u_c0.a1", "u_c1.a2"]);
 });
 
-test("planWireEdits: TOTI agentii cu porturi conduse devin pasivi (nu doar primul)", () => {
+test("planWireEdits: ALL the agents with driven ports become passive (not only the first)", () => {
   // real bug empirically confirmed in the adversarial review: the driven ports of
   // a sink can belong to DIFFERENT agents; quick-uvm refuses generation
   // if ANY stays active — find() passivated only the first and the gesture reported
@@ -352,7 +352,7 @@ agents:
   assert.equal(passives.length, 2, child);
 });
 
-test("planWireEdits: sink fara config/fisier/agent -> manual, restul merg", () => {
+test("planWireEdits: a sink without config/file/agent -> manual, the rest go through", () => {
   const subenvs = [
     { name: "u_a" }, // no config
     { name: "u_b", config: "missing.quickuvm.yaml" }, // unreadable file
@@ -372,7 +372,7 @@ test("planWireEdits: sink fara config/fisier/agent -> manual, restul merg", () =
   const plan = planWireEdits("dut:\n  name: top\n", subenvs, derived, children);
   assert.deepEqual(plan.manual, ["u_a", "u_b", "u_c"]);
   assert.deepEqual(plan.passivated, []);
-  assert.equal(plan.childTexts.size, 0, "scheletul neschimbat nu se scrie");
+  assert.equal(plan.childTexts.size, 0, "the unchanged skeleton is not written");
   // the connections are written to top anyway (passivation is the user's responsibility)
   assert.match(plan.topText, /connections:/);
 });
@@ -424,4 +424,4 @@ test("review: singleConnection — a width the child cannot state is unknown (no
   assert.match(singleConnection("p.data", "c.din", cfg, children).error, /already driven by p\.dout/);
 });
 
-console.log(`\ntest-compose: ${passed} teste au trecut.`);
+console.log(`\ntest-compose: ${passed} tests passed.`);

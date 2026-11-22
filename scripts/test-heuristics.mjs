@@ -30,44 +30,44 @@ function test(name, fn) {
   console.log(`  ok ${name}`);
 }
 
-test("activ-jos: sufixele clasice _n/_b", () => {
+test("active-low: the classic suffixes _n/_b", () => {
   for (const s of ["rst_n", "rst_b", "RST_N", "areset_n"]) {
-    assert.ok(ACTIVE_LOW_RE.test(s), `${s} ar trebui activ-jos`);
+    assert.ok(ACTIVE_LOW_RE.test(s), `${s} should be active-low`);
   }
 });
 
-test("activ-jos: sufixele PULP _ni/_bi (capcana 23 — src_rst_ni)", () => {
+test("active-low: the PULP suffixes _ni/_bi (pitfall 23 — src_rst_ni)", () => {
   for (const s of ["src_rst_ni", "dst_rst_ni", "scan_bi", "RST_NI"]) {
-    assert.ok(ACTIVE_LOW_RE.test(s), `${s} ar trebui activ-jos`);
+    assert.ok(ACTIVE_LOW_RE.test(s), `${s} should be active-low`);
   }
 });
 
-test("activ-jos: NU pe nume fara sufix (clk, data, rst, enable_in)", () => {
+test("active-low: NOT on names without a suffix (clk, data, rst, enable_in)", () => {
   for (const s of ["clk", "data", "rst", "reset", "enable_in", "count"]) {
-    assert.ok(!ACTIVE_LOW_RE.test(s), `${s} NU e activ-jos`);
+    assert.ok(!ACTIVE_LOW_RE.test(s), `${s} is NOT active-low`);
   }
 });
 
-test("ceas: clk/clock, indiferent de caz si pozitie", () => {
+test("clock: clk/clock, whatever the case and the position", () => {
   for (const s of ["clk", "clk_i", "core_clock", "CLK"]) {
-    assert.ok(CLOCK_RE.test(s), `${s} ar trebui ceas`);
+    assert.ok(CLOCK_RE.test(s), `${s} should be a clock`);
   }
   assert.ok(!CLOCK_RE.test("data_i"));
 });
 
-test("reset: rst/reset, indiferent de caz si pozitie", () => {
+test("reset: rst/reset, whatever the case and the position", () => {
   for (const s of ["rst_n", "areset", "src_rst_ni", "RESET"]) {
-    assert.ok(RESET_RE.test(s), `${s} ar trebui reset`);
+    assert.ok(RESET_RE.test(s), `${s} should be a reset`);
   }
   assert.ok(!RESET_RE.test("ready"));
 });
 
-test("identificator SV: valid vs invalid", () => {
+test("SV identifier: valid vs invalid", () => {
   for (const s of ["cmd", "_x", "a1_b2", "P_0"]) {
-    assert.ok(SV_IDENT_RE.test(s), `${s} ar trebui valid`);
+    assert.ok(SV_IDENT_RE.test(s), `${s} should be valid`);
   }
   for (const s of ["1abc", "a-b", "a b", "", "g_ch[0]"]) {
-    assert.ok(!SV_IDENT_RE.test(s), `${s} ar trebui invalid`);
+    assert.ok(!SV_IDENT_RE.test(s), `${s} should be invalid`);
   }
 });
 
@@ -91,4 +91,4 @@ test("a clock's control is not a clock: enable / gate / select; a divided clock 
   }
 });
 
-console.log(`\ntest-heuristics: ${passed} teste au trecut.`);
+console.log(`\ntest-heuristics: ${passed} tests passed.`);

@@ -41,7 +41,7 @@ function test(name, fn) {
 
 const A = (x, y, dir) => ({ x, y, dir });
 
-test("pini aliniati, teren liber: fir perfect drept (2 puncte)", () => {
+test("aligned pins, open ground: a perfectly straight wire (2 points)", () => {
   const r = route(
     [],
     [{ id: "e", source: A(0, 96, 1), target: A(240, 96, -1) }]
@@ -52,25 +52,25 @@ test("pini aliniati, teren liber: fir perfect drept (2 puncte)", () => {
   ]);
 });
 
-test("forma L: exact un cot (3 puncte), nu scari", () => {
+test("L shape: exactly one bend (3 points), no staircases", () => {
   const r = route(
     [],
     [{ id: "e", source: A(0, 0, 1), target: A(200, 160, 1) }]
   );
   const pts = r.get("e");
-  assert.ok(pts.length <= 4, `prea multe coturi: ${JSON.stringify(pts)}`);
+  assert.ok(pts.length <= 4, `too many bends: ${JSON.stringify(pts)}`);
   assert.deepEqual(pts[0], { x: 0, y: 0 });
   assert.deepEqual(pts[pts.length - 1], { x: 200, y: 160 });
 });
 
-test("obstacol interpus: traseul il ocoleste (nicio celula inauntru)", () => {
+test("obstacle in between: the route detours around it (no cell inside)", () => {
   const obst = { x: 96, y: 40, w: 80, h: 112 }; // in the path of the straight wire
   const r = route(
     [obst],
     [{ id: "e", source: A(0, 96, 1), target: A(280, 96, -1) }]
   );
   const pts = r.get("e");
-  assert.ok(pts, "fara drum");
+  assert.ok(pts, "no path");
   // no point of the polyline strictly inside the obstacle
   for (let i = 0; i < pts.length - 1; i++) {
     const a = pts[i];
@@ -81,14 +81,14 @@ test("obstacol interpus: traseul il ocoleste (nicio celula inauntru)", () => {
       const y = a.y + (b.y - a.y) * t;
       const inside =
         x > obst.x && x < obst.x + obst.w && y > obst.y && y < obst.y + obst.h;
-      assert.ok(!inside, `traseul taie obstacolul la (${x},${y})`);
+      assert.ok(!inside, `the route cuts through the obstacle at (${x},${y})`);
     }
   }
   assert.deepEqual(pts[0], { x: 0, y: 96 });
   assert.deepEqual(pts[pts.length - 1], { x: 280, y: 96 });
 });
 
-test("ancora din umbra obstacolului propriu: culoarul o elibereaza", () => {
+test("anchor in the shadow of its own obstacle: the corridor frees it", () => {
   // the pin sits right on the obstacle boundary (the real case: anchor on node)
   const node = { x: 0, y: 64, w: 96, h: 64 };
   const r = route(
@@ -96,11 +96,11 @@ test("ancora din umbra obstacolului propriu: culoarul o elibereaza", () => {
     [{ id: "e", source: A(96, 96, 1), target: A(280, 96, -1) }]
   );
   const pts = r.get("e");
-  assert.ok(pts, "ancora de pe nod trebuie sa fie rutabila");
+  assert.ok(pts, "the anchor on the node must be routable");
   assert.deepEqual(pts[0], { x: 96, y: 96 });
 });
 
-test("tinta inconjurata complet: cererea lipseste din rezultat", () => {
+test("target completely surrounded: the request is missing from the result", () => {
   // thick wall around the target, beyond the 2-cell corridor
   const walls = [
     { x: 160, y: 40, w: 200, h: 40 },
@@ -115,7 +115,7 @@ test("tinta inconjurata complet: cererea lipseste din rezultat", () => {
   assert.equal(r.get("e"), undefined);
 });
 
-test("mai multe cereri: fiecare isi primeste traseul", () => {
+test("several requests: each one gets its route", () => {
   const r = route(
     [],
     [
@@ -131,11 +131,11 @@ const ortho = (pts) => {
     const dx = pts[i + 1].x - pts[i].x;
     const dy = pts[i + 1].y - pts[i].y;
     assert.ok(dx === 0 || dy === 0,
-      `segment oblic ${JSON.stringify(pts[i])} -> ${JSON.stringify(pts[i + 1])}`);
+      `oblique segment ${JSON.stringify(pts[i])} -> ${JSON.stringify(pts[i + 1])}`);
   }
 };
 
-test("ortogonalitate stricta, inclusiv cu ancore in afara grilei pe x", () => {
+test("strict orthogonality, including with anchors off the grid on x", () => {
   const obst = { x: 96, y: 40, w: 80, h: 112 };
   const r = route(
     [obst],
@@ -148,7 +148,7 @@ test("ortogonalitate stricta, inclusiv cu ancore in afara grilei pe x", () => {
   ortho(r.get("b"));
 });
 
-test("suprapunere: doua net-uri paralele isi iau culoare diferite", () => {
+test("overlap: two parallel nets take different corridors", () => {
   const r = route(
     [],
     [
@@ -170,10 +170,10 @@ test("suprapunere: doua net-uri paralele isi iau culoare diferite", () => {
     }
     return best.y;
   };
-  assert.notEqual(longH(a), longH(b), "trasee suprapuse pe acelasi culoar");
+  assert.notEqual(longH(a), longH(b), "routes overlapping on the same corridor");
 });
 
-test("acelasi net (fan-out): trunchiul comun e permis", () => {
+test("same net (fan-out): the shared trunk is allowed", () => {
   const r = route(
     [],
     [
@@ -185,11 +185,11 @@ test("acelasi net (fan-out): trunchiul comun e permis", () => {
   const b = r.get("s2");
   assert.equal(a[0].y, 96);
   assert.equal(b[0].y, 96);
-  assert.equal(a[1].y, 96, "primul segment ramane pe randul pinului");
-  assert.equal(b[1].y, 96, "trunchiul comun nu e penalizat");
+  assert.equal(a[1].y, 96, "the first segment stays on the pin's row");
+  assert.equal(b[1].y, 96, "the shared trunk is not penalised");
 });
 
-test("fan-out net-uri distincte: se suprapun langa sursa comuna", () => {
+test("fan-out of distinct nets: they overlap near the shared source", () => {
   // two edges from the SAME source pin toward different targets, but DISTINCT
   // nets (groups): real fan-out (ap->sb, ap->cov in the TB view).
   // By default (fanoutRadius>0) they share the stub near the source; without a radius they fork
@@ -200,15 +200,15 @@ test("fan-out net-uri distincte: se suprapun langa sursa comuna", () => {
   ];
   // with waive: s2 stays on the source row (y=96) on the stub, then diverges
   const on = route([], reqs);
-  assert.equal(on.get("s1")[1].y, 96, "s1 pleaca pe randul sursei");
-  assert.equal(on.get("s2")[1].y, 96, "s2 imparte trunchiul langa sursa");
-  assert.ok(on.get("s2")[1].x > 0, "s2 diverge abia dupa stubul comun");
+  assert.equal(on.get("s1")[1].y, 96, "s1 leaves on the source's row");
+  assert.equal(on.get("s2")[1].y, 96, "s2 shares the trunk near the source");
+  assert.ok(on.get("s2")[1].x > 0, "s2 diverges only after the shared stub");
   // without waive: s2 forks right at the pin (leaves the row immediately)
   const off = route([], reqs, { fanoutRadius: 0 });
-  assert.notEqual(off.get("s2")[1].y, 96, "fara raza, s2 nu se suprapune deloc");
+  assert.notEqual(off.get("s2")[1].y, 96, "without a radius, s2 does not overlap at all");
 });
 
-test("halou: traseul pastreaza distanta de obstacol (nu trece peste etichete)", () => {
+test("halo: the route keeps its distance from the obstacle (does not run over labels)", () => {
   // obstacle with the top edge 16px below the wire's straight line
   const obst = { x: 120, y: 112, w: 80, h: 40 };
   const req = [{ id: "e", source: A(0, 96, 1), target: A(320, 96, -1) }];
@@ -217,15 +217,15 @@ test("halou: traseul pastreaza distanta de obstacol (nu trece peste etichete)", 
   for (const pt of withHalo) {
     if (pt.x > 112 && pt.x < 208) {
       assert.ok(pt.y <= 96 - 16 || pt.y >= 112 + 40 + 16,
-        'punct in halou: ' + JSON.stringify(pt));
+        'point in the halo: ' + JSON.stringify(pt));
     }
   }
   // with a reduced halo (8px): the straight line fits
   const slim = route([obst], req, { halo: 8 }).get("e");
-  assert.equal(slim.length, 2, 'cu halou mic firul ramane drept');
+  assert.equal(slim.length, 2, 'with a small halo the wire stays straight');
 });
 
-test("proximitate: la egalitate, traseul prefera canalul larg", () => {
+test("proximity: on a tie, the route prefers the wide channel", () => {
   // two L variants with the same raw cost; the obstacle sits near the corner
   // of the top variant -> the router must choose the bottom variant
   const obst = { x: 96, y: 8, w: 120, h: 48 };
@@ -239,11 +239,11 @@ test("proximitate: la egalitate, traseul prefera canalul larg", () => {
     const near =
       pt.x > obst.x - 24 && pt.x < obst.x + obst.w + 24 &&
       pt.y > obst.y - 24 && pt.y < obst.y + obst.h + 24;
-    assert.ok(!near, 'traseul se lipeste de obstacol: ' + JSON.stringify(pt));
+    assert.ok(!near, 'the route hugs the obstacle: ' + JSON.stringify(pt));
   }
 });
 
-test("blocuri lipite: pinul evadeaza prin golul ingust, nu prin blocuri", () => {
+test("blocks close together: the pin escapes through the narrow gap, not through the blocks", () => {
   // two blocks with a 16px gap between them; the source pin is on the wall in the
   // gap — before, the hard halos plugged the gap and the route fell back to fallback
   const left = { x: 0, y: 64, w: 176, h: 56 };
@@ -253,7 +253,7 @@ test("blocuri lipite: pinul evadeaza prin golul ingust, nu prin blocuri", () => 
     [{ id: "e", source: A(176, 104, 1), target: A(560, 224, -1) }]
   );
   const pts = r.get("e");
-  assert.ok(pts, "trebuie sa existe drum prin gol");
+  assert.ok(pts, "there must be a path through the gap");
   // no point inside any block
   for (const o of [left, right]) {
     for (let i = 0; i < pts.length - 1; i++) {
@@ -262,7 +262,7 @@ test("blocuri lipite: pinul evadeaza prin golul ingust, nu prin blocuri", () => 
         const y = pts[i].y + (pts[i + 1].y - pts[i].y) * s;
         assert.ok(!(x > o.x + 1 && x < o.x + o.w - 1 &&
                     y > o.y + 1 && y < o.y + o.h - 1),
-          'traseul taie blocul la (' + x + ',' + y + ')');
+          'the route cuts through the block at (' + x + ',' + y + ')');
       }
     }
   }
@@ -306,28 +306,28 @@ const OBST_LAYOUT = {
   }],
 };
 
-test("edgeObstacles: eticheta de pin = obstacol MOALE inalt de UN pas de pin", () => {
+test("edgeObstacles: a pin label = a SOFT obstacle ONE pin pitch high", () => {
   const obs = edgeObstacles(OBST_SCENE, OBST_LAYOUT);
   // the node itself + a single text obstacle (x has a label, y is on a wire, z empty)
   assert.equal(obs.length, 2, JSON.stringify(obs));
   const soft = obs.find((o) => o.cost !== undefined);
-  assert.ok(soft, "lipseste obstacolul moale al etichetei");
-  assert.equal(soft.cost, 10, "moale (cost), nu zid");
+  assert.ok(soft, "the label's soft obstacle is missing");
+  assert.equal(soft.cost, 10, "soft (cost), not a wall");
   // pitfall 13: the height = PIN_PITCH (24), otherwise it bleeds into the neighboring row
-  assert.equal(soft.h, 24, "inaltimea trebuie sa fie un pas de pin");
+  assert.equal(soft.h, 24, "the height must be one pin pitch");
   // centered on the pin row (py = 50 + 32 = 82), obstacle of PIN_PITCH/2 upward
   assert.equal(soft.y, 82 - 12);
   // on the west side the text extends to the left of the block
   assert.ok(soft.x < 100 && soft.x + soft.w <= 100, JSON.stringify(soft));
 });
 
-test("edgeObstacles: pinul capat de fir NU e obstacol pentru propriul fir", () => {
+test("edgeObstacles: a pin that is a wire end is NOT an obstacle for its own wire", () => {
   // pitfall 14: with a wire, the y pin's annotation does not appear; without a wire, it appears at EAST
   const noWires = { ...OBST_SCENE, edges: [] };
   const obs = edgeObstacles(noWires, OBST_LAYOUT);
-  assert.equal(obs.length, 3, "fara fir, adnotarea lui y devine obstacol");
+  assert.equal(obs.length, 3, "without a wire, y's annotation becomes an obstacle");
   const east = obs.filter((o) => o.cost !== undefined).find((o) => o.x >= 180);
-  assert.ok(east, "adnotarea pinului de est incepe la marginea dreapta");
+  assert.ok(east, "the east pin's annotation starts at the right edge");
   assert.equal(east.x, 180); // child.x + width
 });
 
@@ -390,7 +390,7 @@ test("edgeObstacles: concat/select decorator is a HARD obstacle even with a wire
 const P = (x, y) => ({ x, y });
 const dotKeys = (m) => junctionDots(m).map((d) => `${d.x},${d.y}`).sort();
 
-test("junctionDots: T (3 directii) = un punct; cot/drept = niciunul", () => {
+test("junctionDots: T (3 directions) = one dot; corner/straight = none", () => {
   // vertical trunk x=100 y=0..80, with a horizontal branch at (100,40)->(200,40)
   // -> T at (100,40); the ends (100,0),(100,80),(200,40) are degree 1
   const m = new Map([["n", [
@@ -405,7 +405,7 @@ test("junctionDots: T (3 directii) = un punct; cot/drept = niciunul", () => {
   assert.deepEqual(dotKeys(new Map([["n", [[P(0, 0), P(80, 0)]]]])), []);
 });
 
-test("junctionDots: incrucisare fara varf NU primeste punct (crossover)", () => {
+test("junctionDots: a crossing without a vertex gets NO dot (crossover)", () => {
   // same net, two segments that cross at (50,50) without a vertex there
   const m = new Map([["n", [
     [P(0, 50), P(100, 50)],
@@ -415,7 +415,7 @@ test("junctionDots: incrucisare fara varf NU primeste punct (crossover)", () => 
   assert.deepEqual(dotKeys(m), []);
 });
 
-test("junctionDots: contopire 4-way la VARF primeste punct (fan-in magistrala)", () => {
+test("junctionDots: a 4-way merge at a VERTEX gets a dot (bus fan-in)", () => {
   // straight horizontal through (50,50) + vertical with a VERTEX at (50,50): 4 directions at one
   // vertex, same net -> real merge (like 3 dout-s into one ch_out port)
   const m = new Map([["n", [
@@ -425,7 +425,7 @@ test("junctionDots: contopire 4-way la VARF primeste punct (fan-in magistrala)",
   assert.deepEqual(dotKeys(m), ["50,50"]);
 });
 
-test("junctionDots: net-uri DIFERITE care se ating nu produc punct", () => {
+test("junctionDots: DIFFERENT nets that touch produce no dot", () => {
   // grouping by net isolates: the apparent T is between two distinct nets
   const m = new Map([
     ["a", [[P(0, 0), P(100, 0)]]],
@@ -434,7 +434,7 @@ test("junctionDots: net-uri DIFERITE care se ating nu produc punct", () => {
   assert.deepEqual(dotKeys(m), []);
 });
 
-test("junctionDots: fanout cu trunchi comun -> punct la bifurcatie", () => {
+test("junctionDots: fanout with a shared trunk -> a dot at the fork", () => {
   // two polylines of the same net that share the trunk (0,0)->(0,40) then
   // split: dedup on the trunk + T at (0,40)
   const m = new Map([["n", [
@@ -444,7 +444,7 @@ test("junctionDots: fanout cu trunchi comun -> punct la bifurcatie", () => {
   assert.deepEqual(dotKeys(m), ["0,40"]);
 });
 
-test("combPolys: fan-in -> pieptene (spina + prize interioare), colturi curate", () => {
+test("combPolys: fan-in -> comb (spine + interior taps), clean corners", () => {
   // 3 sources on the left (x=0) on rows 0/40/80, sink on the right (x=100) BELOW
   // the sources (y=120). The (star) routing has the spine at x=50.
   const ends = [P(0, 0), P(0, 40), P(0, 80), P(100, 120)];
@@ -454,7 +454,7 @@ test("combPolys: fan-in -> pieptene (spina + prize interioare), colturi curate",
     [P(0, 80), P(50, 80), P(50, 120), P(100, 120)],
   ];
   const comb = combPolys(ends, routed);
-  assert.ok(comb, "pieptene construit");
+  assert.ok(comb, "comb built");
   // spine = top tap -> trunk -> bottom tap, a SINGLE polyline (corners
   // with a junction, no gap): (0,0)->(50,0)->(50,120)->(100,120)
   assert.deepEqual(comb[0], [P(0, 0), P(50, 0), P(50, 120), P(100, 120)]);
@@ -464,7 +464,7 @@ test("combPolys: fan-in -> pieptene (spina + prize interioare), colturi curate",
   assert.deepEqual(dotKeys(new Map([["n", comb]])), ["50,40", "50,80"]);
 });
 
-test("combPolys: null cand <3 capete sau toate pe un rand", () => {
+test("combPolys: null when <3 ends or all on one row", () => {
   assert.equal(combPolys([P(0, 0), P(100, 0)], [[P(0, 0), P(100, 0)]]), null);
   assert.equal(
     combPolys([P(0, 0), P(50, 0), P(100, 0)], [[P(50, 0), P(50, 10)]]),
@@ -472,7 +472,7 @@ test("combPolys: null cand <3 capete sau toate pe un rand", () => {
   );
 });
 
-test("alignSnap: port tras la acelasi y ca un port vecin -> ghidaj orizontal", () => {
+test("alignSnap: a port dragged to the same y as a neighboring port -> horizontal guide", () => {
   // port dragged to (200,103); neighboring port at (50,100). y 103 vs 100 -> within threshold 6
   // -> dy=-3, horizontal guide at y=100 from the dragged port (200) to the neighbor (50).
   const a = alignSnap([{ x: 200, y: 103 }], [{ x: 50, y: 100 }], 6);
@@ -485,7 +485,7 @@ test("alignSnap: port tras la acelasi y ca un port vecin -> ghidaj orizontal", (
   assert.equal(a.vLine, null);
 });
 
-test("alignSnap: cel mai apropiat port castiga pe ambele axe", () => {
+test("alignSnap: the closest port wins on both axes", () => {
   // two dragged ports; multiple targets. on X the closest is diff 1, on Y diff 2
   const a = alignSnap(
     [{ x: 100, y: 40 }, { x: 100, y: 64 }],
@@ -498,7 +498,7 @@ test("alignSnap: cel mai apropiat port castiga pe ambele axe", () => {
   assert.ok(a.hLine && a.hLine.y === 42);
 });
 
-test("alignSnap: niciun port vecin in prag -> fara aliniere", () => {
+test("alignSnap: no neighboring port within the threshold -> no alignment", () => {
   const a = alignSnap([{ x: 10, y: 10 }], [{ x: 200, y: 200 }], 6);
   assert.equal(a.dx, 0);
   assert.equal(a.dy, 0);
@@ -506,13 +506,13 @@ test("alignSnap: niciun port vecin in prag -> fara aliniere", () => {
   assert.equal(a.hLine, null);
 });
 
-test("alignSnap: fara porturi trase (bloc fara porturi) -> fara aliniere", () => {
+test("alignSnap: no dragged ports (a block without ports) -> no alignment", () => {
   const a = alignSnap([], [{ x: 50, y: 50 }], 6);
   assert.equal(a.vLine, null);
   assert.equal(a.hLine, null);
 });
 
-test("pinTipOffsets: capatul pinului cu marcator la -MARKER_STUB, normal la +STUB", () => {
+test("pinTipOffsets: the tip of a pin with a marker at -MARKER_STUB, of a normal one at +STUB", () => {
   // node width 100; west pin with a concat marker, east pin normal
   const scene = { nodes: [{ pins: [
     { id: "n.a", noteKind: "concat" }, { id: "n.b" },
@@ -528,7 +528,7 @@ test("pinTipOffsets: capatul pinului cu marcator la -MARKER_STUB, normal la +STU
   assert.deepEqual(pts, [{ x: -48, y: 40 }, { x: 110, y: 40 }]);
 });
 
-test("pinTipOffsets: latura vine din geometrie (rasturnare) + nod fara porturi", () => {
+test("pinTipOffsets: the side comes from the geometry (flip) + a node without ports", () => {
   // the same pin moved to the EAST side (center > cw/2) -> endpoint at cw+STUB
   const scene = { nodes: [{ pins: [{ id: "n.a" }] }], boundary: [] };
   const flipped = { children: [
@@ -540,4 +540,4 @@ test("pinTipOffsets: latura vine din geometrie (rasturnare) + nod fara porturi",
   assert.deepEqual(m.get("empty"), []); // no ports -> empty list
 });
 
-console.log(`\ntest-router: ${passed} teste au trecut.`);
+console.log(`\ntest-router: ${passed} tests passed.`);

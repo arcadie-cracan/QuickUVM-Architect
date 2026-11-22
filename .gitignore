@@ -1,4 +1,4 @@
-# dependente si artefacte de build
+# dependencies and build artefacts
 node_modules/
 dist/
 *.vsix
@@ -7,18 +7,18 @@ dist/
 __pycache__/
 .pytest_cache/
 
-# clona externa de validare (pulp-platform/common_cells, licenta proprie —
-# vezi examples-bender/README.md; exista doar local, nu se distribuie)
+# the external validation clone (pulp-platform/common_cells, its own licence —
+# see examples-bender/README.md; it exists only locally, it is not distributed)
 examples-bender/common_cells/
 
-# artefacte de lucru din sesiunile de validare interactiva: config-urile
-# QuickUVM, sidecar-ul de layout si testbench-urile generate le CREEAZA
-# utilizatorul/tutorialul pas cu pas — nu se publica
+# working artefacts of the interactive validation sessions: the QuickUVM
+# configs, the layout sidecar and the generated testbenches are CREATED by
+# the user / the tutorial step by step — they are not published
 *.quickuvm.yaml
 **/quickuvm-architect.yaml
 examples*/tb/
 
-# stare locala Claude Code (permisiuni per-masina)
+# local Claude Code state (per-machine permissions)
 .claude/settings.local.json
 
 # Python venv for the backend (pyslang); see backend/requirements.txt

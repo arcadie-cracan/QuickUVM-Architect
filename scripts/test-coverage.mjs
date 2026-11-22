@@ -40,7 +40,7 @@ test("parseBinSpec: the three legal forms, exactly one each", () => {
 
 test("parseBinSpec: refuses what QuickUVM would refuse (or SV would cover silently)", () => {
   for (const bad of ["", "   ", "abc", "-1", "1..", "..7", "1..2..3", "1,,2", "1,x", "7..3"]) {
-    assert.equal(cov.parseBinSpec(bad), null, `"${bad}" ar fi trebuit respins`);
+    assert.equal(cov.parseBinSpec(bad), null, `"${bad}" should have been refused`);
   }
 });
 

@@ -39,11 +39,11 @@ function test(name, fn) {
     console.log(`  ok    ${name}`);
   } catch (e) {
     failures++;
-    console.error(`  ESEC  ${name}\n        ${e.message}`);
+    console.error(`  FAIL  ${name}\n        ${e.message}`);
   }
 }
 
-test("schelet nou: YAML valid cu project/clock/tests", () => {
+test("new skeleton: valid YAML with project/clock/tests", () => {
   const text = ops.newConfigText("demo");
   const cfg = ops.parseQuvm(text);
   assert.equal(cfg.project.name, "demo");
@@ -51,7 +51,7 @@ test("schelet nou: YAML valid cu project/clock/tests", () => {
   assert.equal(cfg.tests[0].name, "demo_test");
 });
 
-test("setDut: scrie dut-ul si pastreaza restul", () => {
+test("setDut: writes the dut and keeps the rest", () => {
   const text = ops.setDut(ops.newConfigText("demo"), DUT);
   const cfg = ops.parseQuvm(text);
   assert.equal(cfg.dut.name, "soc_top");
@@ -64,7 +64,7 @@ test("setDut: scrie dut-ul si pastreaza restul", () => {
   assert.equal(cfg.project.name, "demo");
 });
 
-test("setDut: abaterile de reset merg in cheia TOP-LEVEL `reset:` (1.0)", () => {
+test("setDut: the reset deviations go into the TOP-LEVEL `reset:` key (1.0)", () => {
   let text = ops.setDut(ops.newConfigText("demo"), {
     ...DUT, resetActiveLow: false,
   });
@@ -215,7 +215,7 @@ test("setDut: a combinational DUT never gets `external` (quick-uvm refuses the p
   assert.equal(ops.parseQuvm(back).reset, undefined);
 });
 
-test("setDut: o LISTA `reset:` scrisa de mana nu se atinge", () => {
+test("setDut: a hand-written `reset:` LIST is not touched", () => {
   // (the base has no reset port, so no `reset:` mapping is there to collide with)
   const withList = ops.setDut(ops.newConfigText("demo"), { ...DUT, reset: null }) +
     "reset:\n  - {name: rst_n}\n  - {name: wrst_n, clock: wclk}\n";
@@ -226,7 +226,7 @@ test("setDut: o LISTA `reset:` scrisa de mana nu se atinge", () => {
   assert.deepEqual(cfg.reset, [{ name: "rst_n" }, { name: "wrst_n", clock: "wclk" }]);
 });
 
-test("setDut combinational: reset gol + combinational true", () => {
+test("setDut combinational: empty reset + combinational true", () => {
   const text = ops.setDut(ops.newConfigText("demo"), {
     ...DUT,
     module: "adder",
@@ -239,23 +239,23 @@ test("setDut combinational: reset gol + combinational true", () => {
   assert.equal(cfg.dut.combinational, true);
 });
 
-test("setDut pastreaza comentariile si campurile necunoscute", () => {
+test("setDut keeps the comments and the unknown fields", () => {
   const src = [
-    "# comentariul meu important",
+    "# my important comment",
     "project: {name: x}",
     "analysis:",
-    "  coverage: [a]   # de pastrat",
-    "camp_necunoscut: {k: v}",
+    "  coverage: [a]   # to be kept",
+    "unknown_field: {k: v}",
     "",
   ].join("\n");
   const text = ops.setDut(src, DUT);
-  assert.match(text, /comentariul meu important/);
-  assert.match(text, /de pastrat/);
-  assert.match(text, /camp_necunoscut/);
+  assert.match(text, /my important comment/);
+  assert.match(text, /to be kept/);
+  assert.match(text, /unknown_field/);
   assert.equal(ops.parseQuvm(text).dut.name, "soc_top");
 });
 
-test("createAgent: forma din docs/03, flow pe porturi", () => {
+test("createAgent: the shape from docs/03, flow style on the ports", () => {
   const text = ops.createAgent(ops.newConfigText("demo"), {
     name: "drv",
     inputs: [
@@ -278,7 +278,7 @@ test("createAgent: forma din docs/03, flow pe porturi", () => {
   assert.match(text, /\{ name: din, width: 8 \}/); // flow style, one line
 });
 
-test("createAgent: nume duplicat => eroare", () => {
+test("createAgent: duplicate name => error", () => {
   const text = ops.createAgent(ops.newConfigText("demo"), {
     name: "drv",
     inputs: [],
@@ -288,7 +288,7 @@ test("createAgent: nume duplicat => eroare", () => {
     /already exists/);
 });
 
-test("createAgent: portul inout merge in ports.inouts (schema §1.5)", () => {
+test("createAgent: an inout port goes into ports.inouts (schema §1.5)", () => {
   const text = ops.createAgent(ops.newConfigText("demo"), {
     name: "sda",
     inputs: [{ name: "scl_i", width: 1 }],
@@ -304,19 +304,19 @@ test("createAgent: portul inout merge in ports.inouts (schema §1.5)", () => {
   assert.deepEqual(a.ports.inouts[1], { name: "bus", width: 4 });
   // an inout is NOT a read-only observation, so no randomize:false is added
   assert.equal(a.ports.inouts[0].randomize, undefined);
-  assert.ok(/inouts:/.test(text), `inouts nu s-a scris:\n${text}`);
-  assert.ok(/\{ name: bus, width: 4 \}/.test(text), "inout nu e flow");
+  assert.ok(/inouts:/.test(text), `inouts was not written:\n${text}`);
+  assert.ok(/\{ name: bus, width: 4 \}/.test(text), "the inout is not flow style");
 });
 
-test("createAgent: fara inouts nu emite cheia (byte-identic cu forma veche)", () => {
+test("createAgent: without inouts the key is not emitted (byte-identical to the old shape)", () => {
   const spec = { name: "drv", inputs: [{ name: "din", width: 8 }], outputs: [] };
   const withUndef = ops.createAgent(ops.newConfigText("demo"), spec);
   const withEmpty = ops.createAgent(ops.newConfigText("demo"), { ...spec, inouts: [] });
-  assert.ok(!/inouts:/.test(withUndef), "inouts nu trebuie emisa fara porturi");
+  assert.ok(!/inouts:/.test(withUndef), "inouts must not be emitted without ports");
   assert.equal(withEmpty, withUndef); // [] and undefined produce identical YAML
 });
 
-test("ignorePorts: uniune sortata, fara duplicate; unignore curata blocul", () => {
+test("ignorePorts: sorted union, no duplicates; unignore cleans the block", () => {
   let text = ops.ignorePorts(ops.newConfigText("demo"), ["scan_en", "dbg"]);
   text = ops.ignorePorts(text, ["dbg", "test_mode"]);
   assert.deepEqual(ops.parseQuvm(text).dut.unverified_ports, [
@@ -336,7 +336,7 @@ test("setAgentPortWidth: an inout port is found too (docs/08 R16: the reset on a
   assert.ok(/width: 4/.test(ops.setAgentPortWidth(out, "cmd", "io", 4)));
 });
 
-test("setAgentPortWidth: actualizeaza si stie sa omita width=1", () => {
+test("setAgentPortWidth: updates, and knows to omit width=1", () => {
   let text = ops.createAgent(ops.newConfigText("demo"), {
     name: "drv",
     inputs: [{ name: "din", width: 8 }],
@@ -346,11 +346,11 @@ test("setAgentPortWidth: actualizeaza si stie sa omita width=1", () => {
   assert.equal(ops.parseQuvm(text).agents[0].ports.inputs[0].width, 16);
   text = ops.setAgentPortWidth(text, "drv", "din", 1);
   assert.equal(ops.parseQuvm(text).agents[0].ports.inputs[0].width, undefined);
-  assert.throws(() => ops.setAgentPortWidth(text, "drv", "nu_exista", 4),
+  assert.throws(() => ops.setAgentPortWidth(text, "drv", "no_such_port", 4),
     /does not exist/);
 });
 
-test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate refuzate", () => {
+test("createSubenvs: flow params only when there are values, comments kept, duplicates refused", () => {
   let text = ops.setDut(ops.newConfigText("soc"), DUT);
   text = ops.createSubenvs(text, [
     { name: "u_add", config: "adder.quickuvm.yaml", params: { W: 8 } },
@@ -369,7 +369,7 @@ test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate 
     config: "chan.quickuvm.yaml",
   });
   // params on a single line (flow map) and the skeleton comments intact
-  assert.ok(/params: \{ ?W: 8 ?\}/.test(text), `params nu e flow:\n${text}`);
+  assert.ok(/params: \{ ?W: 8 ?\}/.test(text), `params is not flow style:\n${text}`);
   assert.ok(text.includes("# QuickUVM configuration — created by QuickUVM Architect"));
   // composition requires layout: packaged (validated by QuickUVM) — ensured by the mutation
   assert.equal(cfg.layout, "packaged");
@@ -387,7 +387,7 @@ test("createSubenvs: params flow doar cu valori, comentarii pastrate, duplicate 
   );
 });
 
-test("topConfigPaths: scaffold-urile copiilor nu devin config-ul activ", () => {
+test("topConfigPaths: the children's scaffolds do not become the active config", () => {
   // the real regression scenario: chan.quickuvm.yaml (createSubenv scaffold)
   // wins alphabetically, but is referenced by demo_top -> the top stays demo_top
   let top = ops.setDut(ops.newConfigText("demo_top"), DUT);
@@ -422,7 +422,7 @@ test("topConfigPaths: scaffold-urile copiilor nu devin config-ul activ", () => {
   assert.equal(tops3.length, 2);
 });
 
-test("isComposedChild: copilul compus e detectat (avertismentul K2 #2)", () => {
+test("isComposedChild: the composed child is detected (the K2 #2 warning)", () => {
   let top = ops.setDut(ops.newConfigText("demo_top"), DUT);
   top = ops.createSubenvs(top, [
     { name: "g_ch_0_u_ch", config: "chan.quickuvm.yaml", params: { W: 16 } },
@@ -446,7 +446,7 @@ test("isComposedChild: copilul compus e detectat (avertismentul K2 #2)", () => {
   assert.equal(ops.isComposedChild([files[0]], files[0].path), false);
 });
 
-test("addScoreboard: two-stream OOO, flow map, nume duplicat refuzat", () => {
+test("addScoreboard: two-stream OOO, flow map, duplicate name refused", () => {
   let text = ops.setDut(ops.newConfigText("soc"), DUT);
   text = ops.addScoreboard(text, {
     name: "sbd",
@@ -463,7 +463,7 @@ test("addScoreboard: two-stream OOO, flow map, nume duplicat refuzat", () => {
     match: "out_of_order",
     match_key: "id",
   });
-  assert.ok(/- \{ ?name: sbd/.test(text), `scoreboard nu e flow:\n${text}`);
+  assert.ok(/- \{ ?name: sbd/.test(text), `the scoreboard is not flow style:\n${text}`);
   // single-stream: monitor/match omitted
   text = ops.addScoreboard(text, { name: "sb2", source: "cmd", match: "in_order" });
   assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[1], {
@@ -476,7 +476,7 @@ test("addScoreboard: two-stream OOO, flow map, nume duplicat refuzat", () => {
   );
 });
 
-test("addCoverage: idempotent, pastreaza scoreboards", () => {
+test("addCoverage: idempotent, keeps the scoreboards", () => {
   let text = ops.addScoreboard(ops.setDut(ops.newConfigText("s"), DUT), {
     name: "sbd",
     source: "cmd",
@@ -489,7 +489,7 @@ test("addCoverage: idempotent, pastreaza scoreboards", () => {
   assert.equal(cfg.analysis.scoreboards.length, 1);
 });
 
-test("addVirtualSequence: mode parallel, pasi flow, sequential omite mode", () => {
+test("addVirtualSequence: mode parallel, flow steps, sequential omits mode", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addVirtualSequence(text, {
     name: "smoke",
@@ -506,7 +506,7 @@ test("addVirtualSequence: mode parallel, pasi flow, sequential omite mode", () =
     { agent: "cmd", sequence: "cmd_seq" },
     { agent: "rsp", sequence: "rsp_seq" },
   ]);
-  assert.ok(/- \{ ?agent: cmd/.test(text), `pasii nu sunt flow:\n${text}`);
+  assert.ok(/- \{ ?agent: cmd/.test(text), `the steps are not flow style:\n${text}`);
   // sequential: mode omitted (byte-identical with the default)
   text = ops.addVirtualSequence(text, {
     name: "seq2",
@@ -520,7 +520,7 @@ test("addVirtualSequence: mode parallel, pasi flow, sequential omite mode", () =
   );
 });
 
-test("round-trip: YAML-ul generat trece prin parseQuvm nealterat semantic", () => {
+test("round-trip: the generated YAML goes through parseQuvm semantically unaltered", () => {
   let text = ops.newConfigText("demo");
   text = ops.setDut(text, DUT);
   text = ops.createAgent(text, {
@@ -535,7 +535,7 @@ test("round-trip: YAML-ul generat trece prin parseQuvm nealterat semantic", () =
   assert.deepEqual(again.dut.unverified_ports, ["scan_en"]);
 });
 
-test("removeScoreboard: sterge dupa nume, PASTREAZA blocul analysis gol, idempotent", () => {
+test("removeScoreboard: deletes by name, KEEPS the empty analysis block, idempotent", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addScoreboard(text, { name: "sbd", source: "cmd" });
   text = ops.addScoreboard(text, { name: "sb2", source: "rsp" });
@@ -549,14 +549,14 @@ test("removeScoreboard: sterge dupa nume, PASTREAZA blocul analysis gol, idempot
   // scoreboard + auto-wired coverage (proven in test:e2e — see keepAnalysis)
   text = ops.removeScoreboard(text, "sb2");
   assert.deepEqual(ops.parseQuvm(text).analysis, {});
-  assert.ok(!/scoreboards:/.test(text), `lista goala nu s-a curatat:\n${text}`);
-  assert.ok(/analysis:/.test(text), `blocul analysis a fost sters:\n${text}`);
+  assert.ok(!/scoreboards:/.test(text), `the empty list was not cleaned up:\n${text}`);
+  assert.ok(/analysis:/.test(text), `the analysis block was deleted:\n${text}`);
   // idempotent: nonexistent name -> unchanged text (apply becomes a no-op)
   const fix = ops.setDut(ops.newConfigText("s"), DUT);
   assert.equal(ops.removeScoreboard(fix, "nope"), fix);
 });
 
-test("removeCoverage: sterge un agent, pastreaza restul si blocul analysis gol", () => {
+test("removeCoverage: deletes one agent, keeps the rest and the empty analysis block", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addCoverage(text, "cmd");
   text = ops.addCoverage(text, "rsp");
@@ -565,10 +565,10 @@ test("removeCoverage: sterge un agent, pastreaza restul si blocul analysis gol",
   text = ops.removeCoverage(text, "rsp");
   // the `analysis` block stays empty (otherwise QuickUVM revives the defaults)
   assert.deepEqual(ops.parseQuvm(text).analysis, {});
-  assert.ok(/analysis:/.test(text), `blocul analysis a fost sters:\n${text}`);
+  assert.ok(/analysis:/.test(text), `the analysis block was deleted:\n${text}`);
 });
 
-test("removeVirtualSequence: sterge dupa nume, curata cheia goala", () => {
+test("removeVirtualSequence: deletes by name, cleans up the empty key", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addVirtualSequence(text, {
     name: "smoke", mode: "sequential", steps: [{ agent: "cmd", sequence: "cmd_seq" }],
@@ -585,7 +585,7 @@ test("removeVirtualSequence: sterge dupa nume, curata cheia goala", () => {
   assert.equal(ops.parseQuvm(text).virtual_sequences, undefined);
 });
 
-test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq", () => {
+test("removeAgent: cascade over coverage, scoreboards (source+monitor) and vseq", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, { name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [] });
   text = ops.createAgent(text, { name: "rsp", inputs: [], outputs: [{ name: "dout", width: 8 }] });
@@ -612,59 +612,59 @@ test("removeAgent: cascada peste coverage, scoreboards (source+monitor) si vseq"
   assert.deepEqual(cfg.virtual_sequences[0].body, [{ agent: "rsp", sequence: "rsp_seq" }]);
 });
 
-test("addVipAgent / setSubenvNamespace: consum prin referinta + prefixare H1", () => {
+test("addVipAgent / setSubenvNamespace: consumption by reference + H1 prefixing", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addVipAgent(text, "io", "../vip/gen/f2_iovip.qvip");
-  // o intrare prin REFERINTA poarta DOAR name + from_vip (restul vine din manifest)
+  // an entry by REFERENCE carries ONLY name + from_vip (the rest comes from the manifest)
   assert.deepEqual(ops.parseQuvm(text).agents[0], {
     name: "io", from_vip: "../vip/gen/f2_iovip.qvip",
   });
-  assert.ok(/\{ name: io, from_vip: /.test(text), `intrarea nu e flow:\n${text}`);
-  // consumul prin referinta cere `layout: packaged` (VIP-ul E un pachet extern) —
-  // op-ul il pune, ca `createSubenvs`, in loc sa esueze abia la generare
+  assert.ok(/\{ name: io, from_vip: /.test(text), `the entry is not flow style:\n${text}`);
+  // consumption by reference requires `layout: packaged` (the VIP IS an external package) —
+  // the op sets it, like `createSubenvs`, instead of failing only at generation
   assert.equal(ops.parseQuvm(text).layout, "packaged");
   assert.throws(() => ops.addVipAgent(text, "io", "x.qvip"), /already exists/);
-  // convietuieste cu agentii declarati normal
+  // it coexists with the normally declared agents
   text = ops.createAgent(text, { name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [] });
   assert.deepEqual(ops.parseQuvm(text).agents.map((a) => a.name), ["io", "cmd"]);
 
-  // namespace: absent = auto (prefixeaza doar cand acelasi config e compus de >=2 ori)
+  // namespace: absent = auto (prefixes only when the same config is composed >=2 times)
   let top = ops.setDut(ops.newConfigText("sys"), { ...DUT, combinational: true });
   top = ops.createSubenvs(top, [
     { name: "u_a", config: "blk.quickuvm.yaml", params: {} },
     { name: "u_b", config: "blk.quickuvm.yaml", params: {} },
   ]);
-  assert.equal("namespace" in ops.parseQuvm(top).subenvs[0], false, "auto = cheia absenta");
+  assert.equal("namespace" in ops.parseQuvm(top).subenvs[0], false, "auto = the key is absent");
   top = ops.setSubenvNamespace(top, "u_a", true);
   assert.equal(ops.parseQuvm(top).subenvs[0].namespace, true);
   top = ops.setSubenvNamespace(top, "u_a", "blkA");
   assert.equal(ops.parseQuvm(top).subenvs[0].namespace, "blkA");
   top = ops.setSubenvNamespace(top, "u_a", false);
   assert.equal(ops.parseQuvm(top).subenvs[0].namespace, false);
-  top = ops.setSubenvNamespace(top, "u_a", undefined); // inapoi la auto
+  top = ops.setSubenvNamespace(top, "u_a", undefined); // back to auto
   assert.equal("namespace" in ops.parseQuvm(top).subenvs[0], false);
   assert.throws(() => ops.setSubenvNamespace(top, "nope", true), /does not exist/);
 });
 
-test("setAgentPortField: open_drain trage pullup-ul dupa el si nu-l lasa scos", () => {
+test("setAgentPortField: open_drain pulls the pullup along and does not let it be removed", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "i2c", inputs: [], outputs: [], inouts: [{ name: "sda", width: 1 }, { name: "bus", width: 4 }],
   });
-  // open_drain: true aprinde SI pullup-ul — o linie open-drain fara pullup pluteste
-  // in X cand toti elibereaza (validatorul QuickUVM: „not a style preference")
+  // open_drain: true turns the pullup on TOO — an open-drain line without a pullup floats
+  // to X when everyone releases it (the QuickUVM validator: "not a style preference")
   text = ops.setAgentPortField(text, "i2c", "sda", "open_drain", true);
   let p = ops.parseQuvm(text).agents[0].ports.inouts[0];
   assert.equal(p.open_drain, true);
-  assert.equal(p.pullup, true, "pullup-ul trebuie sa vina cu open_drain");
-  // scoaterea pullup-ului de pe un port open-drain e REFUZATA
+  assert.equal(p.pullup, true, "the pullup must come with open_drain");
+  // removing the pullup from an open-drain port is REFUSED
   assert.throws(() => ops.setAgentPortField(text, "i2c", "sda", "pullup", false), /floats to X/);
-  // open_drain doar pe 1 bit
+  // open_drain on 1 bit only
   assert.throws(
     () => ops.setAgentPortField(text, "i2c", "bus", "open_drain", true),
     /1-bit only/
   );
-  // stingerea lui open_drain ia si pullup-ul
+  // turning open_drain off takes the pullup too
   text = ops.setAgentPortField(text, "i2c", "sda", "open_drain", false);
   p = ops.parseQuvm(text).agents[0].ports.inouts[0];
   assert.equal("open_drain" in p, false);
@@ -672,28 +672,28 @@ test("setAgentPortField: open_drain trage pullup-ul dupa el si nu-l lasa scos", 
   assert.throws(() => ops.setAgentPortField(text, "i2c", "nope", "pullup", true), /does not exist/);
 });
 
-test("setAgentPortField: enum/type sunt EXCLUSIVE; randomize/constraint", () => {
+test("setAgentPortField: enum/type are EXCLUSIVE; randomize/constraint", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "cmd", inputs: [{ name: "op", width: 2 }], outputs: [{ name: "dout", width: 8 }],
   });
   text = ops.setAgentPortField(text, "cmd", "op", "enum", { IDLE: 0, BUSY: 1 });
   assert.deepEqual(ops.parseQuvm(text).agents[0].ports.inputs[0].enum, { IDLE: 0, BUSY: 1 });
-  assert.ok(/enum: \{ IDLE: 0, BUSY: 1 \}/.test(text), `enum nu e flow:\n${text}`);
-  // setarea lui `type` scoate `enum` (specificatoare exclusive)
+  assert.ok(/enum: \{ IDLE: 0, BUSY: 1 \}/.test(text), `the enum is not flow style:\n${text}`);
+  // setting `type` removes `enum` (exclusive specifiers)
   text = ops.setAgentPortField(text, "cmd", "op", "type", "pkg::op_e");
   let p = ops.parseQuvm(text).agents[0].ports.inputs[0];
   assert.equal(p.type, "pkg::op_e");
-  assert.equal("enum" in p, false, "enum ar fi trebuit scos de type");
+  assert.equal("enum" in p, false, "enum should have been removed by type");
   text = ops.setAgentPortField(text, "cmd", "op", "type", "");
   assert.equal("type" in ops.parseQuvm(text).agents[0].ports.inputs[0], false);
 
-  // `packed_dims` scris de mana nu se pierde tacit: setarea lui enum e REFUZATA
+  // a hand-written `packed_dims` is not lost silently: setting enum is REFUSED
   const hand = text.replace(/\{ name: op, width: 2 \}/, "{ name: op, width: 2, packed_dims: [2, 4] }");
-  assert.notEqual(hand, text, "fixture-ul packed_dims nu s-a aplicat");
+  assert.notEqual(hand, text, "the packed_dims fixture was not applied");
   assert.throws(() => ops.setAgentPortField(hand, "cmd", "op", "enum", { A: 0 }), /exclusive/);
 
-  // randomize: true e default -> cheia dispare; constraint se scrie verbatim
+  // randomize: true is the default -> the key disappears; constraint is written verbatim
   text = ops.setAgentPortField(text, "cmd", "op", "randomize", false);
   assert.equal(ops.parseQuvm(text).agents[0].ports.inputs[0].randomize, false);
   text = ops.setAgentPortField(text, "cmd", "op", "randomize", true);
@@ -702,17 +702,17 @@ test("setAgentPortField: enum/type sunt EXCLUSIVE; randomize/constraint", () => 
   assert.equal(ops.parseQuvm(text).agents[0].ports.inputs[0].constraint, "op inside {[0:2]}");
 });
 
-test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () => {
+test("clock domains: mapping <-> list, add/edit/remove, cascade onto the agents", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
-  // newConfigText scrie clock: {period, unit} (o MAPARE)
+  // newConfigText writes clock: {period, unit} (a MAPPING)
   assert.equal(Array.isArray(ops.parseQuvm(text).clock), false);
 
-  // primul add converteste maparea intr-o LISTA, purtand ceasul curent ca prim domeniu
+  // the first add converts the mapping into a LIST, carrying the current clock as the first domain
   text = ops.addClockDomain(text, "sck");
   let clk = ops.parseQuvm(text).clock;
-  assert.ok(Array.isArray(clk), "clock ar fi trebuit sa devina lista");
+  assert.ok(Array.isArray(clk), "clock should have become a list");
   assert.deepEqual(clk.map((d) => d.name), ["clk", "sck"]);
-  assert.equal(clk[0].period, 10); // campurile maparii au fost pastrate
+  assert.equal(clk[0].period, 10); // the mapping's fields were kept
   assert.equal(clk[0].unit, "ns");
   assert.throws(() => ops.addClockDomain(text, "sck"), /already exists/);
 
@@ -721,27 +721,27 @@ test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () =
   clk = ops.parseQuvm(text).clock;
   assert.equal(clk[1].period, 20);
   assert.equal(clk[1].source, "dut");
-  text = ops.setClockDomainField(text, "sck", "source", "tb"); // default -> sters
+  text = ops.setClockDomainField(text, "sck", "source", "tb"); // default -> deleted
   assert.equal("source" in ops.parseQuvm(text).clock[1], false);
-  // redenumire: unica, obligatorie
+  // rename: unique, required
   assert.throws(() => ops.setClockDomainField(text, "sck", "name", "clk"), /already exists/);
   assert.throws(() => ops.setClockDomainField(text, "sck", "name", ""), /is required/);
 
-  // un agent care foloseste domeniul blocheaza stergerea (QuickUVM refuza clock necunoscut)
+  // an agent that uses the domain blocks the deletion (QuickUVM refuses an unknown clock)
   let used = text.replace(/(\n\s+)interface: cmd_if/, "$1clock: sck$1interface: cmd_if");
-  // DUT nu are agent „cmd" aici; construim unul cu clock: sck prin editare directa
+  // the DUT has no "cmd" agent here; we build one with clock: sck by direct editing
   used = ops.createAgent(text, { name: "spi", inputs: [{ name: "din", width: 8 }], outputs: [] });
   used = ops.setAgentField(used, "spi", "clock", "sck");
   assert.throws(() => ops.removeClockDomain(used, "sck"), /is used by/);
 
-  // remove ok cand nu-l foloseste nimeni
+  // remove is fine when nobody uses it
   text = ops.removeClockDomain(text, "sck");
   assert.deepEqual(ops.parseQuvm(text).clock.map((d) => d.name), ["clk"]);
-  // ultimul domeniu: nu se sterge, se colapseaza
+  // the last domain: it is not deleted, it is collapsed
   assert.throws(() => ops.removeClockDomain(text, "clk"), /is the only (?:clock|reset) domain/);
-  assert.equal(ops.removeClockDomain(text, "nope"), text); // no-op byte-identic
+  assert.equal(ops.removeClockDomain(text, "nope"), text); // byte-identical no-op
 
-  // colapsare: lista de 1 -> mapare, numele redundant dispare
+  // collapse: a list of 1 -> mapping, the redundant name disappears
   text = ops.collapseClocks(text);
   assert.equal(Array.isArray(ops.parseQuvm(text).clock), false);
   assert.equal("name" in ops.parseQuvm(text).clock, false);
@@ -749,55 +749,55 @@ test("clock domains: mapping <-> list, add/edit/remove, cascada pe agenti", () =
   assert.throws(() => ops.collapseClocks(twoAgain), /exactly one clock domain/);
 });
 
-test("reset domains: conversie, invariantul dut.reset, redenumire in cascada", () => {
+test("reset domains: conversion, the dut.reset invariant, cascading rename", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, { name: "a", inputs: [{ name: "din", width: 8 }], outputs: [] });
 
-  // primul add converteste in lista; primul domeniu poarta NUMELE portului dut.reset,
-  // ca `dut.reset` (care sub lista numeste un DOMENIU) sa ramana valid
+  // the first add converts into a list; the first domain carries the NAME of the dut.reset port,
+  // so that `dut.reset` (which under a list names a DOMAIN) stays valid
   text = ops.addResetDomain(text, "srst_n");
   let cfg = ops.parseQuvm(text);
   assert.deepEqual(cfg.reset.map((d) => d.name), ["rst_n", "srst_n"]);
   assert.equal(cfg.dut.reset, "rst_n");
   assert.throws(() => ops.addResetDomain(text, "srst_n"), /already exists/);
 
-  // REDENUMIRE in cascada: dut.reset si agentii legati de domeniu il urmeaza
+  // cascading RENAME: dut.reset and the agents bound to the domain follow it
   const bound = ops.setAgentField(text, "a", "reset", "srst_n");
   const renamed = ops.setResetDomainField(bound, "srst_n", "name", "sync_rst_n");
   cfg = ops.parseQuvm(renamed);
   assert.deepEqual(cfg.reset.map((d) => d.name), ["rst_n", "sync_rst_n"]);
-  assert.equal(cfg.agents[0].reset, "sync_rst_n", "agentul nu a urmat redenumirea");
+  assert.equal(cfg.agents[0].reset, "sync_rst_n", "the agent did not follow the rename");
   const renamedDut = ops.setResetDomainField(bound, "rst_n", "name", "por_n");
-  assert.equal(ops.parseQuvm(renamedDut).dut.reset, "por_n", "dut.reset nu a urmat redenumirea");
+  assert.equal(ops.parseQuvm(renamedDut).dut.reset, "por_n", "dut.reset did not follow the rename");
 
-  // DEFAULTUL E PER CAMP: active_low e implicit TRUE, external implicit FALSE. Un
-  // singur test „valoare falsy => default" ar sterge exact `active_low: false`,
-  // adica abaterea ceruta de utilizator.
+  // THE DEFAULT IS PER FIELD: active_low defaults to TRUE, external defaults to FALSE. A
+  // single "falsy value => default" test would delete exactly `active_low: false`,
+  // that is, the deviation the user asked for.
   text = ops.setResetDomainField(text, "srst_n", "active_low", false);
   assert.equal(ops.parseQuvm(text).reset[1].active_low, false,
-    "active_low: false e o ABATERE, nu un default — trebuie scrisa");
+    "active_low: false is a DEVIATION, not a default — it must be written");
   text = ops.setResetDomainField(text, "srst_n", "active_low", true);
   assert.equal("active_low" in ops.parseQuvm(text).reset[1], false);
-  // pe maparea simpla, external: false e defaultul si dispare
+  // on the plain mapping, external: false is the default and disappears
   let single = ops.setDut(ops.newConfigText("s"), DUT);
   single = ops.setResetDomainField(single, "rst_n", "external", true);
   assert.equal(ops.parseQuvm(single).reset.external, true);
   single = ops.setResetDomainField(single, "rst_n", "external", false);
-  assert.equal(ops.parseQuvm(single).reset, undefined, "maparea golita ar fi trebuit stearsa");
+  assert.equal(ops.parseQuvm(single).reset, undefined, "the emptied mapping should have been deleted");
 
-  // stergere: blocata de dut.reset, de un agent, si pe ultimul domeniu
+  // deletion: blocked by dut.reset, by an agent, and on the last domain
   assert.throws(() => ops.removeResetDomain(text, "rst_n"), /dut\.reset/);
   assert.throws(() => ops.removeResetDomain(bound, "srst_n"), /is used by/);
   text = ops.removeResetDomain(text, "srst_n");
   assert.deepEqual(ops.parseQuvm(text).reset.map((d) => d.name), ["rst_n"]);
   assert.throws(() => ops.removeResetDomain(text, "rst_n"), /is the only (?:clock|reset) domain/);
 
-  // colapsare: numele redevine PORTUL dut.reset, iar `reset:` de pe agenti dispare
+  // collapse: the name becomes the dut.reset PORT again, and `reset:` on the agents disappears
   const collapsed = ops.collapseResets(ops.setAgentField(text, "a", "reset", "rst_n"));
   assert.equal(Array.isArray(ops.parseQuvm(collapsed).reset), false);
   assert.equal(ops.parseQuvm(collapsed).dut.reset, "rst_n");
   assert.equal("reset" in ops.parseQuvm(collapsed).agents[0], false,
-    "`reset:` de pe agent nu are sens fara lista de domenii");
+    "`reset:` on an agent makes no sense without the domain list");
 });
 
 test("reset domains: `external: true` converts (a list is always testbench-driven)", () => {
@@ -860,7 +860,7 @@ test("setResetDomainField: a no-op returns the ORIGINAL text (the reset-undriven
   );
 });
 
-test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () => {
+test("rich coverage model: upgrade/downgrade, coverpoints, bins, crosses, goal", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "cmd",
@@ -868,9 +868,9 @@ test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () =
     outputs: [{ name: "dout", width: 8 }],
   });
   text = ops.addCoverage(text, "cmd");
-  assert.deepEqual(ops.parseQuvm(text).analysis.coverage, ["cmd"]); // forma simpla
+  assert.deepEqual(ops.parseQuvm(text).analysis.coverage, ["cmd"]); // the simple form
 
-  // upgrade: modelul bogat CERE cel putin un coverpoint, deci primul vine cu el
+  // upgrade: the rich model REQUIRES at least one coverpoint, so the first one comes with it
   text = ops.upgradeCoverage(text, "cmd", "din");
   assert.deepEqual(ops.parseQuvm(text).analysis.coverage[0], {
     agent: "cmd", coverpoints: [{ field: "din", bins: [] }],
@@ -879,7 +879,7 @@ test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () =
 
   text = ops.addCoverpoint(text, "cmd", "wr");
   assert.throws(() => ops.addCoverpoint(text, "cmd", "wr"), /already has a coverpoint/);
-  // bin-uri: exact una din cele trei forme supravietuieste
+  // bins: exactly one of the three forms survives
   text = ops.setCoverageBin(text, "cmd", "din", "low", { range: [0, 7] });
   text = ops.setCoverageBin(text, "cmd", "din", "hi", { value: 255 });
   text = ops.setCoverageBin(text, "cmd", "wr", "both", { values: [0, 1] });
@@ -888,7 +888,7 @@ test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () =
     { name: "low", range: [0, 7] },
     { name: "hi", value: 255 },
   ]);
-  // re-setarea aceluiasi nume INLOCUIESTE (nu duplica) si schimba forma
+  // setting the same name again REPLACES (does not duplicate) and changes the form
   text = ops.setCoverageBin(text, "cmd", "din", "low", { values: [1, 2] });
   cp = ops.parseQuvm(text).analysis.coverage[0].coverpoints[0];
   assert.equal(cp.bins.length, 2);
@@ -906,23 +906,23 @@ test("coverage bogat: upgrade/downgrade, coverpoints, bins, crosses, goal", () =
   assert.throws(() => ops.setCoverageGoal(text, "cmd", 0), /percentage/);
   assert.throws(() => ops.setCoverageGoal(text, "cmd", 101), /percentage/);
 
-  // stergerea unui coverpoint ia cu ea crossurile care il refereau (QuickUVM refuza
-  // un cross catre un camp nedeclarat)
+  // deleting a coverpoint takes with it the crosses that referenced it (QuickUVM refuses
+  // a cross to an undeclared field)
   const pruned = ops.removeCoverpoint(text, "cmd", "wr");
   assert.equal("crosses" in ops.parseQuvm(pruned).analysis.coverage[0], false,
-    "cross-ul a supravietuit stergerii coverpoint-ului");
-  // ultimul coverpoint nu se poate sterge: modelul bogat cere >= 1
+    "the cross survived the deletion of the coverpoint");
+  // the last coverpoint cannot be deleted: the rich model requires >= 1
   assert.throws(() => ops.removeCoverpoint(pruned, "cmd", "din"), /is the only coverpoint/);
 
   text = ops.downgradeCoverage(text, "cmd");
   assert.deepEqual(ops.parseQuvm(text).analysis.coverage, ["cmd"]);
-  assert.equal(ops.downgradeCoverage(text, "cmd"), text, "downgrade repetat nu e byte-identic");
+  assert.equal(ops.downgradeCoverage(text, "cmd"), text, "a repeated downgrade is not byte-identical");
   assert.throws(() => ops.addCoverpoint(text, "cmd", "din"), /has no rich coverage model/);
 });
 
-test("coverage bogat: editarile NU rescriu cheile scrise de mana", () => {
-  // illegal_bins / transitions / cross-bins nu sunt autorate de extensie; o editare
-  // le-ar pierde daca ar rescrie intrarea in loc sa o modifice pe loc
+test("rich coverage model: the edits do NOT rewrite the hand-written keys", () => {
+  // illegal_bins / transitions / cross-bins are not authored by the extension; an edit
+  // would lose them if it rewrote the entry instead of modifying it in place
   const hand = [
     "project: { name: s }",
     "analysis:",
@@ -945,10 +945,10 @@ test("coverage bogat: editarile NU rescriu cheile scrise de mana", () => {
   assert.equal(cp.transitions.length, 1);
   const cross = ops.parseQuvm(out).analysis.coverage[0].crosses[0];
   assert.deepEqual(cross.fields, ["din", "wr"]);
-  assert.equal(cross.bins.length, 1, "bin-urile cross-ului scrise de mana s-au pierdut");
+  assert.equal(cross.bins.length, 1, "the cross's hand-written bins were lost");
 });
 
-test("tests[]: add/remove/edit; stergerea ULTIMULUI test scoate cheia `tests`", () => {
+test("tests[]: add/remove/edit; deleting the LAST test removes the `tests` key", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   const dflt = ops.parseQuvm(text).tests[0].name;
   text = ops.addTest(text, "smoke_test");
@@ -959,27 +959,27 @@ test("tests[]: add/remove/edit; stergerea ULTIMULUI test scoate cheia `tests`", 
   let t = ops.parseQuvm(text).tests[1];
   assert.equal(t.num_items, 20);
   assert.equal(t.vseq, "smoke_vseq");
-  text = ops.setTestField(text, "smoke_test", "num_items", 100); // default -> sters
+  text = ops.setTestField(text, "smoke_test", "num_items", 100); // default -> deleted
   assert.equal("num_items" in ops.parseQuvm(text).tests[1], false);
   assert.throws(() => ops.setTestField(text, "nope", "num_items", 5), /does not exist/);
 
-  // `seeds` fara `regress:` e REFUZAT de QuickUVM -> refuzam la sursa
+  // `seeds` without `regress:` is REFUSED by QuickUVM -> we refuse it at the source
   assert.throws(() => ops.setTestField(text, "smoke_test", "seeds", 4), /regress/);
   const withRegress = ops.setTestField(ops.addRegress(text), "smoke_test", "seeds", 4);
   assert.equal(ops.parseQuvm(withRegress).tests[1].seeds, 4);
 
-  // stergere: no-op byte-identic pe un test inexistent
+  // deletion: a byte-identical no-op on a nonexistent test
   assert.equal(ops.removeTest(text, "nope"), text);
   text = ops.removeTest(text, "smoke_test");
   assert.deepEqual(ops.parseQuvm(text).tests.map((t) => t.name), [dflt]);
-  // ULTIMUL test: se sterge CHEIA, nu se scrie `tests: []` — absenta cade inapoi pe
-  // `test1` (rulabil), pe cand lista goala e acceptata si da ZERO teste
+  // the LAST test: the KEY is deleted, `tests: []` is not written — the absence falls back to
+  // `test1` (runnable), whereas the empty list is accepted and gives ZERO tests
   text = ops.removeTest(text, dflt);
   assert.equal(ops.parseQuvm(text).tests, undefined);
-  assert.equal(/tests:/.test(text), false, `cheia tests a ramas:\n${text}`);
+  assert.equal(/tests:/.test(text), false, `the tests key remained:\n${text}`);
 });
 
-test("setBenchField / setProjectField: identitatea bench-ului, default => cheia dispare", () => {
+test("setBenchField / setProjectField: the bench's identity, default => the key disappears", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.setBenchField(text, "layout", "packaged");
   text = ops.setBenchField(text, "kind", "vip");
@@ -998,7 +998,7 @@ test("setBenchField / setProjectField: identitatea bench-ului, default => cheia 
   }
   cfg = ops.parseQuvm(text);
   for (const k of ["layout", "kind", "top_name", "auto_virtual_sequences"]) {
-    assert.equal(k in cfg, false, `${k} la default ar fi trebuit stersa`);
+    assert.equal(k in cfg, false, `${k} at its default should have been deleted`);
   }
   text = ops.setProjectField(text, "author", "Ada");
   text = ops.setProjectField(text, "year", 2026);
@@ -1009,7 +1009,7 @@ test("setBenchField / setProjectField: identitatea bench-ului, default => cheia 
   assert.throws(() => ops.setProjectField(text, "name", ""), /is required/);
 });
 
-test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", () => {
+test("register_model: add/edit/remove, the required fields cannot be emptied", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "host", inputs: [{ name: "addr", width: 8 }], outputs: [{ name: "rdata", width: 8 }],
@@ -1029,14 +1029,14 @@ test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", ()
   assert.deepEqual(rm.csr_tests, ["hw_reset", "rw"]);
   assert.equal(rm.coverage, true);
   assert.equal(rm.backdoor_root, "tb_top.dut_inst");
-  assert.ok(/csr_tests: \[/.test(text), `csr_tests nu e flow:\n${text}`);
+  assert.ok(/csr_tests: \[/.test(text), `csr_tests is not flow style:\n${text}`);
   // default => the key disappears (canonical YAML)
   text = ops.setRegisterModelField(text, "coverage", false);
   text = ops.setRegisterModelField(text, "csr_tests", []);
   text = ops.setRegisterModelField(text, "map", "default_map");
   rm = ops.parseQuvm(text).register_model;
   for (const k of ["coverage", "csr_tests", "map"]) {
-    assert.equal(k in rm, false, `${k} la default ar fi trebuit stersa`);
+    assert.equal(k in rm, false, `${k} at its default should have been deleted`);
   }
   // the three required fields: emptying is refused, not silently written
   for (const f of ["package", "block", "bus_agent"]) {
@@ -1044,34 +1044,34 @@ test("register_model: add/edit/remove, campurile obligatorii nu se pot goli", ()
   }
   text = ops.removeRegisterModel(text);
   assert.equal(ops.parseQuvm(text).register_model, undefined);
-  assert.equal(ops.removeRegisterModel(text), text, "remove pe absent nu e byte-identic");
+  assert.equal(ops.removeRegisterModel(text), text, "remove on an absent block is not byte-identical");
   assert.throws(() => ops.setRegisterModelField(text, "adapter", "a"), /has no/);
 });
 
-test("regress: add e idempotent, remove CASCADEAZA peste tests[].seeds", () => {
+test("regress: add is idempotent, remove CASCADES over tests[].seeds", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addRegress(text);
   assert.deepEqual(ops.parseQuvm(text).regress, {});
-  assert.equal(ops.addRegress(text), text, "al doilea addRegress nu e byte-identic");
+  assert.equal(ops.addRegress(text), text, "the second addRegress is not byte-identical");
   text = ops.setRegressField(text, "seeds", 8);
   text = ops.setRegressField(text, "simulator", "questa");
   assert.equal(ops.parseQuvm(text).regress.seeds, 8);
   assert.equal(ops.parseQuvm(text).regress.simulator, "questa");
-  text = ops.setRegressField(text, "seeds", 1); // default -> sters
+  text = ops.setRegressField(text, "seeds", 1); // default -> deleted
   assert.equal("seeds" in ops.parseQuvm(text).regress, false);
 
-  // QuickUVM REFUZA `tests[].seeds` fara un bloc `regress:`, deci stergerea
-  // blocului trebuie sa ia cu ea si seed-urile (altfel configul nu mai genereaza)
+  // QuickUVM REFUSES `tests[].seeds` without a `regress:` block, so deleting the
+  // block must take the seeds with it too (otherwise the config no longer generates)
   const withSeeds = text.replace(/(\n\s+)- \{ name: ([\w]+) \}/, "$1- { name: $2, seeds: 4 }");
-  assert.notEqual(withSeeds, text, "fixture-ul cu seeds nu s-a aplicat");
+  assert.notEqual(withSeeds, text, "the seeds fixture was not applied");
   assert.equal(ops.parseQuvm(withSeeds).tests[0].seeds, 4);
   const removed = ops.removeRegress(withSeeds);
   assert.equal(ops.parseQuvm(removed).regress, undefined);
-  assert.equal("seeds" in ops.parseQuvm(removed).tests[0], false, "seeds a supravietuit");
-  assert.equal(ops.removeRegress(removed), removed, "remove pe absent nu e byte-identic");
+  assert.equal("seeds" in ops.parseQuvm(removed).tests[0], false, "seeds survived");
+  assert.equal(ops.removeRegress(removed), removed, "remove on an absent block is not byte-identical");
 });
 
-test("setAgentField: seteaza/reseteaza campuri, arunca la agent inexistent", () => {
+test("setAgentField: sets/resets fields, throws on a nonexistent agent", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "cmd",
@@ -1096,14 +1096,14 @@ test("setAgentField: seteaza/reseteaza campuri, arunca la agent inexistent", () 
   text = ops.setAgentField(text, "cmd", "replicas", 1);
   text = ops.setAgentField(text, "cmd", "reorder_policy", "priority");
   a = ops.parseQuvm(text).agents[0];
-  assert.equal("replicas" in a, false, "replicas: 1 ar fi trebuit stersa");
-  assert.equal("reorder_policy" in a, false, "reorder_policy: priority ar fi trebuit stersa");
+  assert.equal("replicas" in a, false, "replicas: 1 should have been deleted");
+  assert.equal("reorder_policy" in a, false, "reorder_policy: priority should have been deleted");
   assert.throws(() => ops.setAgentField(text, "nope", "mode", "responder"), /does not exist/);
 });
 
-test("setAgentField: cascada mode -> initiator sterge cheile responder-only", () => {
-  // QuickUVM REFUZA fiecare din aceste chei pe un initiator ("only valid with
-  // `mode: responder`"), deci inspectorul nu are voie sa le lase in urma
+test("setAgentField: the mode -> initiator cascade deletes the responder-only keys", () => {
+  // QuickUVM REFUSES each of these keys on an initiator ("only valid with
+  // `mode: responder`"), so the inspector must not leave them behind
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "req", width: 1 }],
@@ -1120,12 +1120,12 @@ test("setAgentField: cascada mode -> initiator sterge cheile responder-only", ()
     "mode", "respond", "request_valid", "request_ready", "reorder_by",
     "reorder_policy", "proactive", "idle",
   ]) {
-    assert.equal(k in a, false, `${k} a supravietuit trecerii la initiator`);
+    assert.equal(k in a, false, `${k} survived the switch to initiator`);
   }
-  assert.equal(a.name, "cmd"); // agentul in rest e intact
+  assert.equal(a.name, "cmd"); // the rest of the agent is intact
 });
 
-test("setAgentField: cascada respond curata reorder_*/request_ready/proactive", () => {
+test("setAgentField: the respond cascade cleans up reorder_*/request_ready/proactive", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "req", width: 1 }],
@@ -1135,27 +1135,27 @@ test("setAgentField: cascada respond curata reorder_*/request_ready/proactive", 
   text = ops.setAgentField(text, "cmd", "request_ready", "rdy");
   text = ops.setAgentField(text, "cmd", "respond", "pipelined");
   text = ops.setAgentField(text, "cmd", "reorder_by", "rid");
-  // pipelined -> on_request: reorder_* pica ("only valid with respond: pipelined"),
-  // request_ready RAMANE (on_request publica cererea)
+  // pipelined -> on_request: reorder_* is dropped ("only valid with respond: pipelined"),
+  // request_ready STAYS (on_request publishes the request)
   let t = ops.setAgentField(text, "cmd", "respond", "on_request");
   let a = ops.parseQuvm(t).agents[0];
   assert.equal("reorder_by" in a, false);
-  assert.equal("respond" in a, false, "on_request e default -> cheia se sterge");
+  assert.equal("respond" in a, false, "on_request is the default -> the key is deleted");
   assert.equal(a.request_ready, "rdy");
-  // ... -> combinational: cade si request_ready (driverul citeste cererea, nu o publica)
+  // ... -> combinational: request_ready is dropped too (the driver reads the request, it does not publish it)
   t = ops.setAgentField(text, "cmd", "respond", "combinational");
   a = ops.parseQuvm(t).agents[0];
   assert.equal(a.respond, "combinational");
   assert.equal("request_ready" in a, false);
   assert.equal("reorder_by" in a, false);
-  // proactive cere on_request: mutarea pe prefetch il sterge
+  // proactive requires on_request: moving to prefetch deletes it
   t = ops.setAgentField(text, "cmd", "proactive", true);
   assert.equal(ops.parseQuvm(t).agents[0].proactive, true);
   t = ops.setAgentField(t, "cmd", "respond", "prefetch");
   assert.equal("proactive" in ops.parseQuvm(t).agents[0], false);
 });
 
-test("setScoreboardField: seteaza/reseteaza campuri, arunca la scoreboard inexistent", () => {
+test("setScoreboardField: sets/resets fields, throws on a nonexistent scoreboard", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addScoreboard(text, { name: "sbd", source: "cmd" });
   text = ops.setScoreboardField(text, "sbd", "monitor", "rsp");
@@ -1164,7 +1164,7 @@ test("setScoreboardField: seteaza/reseteaza campuri, arunca la scoreboard inexis
   assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0], {
     name: "sbd", source: "cmd", monitor: "rsp", match: "out_of_order", match_key: "id",
   });
-  assert.ok(/- \{ ?name: sbd/.test(text), `scoreboard nu mai e flow:\n${text}`);
+  assert.ok(/- \{ ?name: sbd/.test(text), `the scoreboard is no longer flow style:\n${text}`);
   text = ops.setScoreboardField(text, "sbd", "source", "drv");
   assert.equal(ops.parseQuvm(text).analysis.scoreboards[0].source, "drv");
   // reset to default deletes the field: match=in_order, match_key empty, monitor empty
@@ -1187,7 +1187,7 @@ test("setScoreboardField: seteaza/reseteaza campuri, arunca la scoreboard inexis
   );
 });
 
-test("remove*: no-op pastreaza byte-identic containerele goale scrise de mana", () => {
+test("remove*: a no-op keeps the hand-written empty containers byte-identical", () => {
   // hand-written file with empty blocks: a deletion with no target must NOT
   // touch them (empty WorkspaceEdit; regression caught in the adversarial review)
   const hand = [
@@ -1206,7 +1206,7 @@ test("remove*: no-op pastreaza byte-identic containerele goale scrise de mana", 
   assert.equal(ops.removeAgent(hand, "nope"), hand);
 });
 
-test("removeAgent: pastreaza un vseq cu body gol scris de mana", () => {
+test("removeAgent: keeps a hand-written vseq with an empty body", () => {
   const text = [
     "agents:",
     "  - { name: cmd }",
@@ -1222,20 +1222,20 @@ test("removeAgent: pastreaza un vseq cu body gol scris de mana", () => {
   assert.deepEqual(cfg.agents.map((a) => a.name), ["rsp"]);
 });
 
-test("setScoreboardField: window + reference_model (campuri imbricate, P3)", () => {
+test("setScoreboardField: window + reference_model (nested fields, P3)", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.createAgent(text, {
     name: "cmd", inputs: [{ name: "din", width: 8 }], outputs: [{ name: "done", width: 1 }],
   });
   text = ops.addScoreboard(text, { name: "sbd", source: "cmd" });
 
-  // reference_model: `sv` e default -> maparea nu se scrie deloc
+  // reference_model: `sv` is the default -> the mapping is not written at all
   text = ops.setScoreboardField(text, "sbd", "reference_model.language", "c");
   assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0].reference_model, { language: "c" });
   text = ops.setScoreboardField(text, "sbd", "reference_model.language", "sv");
   assert.equal("reference_model" in ops.parseQuvm(text).analysis.scoreboards[0], false);
 
-  // window: setarea boundary-ului creeaza maparea cu lungimea minima legala
+  // window: setting the boundary creates the mapping with the minimum legal length
   text = ops.setScoreboardField(text, "sbd", "window.boundary", "done");
   assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0].window, {
     boundary: "done", length: 1,
@@ -1244,14 +1244,14 @@ test("setScoreboardField: window + reference_model (campuri imbricate, P3)", () 
   assert.deepEqual(ops.parseQuvm(text).analysis.scoreboards[0].window, {
     boundary: "done", length: 512,
   });
-  // golirea lungimii ar lasa un window invalid -> no-op byte-identic
+  // emptying the length would leave an invalid window -> a byte-identical no-op
   assert.equal(ops.setScoreboardField(text, "sbd", "window.length", ""), text);
 
-  // CUPLARE: un window cere UN SINGUR flux. Adaugarea unui monitor il sterge...
+  // COUPLING: a window requires A SINGLE stream. Adding a monitor deletes it...
   const twoStream = ops.setScoreboardField(text, "sbd", "monitor", "cmd2");
   assert.equal("window" in ops.parseQuvm(twoStream).analysis.scoreboards[0], false,
-    "window a supravietuit adaugarii monitorului");
-  // ... si invers, un window nu se poate adauga pe un scoreboard cu doua fluxuri
+    "the window survived the addition of the monitor");
+  // ... and conversely, a window cannot be added to a two-stream scoreboard
   assert.throws(
     () => ops.setScoreboardField(twoStream, "sbd", "window.boundary", "done"),
     /SINGLE-stream/
@@ -1260,13 +1260,13 @@ test("setScoreboardField: window + reference_model (campuri imbricate, P3)", () 
     () => ops.setScoreboardField(text, "nope", "window.boundary", "done"),
     /does not exist/
   );
-  // boundary gol => window-ul dispare cu totul
+  // empty boundary => the window disappears altogether
   text = ops.setScoreboardField(text, "sbd", "window.boundary", "");
   assert.equal("window" in ops.parseQuvm(text).analysis.scoreboards[0], false);
   assert.throws(() => ops.setScoreboardField(text, "sbd", "window.length", 4), /has no/);
 });
 
-test("setScoreboardField: cascada — monitor gol / match in_order curata match_key", () => {
+test("setScoreboardField: cascade — empty monitor / match in_order cleans up match_key", () => {
   let text = ops.addScoreboard(ops.setDut(ops.newConfigText("s"), DUT), {
     name: "sbd", source: "cmd", monitor: "rsp", match: "out_of_order", matchKey: "id",
   });
@@ -1282,13 +1282,13 @@ test("setScoreboardField: cascada — monitor gol / match in_order curata match_
   });
 });
 
-test("addProbe: flow map, width=1 omisa, coverage doar cand e cerut, duplicat refuzat", () => {
+test("addProbe: flow map, width=1 omitted, coverage only when requested, duplicate refused", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addProbe(text, { name: "lvl", path: "u_fifo.level", width: 3 });
   assert.deepEqual(ops.parseQuvm(text).probes[0], {
     name: "lvl", path: "u_fifo.level", width: 3,
   });
-  assert.ok(/- \{ ?name: lvl/.test(text), `proba nu e flow:\n${text}`);
+  assert.ok(/- \{ ?name: lvl/.test(text), `the probe is not flow style:\n${text}`);
   // width 1 = the QuickUVM default -> omitted; coverage only when requested
   text = ops.addProbe(text, { name: "busy", path: "u_ctl.busy", width: 1, coverage: true });
   assert.deepEqual(ops.parseQuvm(text).probes[1], {
@@ -1300,7 +1300,7 @@ test("addProbe: flow map, width=1 omisa, coverage doar cand e cerut, duplicat re
   );
 });
 
-test("addProbe: campurile modelate (enum/type/packed_dims/struct/real/clock) fac round-trip (§1.8)", () => {
+test("addProbe: the modelled fields (enum/type/packed_dims/struct/real/clock) round-trip (§1.8)", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addProbe(text, {
     name: "state",
@@ -1331,7 +1331,7 @@ test("addProbe: campurile modelate (enum/type/packed_dims/struct/real/clock) fac
   assert.deepEqual(ops.parseQuvm(text).probes[1], { name: "busy", path: "u.busy" });
 });
 
-test("removeProbe: sterge dupa nume, curata lista goala, idempotent", () => {
+test("removeProbe: deletes by name, cleans up the empty list, idempotent", () => {
   let text = ops.setDut(ops.newConfigText("s"), DUT);
   text = ops.addProbe(text, { name: "lvl", path: "u.lvl", width: 3 });
   text = ops.addProbe(text, { name: "busy", path: "u.busy" });
@@ -1341,17 +1341,17 @@ test("removeProbe: sterge dupa nume, curata lista goala, idempotent", () => {
   // of the `probes` list is byte-identical for the generator — see keepAnalysis)
   text = ops.removeProbe(text, "busy");
   assert.equal(ops.parseQuvm(text).probes, undefined);
-  assert.ok(!/probes:/.test(text), `lista goala nu s-a curatat:\n${text}`);
+  assert.ok(!/probes:/.test(text), `the empty list was not cleaned up:\n${text}`);
   // idempotent: missing target -> original byte-identical text
   const fix = ops.setDut(ops.newConfigText("s"), DUT);
   assert.equal(ops.removeProbe(fix, "nope"), fix);
 });
 
-test("addConnections: flow, dedup pe (from,to), no-op byte-identic", () => {
+test("addConnections: flow, dedup on (from,to), byte-identical no-op", () => {
   let text = "project: {name: sys}\nlayout: packaged\nsubenvs:\n  - {name: p1, config: p.yaml}\n  - {name: c1, config: c.yaml}\n";
   text = ops.addConnections(text, [{ from: "p1.dout", to: "c1.din" }]);
   assert.deepEqual(ops.parseQuvm(text).connections, [{ from: "p1.dout", to: "c1.din" }]);
-  assert.ok(/- \{ ?from: p1.dout/.test(text), `conexiunea nu e flow:\n${text}`);
+  assert.ok(/- \{ ?from: p1.dout/.test(text), `the connection is not flow style:\n${text}`);
   // idempotent per pair: the same (from,to) is not duplicated -> unchanged text
   assert.equal(ops.addConnections(text, [{ from: "p1.dout", to: "c1.din" }]), text);
   // a new pair is added
@@ -1359,7 +1359,7 @@ test("addConnections: flow, dedup pe (from,to), no-op byte-identic", () => {
   assert.deepEqual(ops.parseQuvm(text).connections.length, 2);
 });
 
-test("removeConnection: sterge perechea, curata lista goala, idempotent", () => {
+test("removeConnection: deletes the pair, cleans up the empty list, idempotent", () => {
   let text = ops.addConnections(
     "project: {name: sys}\nlayout: packaged\nsubenvs: [{name: p1, config: p.yaml}, {name: c1, config: c.yaml}]\n",
     [{ from: "p1.dout", to: "c1.din" }]
@@ -1390,7 +1390,7 @@ test("setAgentActive: a hand-written `active: true` is deleted by the reset (doc
   assert.equal(ops.setAgentActive(text, "cmd", false).includes("active: false"), true);
 });
 
-test("setAgentActive: pasiv scrie active:false, activ sterge cheia, no-op idempotent", () => {
+test("setAgentActive: passive writes active:false, active deletes the key, idempotent no-op", () => {
   let text = ops.createAgent(ops.setDut(ops.newConfigText("s"), DUT), {
     name: "cons", inputs: [{ name: "din", width: 8 }], outputs: [],
   });
@@ -1402,7 +1402,7 @@ test("setAgentActive: pasiv scrie active:false, activ sterge cheia, no-op idempo
   // -> active deletes the key (the QuickUVM default)
   text = ops.setAgentActive(text, "cons", true);
   assert.equal(ops.parseQuvm(text).agents[0].active, undefined);
-  assert.ok(!/active:/.test(text), `active nu s-a sters:\n${text}`);
+  assert.ok(!/active:/.test(text), `active was not deleted:\n${text}`);
   // nonexistent agent -> throws
   assert.throws(() => ops.setAgentActive(text, "nope", false), /does not exist/);
 });
@@ -1417,7 +1417,7 @@ writeFileSync(join(outDir, "sample.yaml"),
     }),
     ["scan_en"]
   ));
-console.log(`\n(exemplu generat: ${join(outDir, "sample.yaml")})`);
+console.log(`\n(generated sample:${join(outDir, "sample.yaml")})`);
 
 // --- the host's agent-field gate must cover EVERY AgentField -------------------
 // `emit_when` shipped in the type, the defaults and the inspector while the host's
@@ -1705,7 +1705,7 @@ test("R24 resetAsList: the single reset as a ONE-entry list, named after dut.res
 });
 
 if (failures) {
-  console.error(`\n${failures} teste esuate`);
+  console.error(`\n${failures} tests failed`);
   process.exit(1);
 }
-console.log("toate testele yamlops au trecut");
+console.log("all yamlops tests passed");

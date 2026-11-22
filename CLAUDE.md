@@ -38,21 +38,29 @@ them without a new reason.
   community), but also the **documentation**: `docs/**`, this file,
   `README.md`, the error messages thrown from the host and the fixture
   comments in `examples*/**`. Python backend: PEP 8.
-  **The documentation's migration is complete** (Nov 2026) — the corpus was
-  large (~3100 lines with Romanian at the date of the decision, most of them
-  in `docs/06-plan-mvp.md`, `CLAUDE.md`, `docs/07-plan-post-mvp.md`,
-  `docs/04-layout-si-rutare.md`): `docs/**`, this file, `README.md`, the error
-  messages thrown from the host and the header written into a new
-  configuration are English. What is still Romanian (census of 21 Nov 2026):
-  the test names, the summary lines and some comments in `scripts/*.mjs` and
-  `scripts/harness.html`, the comments of `media/webview.css`, the docstrings
-  in `backend/tests/**`, a few fixture comments in `examples*/**`, and the
-  comments in `.gitignore` / `.gitattributes`. The rule for any session: **add
-  no new Romanian anywhere**, and when you touch one of the remaining files,
-  translate the parts you change. A translation is a careful rewrite, not a
-  mechanical substitution: the documents are dense architectural records (the
-  pitfall lists, the decision journal), where an approximate rendering loses
-  exactly the reason the rule exists.
+  **The migration is complete** (Nov 2026) — the corpus was large (~3100
+  lines with Romanian at the date of the decision, most of them in
+  `docs/06-plan-mvp.md`, `CLAUDE.md`, `docs/07-plan-post-mvp.md`,
+  `docs/04-layout-si-rutare.md`). First the documentation and the user-facing
+  strings (`docs/**`, this file, `README.md`, the error messages thrown from
+  the host, the header written into a new configuration), then the code's own
+  text: the test names, assertion messages and summary lines of
+  `scripts/*.mjs`, the comments of `media/webview.css` and
+  `scripts/harness.html`, the backend's tests, the fixture comments, the
+  schema's descriptions, `.gitignore` / `.gitattributes`. What stays Romanian
+  ON PURPOSE: the UI bundles (`l10n/bundle.l10n.ro.json`,
+  `package.nls.ro.json` — they ARE the Romanian translation) and the
+  historical terms a few documents quote („vederea-simbol"). The rule for any
+  session: **add no new Romanian anywhere** — comments, test names, messages,
+  fixture names. A translation is a careful rewrite, not a mechanical
+  substitution: the documents are dense architectural records (the pitfall
+  lists, the decision journal), where an approximate rendering loses exactly
+  the reason the rule exists. Translating a test file must change TEXT only:
+  compare the file with its previous version once comments are removed and
+  string contents blanked, and read the list of changed string literals —
+  each must be a name, a message or a printed line, never data (a Romanian
+  name inside a fixture is renamed consistently, input and expected value
+  together, and proved by its suite).
   Communication with the user in chat stays in Romanian with diacritics.
 - **The extension's UI: English** (decision D19), localized through
   `package.nls.json` (+`package.nls.ro.json`) and `vscode.l10n.t()` +

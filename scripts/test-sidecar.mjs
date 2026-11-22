@@ -65,7 +65,7 @@ test("docs/08 R18: invalidate keeps a view that holds only hidePins — a schema
   assert.equal(ops.invalidate(d, model, "2026-10-13"), false, "stable afterwards");
 });
 
-test("roundtrip: pozitii + fold supravietuiesc serializarii", () => {
+test("roundtrip: positions + fold survive the serialization", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 120, 80);
   ops.setFold(d, "demo_top.u_soc", "g_ch[0..2].u_ch", false);
@@ -80,14 +80,14 @@ test("roundtrip: pozitii + fold supravietuiesc serializarii", () => {
   assert.equal(text.includes("camera"), false);
 });
 
-test("minimalitate: re-plierea sterge intrarea fara pozitie; vederea goala dispare", () => {
+test("minimality: re-folding deletes the entry without a position; the empty view disappears", () => {
   const d = ops.emptySidecar();
   ops.setFold(d, "demo_top.u_soc", "g_ch[0..2].u_ch", false);
   ops.setFold(d, "demo_top.u_soc", "g_ch[0..2].u_ch", true);
   assert.deepEqual(d.views, {});
 });
 
-test("minimalitate: pliaj mutat + re-pliat pastreaza doar pozitia", () => {
+test("minimality: a fold moved + re-folded keeps only the position", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "g_ch[0..2].u_ch", 300, 150);
   ops.setFold(d, "demo_top.u_soc", "g_ch[0..2].u_ch", false);
@@ -98,7 +98,7 @@ test("minimalitate: pliaj mutat + re-pliat pastreaza doar pozitia", () => {
   });
 });
 
-test("serializare determinista: chei sortate, stabila la ordinea inserarii", () => {
+test("deterministic serialization: sorted keys, stable under the insertion order", () => {
   const a = ops.emptySidecar();
   ops.setNodePos(a, "demo_top.u_soc", "u_inv", 1, 2);
   ops.setNodePos(a, "demo_top.u_soc", "u_add", 3, 4);
@@ -110,31 +110,31 @@ test("serializare determinista: chei sortate, stabila la ordinea inserarii", () 
   assert.equal(ops.serializeSidecar(a), ops.serializeSidecar(b));
 });
 
-test("validNodeKeys: noduri, pliaje si membrii pliajelor; null pe frunze", () => {
+test("validNodeKeys: nodes, folds and the folds' members; null on leaves", () => {
   const keys = ops.validNodeKeys(model, "demo_top.u_soc");
   for (const k of ["u_add", "u_inv", "g_ch[0..2].u_ch", "g_ch[1].u_ch"]) {
-    assert.ok(keys.has(k), `lipseste ${k}`);
+    assert.ok(keys.has(k), `missing ${k}`);
   }
   assert.equal(ops.validNodeKeys(model, "demo_top.u_soc.u_add"), null);
 });
 
-test("invalidate: cheile disparute migreaza in orphans cu lastSeen, nu se sterg", () => {
+test("invalidate: the vanished keys migrate into orphans with lastSeen, they are not deleted", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 120, 80);
-  ops.setNodePos(d, "demo_top.u_soc", "u_vechi", 1, 1);
-  ops.setNodePos(d, "vedere.disparuta", "x", 2, 2);
+  ops.setNodePos(d, "demo_top.u_soc", "u_old", 1, 1);
+  ops.setNodePos(d, "view.gone", "x", 2, 2);
   const changed = ops.invalidate(d, model, "2026-07-11");
   assert.equal(changed, true);
   assert.deepEqual(d.views["demo_top.u_soc"].nodes, { u_add: { x: 120, y: 80 } });
-  assert.equal(d.views["vedere.disparuta"], undefined);
+  assert.equal(d.views["view.gone"], undefined);
   assert.deepEqual(
     d.orphans.map((o) => `${o.view}/${o.node}`).sort(),
-    ["demo_top.u_soc/u_vechi", "vedere.disparuta/x"]
+    ["demo_top.u_soc/u_old", "view.gone/x"]
   );
   assert.ok(d.orphans.every((o) => o.lastSeen === "2026-07-11"));
 });
 
-test("invalidate: orfanele reaparute se restaureaza (eroare temporara)", () => {
+test("invalidate: the orphans that reappear are restored (a temporary error)", () => {
   const d = ops.emptySidecar();
   d.orphans.push({
     view: "demo_top.u_soc",
@@ -148,7 +148,7 @@ test("invalidate: orfanele reaparute se restaureaza (eroare temporara)", () => {
   assert.equal(d.orphans.length, 0);
 });
 
-test("invalidate: restaurarea nu calca peste un override mai nou", () => {
+test("invalidate: the restore does not step over a newer override", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 500, 500);
   d.orphans.push({
@@ -162,19 +162,19 @@ test("invalidate: restaurarea nu calca peste un override mai nou", () => {
   assert.equal(d.orphans.length, 0);
 });
 
-test("invalidate: sidecar curat ramane neschimbat (changed=false)", () => {
+test("invalidate: a clean sidecar stays unchanged (changed=false)", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 120, 80);
   assert.equal(ops.invalidate(d, model, "2026-07-11"), false);
 });
 
-test("parseSidecar: versiune necunoscuta si YAML invalid arunca", () => {
+test("parseSidecar: an unknown version and invalid YAML throw", () => {
   assert.throws(() => ops.parseSidecar("schema_version: 99\nviews: {}\n"));
-  assert.throws(() => ops.parseSidecar("[nu, e, obiect]"));
+  assert.throws(() => ops.parseSidecar("[not, an, object]"));
   assert.deepEqual(ops.parseSidecar(""), ops.emptySidecar());
 });
 
-test("setFlip: persista doar true; prune la revenirea la implicit", () => {
+test("setFlip: persists only true; prune on the return to the default", () => {
   const d = ops.emptySidecar();
   ops.setFlip(d, "demo_top", "u_soc", true, false);
   assert.deepEqual(d.views["demo_top"].nodes["u_soc"], { flipH: true });
@@ -192,7 +192,7 @@ test("setFlip: persista doar true; prune la revenirea la implicit", () => {
   assert.deepEqual(d.views["demo_top"].nodes["u_soc"], { x: 8, y: 16 });
 });
 
-test("clearPositions: sterge x/y, pastreaza pliaje si rasturnari", () => {
+test("clearPositions: deletes x/y, keeps folds and flips", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 120, 80);
   ops.setNodePos(d, "demo_top.u_soc", "u_inv", 8, 8);
@@ -208,7 +208,7 @@ test("clearPositions: sterge x/y, pastreaza pliaje si rasturnari", () => {
   assert.deepEqual(d.views["demo_top"].nodes["u_soc"], { x: 1, y: 2 });
 });
 
-test("setPositions: snapshot-ul scrie tot, pastreaza pliaje/rasturnari", () => {
+test("setPositions: the snapshot writes everything, keeps folds/flips", () => {
   const d = ops.emptySidecar();
   ops.setFold(d, "demo_top.u_soc", "g_ch[0..2].u_ch", false);
   ops.setFlip(d, "demo_top.u_soc", "u_inv", true, false);
@@ -225,7 +225,7 @@ test("setPositions: snapshot-ul scrie tot, pastreaza pliaje/rasturnari", () => {
   assert.deepEqual(nodes["g_ch[0..2].u_ch"], { collapsed: false, x: 120, y: 64 });
 });
 
-test("setNetRender: abaterea se persista; alegerea sugestiei o sterge", () => {
+test("setNetRender: the deviation is persisted; choosing the suggestion deletes it", () => {
   const d = ops.emptySidecar();
   // din has render=label in the model (fanout 9); the user requests wire
   ops.setNetRender(d, "demo_top.u_soc", "din", "wire", "label");
@@ -239,7 +239,7 @@ test("setNetRender: abaterea se persista; alegerea sugestiei o sterge", () => {
   assert.deepEqual(d.views, {});
 });
 
-test("clearPositions: pastreaza override-urile de net", () => {
+test("clearPositions: keeps the net overrides", () => {
   const d = ops.emptySidecar();
   ops.setNodePos(d, "demo_top.u_soc", "u_add", 8, 8);
   ops.setNetRender(d, "demo_top.u_soc", "din", "wire", "label");
@@ -249,16 +249,16 @@ test("clearPositions: pastreaza override-urile de net", () => {
   });
 });
 
-test("invalidate: net disparut migreaza cu kind=net; reaparut se restaureaza", () => {
+test("invalidate: a vanished net migrates with kind=net; once it reappears it is restored", () => {
   const d = ops.emptySidecar();
-  ops.setNetRender(d, "demo_top.u_soc", "net_disparut", "wire", "label");
+  ops.setNetRender(d, "demo_top.u_soc", "net_gone", "wire", "label");
   ops.setNetRender(d, "demo_top.u_soc", "din", "wire", "label");
   assert.equal(ops.invalidate(d, model, "2026-07-11"), true);
   assert.deepEqual(d.views["demo_top.u_soc"].nets, { din: { render: "wire" } });
   assert.deepEqual(d.orphans, [
     {
       view: "demo_top.u_soc",
-      node: "net_disparut",
+      node: "net_gone",
       kind: "net",
       value: { render: "wire" },
       lastSeen: "2026-07-11",
@@ -274,9 +274,9 @@ test("invalidate: net disparut migreaza cu kind=net; reaparut se restaureaza", (
   assert.equal(d.orphans.length, 0);
 });
 
-test("cleanOrphans: goleste lista", () => {
+test("cleanOrphans: empties the list", () => {
   const d = ops.emptySidecar();
-  d.orphans.push({ view: "v", node: "n", value: { x: 1, y: 1 }, lastSeen: "azi" });
+  d.orphans.push({ view: "v", node: "n", value: { x: 1, y: 1 }, lastSeen: "today" });
   ops.cleanOrphans(d);
   assert.deepEqual(d.orphans, []);
 });
@@ -844,4 +844,4 @@ test("D27: an orphaned route re-orphaned replaces its entry (no duplicates), and
   assert.deepEqual(ops.cleanEdges([{ route: "source+8" }]), {});
 });
 
-console.log(`\ntest-sidecar: ${passed} teste au trecut.`);
+console.log(`\ntest-sidecar: ${passed} tests passed.`);

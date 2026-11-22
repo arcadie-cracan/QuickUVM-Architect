@@ -47,7 +47,7 @@ const CFG = {
 
 const { roots, byFocus, byIdent } = buildVTree(CFG, "demo.quickuvm.yaml");
 
-test("radacina Testbench, cu DUT + Env; Env cu agenti", () => {
+test("the Testbench root, with DUT + Env; Env with agents", () => {
   assert.equal(roots.length, 1);
   assert.equal(roots[0].label, "demo (tb)");
   assert.equal(roots[0].focus, "");
@@ -62,7 +62,7 @@ test("radacina Testbench, cu DUT + Env; Env cu agenti", () => {
   );
 });
 
-test("nav: containerele deschid nivelul lor; frunzele deschid parintele + select", () => {
+test("nav: the containers open their own level; the leaves open the parent + select", () => {
   const env = find(roots, (n) => n.label === "Env");
   assert.equal(env.focus, "env");
   assert.equal(env.selectId, null); // click on Env -> opens the env level
@@ -77,7 +77,7 @@ test("nav: containerele deschid nivelul lor; frunzele deschid parintele + select
   assert.equal(dut.selectId, "dut");
 });
 
-test("indici de reveal: byFocus (drill) + byIdent (selectie)", () => {
+test("reveal indexes: byFocus (drill) + byIdent (selection)", () => {
   assert.ok(byFocus.get("") && byFocus.get("env") && byFocus.get("agent:cmd"));
   // reveal the selected agent:cmd block at the env level
   assert.equal(byIdent.get("env|agent:cmd")?.focus, "agent:cmd");
@@ -87,10 +87,10 @@ test("indici de reveal: byFocus (drill) + byIdent (selectie)", () => {
   assert.equal(byIdent.get("|dut")?.label, "soc_top");
 });
 
-test("agent pasiv: doar monitor; config gol -> arbore gol", () => {
+test("passive agent: monitor only; empty config -> empty tree", () => {
   const rsp = find(roots, (n) => n.focus === "agent:rsp");
   assert.deepEqual(rsp.children.map((c) => c.label), ["monitor"]);
   assert.deepEqual(buildVTree({}, null).roots, []);
 });
 
-console.log(`\ntest-tbtree: ${passed} teste au trecut.`);
+console.log(`\ntest-tbtree: ${passed} tests passed.`);

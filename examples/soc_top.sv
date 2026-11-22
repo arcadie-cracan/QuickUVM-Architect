@@ -1,5 +1,5 @@
-// soc_top — top de demonstrație pentru experimentul slang:
-// parametri, lățimi simbolice, generate, interfață cu modport.
+// soc_top — a demonstration top for the slang experiment:
+// parameters, symbolic widths, generate, an interface with a modport.
 interface reg_bus #(parameter int AW = 4) (input logic clk);
   logic [AW-1:0] addr;
   logic [7:0]    wdata;

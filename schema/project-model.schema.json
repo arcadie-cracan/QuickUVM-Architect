@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.org/quickuvm-architect/project-model.schema.json",
   "title": "quickuvm-architect project model",
-  "description": "Modelul de proiect emis de backend-ul semantic (svmodel) si consumat de extensia VSCode. Semantica detaliata: docs/02-model-de-proiect.md",
+  "description": "The project model emitted by the semantic backend (svmodel) and consumed by the VSCode extension. Detailed semantics: docs/02-model-de-proiect.md",
   "type": "object",
   "required": ["schema_version", "tops", "modules", "instances", "views"],
   "properties": {
@@ -18,7 +18,7 @@
     },
     "views": {
       "type": "object",
-      "description": "cheie = calea ierarhica a instantei",
+      "description": "key = the instance's hierarchical path",
       "additionalProperties": { "$ref": "#/$defs/view" }
     }
   },
@@ -70,17 +70,17 @@
       "type": "object",
       "required": ["path", "module", "params"],
       "properties": {
-        "path": { "type": "string", "description": "ID stabil: cale ierarhica elaborata" },
+        "path": { "type": "string", "description": "stable ID: the elaborated hierarchical path" },
         "module": { "type": "string" },
         "params": {
           "type": "object",
           "additionalProperties": { "type": "string" },
-          "description": "valorile efective ale parametrilor, ca text"
+          "description": "the effective parameter values, as text"
         },
         "loc": { "$ref": "#/$defs/loc" },
         "iface": {
           "type": "object",
-          "description": "prezent doar pentru instante de interfata",
+          "description": "present only for interface instances",
           "required": ["signals", "modports"],
           "properties": {
             "signals": { "type": "array", "items": { "$ref": "#/$defs/port_like_signal" } },

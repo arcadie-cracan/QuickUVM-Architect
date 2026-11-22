@@ -323,7 +323,7 @@ function expandedFor(viewId: string): Set<string> {
 }
 
 /** the last design view visited (viewId + mode) — the target of the
- *  „Design" button from the header of the verification (TB) view (docs/05) */
+ *  "Design" button from the header of the verification (TB) view (docs/05) */
 let lastRtl: { viewId: string; mode: "symbol" | "schematic" } | null = null;
 
 /** does the current configuration have anything drawable in the verification (TB) view? */
@@ -357,7 +357,7 @@ function openTbView(): void {
 
 /** the return from the verification (TB) view to the last design view (RTL) —
  *  returns to the view and mode from before entering TB (D24: there is no longer a
- *  switch, so a single „Design" button, not Symbol/Schematic) */
+ *  switch, so a single "Design" button, not Symbol/Schematic) */
 function leaveTbView(): void {
   const target = lastRtl?.viewId ?? state.model?.tops[0];
   if (!target) {
@@ -942,7 +942,7 @@ function renderHeader(inst: Instance, leafInside = false): void {
     head.append(note);
   }
   // no Symbol/Schematic switch (D24): the view is derived from the node
-  // selected in the hierarchy — the „top module" root -> the top's symbol, the rest
+  // selected in the hierarchy — the "top module" root -> the top's symbol, the rest
   // of the modules -> internal schematic (leaves fall gracefully onto the symbol)
   const tgl = h("span", "mode-toggle");
   if (tbAvailable()) {
@@ -2251,7 +2251,7 @@ function applyGenBadges(): void {
   });
 }
 
-/** the status chip of the last „Generate testbench" from the header (docs/05);
+/** the status chip of the last "Generate testbench" from the header (docs/05);
  *  idempotent, run by both headers and at status/decorations */
 function updateGenChip(): void {
   head.querySelector(".gen-chip")?.remove();
@@ -7475,7 +7475,7 @@ function openCtxMenu(
 }
 
 /**
- * Right-click in the RTL views (symbol/schematic, docs/05): „Go to source" on
+ * Right-click in the RTL views (symbol/schematic, docs/05): "Go to source" on
  * any target with a known source (the same owner resolution as on
  * double-click), plus navigation/fold/flip on blocks. On the background and on
  * the targets without actions (the pins of the folds) the native menu remains.
@@ -8123,7 +8123,7 @@ async function presentScene(
   // the selection requested by the host (select/reveal) can refer to FOLDED generate
   // members (rels that do not exist in the DOM): remapping onto the current scene
   // (rel -> the fold through memberPaths; pure, locmap.ts), with an echo to the host —
-  // otherwise „Reveal in Diagram" navigated correctly but selected nothing
+  // otherwise "Reveal in Diagram" navigated correctly but selected nothing
   if (state.selection.size) {
     const remapped = remapSelection(
       [...state.selection],
