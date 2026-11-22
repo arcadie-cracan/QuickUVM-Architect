@@ -316,6 +316,28 @@ test("ghost: implicit mode draws the scoreboard and coverage the YAML omits", ()
   assert.equal(cov.label, "pkt_cov");
 });
 
+test("ghost: none on a shape where what `resolve` reports is not generated (VIP, replicas, composition)", () => {
+  // quick-uvm 1.2.0 reports sbd + a collector for any bench with an agent and no
+  // `analysis:`; on these shapes it generates neither — a ghost would be a box
+  // for a component that does not exist
+  const vip = buildTbScene({ ...IMPLICIT, kind: "vip" }, "env", null, RESOLVED_IMPLICIT);
+  assert.ok(!nodeById(vip, "sb:sbd") && !nodeById(vip, "cov:pkt"));
+  const many = {
+    ...IMPLICIT,
+    agents: IMPLICIT.agents.map((x, i) => (i === 0 ? { ...x, replicas: 3 } : x)),
+  };
+  const rep = buildTbScene(many, "env", null, RESOLVED_IMPLICIT);
+  assert.ok(!nodeById(rep, "sb:sbd") && !nodeById(rep, "cov:pkt"));
+  const hybrid = { ...IMPLICIT, subenvs: [{ name: "p1", config: "p.quickuvm.yaml" }, { name: "c1", config: "c.quickuvm.yaml" }] };
+  for (const focus of ["", "env"]) {
+    const h = buildTbScene(hybrid, focus, null, RESOLVED_IMPLICIT);
+    assert.ok(!h.nodes.some((n) => n.inferred), `no ghost at level "${focus}"`);
+  }
+  // the plain bench still has both
+  const plain = buildTbScene(IMPLICIT, "env", null, RESOLVED_IMPLICIT);
+  assert.equal(plain.nodes.filter((n) => n.inferred).length, 2);
+});
+
 test("ghost: it is wired to its agent, and the wire is ghosted too", () => {
   const s = buildTbScene(IMPLICIT, "env", null, RESOLVED_IMPLICIT);
   const e = s.edges.find((x) => x.target === "sb:sbd");

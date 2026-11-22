@@ -271,7 +271,9 @@ export function ghostProposals(
   if (config.analysis != null) {
     return [];
   }
-  return inferredComponents(resolved).map((c) => ({
+  // not on a shape where the reported set is not generated: materialising it
+  // there writes a configuration quick-uvm refuses (`inferenceIsReal`)
+  return inferredComponents(resolved, config).map((c) => ({
     id: `ghost:${c.id}`,
     kind: "materialize",
     label:

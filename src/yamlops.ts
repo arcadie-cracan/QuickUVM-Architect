@@ -4,7 +4,7 @@
 // import `vscode`: the host (config.ts) applies the result as a WorkspaceEdit,
 // and the tests run it directly in Node (scripts/test-yamlops.mjs).
 
-import { Document, isAlias, isMap, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
+import { Document, isAlias, isMap, isScalar, isSeq, parseDocument, YAMLMap, YAMLSeq } from "yaml";
 import type { QuvmConfig } from "./quickuvm";
 
 /** The serialization options: a larger width so the flow ports don't break. */
@@ -644,9 +644,30 @@ export interface ScoreboardSpec {
   matchKey?: string;
 }
 
+/**
+ * `analysis:` with no value is a null scalar, and `setIn` cannot descend into
+ * one ("Expected YAML collection at analysis") — the add gestures threw on a
+ * file the scene draws as an implicit-mode bench. It gets an empty mapping IN
+ * PLACE: the key keeps its position and its comment.
+ */
+function openAnalysis(doc: Document): void {
+  const node: unknown = doc.get("analysis", true);
+  if (isScalar(node) && (node.value === null || node.value === undefined)) {
+    const map = doc.createNode({}) as YAMLMap;
+    if (node.comment) {
+      map.comment = node.comment;
+    }
+    if (node.commentBefore) {
+      map.commentBefore = node.commentBefore;
+    }
+    doc.set("analysis", map);
+  }
+}
+
 /** Adds a scoreboard to `analysis.scoreboards` (C1/A2); throws on a duplicate name. */
 export function addScoreboard(text: string, spec: ScoreboardSpec): string {
   const doc = parse(text);
+  openAnalysis(doc);
   const existing = doc.getIn(["analysis", "scoreboards"]);
   if (isSeq(existing)) {
     for (const item of existing.items) {
@@ -685,11 +706,15 @@ function coversAgent(item: unknown, agent: string): boolean {
 /** Adds a coverage collector for an agent (`analysis.coverage`); idempotent. */
 export function addCoverage(text: string, agent: string): string {
   const doc = parse(text);
+  openAnalysis(doc);
   const existing = doc.getIn(["analysis", "coverage"]);
   if (isSeq(existing)) {
     for (const item of existing.items) {
       if (coversAgent(item, agent)) {
-        return doc.toString(TO_STRING); // already present, in either form
+        // already present, in either form: the ORIGINAL text, byte for byte —
+        // re-serialising a hand-formatted file is a phantom edit (the no-op
+        // invariant every other mutation here keeps)
+        return text;
       }
     }
     existing.add(agent);
@@ -700,6 +725,85 @@ export function addCoverage(text: string, agent: string): string {
   seq.flow = true;
   doc.setIn(["analysis", "coverage"], seq);
   return doc.toString(TO_STRING);
+}
+
+/** what a gesture declares next to its own first `analysis:` entry: the
+ *  inferred components it keeps (`keepOnFirstAnalysis` in src/resolved.ts) */
+export interface KeptAnalysis {
+  scoreboards: { name: string; source: string; monitor?: string; match?: string }[];
+  coverage: string[];
+}
+
+function keptSpec(sb: KeptAnalysis["scoreboards"][number]): ScoreboardSpec {
+  return {
+    name: sb.name,
+    source: sb.source,
+    ...(sb.monitor ? { monitor: sb.monitor } : {}),
+    ...(sb.match === "out_of_order" ? { match: "out_of_order" as const } : {}),
+  };
+}
+
+/** is the text still in implicit mode — `analysis` absent, or with no value? */
+function analysisIsImplicit(text: string): boolean {
+  const node: unknown = parse(text).get("analysis", true);
+  return (
+    node === undefined ||
+    node === null ||
+    (isScalar(node) && (node.value === null || node.value === undefined))
+  );
+}
+
+/**
+ * `addScoreboard` for the FIRST `analysis:` entry of a bench (docs/07,
+ * "Interim"): the new scoreboard, then the kept inferred ones, then the kept
+ * coverage. A FOLD of the two existing mutations, on purpose — the text is
+ * what the same gestures made one by one would write, byte for byte, so the
+ * tutorial's listing and a hand-made bench do not differ by the path taken.
+ * With nothing kept it IS `addScoreboard`.
+ *
+ * The NEW entry comes first: a drop gesture gives its drop point to the first
+ * node of the kind that was not there before (`renderTb`), and with the kept
+ * entry first that was the former ghost — which jumped, losing its seat, while
+ * the scoreboard the user had just created landed wherever the layout put it.
+ *
+ * The plan was made for a text in implicit mode. If the text declares
+ * `analysis:` by the time it is applied (a second click, a hand edit while the
+ * question waited), nothing is inferred any more and the plain mutation runs:
+ * the kept entries would be additions nobody asked for.
+ */
+export function addScoreboardKeeping(
+  text: string,
+  spec: ScoreboardSpec,
+  keep: KeptAnalysis
+): string {
+  let t = addScoreboard(text, spec);
+  if (!analysisIsImplicit(text)) {
+    return t;
+  }
+  for (const sb of keep.scoreboards) {
+    t = addScoreboard(t, keptSpec(sb));
+  }
+  for (const a of keep.coverage) {
+    t = addCoverage(t, a);
+  }
+  return t;
+}
+
+/** `addCoverage` for the first `analysis:` entry: the new collector, then the
+ *  kept inferred collectors and scoreboards (see above — the new one first,
+ *  and the plain mutation on a text that is no longer implicit). */
+export function addCoverageKeeping(text: string, agent: string, keep: KeptAnalysis): string {
+  let t = addCoverage(text, agent);
+  if (!analysisIsImplicit(text)) {
+    return t;
+  }
+  for (const a of keep.coverage) {
+    t = addCoverage(t, a);
+  }
+  for (const sb of keep.scoreboards) {
+    t = addScoreboard(t, keptSpec(sb));
+  }
+  return t;
 }
 
 /** the inferred components to write (docs/08 R12): the resolved entries, verbatim */

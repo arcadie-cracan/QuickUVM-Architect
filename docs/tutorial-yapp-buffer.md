@@ -169,6 +169,17 @@ At the **Env** level (or from the inspector's "Add component" section), press
 
 A `pkt_sb` box appears, linked to both agents. ✔️ *"a two-stream scoreboard"*
 
+> **What the gesture did besides.** Until now the configuration had no
+> `analysis:` block, and for such a bench quick-uvm *infers* a scoreboard `sbd`
+> and a coverage collector on the first agent, `cmd` (once the file is saved
+> they are the dashed boxes in the Env). Declaring `analysis:` stops the
+> inference, so the gesture declares what was inferred as well, in the same
+> edit: `pkt_sb` takes the place of `sbd` — it checks the same source agent —
+> and the collector on `cmd` is written next to it. A message says what was
+> kept and what was replaced. (This needs a quick-uvm with the `resolve`
+> command, 1.1.0 or newer; with an older one the extension asks before adding,
+> because it cannot tell what would be lost.)
+
 Its fields can be edited later from the inspector (select the scoreboard → the
 Source / Monitor / Match / Match key / Max latency editor), or from the pills
 on the selected box.
@@ -179,8 +190,15 @@ on the selected box.
 
 ## 6. A coverage collector (on `cmd`)
 
-Press **"Coverage collector"** → pick the agent **`cmd`**. A coverage collector
-appears, linked to `cmd`. ✔️ *"a coverage collector"*
+It is already there: step 5 kept the collector quick-uvm had inferred on `cmd`
+— `coverage: [ cmd ]` in the YAML, a solid `cmd_cov` box in the Env.
+✔️ *"a coverage collector"*
+
+Do **not** press "Coverage collector" now unless you want a second one: `rsp`
+is the only agent left without a collector, so the gesture adds it there
+without asking, and the configuration no longer matches the listing in step 9.
+(On a bench that already declares `analysis:` — every bench from here on —
+"Coverage collector" simply adds the one you pick.)
 
 *(Optional)* **"Virtual sequence"** → coordinates `cmd` (the active agent) — a
 sequential `smoke`.

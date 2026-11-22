@@ -143,6 +143,30 @@ should also emit the entries inference would have provided, so a GUI gesture nev
 silently removes a component the user already had. Small, and justified without any
 visualisation work.
 
+**Shipped (Nov 2026)** — it was neither small nor done: an audit of this plan found the
+gestures still writing their own entry alone, and `quick-uvm resolve` confirmed the loss
+(a first scoreboard took the inferred coverage away; a first coverage on another agent
+took the inferred scoreboard and the collector). "Add scoreboard" and "Add coverage" now
+ask the generator what the LIVE document resolves to (`ResolveService.resolveText` — the
+cache describes the file on disk, which lags while the document is unsaved), and write
+what was inferred with their own entry, in one edit (`keepOnFirstAnalysis` in
+`src/resolved.ts`, `addScoreboardKeeping` / `addCoverageKeeping` in `src/yamlops.ts`).
+The rule, decided with the user: inferred coverage is always kept; an inferred scoreboard
+is kept unless the new one checks the SAME source agent, which makes it a replacement.
+The user is told what was kept and what was replaced, and asked first when the inferred
+set cannot be known. `test:e2e` scenario 17 asks the generator before and after.
+
+One thing the adversarial review of this slice found changes more than the slice:
+**`quick-uvm resolve` over-reports.** 1.2.0 reports `sbd` and a collector on the first
+agent for ANY bench without `analysis:`, but on a composition (`subenvs`), on `kind: vip`
+and on an agent with `replicas` / `instances` the generator generates neither, and refuses
+both once they are declared. The diagram had been drawing ghosts there since August, and
+the proposal strip offered to materialise them into a configuration that does not
+generate. `inferenceIsReal` (`src/resolved.ts`) now fences those shapes for the ghosts,
+the strip and the add gestures alike; scenario 17 locks each shape against the generator.
+This is a generator-side gap (the fix belongs in `ProjectConfig.resolved()`); the fence
+is the extension's side of it until then.
+
 ### Status — shipped (Aug 2026)
 
 QuickUVM#118 landed `resolve`, and option A is implemented **read-only**:
@@ -160,12 +184,17 @@ QuickUVM#118 landed `resolve`, and option A is implemented **read-only**:
 - `buildTbScene` draws them dashed + dimmed with an "inferred — not in the config" note,
   and the inspector replaces the property editor with an explanation of the mode switch.
 
-**Deliberately still read-only.** Both sharp edges above are mutations, and neither is
-implemented: `tbDeleteTarget` returns `null` for a ghost, which disables the inspector
-button, the Delete key and the context menu in one place (they all resolve through it).
-A ghost is therefore visible and explained, but not editable — the honest state until
-materialisation is designed, and strictly better than the previous behaviour, where the
-components were invisible.
+**Deliberately still read-only** *(as shipped in Aug 2026; see the update below)*. Both
+sharp edges above are mutations, and neither is implemented: `tbDeleteTarget` returns
+`null` for a ghost, which disables the inspector button, the Delete key and the context
+menu in one place (they all resolve through it). A ghost is therefore visible and
+explained, but not editable — the honest state until materialisation is designed, and
+strictly better than the previous behaviour, where the components were invisible.
+
+*Update, Nov 2026.* The first sharp edge is closed: the proposal strip materialises the
+whole inferred set at once (docs/08 R12, `materializeAnalysis`), and the add gestures keep
+it (the "Interim" item above). The second is still open — an inferred component cannot be
+DELETED from the diagram; a ghost stays read-only.
 
 One guard is worth remembering: `resolve` reads the file on **disk**, so between an edit
 and its save the cache describes the previous text. The scene therefore drops every ghost
@@ -225,6 +254,10 @@ the reason for extracting the inspector before the move.
 
 ## Track A — the QuickUVM generation manifest (the common foundation)
 
+> **Status (audited against the code, Nov 2026): shipped.** quick-uvm 1.2.0 has the
+> `manifest` command, `FileSpec.owner`, a repeatable `--only` and the warning for an
+> `--only` that matches no file. What follows is the plan as written.
+
 **Repo: QuickUVM.** A single slice, through the QuickUVM PR flow. Three small,
 backward-compatible additions (verified in `quick_uvm/cli.py` + `quick_uvm/generator.py`):
 
@@ -274,6 +307,15 @@ against the committed examples (flat/packaged/subenv).
 ---
 
 ## Line 1 — decorating the ungenerated elements
+
+> **Status (audited against the code, Nov 2026): shipped**, slices 1.1–1.4 — the detector
+> on the manifest (`src/genstate.ts`), the ●/U/M badges on the verification tree
+> (`src/tbdecorations.ts`) and on the diagram, `stale` on a content hash. Two things in the
+> plan below are NOT in the code: the hard-coded name table as a fallback for a quick-uvm
+> without `manifest` (the card says "not resolved" instead), and the bubble-up of a badge
+> to `env` / the root. The "open decisions for the user" at the end of this section were
+> settled by the implementation and never written down: the DUT, subenv, coverage, test
+> and RAL nodes carry no generation badge (`ownerToNodeId`).
 
 **Repo: QuickUVM Architect.** A star/badge in the verification hierarchy (and in the
 TB diagram) that marks the TB elements with no generated code behind them (they exist
@@ -347,6 +389,12 @@ generation (`generator.onStatus`), on changes in the output dir (a debounced
 ---
 
 ## Line 2 — incremental per-element generation
+
+> **Status (audited against the code, Nov 2026): shipped**, slices 2.2–2.4 — "Generate
+> this item" (`--only` per owned file, the aggregate set always added), "Open Generated
+> Code" with the offer to generate, both on the manifest that feeds Line 1. The open
+> question about composed elements at the end of this section was not answered: a
+> `sub:` node has no per-element generation.
 
 **Repos: QuickUVM (capability) + QuickUVM Architect (UX).** Regenerating only the
 files of one element (agent/scoreboard/test/subenv), plausibly triggered when the

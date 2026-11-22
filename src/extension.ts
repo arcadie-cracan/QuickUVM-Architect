@@ -68,7 +68,11 @@ export function activate(context: vscode.ExtensionContext): void {
   // docs/08 R19: the diff tabs of a previewed gesture (the virtual "after" texts)
   const preview = new PreviewProvider();
   context.subscriptions.push(preview);
-  const actions = new Actions(() => model, config, log, preview);
+  // `resolve` is created further down: the callback binds late (docs/07
+  // "Interim" — a first `analysis:` entry asks what the LIVE text resolves to)
+  const actions = new Actions(() => model, config, log, preview, (text, uri) =>
+    resolve.resolveText(text, uri)
+  );
   const generator = new Generator(config, log, generateDiags);
   const layout = new LayoutStore(log);
   // docs/07 line 1 — the "not generated" star on the verification tree, driven by
@@ -114,7 +118,8 @@ export function activate(context: vscode.ExtensionContext): void {
     // configuration that may be half typed. The inferred components matter:
     // in implicit mode the scoreboard is the instance `sbd` and the collector
     // `cov`, and without them every report of such a bench lands on the env
-    names: () => benchNames(config.current, inferredComponents(resolve.current)),
+    names: () =>
+      benchNames(config.current, inferredComponents(resolve.current, config.current)),
     ownerOfFile: (file) => {
       const m = genState.currentManifest;
       const owner = m ? ownerOfFile(m, file) : null;

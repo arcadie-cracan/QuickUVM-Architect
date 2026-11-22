@@ -16,10 +16,15 @@
 // mode switch — so a half-typed `analysis:` can never render as "declared
 // scoreboard AND inferred ghosts", a state the generator cannot produce.
 
+import * as fs from "fs";
+import * as os from "os";
 import * as path from "path";
 import * as vscode from "vscode";
 import { invokeQuickUvm } from "./generate";
-import { parseResolved, type ResolvedConfig } from "./resolved";
+import { parseResolved, type LiveResolve, type ResolvedConfig } from "./resolved";
+
+/** a gesture waits for this answer: a Python that hangs must not hang it */
+const LIVE_RESOLVE_TIMEOUT_MS = 20000;
 
 export class ResolveService implements vscode.Disposable {
   /** cached PER CONFIG URI. One slot would be wrong: the custom editor can hold a
@@ -101,6 +106,74 @@ export class ResolveService implements vscode.Disposable {
       return;
     }
     this.set(configUri, parseResolved(r.out));
+  }
+
+  /**
+   * The effective topology of a TEXT — the live document, saved or not (docs/07
+   * "Interim"). A gesture that is about to write the first `analysis:` entry
+   * must know what quick-uvm infers for the configuration AS IT STANDS, and the
+   * cache cannot say: it describes the file on disk, and with
+   * `quickuvm.autoSaveConfig` off (the default) the disk lags behind every
+   * gesture since the last save.
+   *
+   * A copy of the text is resolved from a temporary folder, never from the
+   * workspace: a scratch `*.quickuvm.yaml` there would be discovered as a
+   * configuration. A composition's relative `subenvs[].config` paths do not
+   * resolve from that folder (a file a relative path points at — a VIP
+   * manifest — is not there) — then, and only for a document that is NOT
+   * dirty, the cached answer of the file itself is the same thing. Not cached,
+   * not announced: it answers one question and is gone. When there is no
+   * answer it says WHY: the remedy is not the same for a quick-uvm without the
+   * command, a configuration it refuses, and a process that could not be run.
+   */
+  async resolveText(text: string, configUri: vscode.Uri): Promise<LiveResolve> {
+    const root = vscode.workspace.workspaceFolders?.[0];
+    const cfg = vscode.workspace.getConfiguration("quickuvm", root?.uri);
+    let dir: string | undefined;
+    let live: LiveResolve = { resolved: null, why: "failed" };
+    try {
+      dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), "quickuvm-resolve-"));
+      const file = path.join(dir, path.basename(configUri.fsPath));
+      await fs.promises.writeFile(file, text, "utf8");
+      const run = invokeQuickUvm(["resolve", "-c", file], root?.uri.fsPath ?? dir, cfg);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const late = new Promise<null>((done) => {
+        timer = setTimeout(() => done(null), LIVE_RESOLVE_TIMEOUT_MS);
+      });
+      const r = await Promise.race([run, late]);
+      clearTimeout(timer);
+      if (!r) {
+        live = { resolved: null, why: "failed", detail: "quick-uvm did not answer in time" };
+      } else if (r.code === 0) {
+        const resolved = parseResolved(r.out);
+        live = resolved ? { resolved } : { resolved: null, why: "failed" };
+      } else if (/No such command/i.test(r.err)) {
+        live = { resolved: null, why: "no-command" };
+      } else if (r.enoent) {
+        live = { resolved: null, why: "failed", detail: "quick-uvm could not be started" };
+      } else {
+        // pydantic prints the reason under an "Invalid config" heading: the
+        // first line that says something is the one to show
+        const lines = r.err.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+        const first = lines.find((l) => !/^(Error:|Traceback|\d+ validation error)/i.test(l)) ?? lines[0];
+        live = { resolved: null, why: "refused", detail: first?.slice(0, 240) };
+      }
+    } catch (e) {
+      this.log.appendLine(`[resolve] the live text could not be resolved: ${String(e)}`);
+    } finally {
+      if (dir) {
+        await fs.promises.rm(dir, { recursive: true, force: true }).catch(() => undefined);
+      }
+    }
+    if (live.resolved) {
+      return live;
+    }
+    const open = vscode.workspace.textDocuments.find(
+      (d) => d.uri.toString() === configUri.toString()
+    );
+    const cached =
+      open && !open.isDirty && open.getText() === text ? this.resolvedFor(configUri) : null;
+    return cached ? { resolved: cached } : live;
   }
 
   private set(uri: vscode.Uri, next: ResolvedConfig | null): void {

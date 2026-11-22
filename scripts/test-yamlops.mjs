@@ -1704,6 +1704,141 @@ test("R24 resetAsList: the single reset as a ONE-entry list, named after dut.res
   assert.throws(() => ops.resetAsList(driven), /driven by an agent/);
 });
 
+test('docs/07 "Interim": the first analysis entry with what inference provided is a FOLD of the gestures', () => {
+  let base = ops.createAgent(ops.newConfigText("buf"), {
+    name: "cmd", inputs: [{ name: "d", width: 8 }], outputs: [{ name: "q", width: 8 }],
+  });
+  base = ops.createAgent(base, { name: "rsp", inputs: [{ name: "r" }], outputs: [{ name: "v" }] });
+  const sb = { name: "pkt_sb", source: "cmd", monitor: "rsp", match: "out_of_order", matchKey: "v" };
+
+  // the tutorial's case: the inferred scoreboard (same source) is replaced, its
+  // coverage kept — byte for byte what "add scoreboard" then "add coverage" write
+  const kept = ops.addScoreboardKeeping(base, sb, { scoreboards: [], coverage: ["cmd"] });
+  assert.equal(kept, ops.addCoverage(ops.addScoreboard(base, sb), "cmd"));
+  assert.deepEqual(ops.parseQuvm(kept).analysis.coverage, ["cmd"]);
+
+  // another source: the inferred scoreboard stays beside the new one. The NEW
+  // entry is FIRST — a drop gesture gives its drop point to the first node of the
+  // kind that was not there before, and that must be the one the user created —
+  // and the resolved entry's default `match: in_order` is not written
+  const other = ops.addScoreboardKeeping(
+    base,
+    { name: "rsp_sb", source: "rsp" },
+    { scoreboards: [{ name: "sbd", source: "cmd", match: "in_order" }], coverage: ["cmd"] }
+  );
+  assert.deepEqual(ops.parseQuvm(other).analysis, {
+    scoreboards: [{ name: "rsp_sb", source: "rsp" }, { name: "sbd", source: "cmd" }],
+    coverage: ["cmd"],
+  });
+  assert.equal(
+    other,
+    ops.addCoverage(
+      ops.addScoreboard(ops.addScoreboard(base, { name: "rsp_sb", source: "rsp" }), { name: "sbd", source: "cmd" }),
+      "cmd"
+    )
+  );
+
+  // coverage as the first entry: the new collector first, then the inferred one
+  // and the scoreboard
+  const cov = ops.addCoverageKeeping(base, "rsp", {
+    scoreboards: [{ name: "sbd", source: "cmd" }], coverage: ["cmd"],
+  });
+  assert.deepEqual(ops.parseQuvm(cov).analysis, {
+    coverage: ["rsp", "cmd"],
+    scoreboards: [{ name: "sbd", source: "cmd" }],
+  });
+  assert.equal(cov, ops.addScoreboard(ops.addCoverage(ops.addCoverage(base, "rsp"), "cmd"), { name: "sbd", source: "cmd" }));
+  // the agent the gesture names may be in the kept list too: once
+  assert.deepEqual(
+    ops.parseQuvm(ops.addCoverageKeeping(base, "cmd", { scoreboards: [], coverage: ["cmd"] })).analysis.coverage,
+    ["cmd"]
+  );
+
+  // nothing kept: exactly the plain mutations
+  const none = { scoreboards: [], coverage: [] };
+  assert.equal(ops.addScoreboardKeeping(base, sb, none), ops.addScoreboard(base, sb));
+  assert.equal(ops.addCoverageKeeping(base, "rsp", none), ops.addCoverage(base, "rsp"));
+
+  // `analysis:` with no value is implicit too (the scene and materializeAnalysis agree)
+  const empty = base.replace(/\n*$/, "\nanalysis:\n");
+  assert.equal(ops.parseQuvm(empty).analysis, null);
+  assert.deepEqual(
+    ops.parseQuvm(ops.addScoreboardKeeping(empty, { name: "s", source: "rsp" }, {
+      scoreboards: [{ name: "sbd", source: "cmd" }], coverage: ["cmd"],
+    })).analysis,
+    { scoreboards: [{ name: "s", source: "rsp" }, { name: "sbd", source: "cmd" }], coverage: ["cmd"] }
+  );
+
+  // ... and the plain mutations no longer THROW on it ("Expected YAML collection
+  // at analysis" — setIn cannot descend into a null scalar). The key keeps its
+  // place and its comment.
+  const placed = "analysis: # to fill in\n" + base;
+  for (const out of [ops.addCoverage(placed, "cmd"), ops.addScoreboard(placed, { name: "s", source: "cmd" })]) {
+    assert.match(out, /^analysis:/, "the key stays where the user put it");
+    assert.match(out, /# to fill in/, "its comment survives");
+    assert.equal(ops.parseQuvm(out).agents.length, 2);
+  }
+  assert.deepEqual(ops.parseQuvm(ops.addCoverage(placed, "cmd")).analysis, { coverage: ["cmd"] });
+
+  // the caller keeps the names apart: a new scoreboard named like a kept one is refused
+  assert.throws(
+    () => ops.addScoreboardKeeping(base, { name: "sbd", source: "rsp" }, {
+      scoreboards: [{ name: "sbd", source: "cmd" }], coverage: [],
+    }),
+    /already exists/
+  );
+  // comments and unknown keys survive the fold
+  const noted = base.replace("agents:", "# my agents\nagents:");
+  assert.match(ops.addCoverageKeeping(noted, "rsp", { scoreboards: [{ name: "sbd", source: "cmd" }], coverage: [] }), /# my agents/);
+});
+
+test('docs/07 "Interim": a plan made for an implicit text is NOT applied to one that declares analysis', () => {
+  // the plan is computed, then a question waits (the name box, the modal) or a
+  // Python process runs — and the text may have left implicit mode meanwhile
+  let base = ops.createAgent(ops.newConfigText("buf"), {
+    name: "cmd", inputs: [{ name: "d", width: 8 }], outputs: [],
+  });
+  base = ops.createAgent(base, { name: "rsp", inputs: [{ name: "r" }], outputs: [] });
+  const keep = { scoreboards: [{ name: "sbd", source: "cmd" }], coverage: ["cmd"] };
+
+  // the same gesture twice (two quick clicks): the second finds its own first
+  // write — the plain mutation, whose "already there" is a no-op
+  const once = ops.addCoverageKeeping(base, "rsp", keep);
+  assert.equal(ops.addCoverageKeeping(once, "rsp", keep), once, "byte-identical: no second sbd, no throw");
+
+  // the user declared an EMPTY list by hand meanwhile: nothing inferred is put back into it
+  const declared = base.replace(/\n*$/, "\nanalysis:\n  scoreboards: []\n");
+  assert.deepEqual(ops.parseQuvm(ops.addCoverageKeeping(declared, "rsp", keep)).analysis, {
+    scoreboards: [], coverage: ["rsp"],
+  });
+  assert.deepEqual(
+    ops.parseQuvm(ops.addScoreboardKeeping(declared, { name: "x", source: "rsp" }, keep)).analysis,
+    { scoreboards: [{ name: "x", source: "rsp" }] }
+  );
+  // `analysis: {}` is declared mode with nothing wired — not implicit
+  const braces = base.replace(/\n*$/, "\nanalysis: {}\n");
+  assert.deepEqual(ops.parseQuvm(ops.addCoverageKeeping(braces, "rsp", keep)).analysis, { coverage: ["rsp"] });
+});
+
+test("addCoverage: an agent already covered returns the ORIGINAL text (the no-op invariant)", () => {
+  // it returned the re-serialised document: on a hand-formatted file that is a
+  // phantom edit — the spacing changes, a WorkspaceEdit is made, undo gains a step
+  const hand = [
+    "project: {name: x}",
+    "agents:",
+    "  - {name: cmd, interface: cmd_if, sequence_item: cmd_item, ports: {inputs: [{name: d}], outputs: []}}",
+    "analysis:",
+    "  coverage: [cmd,rsp]   # mine",
+    "",
+  ].join("\n");
+  assert.equal(ops.addCoverage(hand, "cmd"), hand);
+  assert.equal(ops.addCoverage(hand, "rsp"), hand);
+  // a rich entry covers its agent too
+  const rich = hand.replace("[cmd,rsp]   # mine", "[{agent: cmd, coverpoints: []}]");
+  assert.equal(ops.addCoverage(rich, "cmd"), rich);
+  assert.notEqual(ops.addCoverage(hand, "other"), hand, "a new agent is still added");
+});
+
 if (failures) {
   console.error(`\n${failures} tests failed`);
   process.exit(1);
