@@ -143,11 +143,11 @@ test("declaredElements: mirrors the tree's nodes, from the IN-MEMORY config", ()
   assert.ok(!hasVseq({
     agents: [{ name: "cmd" }],
     virtual_sequences: [{ name: "v", body: [{ agent: "nope", sequence: "s" }] }],
-  }), "un vseq care nu numeste niciun agent real nu coordoneaza nimic");
+  }), "a vseq that names no real agent coordinates nothing");
   assert.ok(!hasVseq({ agents: [{ name: "a" }, { name: "b" }], auto_virtual_sequences: false }));
   assert.ok(hasVseq({ agents: [{ name: "a" }, { name: "b" }] }));
   assert.ok(!hasVseq({ agents: [{ name: "a" }, { name: "b", active: false }] }),
-    "auto vseq cere >= 2 agenti ACTIVI");
+    "the auto vseq needs >= 2 ACTIVE agents");
 });
 
 test("classify: a JUST-ADDED element is UNSAVED, its own state (● green)", () => {
@@ -160,11 +160,11 @@ test("classify: a JUST-ADDED element is UNSAVED, its own state (● green)", () 
   const gen = new Map([["agent:cmd", "H1"]]);
   const saved = classify(m, present, gen, "H1");
   assert.equal(saved.unsaved.size, 0);
-  assert.equal(saved.missing.size, 0, "starea salvata e curata");
+  assert.equal(saved.missing.size, 0, "the saved state is clean");
 
   const dirty = classify(m, present, gen, "H1", ["agent:cmd", "vseq:v"]);
   assert.deepEqual([...dirty.unsaved], ["vsqr"]);
-  assert.equal(dirty.missing.size, 0, "un element nesalvat NU e si `missing`");
+  assert.equal(dirty.missing.size, 0, "an unsaved element is NOT `missing` as well");
   assert.equal(dirty.stale.size, 0);
 });
 

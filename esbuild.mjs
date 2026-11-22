@@ -1,5 +1,5 @@
-// Build: host-ul extensiei (Node/CJS) + codul webview-ului (browser/IIFE).
-// elkjs se leaga static in dist/webview.js (varianta bundled, fara worker).
+// Build: the extension host (Node/CJS) + the webview code (browser/IIFE).
+// elkjs is linked statically into dist/webview.js (the bundled variant, no worker).
 import esbuild from "esbuild";
 
 const watch = process.argv.includes("--watch");

@@ -1,16 +1,16 @@
 <!DOCTYPE html>
-<!-- Harness de browser pentru webview, fara VSCode: stub acquireVsCodeApi,
-     tema minimala si modelul de regresie din examples/model.json.
-     Rulare: python -m http.server din radacina proiectului, apoi
+<!-- Browser harness for the webview, without VSCode: an acquireVsCodeApi stub,
+     a minimal theme and the regression model from examples/model.json.
+     Run: python -m http.server from the project root, then
        http://localhost:8123/scripts/harness.html?view=demo_top.u_soc&mode=schematic
-     Parametri: view (calea instantei), mode (symbol|schematic). -->
+     Parameters: view (the instance path), mode (symbol|schematic). -->
 <html lang="ro">
 <head>
 <meta charset="UTF-8">
 <title>QuickUVM Architect — harness</title>
 <script>
-  // ocolirea cache-ului euristic al browserului (http.server nu trimite
-  // antete): stilurile si bundle-ul se incarca mereu proaspete
+  // getting around the browser's heuristic cache (http.server sends no
+  // headers): the styles and the bundle are always loaded fresh
   document.write(
     `<link href="../media/webview.css?v=${Date.now()}" rel="stylesheet">`
   );
@@ -75,7 +75,7 @@
 </div>
 <div id="empty">Select an instance from the "Hierarchy" view.</div>
 <script>
-  // stub-ul API-ului VSCode: host-ul e simulat aici
+  // the stub of the VSCode API: the host is simulated here
   const params = new URLSearchParams(location.search);
   if (params.get("only")) {
     document.body.classList.add(`only-${params.get("only")}`);
@@ -93,9 +93,9 @@
   //   model, configPath, config, resolved, children, overlay, sidecar,
   //   viewId, mode, focus, select[], proposals[], status, results
   const SCENE_URL = params.get("scene");
-  // config de verificare pentru mode=tb: DUT + 2 agenti (activ/pasiv) +
-  // scoreboard/coverage/vseq/proba, ca toate nivelurile (top/env/agent) sa fie
-  // populate la drill
+  // verification config for mode=tb: DUT + 2 agents (active/passive) +
+  // scoreboard/coverage/vseq/probe, so that all levels (top/env/agent) are
+  // populated on a drill
   const TB_CONFIG_PATH = "demo.quickuvm.yaml";
   const TB_CONFIG = {
     project: { name: "demo" },
@@ -187,14 +187,14 @@
       }
     );
   }
-  window.__sent = []; // mesajele webview -> "host", pentru inspectie
+  window.__sent = []; // the webview -> "host" messages, for inspection
   function acquireVsCodeApi() {
     return {
       postMessage(m) {
         window.__sent.push(m);
         console.log("[webview->host]", JSON.stringify(m));
-        // persistam pozitiile (layout/snapshot) in sidecar, ca
-        // reincarcarea sa le restaureze (simuleaza redeschiderea panelului)
+        // we persist the positions (layout/snapshot) in the sidecar, so that a
+        // reload restores them (it simulates reopening the panel)
         if (m.type === "layout/snapshot") {
           const sc = loadSidecar();
           const v = (sc.views[m.viewId] ??= {});
@@ -355,18 +355,18 @@
         if (m.type === "ready") {
           void (async () => {
             const model = await (await fetch("../examples/model.json")).json();
-            // sidecar-ul INAINTEA modelului (docs/05, ca in panel.ts): prima
-            // randare trebuie sa aiba semintele de pozitii.
+            // the sidecar BEFORE the model (docs/05, as in panel.ts): the first
+            // render must have the position seeds.
             window.postMessage(
               { v: 1, type: "layout/full", sidecar: loadSidecar() },
               "*"
             );
-            // ?nomodel: simuleaza CustomTextEditor-ul (felia 4) — vederea TB se
-            // randeaza DOAR din config/full, fara model/full (nu are nevoie de RTL)
+            // ?nomodel: simulates the CustomTextEditor (slice 4) — the TB view is
+            // rendered ONLY from config/full, without model/full (it needs no RTL)
             if (!params.has("nomodel")) {
               window.postMessage({ v: 1, type: "model/full", model }, "*");
             }
-            // config-ul de verificare (mesajul config/full, docs/05)
+            // the verification config (the config/full message, docs/05)
             window.postMessage(
               {
                 v: 1,

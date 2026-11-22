@@ -55,7 +55,7 @@ const CFG = {
   probes: [{ name: "lvl", path: "u.lvl", width: 3 }],
 };
 
-test("nivel testbench (focus=''): DUT + Env, Env cu drill", () => {
+test("testbench level (focus=''): DUT + Env, Env with a drill", () => {
   const s = buildTbScene(CFG, "", "demo.quickuvm.yaml");
   assert.equal(s.viewId, "tb:demo.quickuvm.yaml");
   assert.equal(s.focus, "");
@@ -72,7 +72,7 @@ test("nivel testbench (focus=''): DUT + Env, Env cu drill", () => {
   assert.ok(env.stereotype.includes("env"));
 });
 
-test("nivel Env (focus='env'): agenti + analiza + boundary interfata", () => {
+test("Env level (focus='env'): agents + analysis + the interface boundary", () => {
   const s = buildTbScene(CFG, "env", "demo.quickuvm.yaml");
   assert.deepEqual(
     s.breadcrumb.map((c) => c.focus),
@@ -95,7 +95,7 @@ test("nivel Env (focus='env'): agenti + analiza + boundary interfata", () => {
   assert.ok(s.edges.some((e) => e.id === "e:sb:sbd.source" && e.source === "agent:cmd"));
 });
 
-test("nivel agent (focus='agent:cmd'): sequencer/driver/monitor + boundary", () => {
+test("agent level (focus='agent:cmd'): sequencer/driver/monitor + boundary", () => {
   const s = buildTbScene(CFG, "agent:cmd", "demo.quickuvm.yaml");
   assert.deepEqual(
     s.breadcrumb.map((c) => c.label),
@@ -120,13 +120,13 @@ test("nivel agent (focus='agent:cmd'): sequencer/driver/monitor + boundary", () 
   assert.equal(dir("<ap>"), "out");
 });
 
-test("agent pasiv: doar monitor, fara sequencer/driver", () => {
+test("passive agent: monitor only, no sequencer/driver", () => {
   const s = buildTbScene(CFG, "agent:rsp", null);
   assert.deepEqual(s.nodes.map((n) => n.id), ["u.monitor"]);
   assert.ok(!s.edges.some((e) => e.source === "u.sequencer"));
 });
 
-test("nivel inexistent -> null; config gol -> null", () => {
+test("nonexistent level -> null; empty config -> null", () => {
   assert.equal(buildTbScene(CFG, "agent:xyz", null), null);
   assert.equal(buildTbScene({}, "", null), null);
 });
@@ -150,7 +150,7 @@ test("docs/08 R11: the children's agent ports become the sub boxes' ports (outpu
   assert.deepEqual(nodeById(bare, "sub:u_a").ports.map((p) => p.port), ["q"], "without children: the connection pins only, as before");
 });
 
-test("bench subsystem: DUT prefix de clasa, nu se deseneaza; Env cu subenvs", () => {
+test("subsystem bench: the DUT is a class prefix, it is not drawn; Env with subenvs", () => {
   const s = buildTbScene(
     {
       dut: { name: "top" },
@@ -180,7 +180,7 @@ test("bench subsystem: DUT prefix de clasa, nu se deseneaza; Env cu subenvs", ()
   assert.equal(nodeById(noCfg, "sub:u_y").drill, "config:y.yaml");
 });
 
-test("subenv-uri cu ACELASI nume: noduri distincte, fiecare cu config-ul lui", () => {
+test("subenvs with the SAME name: distinct nodes, each with its own config", () => {
   // hand-written YAML, invalid for quick-uvm but drawn honestly: the node ids
   // dedup (#n), and the drill carries its own path — the second block does NOT
   // collapse silently into the first (adversarial review loose-ends)
@@ -205,7 +205,7 @@ test("subenv-uri cu ACELASI nume: noduri distincte, fiecare cu config-ul lui", (
   ]);
 });
 
-test("subenv cu config ABSOLUT: drill-ul poarta calea absoluta ca atare", () => {
+test("subenv with an ABSOLUTE config: the drill carries the absolute path as it is", () => {
   const s = buildTbScene(
     { dut: { name: "top" }, subenvs: [{ name: "u", config: "C:/abs/x.quickuvm.yaml" }] },
     "env",
@@ -222,7 +222,7 @@ test("subenv cu config ABSOLUT: drill-ul poarta calea absoluta ca atare", () => 
   assert.deepEqual(topS.nodes.map((n) => n.id), ["env"]);
 });
 
-test("bench hibrid (DUT + agenti + subenvs): DUT desenat + interfata env<->dut", () => {
+test("hybrid bench (DUT + agents + subenvs): the DUT is drawn + the env<->dut interface", () => {
   // demo_top: soc_top is the DUT verified directly by agent1, and the channels are
   // sub-envs — the DUT MUST appear (D24: TB root = DUT + Env)
   const cfg = {
@@ -245,7 +245,7 @@ test("bench hibrid (DUT + agenti + subenvs): DUT desenat + interfata env<->dut",
   assert.ok(envLvl.boundary.some((b) => b.id === "<if>.agent1"));
 });
 
-test("probe 'tap' nu colizioneaza; probele in compartiment + granita internals", () => {
+test("a probe named 'tap' does not collide; the probes in a compartment + the internals boundary", () => {
   const s = buildTbScene(
     {
       dut: { name: "d" },
@@ -265,7 +265,7 @@ test("probe 'tap' nu colizioneaza; probele in compartiment + granita internals",
   assert.equal(probes.ports.find((pp) => pp.id === "probes._tap").side, "WEST");
 });
 
-test("regresie: probe fara agenti (env gol) nu produce muchie/port dangling", () => {
+test("regression: probes without agents (an empty env) produce no dangling edge/port", () => {
   const s = buildTbScene(
     { dut: { name: "fifo" }, probes: [{ name: "lvl", path: "u.p", width: 4 }] },
     "",

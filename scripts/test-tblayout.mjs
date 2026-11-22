@@ -1,7 +1,7 @@
 // Node tests for the verification view layout (src/webview/tbschematic.ts
 // — layoutTb with real ELK): npm run test:tblayout
 //
-// Covers the key invariants of the drift from the „drag + TB positions" slice:
+// Covers the key invariants of the drift from the "drag + TB positions" slice:
 //  - the TbPlaced ports are RELATIVE to the node origin (anchor = n.x +
 //    offset), not absolute — otherwise the wires don't follow the block on drag;
 //  - layoutTb accepts seeds (interactive ELK) without crashing.
@@ -83,7 +83,7 @@ await test("docs/08 R18: a block collapsed to its header is shorter, keeps its p
   assert.equal(layout.nodes.get("agent:rsp").collapsed, undefined, "only the named block");
 });
 
-await test("porturile sunt RELATIVE la originea nodului (0 sau w)", async () => {
+await test("the ports are RELATIVE to the node origin (0 or w)", async () => {
   const scene = buildTbScene(CFG, "", "d.yaml");
   const layout = await layoutTb(elk, scene, measure);
   let checked = 0;
@@ -93,17 +93,17 @@ await test("porturile sunt RELATIVE la originea nodului (0 sau w)", async () => 
       // i.e. >= p.x (always shifted by the node position on the canvas)
       assert.ok(
         port.x === 0 || port.x === p.w,
-        `port ${JSON.stringify(port)} nu e relativ (w=${p.w}, node.x=${p.x})`
+        `port ${JSON.stringify(port)} is not relative (w=${p.w}, node.x=${p.x})`
       );
       // the port y is relative (in the port band, < the node height)
-      assert.ok(port.y >= 0 && port.y <= p.h, `port.y ${port.y} nu e relativ`);
+      assert.ok(port.y >= 0 && port.y <= p.h, `port.y ${port.y} is not relative`);
       checked += 1;
     }
   }
-  assert.ok(checked > 0, "niciun port de verificat");
+  assert.ok(checked > 0, "no port to check");
 });
 
-await test("layoutTb accepta seminte (ELK interactiv) fara sa crape", async () => {
+await test("layoutTb accepts seeds (interactive ELK) without crashing", async () => {
   const scene = buildTbScene(CFG, "env", "d.yaml");
   const ids = scene.nodes.map((n) => n.id);
   // partial seeds: only a few nodes have positions
@@ -114,16 +114,16 @@ await test("layoutTb accepta seminte (ELK interactiv) fara sa crape", async () =
   const layout = await layoutTb(elk, scene, measure, seeds);
   // all scene nodes appear in the layout, the ports stay relative
   for (const n of scene.nodes) {
-    assert.ok(layout.nodes.has(n.id), `nodul ${n.id} lipseste din layout`);
+    assert.ok(layout.nodes.has(n.id), `node ${n.id} is missing from the layout`);
   }
   for (const p of layout.nodes.values()) {
     for (const port of p.ports.values()) {
-      assert.ok(port.x === 0 || port.x === p.w, "port ne-relativ cu seminte");
+      assert.ok(port.x === 0 || port.x === p.w, "a non-relative port with seeds");
     }
   }
 });
 
-await test("flip H pe un bloc: laturile porturilor se schimba vest<->est", async () => {
+await test("flip H on a block: the ports' sides swap west<->east", async () => {
   const scene = buildTbScene(CFG, "agent:cmd", "d.yaml");
   const plain = await layoutTb(elk, scene, measure);
   const flips = new Map([["u.monitor", { h: true, v: false }]]);
@@ -137,7 +137,7 @@ await test("flip H pe un bloc: laturile porturilor se schimba vest<->est", async
   assert.equal(sideOf(flipped, "ap"), "WEST");
 });
 
-await test("flip pe steag = rasturnare LOCALA (flipH), fara sa mute latura ELK", async () => {
+await test("flip on a boundary flag = a LOCAL flip (flipH), without moving the ELK side", async () => {
   // Flip on a flag is a LOCAL horizontal mirror: it mirrors the shape +
   // moves the anchor to the opposite side of the flag, BUT does not change its
   // ELK position/side (FIRST/LAST_SEPARATE stays satisfied, so ELK does NOT throw —
@@ -155,4 +155,4 @@ await test("flip pe steag = rasturnare LOCALA (flipH), fara sa mute latura ELK",
   assert.ok(!plain.boundary.get("<ap>").flipH); // non-flipped by default
 });
 
-console.log(`\ntest-tblayout: ${passed} teste au trecut.`);
+console.log(`\ntest-tblayout: ${passed} tests passed.`);

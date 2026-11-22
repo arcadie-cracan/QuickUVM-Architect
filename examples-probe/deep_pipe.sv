@@ -1,17 +1,17 @@
-// deep_pipe.sv — un pipeline cu MULTE module intr-un SINGUR fisier, gandit
-// pentru a proba cross-probing-ul la hover (Faza 4): in schema lui
-// `deep_pipe`, fiecare instanta e un modul DIFERIT, iar declaratiile lor de
-// porturi stau la linii foarte departate in fisier. Cand stationezi pe un pin
-// al unei instante, sursa deruleaza vizibil pana la definitia acelui modul —
-// cu cat instanta e mai jos in lant, cu atat saltul e mai mare.
+// deep_pipe.sv — a pipeline with MANY modules in ONE file, meant for
+// probing the hover cross-probing (Phase 4): in the schematic of
+// `deep_pipe`, every instance is a DIFFERENT module, and their port
+// declarations sit on lines far apart in the file. When you dwell on a pin
+// of an instance, the source visibly scrolls to that module's definition —
+// the further down the chain the instance is, the bigger the jump.
 //
-// Deschide simbolul/schema lui `deep_pipe`, tine editorul acesta split langa
-// diagrama, si plimba-te cu hover-ul peste pinii u_a … u_h.
+// Open the symbol/schematic of `deep_pipe`, keep this editor split beside
+// the diagram, and move the hover over the pins u_a … u_h.
 
 `timescale 1ns / 1ps
 
 // =====================================================================
-// Etajul A — captura de intrare (registru simplu)
+// Stage A — input capture (a plain register)
 // =====================================================================
 module stage_a #(
     parameter int W = 16
@@ -35,7 +35,7 @@ module stage_a #(
 endmodule
 
 // =====================================================================
-// Etajul B — incrementare
+// Stage B — increment
 // =====================================================================
 module stage_b #(
     parameter int W = 16
@@ -59,7 +59,7 @@ module stage_b #(
 endmodule
 
 // =====================================================================
-// Etajul C — deplasare la stanga cu 1
+// Stage C — shift left by 1
 // =====================================================================
 module stage_c #(
     parameter int W = 16
@@ -83,7 +83,7 @@ module stage_c #(
 endmodule
 
 // =====================================================================
-// Etajul D — XOR cu o masca constanta
+// Stage D — XOR with a constant mask
 // =====================================================================
 module stage_d #(
     parameter int W = 16
@@ -107,7 +107,7 @@ module stage_d #(
 endmodule
 
 // =====================================================================
-// Etajul E — saturare la jumatate de scala
+// Stage E — saturation at half scale
 // =====================================================================
 module stage_e #(
     parameter int W = 16
@@ -131,7 +131,7 @@ module stage_e #(
 endmodule
 
 // =====================================================================
-// Etajul F — inversare pe biti
+// Stage F — bitwise inversion
 // =====================================================================
 module stage_f #(
     parameter int W = 16
@@ -155,7 +155,7 @@ module stage_f #(
 endmodule
 
 // =====================================================================
-// Etajul G — acumulare (stare interna)
+// Stage G — accumulation (internal state)
 // =====================================================================
 module stage_g #(
     parameter int W = 16
@@ -182,7 +182,7 @@ module stage_g #(
 endmodule
 
 // =====================================================================
-// Etajul H — captura de iesire
+// Stage H — output capture
 // =====================================================================
 module stage_h #(
     parameter int W = 16
@@ -206,7 +206,7 @@ module stage_h #(
 endmodule
 
 // =====================================================================
-// Top — inlantuie cele opt etaje (A -> B -> ... -> H)
+// Top — chains the eight stages (A -> B -> ... -> H)
 // =====================================================================
 module deep_pipe #(
     parameter int W = 16

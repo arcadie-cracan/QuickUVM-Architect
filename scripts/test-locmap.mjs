@@ -31,7 +31,7 @@ function test(name, fn) {
   console.log(`  ok ${name}`);
 }
 
-test("buildLocIndex: fisierele modelului, intrari sortate pe linie", () => {
+test("buildLocIndex: the model's files, entries sorted by line", () => {
   assert.ok(idx.has("soc_top.sv"));
   assert.ok(idx.has("chan.sv"));
   const chan = idx.get("chan.sv");
@@ -43,13 +43,13 @@ test("buildLocIndex: fisierele modelului, intrari sortate pe linie", () => {
   assert.ok(!chan.find((e) => e.target.kind === "module").exactOnly);
 });
 
-test("resolveLoc: exact pe linia unui port -> portul", () => {
+test("resolveLoc: exactly on a port's line -> the port", () => {
   // chan.sv:7 = the declaration of port din
   const t = resolveLoc(idx.get("chan.sv"), 7);
   assert.deepEqual(t, [{ kind: "port", module: "chan", port: "din" }]);
 });
 
-test("resolveLoc: linia instantierii generate -> TOATE instantele", () => {
+test("resolveLoc: the line of the generate instantiation -> ALL the instances", () => {
   // soc_top.sv:24 = `chan #(.W(CW)) u_ch` — shared by g_ch[0..2]
   const t = resolveLoc(idx.get("soc_top.sv"), 24);
   assert.equal(t.length, 3);
@@ -64,7 +64,7 @@ test("resolveLoc: linia instantierii generate -> TOATE instantele", () => {
   );
 });
 
-test("resolveLoc: cuprindere — sub instantiere cade pe instanta de deasupra", () => {
+test("resolveLoc: span — below an instantiation it falls on the instance above", () => {
   // soc_top.sv:22 (empty line) and 23 (`for (genvar…`) are between u_inv (21)
   // and g_ch (24): the closest above that spans is the u_inv instance
   // (the ports do NOT stretch — only exact)
@@ -76,16 +76,16 @@ test("resolveLoc: cuprindere — sub instantiere cade pe instanta de deasupra", 
   ]);
 });
 
-test("resolveLoc: ANSI — antetul si primul port pe aceeasi linie -> portul", () => {
+test("resolveLoc: ANSI — the header and the first port on the same line -> the port", () => {
   // soc_top.sv:3 = `interface reg_bus ... (input logic clk ...)` — the module
   // reg_bus and the port clk share the line; the port is more specific
   const t = resolveLoc(idx.get("soc_top.sv"), 3);
   assert.deepEqual(t, [{ kind: "port", module: "reg_bus", port: "clk" }]);
 });
 
-test("resolveLoc: inainte de orice element / fisier necunoscut -> nimic", () => {
+test("resolveLoc: before any element / unknown file -> nothing", () => {
   assert.deepEqual(resolveLoc(idx.get("soc_top.sv"), 1), []);
-  assert.deepEqual(resolveLoc(idx.get("nu-exista.sv"), 10), []);
+  assert.deepEqual(resolveLoc(idx.get("no-such.sv"), 10), []);
 });
 
 // ------------------------------------------------ probeIds on the current view
@@ -111,7 +111,7 @@ const CTX = {
   ],
 };
 
-test("probeIds: instanta directa -> nodul ei; membru pliat -> pliajul", () => {
+test("probeIds: direct instance -> its node; folded member -> the fold", () => {
   assert.deepEqual(
     probeIds([{ kind: "instance", path: "demo_top.u_soc.u_add" }], CTX),
     ["u_add"]
@@ -122,7 +122,7 @@ test("probeIds: instanta directa -> nodul ei; membru pliat -> pliajul", () => {
   );
 });
 
-test("probeIds: tinta mai adanca -> copilul care o CONTINE", () => {
+test("probeIds: a deeper target -> the child that CONTAINS it", () => {
   assert.deepEqual(
     probeIds([{ kind: "instance", path: "demo_top.u_soc.u_add.u_deep" }], CTX),
     ["u_add"]
@@ -137,7 +137,7 @@ test("probeIds: tinta mai adanca -> copilul care o CONTINE", () => {
   );
 });
 
-test("probeIds: port de copil -> pinul; port al vederii -> steagul", () => {
+test("probeIds: a child's port -> the pin; a port of the view -> the boundary flag", () => {
   assert.deepEqual(probeIds([{ kind: "port", module: "chan", port: "din" }], CTX), [
     "g_ch[0..2].u_ch.din",
   ]);
@@ -147,7 +147,7 @@ test("probeIds: port de copil -> pinul; port al vederii -> steagul", () => {
   );
 });
 
-test("probeIds: modul -> toate instantele lui din vedere; tb -> nimic", () => {
+test("probeIds: module -> all its instances in the view; tb -> nothing", () => {
   assert.deepEqual(probeIds([{ kind: "module", module: "chan" }], CTX), [
     "g_ch[0..2].u_ch",
   ]);
@@ -157,7 +157,7 @@ test("probeIds: modul -> toate instantele lui din vedere; tb -> nimic", () => {
   );
 });
 
-test("probeIds: simbol — doar porturile modulului desenat", () => {
+test("probeIds: symbol — only the ports of the drawn module", () => {
   const sym = {
     mode: "symbol",
     viewId: "demo_top.u_soc.u_add",
@@ -178,13 +178,13 @@ test("probeIds: simbol — doar porturile modulului desenat", () => {
   );
 });
 
-test("probeIds: instantele generate (mai multe tinte) aprind pliajul o data", () => {
+test("probeIds: the generate instances (several targets) light the fold once", () => {
   const targets = resolveLoc(idx.get("soc_top.sv"), 24);
   assert.deepEqual(probeIds(targets, CTX), ["g_ch[0..2].u_ch"]);
 });
 
-test("remapSelection: rel-urile membrilor pliati -> pliajul, o singura data", () => {
-  // the „Reveal in Diagram" case on the generate line with the fold CLOSED (the default):
+test("remapSelection: the rel-s of the folded members -> the fold, only once", () => {
+  // the "Reveal in Diagram" case on the generate line with the fold CLOSED (the default):
   // the host sends the members' rel-s, but only the fold exists in the DOM
   const out = remapSelection(
     ["g_ch[0].u_ch", "g_ch[1].u_ch", "g_ch[2].u_ch"],
@@ -194,13 +194,13 @@ test("remapSelection: rel-urile membrilor pliati -> pliajul, o singura data", ()
   assert.deepEqual(out, ["g_ch[0..2].u_ch"]);
 });
 
-test("remapSelection: id-urile existente si cele straine raman neatinse", () => {
+test("remapSelection: the existing ids and the foreign ones stay untouched", () => {
   const out = remapSelection(
-    ["u_add", "<port>.din", "necunoscut"],
+    ["u_add", "<port>.din", "no_such_id"],
     "demo_top.u_soc",
     CTX.nodes
   );
-  assert.deepEqual(out.sort(), ["<port>.din", "necunoscut", "u_add"]);
+  assert.deepEqual(out.sort(), ["<port>.din", "no_such_id", "u_add"]);
 });
 
-console.log(`\ntest-locmap: ${passed} teste au trecut.`);
+console.log(`\ntest-locmap: ${passed} tests passed.`);

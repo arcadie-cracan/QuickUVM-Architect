@@ -8,7 +8,7 @@ Produces the JSON model consumed by the VSCode extension (see schema/project-mod
     fan-out per net with the wire/label hint
 
 Usage:
-  python3 svmodel.py -f lista.f --top demo_top            # file list (e.g. from bender)
+  python3 svmodel.py -f sources.f --top demo_top          # file list (e.g. from bender)
   python3 svmodel.py file1.sv file2.sv --top demo_top
 Options: --label-threshold N (default 4), -o out.json (default stdout)
 
@@ -204,14 +204,14 @@ def build_model(files=(), flists=(), top=None, label_threshold=4):
     drv.addStandardArgs()
     if not (drv.parseCommandLine(cmd) and drv.processOptions()
             and drv.parseAllSources()):
-        raise RuntimeError("eroare: parsarea surselor a esuat")
+        raise RuntimeError("error: parsing the sources failed")
     comp = drv.createCompilation()
     diags = comp.getAllDiagnostics()      # forces full elaboration
     if diags:
         sys.stderr.write(DiagnosticEngine.reportAll(drv.sourceManager, diags))
     errors = sum(1 for d in diags if d.isError())
     if errors:
-        raise RuntimeError(f"eroare: compilarea are {errors} erori")
+        raise RuntimeError(f"error: the compilation has {errors} error(s)")
 
     ex = Extractor(comp, drv.sourceManager, label_threshold)
     for t in comp.getRoot().topInstances:

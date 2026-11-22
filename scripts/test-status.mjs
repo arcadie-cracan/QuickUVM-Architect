@@ -30,7 +30,7 @@ function test(name, fn) {
 
 const F = (kind, severity, params) => ({ kind, severity, params, span: null });
 
-test("decosFromFindings: fiecare fel isi gaseste tinta semantica", () => {
+test("decosFromFindings: each kind finds its semantic target", () => {
   const decos = decosFromFindings([
     F("dut-missing", "warning", { module: "ghost" }),
     F("port-claimed", "error", { port: "clk", agent: "cmd" }),
@@ -53,7 +53,7 @@ test("decosFromFindings: fiecare fel isi gaseste tinta semantica", () => {
   assert.ok(decos[4].message.includes("width 8"));
 });
 
-test("statusIdsRtl: vederea DUT-ului -> steag; instantele de DUT -> pini", () => {
+test("statusIdsRtl: the DUT's view -> boundary flag; the DUT instances -> pins", () => {
   const decos = decosFromFindings([
     F("width-mismatch", "warning", {
       port: "din", declared: 8, expected: 16, agent: "cmd",
@@ -75,7 +75,7 @@ test("statusIdsRtl: vederea DUT-ului -> steag; instantele de DUT -> pini", () =>
   assert.deepEqual([...parent.keys()], ["g_ch[0..2].u_ch.din"]);
 });
 
-test("statusIdsRtl: fara DUT sau vedere nelegata -> nimic", () => {
+test("statusIdsRtl: without a DUT or an unrelated view -> nothing", () => {
   const decos = decosFromFindings([
     F("port-claimed", "error", { port: "clk", agent: "cmd" }),
   ]);
@@ -86,7 +86,7 @@ test("statusIdsRtl: fara DUT sau vedere nelegata -> nimic", () => {
   );
 });
 
-test("statusIdsTb: agent prezent -> blocul lui; env -> nodul env", () => {
+test("statusIdsTb: agent present -> its block; env -> the env node", () => {
   const decos = decosFromFindings([
     // fabricated env-scoped ERROR (the former role of the "hybrid"): the test checks
     // the severity PRECEDENCE at aggregation, not the realism of the finding
@@ -107,7 +107,7 @@ test("statusIdsTb: agent prezent -> blocul lui; env -> nodul env", () => {
   assert.ok(env.messages.some((m) => m.startsWith("cmd: ")));
 });
 
-test("statusIdsTb: agregare — doua probleme pe acelasi agent, un badge", () => {
+test("statusIdsTb: aggregation — two problems on the same agent, one badge", () => {
   const decos = decosFromFindings([
     F("width-mismatch", "warning", {
       port: "din", declared: 8, expected: 16, agent: "cmd",
@@ -121,7 +121,7 @@ test("statusIdsTb: agregare — doua probleme pe acelasi agent, un badge", () =>
   assert.equal(a.messages.length, 2);
 });
 
-test("statusIdsTb: porturile nu decoreaza TB; decos gol -> nimic", () => {
+test("statusIdsTb: the ports do not decorate the TB; empty decos -> nothing", () => {
   const decos = decosFromFindings([
     F("ignored-and-mapped", "warning", { port: "x", agent: "rsp" }),
   ]);
@@ -267,4 +267,4 @@ test("R3 (review, D19): the message override feeds the tree with localized text"
   assert.equal(decos[0].fixes.length, 1, "the repairs are untouched by the override");
 });
 
-console.log(`\ntest-status: ${passed} teste au trecut.`);
+console.log(`\ntest-status: ${passed} tests passed.`);

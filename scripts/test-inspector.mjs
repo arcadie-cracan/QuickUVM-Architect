@@ -45,7 +45,7 @@ test("agentRows: an initiator shows NO responder knob", () => {
     "reorder_policy",
     "proactive",
   ]) {
-    assert.ok(!all(r).includes(hidden), `${hidden} nu ar trebui aratat pe un initiator`);
+    assert.ok(!all(r).includes(hidden), `${hidden} should not be shown on an initiator`);
   }
   // `mode` IS the discovery point, so it must stay visible and basic
   assert.ok(r.basic.includes("mode"));
@@ -73,8 +73,8 @@ test("agentRows: responder reveals its knobs, `respond` gates the rest", () => {
 test("agentRows: rare-but-always-valid knobs stay reachable under advanced", () => {
   const r = agentRows({ name: "cmd" });
   for (const rare of ["seq_item_style", "replicas"]) {
-    assert.ok(r.advanced.includes(rare), `${rare} trebuie sa ramana accesibil`);
-    assert.ok(!r.basic.includes(rare), `${rare} nu e o alegere de zi cu zi`);
+    assert.ok(r.advanced.includes(rare), `${rare} must stay reachable`);
+    assert.ok(!r.basic.includes(rare), `${rare} is not an everyday choice`);
   }
 });
 

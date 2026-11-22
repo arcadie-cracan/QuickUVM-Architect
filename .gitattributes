@@ -1,2 +1,2 @@
-# normalizare de linii: text auto (LF in istoric), fara zgomot CRLF pe Windows
+# line-ending normalisation: text auto (LF in the history), no CRLF noise on Windows
 * text=auto

@@ -38,13 +38,13 @@ function test(name, fn) {
 
 const soc = buildSchematicScene(model, "demo_top.u_soc", none);
 
-test("hasSchematic: doar instantele cu vedere", () => {
+test("hasSchematic: only the instances with a view", () => {
   assert.equal(hasSchematic(model, "demo_top.u_soc"), true);
   assert.equal(hasSchematic(model, "demo_top.u_soc.u_add"), false);
   assert.equal(hasSchematic(undefined, "demo_top"), false);
 });
 
-test("u_soc: pliajul generate g_ch[0..2].u_ch (3 membri, chan #(W=16))", () => {
+test("u_soc: the generate fold g_ch[0..2].u_ch (3 members, chan #(W=16))", () => {
   const ids = soc.nodes.map((n) => n.id).sort();
   assert.deepEqual(ids, ["g_ch[0..2].u_ch", "u_add", "u_inv"]);
   const fold = soc.nodes.find((n) => n.id === "g_ch[0..2].u_ch");
@@ -54,7 +54,7 @@ test("u_soc: pliajul generate g_ch[0..2].u_ch (3 membri, chan #(W=16))", () => {
   assert.equal(fold.instPath, null);
 });
 
-test("u_soc: din (fanout 9, render=label) — etichete pe pini, zero muchii", () => {
+test("u_soc: din (fanout 9, render=label) — labels on the pins, zero edges", () => {
   assert.equal(soc.edges.filter((e) => e.net === "din").length, 0);
   const uAddDin = soc.nodes
     .find((n) => n.id === "u_add")
@@ -66,7 +66,7 @@ test("u_soc: din (fanout 9, render=label) — etichete pe pini, zero muchii", ()
   assert.equal(foldDin.netLabel, "din");
 });
 
-test("u_soc: override-urile de nivel 4 bat sugestia din model", () => {
+test("u_soc: the level-4 overrides beat the suggestion from the model", () => {
   // din: label in the model -> wire; ch_out: wire in the model -> label
   const ov = buildSchematicScene(
     model,
@@ -89,7 +89,7 @@ test("u_soc: override-urile de nivel 4 bat sugestia din model", () => {
   assert.equal(foldOut.netLabel, "ch_out");
 });
 
-test("u_soc: ch_out — o singura muchie dedup din pliaj spre granita", () => {
+test("u_soc: ch_out — a single deduplicated edge from the fold to the boundary", () => {
   const chOut = soc.edges.filter((e) => e.net === "ch_out");
   assert.equal(chOut.length, 1);
   assert.equal(chOut[0].source, "g_ch[0..2].u_ch");
@@ -98,21 +98,21 @@ test("u_soc: ch_out — o singura muchie dedup din pliaj spre granita", () => {
   assert.equal(chOut[0].targetPort, null);
 });
 
-test("u_soc: pinul dout al pliajului poarta intervalul de selecturi [0..2]", () => {
+test("u_soc: the fold's dout pin carries the range of selects [0..2]", () => {
   const dout = soc.nodes
     .find((n) => n.id === "g_ch[0..2].u_ch")
     .pins.find((p) => p.port === "dout");
   assert.equal(dout.note, "[0..2]");
 });
 
-test("u_soc: sum — muchie u_add.dout -> <port>.sum", () => {
+test("u_soc: sum — edge u_add.dout -> <port>.sum", () => {
   const sum = soc.edges.filter((e) => e.net === "sum");
   assert.equal(sum.length, 1);
   assert.equal(sum[0].sourcePort, "u_add.dout");
   assert.equal(sum[0].target, "<port>.sum");
 });
 
-test("u_soc: granita — intrarile west, iesirile east, interfata bus prezenta", () => {
+test("u_soc: boundary — the inputs west, the outputs east, the bus interface present", () => {
   const side = new Map(soc.boundary.map((b) => [b.name, b.side]));
   assert.equal(side.get("clk"), "WEST");
   assert.equal(side.get("rst_n"), "WEST");
@@ -125,7 +125,7 @@ test("u_soc: granita — intrarile west, iesirile east, interfata bus prezenta",
   assert.equal(bus.label, "bus : reg_bus.slave");
 });
 
-test("u_soc: ch_out pe granita — tablou unpacked cu multiplicitate separata", () => {
+test("u_soc: ch_out on the boundary — an unpacked array with a separate multiplicity", () => {
   const chOut = soc.boundary.find((b) => b.name === "ch_out");
   assert.equal(chOut.mult, "×3");
   // compact label in SV declaration order: packed+name+unpacked, without
@@ -133,7 +133,7 @@ test("u_soc: ch_out pe granita — tablou unpacked cu multiplicitate separata", 
   assert.equal(chOut.label, "[15:0]ch_out[0:2]");
 });
 
-test("portLabel: packed inaintea numelui, unpacked dupa, compact (ordinea SV)", () => {
+test("portLabel: packed before the name, unpacked after, compact (the SV order)", () => {
   // unpacked array of vectors: packed [15:0] + name + unpacked [0:2], without spaces
   assert.equal(
     portLabel({ name: "ch_out", type: "logic[15:0]$[0:2]", elem_width: 16, width: 48 }),
@@ -147,7 +147,7 @@ test("portLabel: packed inaintea numelui, unpacked dupa, compact (ordinea SV)", 
   assert.equal(portLabel({ name: "en", type: "logic$[0:3]", elem_width: 1, width: 4 }), "en[0:3]");
 });
 
-test("splitLabel: desparte eticheta compacta in packed/nume/unpacked", () => {
+test("splitLabel: splits the compact label into packed/name/unpacked", () => {
   assert.deepEqual(splitLabel("[15:0]ch_out[0:2]", "ch_out"), {
     packed: "[15:0]", name: "ch_out", unpacked: "[0:2]",
   });
@@ -168,7 +168,7 @@ const socExp = buildSchematicScene(
   new Set(["g_ch[0..2].u_ch"])
 );
 
-test("u_soc expandat: 5 noduri, membrii poarta foldId pentru re-pliere", () => {
+test("u_soc expanded: 5 nodes, the members carry foldId for re-folding", () => {
   assert.equal(socExp.nodes.length, 5);
   const m1 = socExp.nodes.find((n) => n.id === "g_ch[1].u_ch");
   assert.equal(m1.kind, "instance");
@@ -176,14 +176,14 @@ test("u_soc expandat: 5 noduri, membrii poarta foldId pentru re-pliere", () => {
   assert.equal(m1.instPath, "demo_top.u_soc.g_ch[1].u_ch");
 });
 
-test("u_soc expandat: selectul per membru ([1] din constant, nu din genvar)", () => {
+test("u_soc expanded: the per-member select ([1] from the constant, not from the genvar)", () => {
   const dout = socExp.nodes
     .find((n) => n.id === "g_ch[1].u_ch")
     .pins.find((p) => p.port === "dout");
   assert.equal(dout.note, "[1]");
 });
 
-test("u_soc expandat: ch_out are 3 muchii, membru -> granita (nu intre membri)", () => {
+test("u_soc expanded: ch_out has 3 edges, member -> boundary (not between members)", () => {
   const chOut = socExp.edges.filter((e) => e.net === "ch_out");
   assert.equal(chOut.length, 3);
   const sources = chOut.map((e) => e.sourcePort).sort();
@@ -199,13 +199,13 @@ test("u_soc expandat: ch_out are 3 muchii, membru -> granita (nu intre membri)",
 
 const top = buildSchematicScene(model, "demo_top", none);
 
-test("demo_top: bus_i e nod de interfata cu parametrii efectivi", () => {
+test("demo_top: bus_i is an interface node with the effective parameters", () => {
   const busI = top.nodes.find((n) => n.id === "bus_i");
   assert.equal(busI.kind, "iface");
   assert.equal(busI.sub, "reg_bus #(AW=6)");
 });
 
-test("hasView: u_soc coboara in schema, frunzele si pliajele nu", () => {
+test("hasView: u_soc drills down into its schematic, the leaves and the folds do not", () => {
   assert.equal(top.nodes.find((n) => n.id === "u_soc").hasView, true);
   assert.equal(top.nodes.find((n) => n.id === "bus_i").hasView, false);
   assert.equal(soc.nodes.find((n) => n.id === "u_add").hasView, false);
@@ -215,27 +215,27 @@ test("hasView: u_soc coboara in schema, frunzele si pliajele nu", () => {
   );
 });
 
-test("demo_top: conexiunea de interfata bus_i -> u_soc.bus, o muchie iface", () => {
+test("demo_top: the interface connection bus_i -> u_soc.bus, one iface edge", () => {
   const ifaces = top.edges.filter((e) => e.kind === "iface");
   assert.equal(ifaces.length, 1);
   assert.equal(ifaces[0].source, "bus_i");
   assert.equal(ifaces[0].targetPort, "u_soc.bus");
 });
 
-test("demo_top: tie-off si pini flotanti ca adnotari", () => {
+test("demo_top: tie-offs and floating pins as annotations", () => {
   const uSoc = top.nodes.find((n) => n.id === "u_soc");
   assert.equal(uSoc.pins.find((p) => p.port === "rst_n").note, "=1'b1");
   assert.equal(uSoc.pins.find((p) => p.port === "sum").note, "nc");
 });
 
-test("demo_top: net fara sursa (clk condus intern) — primul capat tine loc", () => {
+test("demo_top: a net without a source (clk driven internally) — the first endpoint stands in", () => {
   const clk = top.edges.filter((e) => e.net === "clk");
   assert.equal(clk.length, 1);
   assert.equal(clk[0].sourcePort, "bus_i.clk");
   assert.equal(clk[0].targetPort, "u_soc.clk");
 });
 
-test("demo_top: net wire cu un singur capat — degradare la eticheta", () => {
+test("demo_top: a wire net with a single endpoint — degraded to a label", () => {
   assert.equal(top.edges.filter((e) => e.net === "din").length, 0);
   const din = top.nodes
     .find((n) => n.id === "u_soc")
@@ -258,25 +258,25 @@ const { layoutSchematic } = await import(pathToFileURL(outFile2));
 const ELK = require("elkjs/lib/elk.bundled.js");
 const layout = await layoutSchematic(new ELK(), socExp, (t) => t.length * 7.2);
 
-test("layout: pinii pe grila de 8 cu pas 16, nodurile multiple de 8", () => {
+test("layout: the pins on the grid of 8 with pitch 16, the nodes multiples of 8", () => {
   const bports = new Set(socExp.boundary.map((b) => b.id));
   for (const c of layout.children ?? []) {
     if (bports.has(c.id)) {
       continue; // the boundary flags are not draggable (yet)
     }
-    assert.equal(c.width % 8, 0, `${c.id}: latime ${c.width}`);
-    assert.equal(c.height % 8, 0, `${c.id}: inaltime ${c.height}`);
+    assert.equal(c.width % 8, 0, `${c.id}: width ${c.width}`);
+    assert.equal(c.height % 8, 0, `${c.id}: height ${c.height}`);
     const bySide = { west: [], east: [] };
     for (const p of c.ports ?? []) {
       const center = p.y + p.height / 2;
-      assert.equal(center % 8, 0, `${c.id}/${p.id}: centrul la ${center}`);
+      assert.equal(center % 8, 0, `${c.id}/${p.id}: the center at ${center}`);
       bySide[p.x < c.width / 2 ? "west" : "east"].push(center);
     }
     for (const side of Object.values(bySide)) {
       side.sort((a, b) => a - b);
       for (let i = 1; i < side.length; i++) {
         assert.equal(
-          side[i] - side[i - 1], 16, `${c.id}: pas ${side[i] - side[i - 1]}`
+          side[i] - side[i - 1], 16, `${c.id}: pitch ${side[i] - side[i - 1]}`
         );
       }
     }
@@ -299,10 +299,10 @@ const relayout = await layoutSchematic(
   new ELK(), socExp, (t) => t.length * 7.2, undefined, totalSeeds
 );
 
-test("seminte totale: re-layout interactiv fara exceptii, aceleasi elemente", () => {
+test("total seeds: interactive re-layout without exceptions, the same elements", () => {
   const ids = new Set((relayout.children ?? []).map((c) => c.id));
   for (const c of layout.children ?? []) {
-    assert.ok(ids.has(c.id), `lipseste ${c.id} la re-layout interactiv`);
+    assert.ok(ids.has(c.id), `missing ${c.id} from the interactive re-layout`);
   }
   assert.equal(ids.size, (layout.children ?? []).length);
 });
@@ -317,29 +317,29 @@ const layoutFlipV = await layoutSchematic(
   new ELK(), top, measureStub, new Map([["u_soc", { h: false, v: true }]])
 );
 
-test("flip orizontal: laturile vest<->est se schimba, sloturile raman", () => {
+test("horizontal flip: the west<->east sides swap, the slots stay", () => {
   const n = layoutFlipH.children.find((c) => c.id === "u_soc");
   const clk = n.ports.find((p) => p.id === "u_soc.clk");
   const sum = n.ports.find((p) => p.id === "u_soc.sum");
-  assert.equal(clk.x, n.width - 4, "clk (in) trece pe est");
-  assert.equal(sum.x, -4, "sum (out) trece pe vest");
-  assert.equal(clk.y + 4, 40, "clk ramane in primul slot");
+  assert.equal(clk.x, n.width - 4, "clk (in) moves to the east");
+  assert.equal(sum.x, -4, "sum (out) moves to the west");
+  assert.equal(clk.y + 4, 40, "clk stays in the first slot");
 });
 
-test("flip vertical: ordinea pinilor se inverseaza pe fiecare latura", () => {
+test("vertical flip: the order of the pins is reversed on each side", () => {
   const n = layoutFlipV.children.find((c) => c.id === "u_soc");
   const clk = n.ports.find((p) => p.id === "u_soc.clk");
   const bus = n.ports.find((p) => p.id === "u_soc.bus");
   // west has 4 pins (clk, rst_n, din, bus): clk ends up last, bus first
   // (pin step PIN_PITCH=24, first center at PIN_TOP=40)
-  assert.equal(clk.x, -4, "clk ramane pe vest");
-  assert.equal(clk.y + 4, 40 + 24 * 3, "clk in ultimul slot vest");
-  assert.equal(bus.y + 4, 40, "bus in primul slot vest");
+  assert.equal(clk.x, -4, "clk stays on the west");
+  assert.equal(clk.y + 4, 40 + 24 * 3, "clk in the last west slot");
+  assert.equal(bus.y + 4, 40, "bus in the first west slot");
 });
 
 // --------------------------------------------- the connectivity cone (phase 4)
 
-test("netCone aval: prin etichetele de net (din, fanout 9) si mai departe", () => {
+test("netCone downstream: through the net labels (din, fanout 9) and onward", () => {
   const s = buildSchematicScene(model, "demo_top.u_soc", none);
   // din is a net with render=label (no edges): the cone must pass through
   // pin.nets — all three consumers (the fold is ONE node, as on screen),
@@ -352,7 +352,7 @@ test("netCone aval: prin etichetele de net (din, fanout 9) si mai departe", () =
   );
 });
 
-test("netCone amonte: directia conteaza + steagul granitei intra in con", () => {
+test("netCone upstream: the direction matters + the boundary flag joins the cone", () => {
   const s = buildSchematicScene(model, "demo_top.u_soc", none);
   // upstream of u_add: the net that feeds it (din) + its boundary flag
   // <port>.din (net-label that touches the boundary — the boundary endpoint is NOT
@@ -374,7 +374,7 @@ test("netCone amonte: directia conteaza + steagul granitei intra in con", () => 
   );
 });
 
-test("netCone: steagul granitei pe net-eticheta e samanta valida (fix boundary)", () => {
+test("netCone: the boundary flag on a label net is a valid seed (the boundary fix)", () => {
   const s = buildSchematicScene(model, "demo_top.u_soc", none);
   // <port>.din carries the label net `din`: SceneBPort.nets holds it
   const bDin = s.boundary.find((b) => b.id === "<port>.din");
@@ -387,7 +387,7 @@ test("netCone: steagul granitei pe net-eticheta e samanta valida (fix boundary)"
   );
 });
 
-test("coneOf: pin din interiorul blocului -> conul netului, nu net inexistent", () => {
+test("coneOf: a pin inside the block -> the net's cone, not a nonexistent net", () => {
   const s = buildSchematicScene(model, "demo_top.u_soc", none);
   // click on the pin u_add.din (group data-id) — it is NOT a node/net; it resolves to
   // the pin's nets, not to a useless seed {net:"u_add.din"} (review)
@@ -411,18 +411,18 @@ test("coneOf: pin din interiorul blocului -> conul netului, nu net inexistent", 
   assert.equal(coneOf(s, "does.not.exist", "down"), null);
 });
 
-test("latimi pe scena: pin/bport = elemW, edge = netWidth (nu prin select)", () => {
+test("widths on the scene: pin/bport = elemW, edge = netWidth (not through select)", () => {
   const s = buildSchematicScene(model, "demo_top.u_soc", none);
   const bw = (name) => s.boundary.find((b) => b.name === name)?.width;
   // the view ports: elem_width (ch_out is unpacked 3×16 -> elemW=16)
   assert.equal(bw("clk"), 1);
   assert.equal(bw("din"), 8);
   assert.equal(bw("ch_out"), 16);
-  assert.equal(s.boundary.find((b) => b.iface)?.width, null); // interfata
+  assert.equal(s.boundary.find((b) => b.iface)?.width, null); // interface
   // the edges: the NET width (netWidth) — ch_out=48 (the whole port), NOT 16
   // from the select pins; sum/inv=8
   const ew = (net) => s.edges.find((e) => e.net === net && e.kind === "wire")?.width;
-  assert.equal(ew("ch_out"), 48, "latimea netului, nu a pinilor de select");
+  assert.equal(ew("ch_out"), 48, "the net's width, not the select pins'");
   assert.equal(ew("sum"), 8);
   // the pins of a child instance carry their own width
   const uadd = s.nodes.find((n) => n.id === "u_add");
@@ -430,7 +430,7 @@ test("latimi pe scena: pin/bport = elemW, edge = netWidth (nu prin select)", () 
   assert.equal(uadd.pins.find((p) => p.port === "din")?.width, 8);
 });
 
-test("noteKind: discriminatorul adnotarii (select/concat/const/nc) pe model real", () => {
+test("noteKind: the annotation's discriminator (select/concat/const/nc) on the real model", () => {
   const s = buildSchematicScene(model, "demo_top.u_soc", none);
   const pin = (nid, port) => s.nodes.find((n) => n.id === nid)?.pins.find((p) => p.port === port);
   // the g_ch fold: dout via select (`[0..2]`), din via concat (`{…}`)
@@ -446,10 +446,10 @@ test("noteKind: discriminatorul adnotarii (select/concat/const/nc) pe model real
   assert.equal(tp("clk")?.noteKind, null);
 });
 
-test("netCone: pin.nets e masina (netLabel ramane doar afisare)", () => {
+test("netCone: pin.nets is the machinery (netLabel stays display only)", () => {
   const s = buildSchematicScene(model, "demo_top.u_soc", none);
   const labeled = s.nodes.flatMap((n) => n.pins.filter((p) => p.nets.length));
-  assert.equal(labeled.length, 3, "din etichetat pe cei trei consumatori");
+  assert.equal(labeled.length, 3, "din labeled on the three consumers");
   assert.ok(labeled.every((p) => p.nets.includes("din") && p.netLabel));
 });
 
@@ -483,4 +483,4 @@ test("docs/08 R18: pruneNcPins drops the nc pins and nothing else", () => {
   assert.ok(fake.nodes.find((n) => n.id === "x").pins.length === 3, "the input is not mutated");
 });
 
-console.log(`\ntest-scene: ${passed} teste au trecut.`);
+console.log(`\ntest-scene: ${passed} tests passed.`);

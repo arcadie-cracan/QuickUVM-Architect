@@ -292,10 +292,10 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   if (r.status !== 0) {
     console.error(r.stdout ?? "");
     console.error(r.stderr ?? "");
-    throw new Error(`quick-uvm generate a esuat pentru ${name} (${r.status})`);
+    throw new Error(`quick-uvm generate failed for ${name} (${r.status})`);
   }
   for (const f of expectFiles) {
-    assert.ok(existsSync(join(dir, "tb", f)), `lipseste ${f} (in ${dir})`);
+    assert.ok(existsSync(join(dir, "tb", f)), `${f} is missing (in ${dir})`);
   }
   // exit 0 is not enough — see lintDutConnections (interfaces generated outside
   // `tb/`, e.g. a VIP copied next to the config, are looked up in the scenario dir)
@@ -305,7 +305,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     [],
     `${name}: the generated top connects the DUT to signals that do not exist (in ${dir})`
   );
-  console.log(`  ok    ${name}: testbench generat (${expectFiles.length}+ fisiere) in ${dir}`);
+  console.log(`  ok    ${name}: testbench generated (${expectFiles.length}+ files) in ${dir}`);
   return dir;
 }
 
@@ -498,7 +498,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     "rsp_cov.svh",
   ]);
   const before = listFiles(join(beforeDir, "tb")).map((f) => basename(f));
-  assert.ok(before.some((f) => f.startsWith("rsp_")), "baza nu are artefacte rsp_*");
+  assert.ok(before.some((f) => f.startsWith("rsp_")), "the baseline has no rsp_* artifacts");
 
   // deleting the `rsp` agent (the gesture from the diagram), with cascade
   const afterAgent = ops.removeAgent(text, "rsp");
@@ -515,8 +515,8 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const orphans = listFiles(join(afterDir, "tb"))
     .map((f) => basename(f))
     .filter((f) => f.startsWith("rsp_"));
-  assert.deepEqual(orphans, [], `artefacte rsp_* ramase: ${orphans.join(", ")}`);
-  console.log("  ok    stergere: removeAgent(rsp) — cascada acceptata de generator, rsp_* disparute");
+  assert.deepEqual(orphans, [], `rsp_* artifacts left behind: ${orphans.join(", ")}`);
+  console.log("  ok    deletion: removeAgent(rsp) — the cascade is accepted by the generator, rsp_* are gone");
 
   // Deleting the LAST element from `analysis`: the block must stay EMPTY
   // (`analysis: {}`), so that QuickUVM stays in DECLARED mode. If we cleaned it,
@@ -524,7 +524,7 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   // auto-wired to the primary agent — i.e. you delete something and get back
   // more (a real regression caught exactly here; see `keepAnalysis` in yamlops).
   const afterCov = ops.removeCoverage(afterAgent, "cmd");
-  assert.deepEqual(ops.parseQuvm(afterCov).analysis, {}, "blocul analysis nu a ramas gol");
+  assert.deepEqual(ops.parseQuvm(afterCov).analysis, {}, "the analysis block did not stay empty");
   const covDir = generate("soc_top", afterCov, ["cmd_if.sv"]);
   const envPath = listFiles(join(covDir, "tb")).find((f) =>
     basename(f).endsWith("_env.svh")
@@ -532,13 +532,13 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const env = readFileSync(envPath, "utf8");
   assert.ok(
     !/wired to primary agent/i.test(env),
-    `QuickUVM a cazut in mod IMPLICIT si a reinviat default-urile:\n${env}`
+    `QuickUVM fell into IMPLICIT mode and revived the defaults:\n${env}`
   );
   assert.ok(
     !/\b\w+_cov\s+cov\b/.test(env),
-    `colectorul de coverage sters a fost reinviat in env:\n${env}`
+    `the deleted coverage collector was revived in the env:\n${env}`
   );
-  console.log("  ok    stergere: analysis golit ramane `{}` — fara reinvierea default-urilor");
+  console.log("  ok    deletion: an emptied analysis stays `{}` — the defaults are not revived");
 }
 
 // --- scenario 5: WHITEBOX PROBE (K2, slice 3) — the probe built by the
@@ -572,14 +572,14 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   // the XMR: quick-uvm pastes the path VERBATIM after `dut_inst.`
   assert.ok(
     /assign\s+probe_if\.add_out\s*=\s*dut_inst\.u_add\.dout\s*;/.test(tb),
-    `XMR-ul probei lipseste din tb_top:\n${tb}`
+    `the probe's XMR is missing from tb_top:\n${tb}`
   );
   // without coverage: the probe monitor is NOT generated
   assert.ok(
     !files.some((f) => basename(f) === "soc_top_probe_monitor.svh"),
-    "probe_monitor generat desi nicio proba nu cere coverage"
+    "probe_monitor was generated although no probe asks for coverage"
   );
-  console.log("  ok    proba: XMR `probe_if.add_out = dut_inst.u_add.dout` in tb_top");
+  console.log("  ok    probe: XMR `probe_if.add_out = dut_inst.u_add.dout` in tb_top");
 
   // coverage: true on a probe => the probe monitor appears in env
   const withCov = ops.addProbe(text, {
@@ -591,9 +591,9 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const covDir = generate("soc_top", withCov, ["soc_top_probe_monitor.svh"]);
   assert.ok(
     listFiles(join(covDir, "tb")).some((f) => basename(f) === "soc_top_probe_if.sv"),
-    "probe_if lipseste la proba cu coverage"
+    "probe_if is missing for the probe with coverage"
   );
-  console.log("  ok    proba: coverage: true -> soc_top_probe_monitor.svh");
+  console.log("  ok    probe: coverage: true -> soc_top_probe_monitor.svh");
 
   // deleting the probe: its artifacts disappear, the rest is generated cleanly
   const noProbe = ops.removeProbe(text, "add_out");
@@ -601,9 +601,9 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
   const delDir = generate("soc_top", noProbe, ["tb_top.sv"]);
   assert.ok(
     !listFiles(join(delDir, "tb")).some((f) => basename(f).startsWith("soc_top_probe")),
-    "artefactele probei au ramas dupa removeProbe"
+    "the probe's artifacts were left behind after removeProbe"
   );
-  console.log("  ok    proba: removeProbe -> artefactele probei dispar");
+  console.log("  ok    probe: removeProbe -> the probe's artifacts disappear");
 
   // H1 (the reason for proposeProbe's refusal): quick-uvm REFUSES probes+subenvs
   let h1 = ops.setDut(ops.newConfigText("soc_top"), soc);
@@ -628,13 +628,13 @@ function generate(name, yamlText, expectFiles, extraFiles = {}) {
     )
   );
   const r = quickUvm(["generate", "-c", hcfg, "-o", join(hd, "tb")], hd);
-  assert.notEqual(r.status, 0, "quick-uvm ar fi trebuit sa refuze probes + subenvs (H1)");
+  assert.notEqual(r.status, 0, "quick-uvm should have refused probes + subenvs (H1)");
   assert.match(
     `${r.stdout ?? ""}${r.stderr ?? ""}`,
     /subsystem bench/i,
-    "alt motiv de esec decat H1"
+    "it failed for a reason other than H1"
   );
-  console.log("  ok    proba: H1 confirmat — probes + subenvs refuzat de generator");
+  console.log("  ok    probe: H1 confirmed — probes + subenvs is refused by the generator");
 }
 
 // --- scenario 6: DERIVED COMPOSITION (slice 3) — the inter-block connections
@@ -686,9 +686,9 @@ agents:
   // the physical inter-block wire: `assign <dst>_<if>_inst.din = <src>_<if>_inst.dout;`
   assert.ok(
     /assign\s+c1_\w*if\w*_inst\.din\s*=\s*p1_\w*if\w*_inst\.dout\s*;/.test(tb),
-    `conexiunea inter-bloc lipseste din tb_top:\n${tb.split("\n").filter((l) => /assign|probe|connect/i.test(l)).join("\n")}`
+    `the inter-block connection is missing from tb_top:\n${tb.split("\n").filter((l) => /assign|probe|connect/i.test(l)).join("\n")}`
   );
-  console.log("  ok    compunere: connections -> `assign c1...din = p1...dout` in tb_top");
+  console.log("  ok    composition: connections -> `assign c1...din = p1...dout` in tb_top");
 
   // the passivity constraint: an ACTIVE destination agent is refused by
   // quick-uvm, and `setAgentActive(false)` (the flip from wireConnections)
@@ -704,14 +704,14 @@ agents:
       outputs: [{name: cout, width: 8, randomize: false}]
 `;
   const active = quickUvmComposed(top, producer, consumerActive);
-  assert.notEqual(active.status, 0, "un agent-destinatie ACTIV ar fi trebuit refuzat");
-  assert.match(active.out, /passive|active/i, "alt motiv de esec decat pasivitatea");
+  assert.notEqual(active.status, 0, "an ACTIVE destination agent should have been refused");
+  assert.match(active.out, /passive|active/i, "it failed for a reason other than passivity");
   // the flip: setAgentActive makes cons_agent passive -> generates cleanly
   const consumerFixed = ops.setAgentActive(consumerActive, "cons_agent", false);
   assert.equal(ops.parseQuvm(consumerFixed).agents[0].active, false);
   const fixed = quickUvmComposed(top, producer, consumerFixed);
-  assert.equal(fixed.status, 0, `flip-ul la pasiv nu a reparat generarea:\n${fixed.out.slice(-400)}`);
-  console.log("  ok    compunere: agent activ refuzat, setAgentActive(pasiv) repara generarea");
+  assert.equal(fixed.status, 0, `the flip to passive did not repair the generation:\n${fixed.out.slice(-400)}`);
+  console.log("  ok    composition: an active agent is refused, setAgentActive(passive) repairs the generation");
 
   // INVERTED LOCK (quick-uvm >= 1.0.0): the `subenvs` + own agents hybrid is
   // LEGAL — boundary agents (H2). The old test just did its job (it
@@ -723,8 +723,8 @@ agents:
   });
   const hyb = quickUvmComposed(hybridTop, producer, consumerFixed);
   assert.equal(hyb.status, 0,
-    `hibridul (agenti de granita H2) ar trebui sa genereze curat:\n${hyb.out.slice(-400)}`);
-  console.log("  ok    compunere: hibrid (subenvs + agenti de granita) ACCEPTAT de generator (1.0)");
+    `the hybrid (boundary agents, H2) should generate cleanly:\n${hyb.out.slice(-400)}`);
+  console.log("  ok    composition: the hybrid (subenvs + boundary agents) is ACCEPTED by the generator (1.0)");
 
   // deleting the connection: the wire disappears, the rest is generated cleanly
   const noConn = ops.removeConnection(top, "p1.dout", "c1.din");
@@ -737,8 +737,8 @@ agents:
     listFiles(join(d2, "tb")).find((f) => basename(f) === "tb_top.sv"),
     "utf8"
   );
-  assert.ok(!/assign\s+c1_\w*inst\.din/.test(tb2), "firul a ramas dupa removeConnection");
-  console.log("  ok    compunere: removeConnection -> firul dispare din tb_top");
+  assert.ok(!/assign\s+c1_\w*inst\.din/.test(tb2), "the wire was left behind after removeConnection");
+  console.log("  ok    composition: removeConnection -> the wire disappears from tb_top");
 }
 
 // --- scenario 5 (docs/07 P1): the AGENT INSPECTOR writes a config quick-uvm ACCEPTS.
@@ -786,7 +786,7 @@ agents:
   const backToInit = ops.setAgentField(pipe, "rd", "mode", "initiator");
   const cfgInit = ops.parseQuvm(backToInit).agents[0];
   for (const k of ["respond", "request_valid", "request_ready", "reorder_by", "reorder_policy"]) {
-    assert.equal(k in cfgInit, false, `${k} a supravietuit cascadei`);
+    assert.equal(k in cfgInit, false, `${k} survived the cascade`);
   }
   generate("rsp_back_to_initiator", backToInit, ["rd_driver.svh"]);
 
@@ -794,17 +794,17 @@ agents:
     /(\n(\s+))interface: rd_if/,
     "$1interface: rd_if$1request_valid: arvalid"
   );
-  assert.notEqual(leftover, backToInit, "mutatia nu s-a aplicat");
+  assert.notEqual(leftover, backToInit, "the mutation did not apply");
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-leftover-"));
   writeFileSync(join(dir, "m.quickuvm.yaml"), leftover);
   const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze request_valid pe un initiator");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused request_valid on an initiator");
   assert.match(
     (bad.stdout ?? "") + (bad.stderr ?? ""),
     /request_valid.*only valid with/s,
-    "alt motiv de esec decat cuplarea responder"
+    "it failed for a reason other than the responder coupling"
   );
-  console.log("  ok    inspector agent: cascada mode->initiator e load-bearing (fara ea: REFUZ)");
+  console.log("  ok    agent inspector: the mode->initiator cascade is load-bearing (without it: REFUSED)");
 }
 
 // --- scenario 6 (docs/07 P2): the BENCH SETTINGS panel writes configs quick-uvm
@@ -850,7 +850,7 @@ endpackage
   const dirNoRal = generate("ral_removed", noRal, ["tb_top.sv"]);
   assert.ok(
     !existsSync(join(dirNoRal, "tb", "reg_adapter.svh")),
-    "adaptorul a supravietuit stergerii lui register_model"
+    "the adapter survived the removal of register_model"
   );
 
   // (c) regress: presence generates the Makefile
@@ -862,25 +862,25 @@ endpackage
   // `regress:` block, so removing the block must strip them. Mutation proof: the same
   // config with the seeds left behind is REFUSED.
   const seeded = rg.replace(/(\n\s+)- \{ name: (\w+) \}/, "$1- { name: $2, seeds: 4 }");
-  assert.notEqual(seeded, rg, "fixture-ul cu tests[].seeds nu s-a aplicat");
+  assert.notEqual(seeded, rg, "the fixture with tests[].seeds did not apply");
   generate("regress_seeded", seeded, ["Makefile"]);
 
   const cleaned = ops.removeRegress(seeded);
-  assert.equal("seeds" in ops.parseQuvm(cleaned).tests[0], false, "seeds a supravietuit cascadei");
+  assert.equal("seeds" in ops.parseQuvm(cleaned).tests[0], false, "seeds survived the cascade");
   generate("regress_removed", cleaned, ["tb_top.sv"]);
 
   const orphan = seeded.replace(/\nregress:[^\n]*\n/, "\n");
-  assert.notEqual(orphan, seeded, "mutatia (regress sters, seeds ramas) nu s-a aplicat");
+  assert.notEqual(orphan, seeded, "the mutation (regress removed, seeds left behind) did not apply");
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-orphan-"));
   writeFileSync(join(dir, "m.quickuvm.yaml"), orphan);
   const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze seeds fara regress");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused seeds without regress");
   assert.match(
     (bad.stdout ?? "") + (bad.stderr ?? ""),
     /seeds.*regress/s,
-    "alt motiv de esec decat seeds-fara-regress"
+    "it failed for a reason other than seeds-without-regress"
   );
-  console.log("  ok    setari bench: cascada removeRegress -> seeds e load-bearing (fara ea: REFUZ)");
+  console.log("  ok    bench settings: the removeRegress -> seeds cascade is load-bearing (without it: REFUSED)");
 }
 
 // --- scenario 7 (docs/07 P2b): the TESTS editor + BENCH IDENTITY form. The two
@@ -910,22 +910,22 @@ endpackage
   for (const name of ops.parseQuvm(many).tests.map((x) => x.name)) {
     last = ops.removeTest(last, name);
   }
-  assert.equal(ops.parseQuvm(last).tests, undefined, "cheia tests ar fi trebuit stearsa");
+  assert.equal(ops.parseQuvm(last).tests, undefined, "the tests key should have been deleted");
   const dirDefault = generate("tests_key_removed", last, ["bid_base_test.svh"]);
   const testFiles = (dir) =>
     listFiles(join(dir, "tb"))
       .map((f) => basename(f))
       .filter((f) => f.endsWith(".svh") && /test/.test(f) && !/_base_test\.svh$/.test(f));
   const defaultTests = testFiles(dirDefault);
-  assert.ok(defaultTests.length > 0, "absenta lui tests: ar fi trebuit sa dea test1");
+  assert.ok(defaultTests.length > 0, "the absence of tests: should have given test1");
 
   const emptyList = last.replace(/\n(dut:)/, "\ntests: []\n$1");
-  assert.notEqual(emptyList, last, "fixture-ul `tests: []` nu s-a aplicat");
+  assert.notEqual(emptyList, last, "the `tests: []` fixture did not apply");
   const dirEmpty = generate("tests_empty_list", emptyList, ["bid_base_test.svh"]);
   const emptyTests = testFiles(dirEmpty);
   assert.equal(emptyTests.length, 0,
-    `\`tests: []\` ar trebui sa dea ZERO teste rulabile, are: ${emptyTests}`);
-  console.log("  ok    tests[]: absenta => test1 implicit, `tests: []` => bench fara test rulabil");
+    `\`tests: []\` should give ZERO runnable tests, it has: ${emptyTests}`);
+  console.log("  ok    tests[]: absence => the default test1, `tests: []` => a bench with no runnable test");
 
   // (c) bench identity: top_name + packaged layout generate cleanly
   let ident = ops.setBenchField(t, "top_name", "my_top");
@@ -945,7 +945,7 @@ endpackage
   // flat + vip: blocked by the guard AND refused by the generator, same reason
   const flatVip = ops.setBenchField(t, "kind", "vip");
   const flatWhy = guards.kindBlockers(ops.parseQuvm(flatVip), "vip");
-  assert.ok(flatWhy.length, "kindBlockers ar fi trebuit sa blocheze vip pe layout flat");
+  assert.ok(flatWhy.length, "kindBlockers should have blocked vip on the flat layout");
   const flatRun = tryGenerate(flatVip);
   assert.equal(flatRun.ok, false);
   assert.match(flatRun.out, /kind: vip.*layout: packaged/s);
@@ -954,7 +954,7 @@ endpackage
   // sections, and the generator names exactly the same one
   const pkgVip = ops.setBenchField(flatVip, "layout", "packaged");
   const pkgWhy = guards.kindBlockers(ops.parseQuvm(pkgVip), "vip");
-  assert.ok(pkgWhy.some((w) => w.includes("tests")), `garda nu a numit tests: ${pkgWhy}`);
+  assert.ok(pkgWhy.some((w) => w.includes("tests")), `the guard did not name tests: ${pkgWhy}`);
   const pkgRun = tryGenerate(pkgVip);
   assert.equal(pkgRun.ok, false);
   assert.match(pkgRun.out, /would be silently dropped.*tests/s);
@@ -970,8 +970,8 @@ endpackage
   // the layout guard, same agreement: subenvs pin it to packaged
   assert.deepEqual(guards.layoutBlockers(ops.parseQuvm(t), "flat"), []);
   assert.ok(guards.layoutBlockers(ops.parseQuvm(cleanVip), "flat").length,
-    "layoutBlockers ar fi trebuit sa blocheze flat sub kind: vip");
-  console.log("  ok    identitate bench: garda kind/layout corespunde refuzului real");
+    "layoutBlockers should have blocked flat under kind: vip");
+  console.log("  ok    bench identity: the kind/layout guard matches the real refusal");
 }
 
 // --- scenario 8 (docs/07 P3a): scoreboard DEPTH — the windowed N:1 check and the
@@ -998,7 +998,7 @@ endpackage
   const dirC = generate("sb_ref_c", cModel, ["win_reference_model.c"]);
   assert.ok(
     listFiles(join(dirC, "tb")).some((f) => basename(f).endsWith(".c")),
-    "limbajul `c` ar fi trebuit sa emita un stub .c"
+    "the `c` language should have emitted a .c stub"
   );
 
   // (c) THE SINGLE-STREAM COUPLING IS LOAD-BEARING. Adding a monitor drops the window
@@ -1008,24 +1008,24 @@ endpackage
   });
   const twoStream = ops.setScoreboardField(withObs, "sbd", "monitor", "obs");
   assert.equal("window" in ops.parseQuvm(twoStream).analysis.scoreboards[0], false,
-    "window a supravietuit adaugarii monitorului");
+    "window survived the addition of the monitor");
   generate("sb_two_stream", twoStream, ["win_scoreboard.svh"]);
 
   const leftover = twoStream.replace(
     /(\n\s+)- \{ ?name: sbd/,
     "$1- { window: { boundary: done, length: 64 }, name: sbd"
   );
-  assert.notEqual(leftover, twoStream, "mutatia (window + monitor) nu s-a aplicat");
+  assert.notEqual(leftover, twoStream, "the mutation (window + monitor) did not apply");
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-window-"));
   writeFileSync(join(dir, "m.quickuvm.yaml"), leftover);
   const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze window + monitor");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused window + monitor");
   assert.match(
     (bad.stdout ?? "") + (bad.stderr ?? ""),
     /window requires a SINGLE-stream/s,
-    "alt motiv de esec decat window-pe-doua-fluxuri"
+    "it failed for a reason other than window-on-two-streams"
   );
-  console.log("  ok    scoreboard: cascada window<->monitor e load-bearing (fara ea: REFUZ)");
+  console.log("  ok    scoreboard: the window<->monitor cascade is load-bearing (without it: REFUSED)");
 }
 
 // --- scenario 9 (docs/07 P3b): RICH functional coverage. The editor upgrades a bare
@@ -1048,7 +1048,7 @@ endpackage
   const bareCov = readFileSync(
     listFiles(join(dirBare, "tb")).find((f) => basename(f) === "cmd_cov.svh"), "utf8"
   );
-  assert.ok(!/low\b/.test(bareCov), "intrarea simpla nu ar trebui sa aiba bin-uri denumite");
+  assert.ok(!/low\b/.test(bareCov), "the bare entry should have no named bins");
 
   // upgrade + author: coverpoints, bins in all three forms, a cross, a goal
   let rich = ops.upgradeCoverage(t, "cmd", "din");
@@ -1064,9 +1064,9 @@ endpackage
   );
   // the authored content really reaches the covergroup
   for (const needle of ["low", "max", "both", "[0:7]", "255", "cross", "goal"]) {
-    assert.ok(richCov.includes(needle), `covergroup-ul nu contine „${needle}":\n${richCov}`);
+    assert.ok(richCov.includes(needle), `the covergroup does not contain "${needle}":\n${richCov}`);
   }
-  console.log("  ok    coverage bogat: bins/cross/goal ajung in covergroup-ul generat");
+  console.log("  ok    rich coverage: bins/cross/goal reach the generated covergroup");
 
   // THE PRUNING CASCADE IS LOAD-BEARING. Removing a coverpoint must remove the
   // crosses over it — QuickUVM refuses a cross naming an undeclared coverpoint.
@@ -1077,17 +1077,17 @@ endpackage
   // the mutation uses the real op, which does NOT validate: a cross over `wr`, which
   // is no longer a declared coverpoint — precisely what the cascade prevents
   const orphanCross = ops.addCross(pruned, "cmd", ["din", "wr"]);
-  assert.notEqual(orphanCross, pruned, "mutatia (cross orfan) nu s-a aplicat");
+  assert.notEqual(orphanCross, pruned, "the mutation (orphan cross) did not apply");
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-cross-"));
   writeFileSync(join(dir, "m.quickuvm.yaml"), orphanCross);
   const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze un cross catre un camp nedeclarat");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused a cross to an undeclared field");
   assert.match(
     (bad.stdout ?? "") + (bad.stderr ?? ""),
     /cross references.*not a declared coverpoint/s,
-    "alt motiv de esec decat cross-ul orfan"
+    "it failed for a reason other than the orphan cross"
   );
-  console.log("  ok    coverage bogat: cascada coverpoint->cross e load-bearing (fara ea: REFUZ)");
+  console.log("  ok    rich coverage: the coverpoint->cross cascade is load-bearing (without it: REFUSED)");
 
   // downgrade: back to routing only, and the bench still generates
   const bare = ops.downgradeCoverage(rich, "cmd");
@@ -1116,17 +1116,17 @@ endpackage
   mc = ops.setClockDomainField(mc, "sck", "period", 40);
   mc = ops.setClockDomainField(mc, "sck", "source", "dut");
   mc = ops.setAgentField(mc, "spi", "clock", "sck");
-  assert.ok(Array.isArray(ops.parseQuvm(mc).clock), "clock ar fi trebuit sa fie o lista");
+  assert.ok(Array.isArray(ops.parseQuvm(mc).clock), "clock should have been a list");
   const dirMc = generate("multiclock", mc, ["clkgen.sv", "tb_top.sv"]);
   // the second domain reached the top: a DUT-sourced clock is a sampled net there
   // (source: dut => the TB does not generate it, so it is NOT in clkgen)
   const top = readFileSync(
     listFiles(join(dirMc, "tb")).find((f) => basename(f) === "tb_top.sv"), "utf8"
   );
-  assert.ok(/\bsck\b/.test(top), `tb_top.sv nu contine domeniul sck:\n${top}`);
+  assert.ok(/\bsck\b/.test(top), `tb_top.sv does not contain the sck domain:\n${top}`);
   assert.match(top, /OBSERVED: the DUT drives this clock/,
-    "domeniul source: dut ar fi trebuit sa fie un ceas observat");
-  console.log("  ok    multi-clock: al doilea domeniu (source: dut) ajunge in tb_top");
+    "the source: dut domain should have been an observed clock");
+  console.log("  ok    multi-clock: the second domain (source: dut) reaches tb_top");
 
   // THE DOMAIN-USE CASCADE IS LOAD-BEARING. An agent samples `sck`; QuickUVM refuses
   // an agent clock naming an undeclared domain, so removing `sck` is blocked. Mutation
@@ -1138,11 +1138,11 @@ endpackage
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-mc-"));
   // re-serialize via a targeted text edit: remove the `{ name: sck, ... }` entry
   const orphanText = mc.replace(/\n\s+- \{ name: sck[^}]*\}/, "");
-  assert.notEqual(orphanText, mc, "mutatia (domeniu sck sters) nu s-a aplicat");
+  assert.notEqual(orphanText, mc, "the mutation (sck domain removed) did not apply");
   writeFileSync(join(dir, "m.quickuvm.yaml"), orphanText);
   const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze agentul pe un domeniu inexistent");
-  console.log("  ok    multi-clock: cascada domeniu-folosit e load-bearing (fara ea: REFUZ)");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused the agent on a nonexistent domain");
+  console.log("  ok    multi-clock: the domain-use cascade is load-bearing (without it: REFUSED)");
 
   // collapse a 1-element list back to a single mapping — still generates
   let one = ops.addClockDomain(t, "aux"); // core stays on the implicit first
@@ -1174,9 +1174,9 @@ endpackage
   mr = ops.setAgentField(mr, "wr", "reset", "wrst_n");
   const cfgMr = ops.parseQuvm(mr);
   assert.deepEqual(cfgMr.reset.map((d) => d.name), ["rst_n", "wrst_n"]);
-  assert.equal(cfgMr.dut.reset, "rst_n", "dut.reset trebuie sa numeasca un domeniu declarat");
+  assert.equal(cfgMr.dut.reset, "rst_n", "dut.reset must name a declared domain");
   generate("multireset", mr, ["tb_top.sv", "clkgen.sv"]);
-  console.log("  ok    multi-reset: doua domenii + poarta de ceas genereaza curat");
+  console.log("  ok    multi-reset: two domains + the clock gate generate cleanly");
 
   // THE RENAME CASCADE IS LOAD-BEARING. `dut.reset` and every agent gated by a domain
   // must name a DECLARED domain, so a rename has to carry them along.
@@ -1186,17 +1186,17 @@ endpackage
 
   // mutation: rename the domain WITHOUT carrying the agent binding -> REFUSED
   const orphan = mr.replace(/\{ name: wrst_n([^}]*)\}/, "{ name: wr_rst_n$1}");
-  assert.notEqual(orphan, mr, "mutatia (redenumire fara cascada) nu s-a aplicat");
+  assert.notEqual(orphan, mr, "the mutation (a rename without the cascade) did not apply");
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-mr-"));
   writeFileSync(join(dir, "m.quickuvm.yaml"), orphan);
   const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze resetul necunoscut");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused the unknown reset");
   assert.match(
     (bad.stdout ?? "") + (bad.stderr ?? ""),
     /not a declared reset|dut\.reset/s,
-    "alt motiv de esec decat domeniul de reset nedeclarat"
+    "it failed for a reason other than the undeclared reset domain"
   );
-  console.log("  ok    multi-reset: cascada de redenumire e load-bearing (fara ea: REFUZ)");
+  console.log("  ok    multi-reset: the rename cascade is load-bearing (without it: REFUSED)");
 
   // collapse back: dut.reset becomes a PORT name again and agent `reset:` disappears.
   // The domain is in use, so it must be unbound first — the op refuses otherwise,
@@ -1238,30 +1238,30 @@ endpackage
   const iface = readFileSync(
     listFiles(join(dirOd, "tb")).find((f) => basename(f) === "bus_if.sv"), "utf8"
   );
-  assert.match(iface, /1'bz/, `interfata nu are rezolutia open-drain:\n${iface}`);
+  assert.match(iface, /1'bz/, `the interface has no open-drain resolution:\n${iface}`);
   const item = readFileSync(
     listFiles(join(dirOd, "tb")).find((f) => basename(f) === "bus_seq_item.svh"), "utf8"
   );
   for (const needle of ["READ", "WRITE", "STOP"]) {
-    assert.ok(item.includes(needle), `enum-ul nu a ajuns in seq_item: ${needle}`);
+    assert.ok(item.includes(needle), `the enum did not reach the seq_item: ${needle}`);
   }
-  console.log("  ok    port depth: open-drain (1'bz) + enum simbolic ajung in cod");
+  console.log("  ok    port depth: open-drain (1'bz) + the symbolic enum reach the code");
 
   // THE PULLUP PAIRING IS LOAD-BEARING. Mutation: the same config with the pullup
   // stripped is REFUSED — the op refuses it at the source for the same reason.
   assert.throws(() => ops.setAgentPortField(od, "bus", "sda", "pullup", false), /floats to X/);
   const noPullup = od.replace(/, pullup: true/, "");
-  assert.notEqual(noPullup, od, "mutatia (pullup scos) nu s-a aplicat");
+  assert.notEqual(noPullup, od, "the mutation (pullup stripped) did not apply");
   const dir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-od-"));
   writeFileSync(join(dir, "m.quickuvm.yaml"), noPullup);
   const bad = quickUvm(["generate", "-c", join(dir, "m.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze open-drain fara pullup");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused open-drain without a pullup");
   assert.match(
     (bad.stdout ?? "") + (bad.stderr ?? ""),
     /needs `pullup: true`|floats to X/s,
-    "alt motiv de esec decat open-drain-fara-pullup"
+    "it failed for a reason other than open-drain-without-pullup"
   );
-  console.log("  ok    port depth: perechea open_drain/pullup e load-bearing (fara ea: REFUZ)");
+  console.log("  ok    port depth: the open_drain/pullup pair is load-bearing (without it: REFUSED)");
 }
 
 // --- scenario 13 (docs/07 P3c): CROSS-BLOCK scoreboards. A scoreboard whose
@@ -1305,7 +1305,7 @@ endpackage
     "producer.quickuvm.yaml": producer,
     "consumer.quickuvm.yaml": consumer,
   });
-  console.log("  ok    scoreboard cross-bloc: capete `<subenv>.<agent>` genereaza curat");
+  console.log("  ok    cross-block scoreboard: `<subenv>.<agent>` endpoints generate cleanly");
 
   // the endpoint list the picker offers must match what the generator accepts: an
   // endpoint naming an agent the child does NOT declare is REFUSED
@@ -1315,8 +1315,8 @@ endpackage
   writeFileSync(join(dir, "producer.quickuvm.yaml"), producer);
   writeFileSync(join(dir, "consumer.quickuvm.yaml"), consumer);
   const bad = quickUvm(["generate", "-c", join(dir, "sys.quickuvm.yaml"), "-o", join(dir, "tb")], dir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze un capat inexistent");
-  console.log("  ok    scoreboard cross-bloc: un capat nedeclarat e REFUZAT (lista e ancorata)");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused a nonexistent endpoint");
+  console.log("  ok    cross-block scoreboard: an undeclared endpoint is REFUSED (the list is anchored)");
 }
 
 // --- scenario 14 (docs/07 P5): COMPOSITION & VIP. A VIP is generated first, then a
@@ -1339,10 +1339,10 @@ endpackage
   const vipDir = mkdtempSync(join(tmpdir(), "quickuvm-e2e-vip-"));
   writeFileSync(join(vipDir, "iovip.quickuvm.yaml"), vip);
   const rv = quickUvm(["generate", "-c", join(vipDir, "iovip.quickuvm.yaml"), "-o", join(vipDir, "gen")], vipDir);
-  assert.equal(rv.status, 0, `generarea VIP-ului a esuat:\n${(rv.stdout ?? "") + (rv.stderr ?? "")}`);
+  assert.equal(rv.status, 0, `the VIP's generation failed:\n${(rv.stdout ?? "") + (rv.stderr ?? "")}`);
   const manifest = listFiles(join(vipDir, "gen")).find((f) => f.endsWith(".qvip"));
-  assert.ok(manifest, "VIP-ul nu a emis un manifest .qvip");
-  console.log("  ok    VIP: kind: vip emite manifestul .qvip");
+  assert.ok(manifest, "the VIP did not emit a .qvip manifest");
+  console.log("  ok    VIP: kind: vip emits the .qvip manifest");
 
   // 2. the consuming bench: `{name, from_vip}` with the path RELATIVE to the config
   let bench = ops.setDut(ops.newConfigText("user"), {
@@ -1357,27 +1357,27 @@ endpackage
   cpSync(vipDir, join(benchDir, "vip"), { recursive: true });
   writeFileSync(join(benchDir, "user.quickuvm.yaml"), bench);
   const rb = quickUvm(["generate", "-c", join(benchDir, "user.quickuvm.yaml"), "-o", join(benchDir, "tb")], benchDir);
-  assert.equal(rb.status, 0, `bench-ul consumator a esuat:\n${(rb.stdout ?? "") + (rb.stderr ?? "")}`);
+  assert.equal(rb.status, 0, `the consuming bench failed:\n${(rb.stdout ?? "") + (rb.stderr ?? "")}`);
 
   // the referenced agent's SOURCE is not regenerated — only the wiring is
   const emitted = listFiles(join(benchDir, "tb")).map((f) => basename(f));
   assert.ok(!emitted.includes("io_driver.svh"),
-    `sursa agentului referit ar fi trebuit SARITA, dar s-a generat: ${emitted}`);
-  assert.ok(emitted.includes("tb_top.sv"), "bench-ul consumator nu a generat un top");
-  console.log("  ok    VIP: consum prin referinta (sursa agentului NU se regenereaza)");
+    `the referenced agent's source should have been SKIPPED, but it was generated: ${emitted}`);
+  assert.ok(emitted.includes("tb_top.sv"), "the consuming bench did not generate a top");
+  console.log("  ok    VIP: consumption by reference (the agent's source is NOT regenerated)");
 
   // a reference entry carries ONLY name + from_vip — anything else is refused
   const bloated = bench.replace(/\{ name: io, from_vip: ([^}]*)\}/, "{ name: io, from_vip: $1, active: false }");
-  assert.notEqual(bloated, bench, "mutatia (cheie in plus pe referinta) nu s-a aplicat");
+  assert.notEqual(bloated, bench, "the mutation (an extra key on the reference) did not apply");
   writeFileSync(join(benchDir, "bad.quickuvm.yaml"), bloated);
   const bad = quickUvm(["generate", "-c", join(benchDir, "bad.quickuvm.yaml"), "-o", join(benchDir, "tb2")], benchDir);
-  assert.notEqual(bad.status, 0, "quick-uvm ar fi trebuit sa refuze o referinta cu chei in plus");
+  assert.notEqual(bad.status, 0, "quick-uvm should have refused a reference with extra keys");
   assert.match(
     (bad.stdout ?? "") + (bad.stderr ?? ""),
     /reference entry carries only/s,
-    "alt motiv de esec decat referinta imbogatita"
+    "it failed for a reason other than the enriched reference"
   );
-  console.log("  ok    VIP: referinta poarta DOAR name + from_vip (restul: REFUZ)");
+  console.log("  ok    VIP: a reference carries ONLY name + from_vip (anything else: REFUSED)");
 }
 
 // --- scenario 15 (Nov 2026): THE TUTORIAL BENCH, gesture by gesture
@@ -1725,4 +1725,4 @@ endpackage
   console.log("  ok    templates: per-interface, per-clock (+ the unassigned default), composition (+ wired)");
 }
 
-console.log("fluxul end-to-end (yamlops -> quick-uvm generate) e verde");
+console.log("the end-to-end flow (yamlops -> quick-uvm generate) is green");

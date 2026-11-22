@@ -59,7 +59,7 @@ const MODEL = {
 // `reset-undriven` finding (its own tests are at the end of this file).
 const kinds = (r) => r.findings.map((f) => f.kind);
 
-test("config curat: zero findings, zero orfani", () => {
+test("clean config: zero findings, zero orphans", () => {
   const r = check(
     `dut: { name: soc_top, clock: clk, reset: '' }
 agents:
@@ -73,7 +73,7 @@ agents:
   assert.deepEqual(r.orphans, []);
 });
 
-test("hibrid subenvs + agents (agenti de granita H2): NICIUN diagnostic", () => {
+test("hybrid subenvs + agents (H2 boundary agents): NO diagnostic", () => {
   const r = check(
     `dut: { name: top, reset: '' }
 subenvs:
@@ -86,10 +86,10 @@ agents:
   );
   // quick-uvm >= 1.0.0 ACCEPTS composition with own agents at top
   assert.ok(!r.findings.some((f) => f.kind === "hybrid"),
-    "diagnosticul 'hybrid' nu mai exista (1.0: agenti de granita legali)");
+    "the 'hybrid' diagnostic no longer exists (1.0: boundary agents are legal)");
 });
 
-test("latime gresita: warning cu codul quick-fix-ului", () => {
+test("wrong width: a warning with the quick-fix's code", () => {
   const r = check(
     `dut: { name: soc_top, reset: '' }
 agents:
@@ -100,7 +100,7 @@ agents:
     MODEL
   );
   const w = r.findings.find((f) => f.kind === "width-mismatch");
-  assert.ok(w, "lipseste width-mismatch");
+  assert.ok(w, "width-mismatch is missing");
   assert.equal(w.severity, "warning");
   assert.equal(w.code, `${WIDTH_CODE}:a:din:8`);
   // `agent` entered params for the status decorations (src/status.ts)
@@ -109,7 +109,7 @@ agents:
   assert.match(r.text.slice(w.span[0], w.span[1]), /din/);
 });
 
-test("latime implicita: fara width in YAML inseamna 1 (nepotrivire pe din=8)", () => {
+test("default width: no width in the YAML means 1 (a mismatch on din=8)", () => {
   const r = check(
     `dut: { name: soc_top, reset: '' }
 agents:
@@ -124,7 +124,7 @@ agents:
   assert.equal(w?.params.expected, 8);
 });
 
-test("port revendicat de doi agenti: EROARE la al doilea", () => {
+test("a port claimed by two agents: an ERROR on the second", () => {
   const r = check(
     `dut: { name: soc_top, reset: '' }
 agents:
@@ -138,12 +138,12 @@ agents:
     MODEL
   );
   const c = r.findings.find((f) => f.kind === "port-claimed");
-  assert.ok(c, "lipseste port-claimed");
+  assert.ok(c, "port-claimed is missing");
   assert.equal(c.severity, "error");
   assert.deepEqual(c.params, { port: "din", agent: "a" });
 });
 
-test("port disparut din model: warning + orfan (invalidare gratioasa)", () => {
+test("a port gone from the model: warning + orphan (graceful invalidation)", () => {
   const r = check(
     `dut: { name: soc_top, reset: '' }
 agents:
@@ -159,7 +159,7 @@ agents:
   assert.deepEqual(r.orphans, ["gone"]);
 });
 
-test("waived + mapat: EROARE pe dut.unverified_ports (zidul 1.0)", () => {
+test("waived + mapped: an ERROR on dut.unverified_ports (the 1.0 wall)", () => {
   const r = check(
     `dut: { name: soc_top, reset: '', unverified_ports: [ din ] }
 agents:
@@ -177,7 +177,7 @@ agents:
   assert.deepEqual(i.params, { port: "din", agent: "a" });
 });
 
-test("dut inexistent in model: warning; fara model, tacere", () => {
+test("a dut that does not exist in the model: warning; without a model, silence", () => {
   // (`reset: ''`: the reset rule is YAML-internal and has its own tests below)
   const r = check(`dut: { name: nope, reset: '' }\n`, MODEL);
   assert.deepEqual(kinds(r), ["dut-missing"]);
@@ -432,4 +432,4 @@ test("reset-undriven: silent where the YAML cannot tell, or the generator wires 
   assert.equal(undrivenReset({ dut: {} }), null);
 });
 
-console.log(`\ntest-configcheck: ${passed} teste au trecut.`);
+console.log(`\ntest-configcheck: ${passed} tests passed.`);
