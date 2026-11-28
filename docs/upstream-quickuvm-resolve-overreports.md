@@ -147,7 +147,7 @@ the kind of knowledge `resolve` was meant to make unnecessary.
 components · the plain gesture generates · the reported set, declared, is
 refused with that shape's message). When this is fixed upstream the second leg
 of each lock fails with "fixed upstream, the fence may go", and the fence can
-be deleted — together with the three callers that pass the live config to
+be deleted — together with the callers that pass the live config to
 `inferredComponents` for its sake.
 
 ---
