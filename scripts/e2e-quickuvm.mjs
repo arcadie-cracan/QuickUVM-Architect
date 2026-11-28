@@ -1853,7 +1853,15 @@ endpackage
   // reported set there turned a bench that generated into one that does not.
   // `inferenceIsReal` fences those shapes off (no ghost, no materialise offer,
   // the plain gesture). Each lock below has four legs; the day quick-uvm wires
-  // one of these shapes, or stops over-reporting it, a leg fails and says which.
+  // one of these shapes, a leg fails and says which.
+  //
+  // The over-report is QuickUVM#121. A generator with the fix reports nothing
+  // inferred on these shapes, so leg 2 accepts BOTH answers and says which one
+  // it met: the fence is needed for 1.2.0 and older, and harmless after — it
+  // stays as long as those versions are supported. What 1.2.0 reported is
+  // written down here (`legacy`) so that leg 4, the reason the fence exists,
+  // keeps being checked whatever the installed generator answers.
+  const overReporting = [];
   const tryGen = (text, extra = {}) => {
     const d = mkdtempSync(join(tmpdir(), "quickuvm-e2e-shape-"));
     const f = join(d, "b.quickuvm.yaml");
@@ -1876,12 +1884,27 @@ endpackage
     // 1. the fence knows the shape
     assert.equal(R.inferenceIsReal(cfg), false, `${label}: the fence does not know this shape`);
     assert.deepEqual(R.inferredComponents(resolveOf(text, extra), cfg), [], `${label}: a ghost would be drawn`);
-    // 2. `resolve` still over-reports it (when it stops, the fence is redundant here)
+    // 2. `resolve` either over-reports the shape (<= 1.2.0) or reports nothing
+    //    inferred for it (QuickUVM#121 fixed) — never something else
     const reported = resolveOf(text, extra);
+    const now = R.inferredComponents(reported).map((c) => c.id).sort();
+    const legacyIds = [`cov:${agents[0]}`, `sb:sbd`];
     assert.ok(
-      R.inferredComponents(reported).length > 0,
-      `${label}: quick-uvm resolve no longer reports inferred components here — fixed upstream, the fence may go`
+      now.length === 0 || JSON.stringify(now) === JSON.stringify(legacyIds),
+      `${label}: quick-uvm resolve reports ${JSON.stringify(now)} here — neither the old over-report nor nothing`
     );
+    if (now.length) {
+      overReporting.push(label);
+    }
+    // what 1.2.0 answered, whatever this generator answers
+    const legacy = {
+      ...reported,
+      analysis: {
+        mode: "implicit",
+        scoreboards: [{ name: "sbd", source: agents[0], origin: "inferred" }],
+        coverage: [{ agent: agents[0], origin: "inferred" }],
+      },
+    };
     // 3. the bench generates as it is, WITHOUT the components resolve reports
     const implicitGen = tryGen(text, extra);
     assert.equal(implicitGen.status, 0, `${label}: the implicit bench does not generate:\n${implicitGen.out.slice(-600)}`);
@@ -1889,8 +1912,17 @@ endpackage
       const hits = generated(implicitGen, re).filter((f) => !only || only.test(f));
       assert.deepEqual(hits, [], `${label}: the generator DOES generate ${what} now (${hits.join(", ")}) — the fence hides real components`);
     }
-    // 4. the plain gesture generates; the reported set, declared with it, is refused
-    const plan = R.keepOnFirstAnalysis(reported, agents, gesture);
+    // 4. the plain gesture generates; the set 1.2.0 reports, declared with it,
+    //    is refused — and with a generator that reports nothing, nothing is kept
+    if (!now.length) {
+      const honest = R.keepOnFirstAnalysis(reported, agents, gesture);
+      assert.deepEqual(
+        [honest.known, honest.scoreboards, honest.coverage],
+        [true, [], []],
+        `${label}: the fixed generator's answer would still have something kept`
+      );
+    }
+    const plan = R.keepOnFirstAnalysis(legacy, agents, gesture);
     assert.equal(plan.known, true, `${label}: the plan would not have been made`);
     assert.ok(plan.scoreboards.length + plan.coverage.length > 0, `${label}: nothing would have been kept`);
     const plain = tryGen(bare(text), extra);
@@ -1989,7 +2021,12 @@ endpackage
   const stGen = tryGen(selftest);
   assert.equal(stGen.status, 0, `the selftest does not generate:\n${stGen.out.slice(-400)}`);
   assert.ok(generated(stGen, /\bsbd\b/).some((f) => /_env\.svh$/.test(f)), "a selftest no longer generates sbd: it should be fenced too");
-  console.log("  ok    where resolve over-reports (replicas, vip, hybrid): fenced — the plain gesture generates, the reported set is refused");
+  console.log(
+    "  ok    where the implicit pair is not generated (replicas, vip, hybrid): fenced — the plain gesture generates, the pair declared is refused; " +
+      (overReporting.length
+        ? `this quick-uvm still over-reports ${overReporting.join(", ")} (QuickUVM#121)`
+        : "this quick-uvm reports nothing inferred there (QuickUVM#121 fixed)")
+  );
 }
 
 console.log("the end-to-end flow (yamlops -> quick-uvm generate) is green");
