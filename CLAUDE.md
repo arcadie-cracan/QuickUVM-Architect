@@ -1559,7 +1559,8 @@ designs — do not reintroduce the name collision.
   there, and — the same lie, older — no ghost in the scene, no materialise
   row in the proposal strip (`inferredComponents(resolved, config)`: pass the
   live config wherever there is one). It is the ONE place the extension knows
-  where inference happens; each shape has a four-leg lock in scenario 17
+  where inference happens (the gap is the generator's: QuickUVM#121,
+  `docs/upstream-quickuvm-resolve-overreports.md`); each shape has a four-leg lock in scenario 17
   (resolve still reports it, the implicit bench generates WITHOUT the
   components, the plain gesture generates, the reported set declared is
   refused with that shape's wall), so a quick-uvm that wires a shape, or stops
