@@ -2,7 +2,51 @@
 
 *Written from QuickUVM Architect's side; observed on quick-uvm 1.2.0, Nov 2026.
 Filed upstream on 28 Nov 2026 as [arcadie-cracan/QuickUVM#121](https://github.com/arcadie-cracan/QuickUVM/issues/121);
-the issue's text is at the end of this note. Open at the time of writing.*
+the issue's text is at the end of this note. **Fixed in quick-uvm 1.3.0**
+(released 28 Nov 2026) — the next section says what changed. Everything from
+"Summary" to "Why it matters to a consumer" describes 1.2.0 and older, and is
+kept as the record of why Architect's fence exists.*
+
+## Status — fixed in quick-uvm 1.3.0
+
+The four cases of the table in "Summary", run again on an installed 1.3.0:
+
+| shape | `resolve` reports (1.3.0) | `generate`, as written |
+|---|---|---|
+| a plain bench (control) | `sbd` + coverage on `cmd`, as before | env declares `sbd` and `cov` |
+| `replicas: 3` on the agent | nothing under `analysis`; a new `instances` list with `cmd_0` … `cmd_2`, each with its scoreboard (`cmd_0_sb` …, `origin: inferred`) | env declares `cmd_0_sb` … `cmd_2_sb`, no `sbd`, no `cov` |
+| `kind: vip` | nothing inferred under `analysis`, and no tests | no env is generated at all |
+| a composition (`subenvs`) with a boundary agent | nothing under `analysis`; the guard `UNCHECKED_AGENT: topcmd` and the top's own `sys_top_vseq` | the top env declares neither, and warns `UNCHECKED_AGENT` |
+
+So the report and the output agree on the three shapes. What a consumer of
+the JSON meets on 1.3.0:
+
+- `analysis.scoreboards` and `analysis.coverage` are EMPTY on the three shapes
+  when nothing is declared, while `analysis.mode` is still `implicit` (the key
+  is absent from the file). "Implicit" no longer implies the pair.
+- A new top-level `instances` list, present only on a bench with `replicas` /
+  `instances`: one entry per generated instance, with the per-instance
+  scoreboard the env really declares.
+- `wired: false` on a DECLARED entry the generator accepts and renders as no
+  component — a plain scoreboard on a replicated agent (measured:
+  `{"name": "chk", "origin": "declared", "wired": false}`); the generator's
+  changelog lists two more (a virtual sequence on a composition top, a coverage
+  entry on a VIP), not re-measured here.
+
+What did NOT change: the walls. Declaring the pair 1.2.0 reported is refused
+on each shape with the same message as before (leg 4 of the lock below passes
+on 1.3.0).
+
+Architect needed no change for 1.3.0. `parseResolved` reads `analysis` and
+ignores the keys it does not know; every gate passes on the installed 1.3.0,
+and the shape lock of `test:e2e` prints "this quick-uvm reports nothing
+inferred there (QuickUVM#121 fixed)". Two things the extension does NOT do with the new
+answer — neither is a regression, both are what it did before:
+
+- it does not read `instances`: the per-instance scoreboards of a replicated
+  agent are not drawn;
+- it does not read `wired`: a declared entry the generator drops is drawn like
+  any other declared entry.
 
 ## Summary
 
@@ -134,7 +178,7 @@ Architect did exactly that, and on these shapes:
   inferred set (Architect #84), kept it there too, turning benches that
   generated into benches that do not.
 
-## What Architect does meanwhile
+## What Architect does — before and after the fix
 
 `inferenceIsReal(config)` in `src/resolved.ts` fences the three shapes
 (`subenvs` non-empty, `kind: vip`, an agent with `replicas` > 1 or
@@ -146,14 +190,14 @@ the kind of knowledge `resolve` was meant to make unnecessary.
 (what resolve answers · the bench as written generates without the components
 · the plain gesture generates · the pair 1.2.0 reported, declared, is refused
 with that shape's message). The second leg accepts both answers — the
-over-report, or nothing inferred — and the suite's last line says which
-generator it met.
+over-report, or nothing inferred — and the lock's line in the suite's output
+says which generator it met.
 
-The fence does NOT go when the fix is released: quick-uvm 1.2.0 and older keep
-over-reporting, and Architect supports them. It is needed there and harmless
-on a fixed generator (which reports nothing on these shapes anyway). It can be
+The fence does NOT go now that the fix is released: quick-uvm 1.2.0 and older
+keep over-reporting, and Architect supports them. It is needed there and
+harmless on 1.3.0 (which reports nothing on these shapes anyway). It can be
 deleted — with the callers that pass the live config to `inferredComponents`
-for its sake — only when the minimum supported quick-uvm is one with the fix.
+for its sake — only when the minimum supported quick-uvm is 1.3.0 or newer.
 
 ---
 

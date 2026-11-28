@@ -1855,8 +1855,8 @@ endpackage
   // the plain gesture). Each lock below has four legs; the day quick-uvm wires
   // one of these shapes, a leg fails and says which.
   //
-  // The over-report is QuickUVM#121. A generator with the fix reports nothing
-  // inferred on these shapes, so leg 2 accepts BOTH answers and says which one
+  // The over-report is QuickUVM#121, fixed in quick-uvm 1.3.0, which reports
+  // nothing inferred on these shapes; so leg 2 accepts BOTH answers and says which one
   // it met: the fence is needed for 1.2.0 and older, and harmless after — it
   // stays as long as those versions are supported. What 1.2.0 reported is
   // written down here (`legacy`) so that leg 4, the reason the fence exists,

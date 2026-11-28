@@ -1559,18 +1559,25 @@ designs — do not reintroduce the name collision.
   there, and — the same lie, older — no ghost in the scene, no materialise
   row in the proposal strip (`inferredComponents(resolved, config)`: pass the
   live config wherever there is one). It is the ONE place the extension knows
-  where inference happens (the gap is the generator's: QuickUVM#121,
-  `docs/upstream-quickuvm-resolve-overreports.md`); each shape has a four-leg lock in scenario 17
+  where inference happens (the gap was the generator's: QuickUVM#121, FIXED in
+  quick-uvm 1.3.0 — `docs/upstream-quickuvm-resolve-overreports.md`); each
+  shape has a four-leg lock in scenario 17
   (what resolve answers, the implicit bench generates WITHOUT the components,
   the plain gesture generates, the pair 1.2.0 reported is refused once
   declared, with that shape's wall), so a quick-uvm that wires a shape fails a
   leg that says which. Leg 2 accepts BOTH generators: the old over-report, or
-  nothing inferred (#121 fixed) — and the suite's last line says which it met;
+  nothing inferred (1.3.0) — and the lock's own line says which it met;
   the first cut failed on the fixed generator with "the fence may go", which
   is wrong while 1.2.0 is supported: the fence STAYS, needed there and
   harmless after. What 1.2.0 reported is a constant of the test (`legacy`),
-  so leg 4 is checked whatever the installed generator answers. A selftest is NOT fenced: it
-  really generates `sbd`. (8) The NEW entry is written FIRST: a wire drop
+  so leg 4 is checked whatever the installed generator answers. On 1.3.0
+  `analysis.mode: implicit` no longer implies the pair (both lists are empty
+  on the three shapes), and the JSON has two keys the extension does NOT read
+  (`parseResolved` ignores them): `instances` — the per-instance scoreboards
+  of a replicated agent, not drawn — and `wired: false` on a declared entry
+  the generator renders as no component, drawn like any declared one. A
+  selftest is NOT fenced: it really generates `sbd`. (8) The NEW entry is
+  written FIRST: a wire drop
   gives its drop point to the first node of the kind that was not in the
   pre-gesture scene (`renderTb`), and with the kept entry first that was the
   former ghost, which jumped and lost its seat. (9) The plan is for an

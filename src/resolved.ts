@@ -74,10 +74,11 @@ export interface InferredComponent {
 /**
  * Does quick-uvm really GENERATE what `resolve` says it infers for this bench?
  *
- * `resolve` (1.2.0) reports the scoreboard `sbd` and a collector on the first
- * agent whenever `analysis:` is absent and there is an agent. It does not look
- * at the shape of the bench, and on three shapes the generator's env wires
- * neither — and REFUSES both once they are declared (measured, Nov 2026):
+ * `resolve` up to quick-uvm 1.2.0 reports the scoreboard `sbd` and a collector
+ * on the first agent whenever `analysis:` is absent and there is an agent. It
+ * does not look at the shape of the bench, and on three shapes the generator's
+ * env wires neither — and REFUSES both once they are declared (measured, Nov
+ * 2026):
  *   - a composition (`subenvs`), pure or hybrid: "a `subenvs` top does not wire
  *     `analysis.coverage`", "a composition scoreboard is two-stream";
  *   - `kind: vip`: the bench layer is not emitted at all, and bare coverage /
@@ -93,6 +94,10 @@ export interface InferredComponent {
  * is locked in `test:e2e` (scenario 17) against the generator, so a quick-uvm
  * that starts wiring one of them makes that lock fail instead of this fence
  * hiding real components.
+ *
+ * quick-uvm 1.3.0 fixed the report (QuickUVM#121): there `resolve` reports
+ * nothing inferred on these shapes, and this fence changes nothing. It stays
+ * for 1.2.0 and older, which the extension supports.
  */
 export function inferenceIsReal(
   config:
