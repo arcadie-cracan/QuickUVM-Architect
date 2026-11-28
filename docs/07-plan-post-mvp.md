@@ -164,8 +164,10 @@ both once they are declared. The diagram had been drawing ghosts there since Aug
 the proposal strip offered to materialise them into a configuration that does not
 generate. `inferenceIsReal` (`src/resolved.ts`) now fences those shapes for the ghosts,
 the strip and the add gestures alike; scenario 17 locks each shape against the generator.
-This is a generator-side gap (the fix belongs in `ProjectConfig.resolved()`); the fence
-is the extension's side of it until then.
+This is a generator-side gap (the fix belongs in `ProjectConfig.resolved()`; filed as
+[arcadie-cracan/QuickUVM#121](https://github.com/arcadie-cracan/QuickUVM/issues/121), written up in
+`docs/upstream-quickuvm-resolve-overreports.md`); the fence is the extension's side of it
+until then.
 
 ### Status — shipped (Aug 2026)
 
