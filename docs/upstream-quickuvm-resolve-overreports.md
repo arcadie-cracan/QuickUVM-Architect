@@ -143,12 +143,17 @@ the one place the extension knows something about *where* inference happens —
 the kind of knowledge `resolve` was meant to make unnecessary.
 
 `test:e2e` scenario 17 locks each shape with four legs against the generator
-(resolve still reports it · the bench as written generates without the
-components · the plain gesture generates · the reported set, declared, is
-refused with that shape's message). When this is fixed upstream the second leg
-of each lock fails with "fixed upstream, the fence may go", and the fence can
-be deleted — together with the callers that pass the live config to
-`inferredComponents` for its sake.
+(what resolve answers · the bench as written generates without the components
+· the plain gesture generates · the pair 1.2.0 reported, declared, is refused
+with that shape's message). The second leg accepts both answers — the
+over-report, or nothing inferred — and the suite's last line says which
+generator it met.
+
+The fence does NOT go when the fix is released: quick-uvm 1.2.0 and older keep
+over-reporting, and Architect supports them. It is needed there and harmless
+on a fixed generator (which reports nothing on these shapes anyway). It can be
+deleted — with the callers that pass the live config to `inferredComponents`
+for its sake — only when the minimum supported quick-uvm is one with the fix.
 
 ---
 

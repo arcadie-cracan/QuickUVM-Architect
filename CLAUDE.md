@@ -1561,10 +1561,15 @@ designs — do not reintroduce the name collision.
   live config wherever there is one). It is the ONE place the extension knows
   where inference happens (the gap is the generator's: QuickUVM#121,
   `docs/upstream-quickuvm-resolve-overreports.md`); each shape has a four-leg lock in scenario 17
-  (resolve still reports it, the implicit bench generates WITHOUT the
-  components, the plain gesture generates, the reported set declared is
-  refused with that shape's wall), so a quick-uvm that wires a shape, or stops
-  over-reporting it, fails a leg that says which. A selftest is NOT fenced: it
+  (what resolve answers, the implicit bench generates WITHOUT the components,
+  the plain gesture generates, the pair 1.2.0 reported is refused once
+  declared, with that shape's wall), so a quick-uvm that wires a shape fails a
+  leg that says which. Leg 2 accepts BOTH generators: the old over-report, or
+  nothing inferred (#121 fixed) — and the suite's last line says which it met;
+  the first cut failed on the fixed generator with "the fence may go", which
+  is wrong while 1.2.0 is supported: the fence STAYS, needed there and
+  harmless after. What 1.2.0 reported is a constant of the test (`legacy`),
+  so leg 4 is checked whatever the installed generator answers. A selftest is NOT fenced: it
   really generates `sbd`. (8) The NEW entry is written FIRST: a wire drop
   gives its drop point to the first node of the kind that was not in the
   pre-gesture scene (`renderTb`), and with the kept entry first that was the
